@@ -22,6 +22,15 @@
  * public. The resolver is injected so tests never touch the network, and a resolution failure is a
  * **refusal**, not a pass: an address we could not classify is one we cannot vouch for.
  *
+ * ## What the guard does not do, and who does it instead
+ *
+ * This function classifies **one** URL. It cannot police where the request goes after that, so the
+ * delivery transport must not follow redirects: a `307` from an allowed receiver would otherwise
+ * re-issue the same method, body and headers at an address never classified here, which is a full
+ * bypass rather than a race (#494). `webhook.ts` sets `redirect: 'manual'` and ends the delivery on
+ * a `3xx` — if redirects are ever supported, each `Location` must come back through this function,
+ * under a hop cap.
+ *
  * A residual TOCTOU gap remains — the name could resolve differently between this check and the
  * `fetch` — and closing it fully needs pinned-IP connections, which Node's `fetch` does not expose.
  * That is documented here rather than papered over: this guard raises the cost substantially and

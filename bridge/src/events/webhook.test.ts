@@ -14,7 +14,11 @@ import {
   createWebhookDeliverer,
   DELIVERY_HEADER,
   EVENT_TYPE_HEADER,
+  isRedirect,
+  MAX_RESPONSE_BODY_BYTES,
   parseWebhookTargets,
+  readBoundedText,
+  REDIRECT_DETAIL,
   SIGNATURE_HEADER,
   signBody,
   targetWantsType,
@@ -750,5 +754,116 @@ describe('end-to-end signature verification against a real receiver', () => {
     await deliverer.whenIdle();
     expect(result.ok).toBe(true);
     expect(result.type).toBe('item.low_stock');
+  });
+});
+
+// --- #494: a redirect must not carry a delivery past the SSRF guard -----------------
+
+describe('redirects (#494)', () => {
+  const evt = event({ id: 'hist-1', type: 'item.low_stock' });
+
+  it('classifies only 3xx as a redirect', () => {
+    expect([300, 301, 302, 303, 307, 308, 399].filter((s) => !isRedirect(s))).toEqual([]);
+    expect([200, 204, 299, 400, 404, 500].filter(isRedirect)).toEqual([]);
+  });
+
+  it('ends the delivery on a 3xx without retrying it', async () => {
+    const log = createWebhookDeliveryLog();
+    let calls = 0;
+    const deliverer = createWebhookDeliverer({
+      hostResolver: publicResolver,
+      targets: [{ url: 'https://a.example.test/hook', secret: 's' }],
+      fetchImpl: async () => {
+        calls += 1;
+        return { ok: false, status: 307, body: 'moved' };
+      },
+      sleep: noSleep,
+      maxAttempts: 5,
+      deliveryLog: log,
+      log: () => undefined,
+    });
+    deliverer.deliver([evt]);
+    await deliverer.whenIdle();
+
+    // One attempt, not five: a receiver that redirects will redirect again.
+    expect(calls).toBe(1);
+    expect(log.list()[0]).toMatchObject({ outcome: 'failed', status: 307, attempts: 1 });
+    // Our own wording, so the receiver cannot choose what the operator reads.
+    expect(log.list()[0]!.detail).toBe(REDIRECT_DETAIL);
+    expect(log.list()[0]!.detail).not.toContain('moved');
+  });
+
+  it('does not follow a real receiver’s 307 to a second address', async () => {
+    let redirected = 0;
+    let followed = 0;
+    const server = createServer((req, res) => {
+      if (req.url === '/final') {
+        followed += 1;
+        res.writeHead(200).end();
+        return;
+      }
+      redirected += 1;
+      // The shape that matters: a 307 preserves the method and the body, so following it would
+      // re-issue the whole signed delivery at an address the SSRF guard never classified.
+      res.writeHead(307, { location: `http://127.0.0.1:${port}/final` }).end('go here instead');
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const log = createWebhookDeliveryLog();
+      const deliverer = createWebhookDeliverer({
+        // Loopback needs the opt-in, exactly as the end-to-end signature test does.
+        ssrfPolicy: { allowPrivate: true },
+        targets: [{ url: `http://127.0.0.1:${port}/hook`, secret: 'placeholder-signing-secret' }],
+        sleep: noSleep,
+        maxAttempts: 2,
+        deliveryLog: log,
+        log: () => undefined,
+      });
+      deliverer.deliver([evt]);
+      await deliverer.whenIdle();
+
+      expect(redirected).toBe(1);
+      expect(followed).toBe(0);
+      expect(log.list()[0]).toMatchObject({ outcome: 'failed', status: 307, detail: REDIRECT_DETAIL });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});
+
+// --- #494: the response body is read through a byte cap ---------------------------
+
+describe('readBoundedText (#494)', () => {
+  it('stops at the cap and cancels a body that never ends', async () => {
+    let cancelled = false;
+    let pulls = 0;
+    const chunk = new Uint8Array(1_024).fill(0x61); // 'a'
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    const text = await readBoundedText(new Response(stream));
+
+    expect(text).toHaveLength(MAX_RESPONSE_BODY_BYTES);
+    expect(cancelled).toBe(true);
+    // The point of the cap: a stream with no end still costs a bounded number of reads.
+    expect(pulls).toBeLessThan(1_000);
+  });
+
+  it('returns a short body whole, and an empty body as an empty string', async () => {
+    expect(await readBoundedText(new Response('upstream exploded'))).toBe('upstream exploded');
+    expect(await readBoundedText(new Response(''))).toBe('');
+  });
+
+  it('returns undefined when there is no body at all', async () => {
+    expect(await readBoundedText(new Response(null, { status: 204 }))).toBeUndefined();
   });
 });

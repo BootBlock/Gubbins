@@ -27,7 +27,8 @@ Press **Add webhook** and fill in:
 ![The Add-webhook dialog, showing the name, URL and method fields, the signing options, and the start of the event list](images/webhooks-form.png)
 
 - **Name** — how you'll recognise it in the list. Purely for you.
-- **URL** — the address the bridge calls. Must start with `http://` or `https://`.
+- **URL** — the address the bridge calls. Must start with `http://` or `https://`. Give the final
+  address: the bridge doesn't follow redirects (see below).
 - **Method** — `POST`, `GET`, `PUT` or `PATCH`. `POST` is what most receivers expect.
 - **Events** — tick the changes you care about, grouped by kind (items, stock levels, location,
   storage locations, loans & reservations, condition & upkeep, and other). **Every event** also
@@ -130,7 +131,8 @@ a receiver is actually listening.
 attempt marked:
 
 - **Delivered** — the receiver accepted it.
-- **Failed** — the receiver was reached but didn't accept it, or couldn't be reached.
+- **Failed** — the receiver was reached but didn't accept it, couldn't be reached, or answered with
+  a redirect.
 - **Blocked** — refused before anything was sent: either the address is on a private network the
   bridge hasn't been allowed to reach, or a named signing secret couldn't be found. A webhook whose
   secret the bridge can't find gets a row the next time anything happens that the bridge sends
@@ -160,6 +162,19 @@ This is a setting, not a fault. Turning it on is described in the bridge's own c
 > **⚠️ Heads-up**
 > A webhook sends your data outward, to an address you chose. Keep them pointed at destinations you
 > trust, sign them where you can, and see [[Privacy & security|Privacy-and-Security]].
+
+## Redirects are not followed
+
+If your receiver answers with a redirect — a `301`, `302`, `303`, `307` or `308` — the bridge stops there
+and records the delivery as **Failed**, saying so. It does not call the new address.
+
+That is deliberate. The bridge checks the address you gave it *before* it sends anything, and a
+redirect would move the request to an address it never checked — including one on your own network
+that you hadn't allowed. Rather than trust the redirect, the bridge treats it as a delivery that
+didn't happen.
+
+Point the webhook at the final address instead. A `http://` URL on a service that redirects
+everything to `https://` is the usual cause: use the `https://` address directly.
 
 ## Hiding the page
 

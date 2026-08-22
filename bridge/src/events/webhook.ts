@@ -23,6 +23,8 @@
  *   4. The **SSRF guard** (`webhook-ssrf.ts`, §6.2) decides whether the destination may be reached
  *      at all. This is the feature's primary security control, so it sits in the request path
  *      rather than at config time — a subscription's URL arrives over sync and is never trusted.
+ *      Because the guard classifies *one* address, the delivery must reach that address and no
+ *      other: redirects are **not** followed, and a `3xx` ends the delivery as a failure (#494).
  *   5. `GET` flattens the payload into query parameters and sends **no body** — and therefore
  *      carries **no HMAC signature**, since the signature signs a body. That is a real limitation
  *      of the method, not an oversight.
@@ -95,6 +97,10 @@ export const DEFAULT_MAX_QUEUE = 1_000;
  * `body` is **optional**: a `GET` delivery carries its payload in the query string and sends none.
  * The response's `body` is likewise optional — a receiver's error text is recorded (truncated) in
  * the delivery log when available, and its absence is not a failure.
+ *
+ * **Contract: an implementation must not follow redirects.** A `3xx` is returned as-is, with its
+ * status, so the caller can refuse it — following one would re-issue the request at an address the
+ * SSRF guard never classified.
  */
 export type FetchLike = (
   url: string,
@@ -386,6 +392,18 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
             recordOutcome(job, 'delivered', attempt, res.status, null);
             return 'delivered';
           }
+          if (isRedirect(res.status)) {
+            // The guard classified *this* URL's address; the redirect names another one it never
+            // saw, so following it would hand a synced subscription the LAN reach the guard exists
+            // to withhold (#494). Terminal, not retried: a receiver that redirects will redirect
+            // again, and the detail is ours rather than the receiver's so the operator is told why.
+            log(
+              `Webhook delivery got HTTP ${res.status} from ${redactUrl(plan.url)}; ` +
+                'redirects are not followed, so the delivery is abandoned.',
+            );
+            recordOutcome(job, 'failed', attempt, res.status, REDIRECT_DETAIL);
+            return 'failed';
+          }
           lastDetail = res.body ?? null;
           log(`Webhook delivery got HTTP ${res.status} from ${redactUrl(plan.url)} (attempt ${attempt}).`);
         } catch (err) {
@@ -493,16 +511,28 @@ export function createWebhookDeliverer(options: WebhookDelivererOptions): Webhoo
     },
   };
 
-  /** The default transport: the global `fetch`, narrowed to {@link FetchLike}. */
+  /**
+   * The default transport: the global `fetch`, narrowed to {@link FetchLike}.
+   *
+   * `redirect: 'manual'` is the security-relevant part. `fetch` defaults to `'follow'`, and a
+   * `307`/`308` preserves the method **and** the body — so a receiver the SSRF guard allowed could
+   * answer with `Location: http://169.254.169.254/…` and have the bridge issue, in full, the very
+   * request the guard had just refused (#494). Manual mode returns the `3xx` itself, which
+   * `deliverWithRetry` ends the delivery on.
+   *
+   * The body is read through a byte cap for the same reason it is read at all: only a short
+   * diagnostic is ever kept, so an unbounded read would let a hostile or broken receiver make the
+   * bridge buffer an arbitrary amount of memory — once per attempt — on a Pi-class host.
+   */
   async function defaultFetch(
     url: string,
     init: { method: string; headers: Record<string, string>; body?: string },
   ): Promise<{ ok: boolean; status: number; body?: string }> {
-    const res = await fetch(url, init);
-    // The body is read only to record a short diagnostic; a receiver that sends none is normal.
+    const res = await fetch(url, { ...init, redirect: 'manual' });
+    // A receiver that sends no body is normal, and a body we fail to read is not a delivery failure.
     let body: string | undefined;
     try {
-      body = await res.text();
+      body = await readBoundedText(res);
     } catch {
       body = undefined;
     }
@@ -518,6 +548,70 @@ interface TargetWorkerShape {
 /** Exponential backoff for the nth retry (1-based), capped. */
 export function backoffFor(attempt: number, base: number, max: number): number {
   return Math.min(max, base * 2 ** (attempt - 1));
+}
+
+/**
+ * How many bytes of a response body are read before the rest is discarded.
+ *
+ * Generous next to the ~200 characters the delivery log keeps, and small enough that a receiver
+ * streaming forever costs the bridge nothing (#494). Bytes, not characters, because the cap has to
+ * hold before the text is decoded — the point is to stop reading, not to shorten a string we
+ * already buffered.
+ */
+export const MAX_RESPONSE_BODY_BYTES = 4_096;
+
+/** The delivery-log detail for a refused redirect. Ours, not the receiver's, and URL-free. */
+export const REDIRECT_DETAIL =
+  'The receiver answered with a redirect. Redirects are not followed, so nothing was delivered — ' +
+  'point the subscription at the final URL instead.';
+
+/** Whether a status is a redirect the delivery must refuse rather than follow. */
+export function isRedirect(status: number): boolean {
+  return status >= 300 && status < 400;
+}
+
+/**
+ * Read at most {@link MAX_RESPONSE_BODY_BYTES} of a response, then drop the rest.
+ *
+ * `res.text()` reads to the end of the stream, which a hostile or malfunctioning receiver controls.
+ * This reads chunk by chunk, stops at the cap and cancels the body, so the memory a single delivery
+ * can cost is bounded no matter what the far end sends.
+ *
+ * A decode of a truncated tail can split a multi-byte character; `TextDecoder` renders that as a
+ * replacement character, which is acceptable in a 200-character diagnostic and is why the read is
+ * not retried or repaired.
+ *
+ * Exported so the cap can be tested against a stream that never ends, which is the case that
+ * matters and which no real receiver would let a test reproduce reliably.
+ */
+export async function readBoundedText(res: Response): Promise<string | undefined> {
+  const stream = res.body;
+  if (stream === null || stream === undefined) return undefined;
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < MAX_RESPONSE_BODY_BYTES) {
+      const { done, value } = await reader.read();
+      // `done` and `value` lose their correlation when destructured, so an absent chunk is treated
+      // as the end of the stream rather than skipped — skipping it could not terminate.
+      if (done || value === undefined) break;
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    // Releases the connection whether we stopped at the cap or at the end of the stream. A cancel
+    // that rejects (an already-errored stream) must not become the delivery's error.
+    await reader.cancel().catch(() => undefined);
+  }
+  if (chunks.length === 0) return '';
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(joined.subarray(0, MAX_RESPONSE_BODY_BYTES));
 }
 
 /**
