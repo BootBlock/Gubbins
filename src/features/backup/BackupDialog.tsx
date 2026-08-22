@@ -27,6 +27,7 @@ import { getItemRepository } from '@/db/repositories';
 import { estimateStorage } from '@/features/storage/storage-api';
 import { useConfirmSaved } from '@/components/useConfirmSaved';
 import { prepareSave } from '@/lib/save-file';
+import { useT } from '@/features/i18n';
 import { can } from '@/features/users/permissions';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { BACKUP_FILE_KIND, backupFilename, createBackup, type BackupResult } from './build-backup';
@@ -144,6 +145,7 @@ function BackupTabs({
 }) {
   // Issue #519: `createBackup` and `restoreBackup` now refuse a session that lacks the key, so a
   // tab the role cannot use would only be a panel that throws on its own action button.
+  const t = useT();
   const authority = useSessionStore((state) => state.authority);
   const mayCreate = can(authority, 'backup:read');
   const mayRestore = can(authority, 'backup:write');
@@ -178,9 +180,7 @@ function BackupTabs({
         <RestorePanel onClose={onClose} onRestored={onRestored} mayReplace={mayCreate} />
       ) : null}
       {!mayCreate && !mayRestore ? (
-        <p className="text-sm text-muted-foreground">
-          Your role does not allow creating or restoring backups.
-        </p>
+        <p className="text-sm text-muted-foreground">{t('backup.denied.noAccess')}</p>
       ) : null}
     </div>
   );

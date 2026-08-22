@@ -51,6 +51,7 @@
   "settings.appShellReset.action": "Reinstall & reload",
   "settings.eraseData.denied.heading": "Not permitted",
   "settings.eraseData.denied.everything": "Your role does not allow erasing everything. Nothing was removed.",
+  "backup.denied.noAccess": "Your role does not allow creating or restoring backups.",
   "settings.reminders.backgroundWake.label": "Background checks unavailable",
   "settings.reminders.backgroundWake.description": "Your browser wouldn't set up background checks for Gubbins, so reminders only arrive while it's open. Using Gubbins regularly can make them available.",
   "settings.reminders.backgroundWake.status": "Not set up",

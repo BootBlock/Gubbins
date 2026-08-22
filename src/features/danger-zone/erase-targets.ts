@@ -730,6 +730,10 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     ],
   },
   {
+    // Kept at `settings:write` even though resetting it switches the Users module back off and so
+    // lifts the sign-in gate. Anyone may do that from the Modules screen directly — it is one of
+    // the escape hatches the permission model documents rather than a hole in it — and unlike the
+    // factory reset, this target destroys no records on its way there.
     id: 'enabled-features',
     permissions: ['settings:write'],
     section: 'local',
@@ -787,10 +791,15 @@ export function eraseTargetPermissions(id: EraseTargetId): readonly PermissionKe
  * would ever find them (issue #519).
  *
  * "Erase everything" is `hardResetLocalData`: it deletes the whole database file, not a set of
- * tables. That takes `users` and `roles` with it, and the next boot comes up unrestricted — so a
- * role documented as unable to manage users could otherwise reset away the accounts that bound
- * it and return as an administrator. `stock`, `bookings` and `wishlist` are here for the plainer
- * reason that the reset destroys their rows and no catalog entry asks for them.
+ * tables. Every row of `users` and `roles` goes with it, which is `users:manage` by any reading —
+ * destroying an account is the most complete way of administering one. `stock`, `bookings` and
+ * `wishlist` are here for the same plain reason: the reset destroys their rows and no catalog
+ * entry asks for them.
+ *
+ * The point is the data, not the authority. Anyone may switch the Users module off from the
+ * Modules screen and come back unrestricted — that is a documented, deliberate escape hatch, and
+ * no key here closes it. What these keys withhold is the ability to take everyone's records with
+ * you on the way.
  */
 const RESET_ONLY_PERMISSIONS: readonly PermissionKey[] = [
   'users:manage',
