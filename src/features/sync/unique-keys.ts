@@ -25,6 +25,12 @@
  * pair, so the choice **must not depend on which side is "local"**. A local-wins tie would
  * have each device keep its own row and re-push it forever.
  *
+ * Ahead of that sits one absolute clause: a row a `RAISE(ABORT)` delete trigger protects — a
+ * built-in role — never loses (issue #708). Retiring one issues a DELETE the trigger refuses,
+ * and that aborts the whole apply rather than the statement. The clause is a constant both
+ * devices hold, so it is decided before either side reads a timestamp and the resolution stays
+ * the pure function the paragraph above depends on. See `UniqueKeySpec.protectedIds`.
+ *
  * Not every entry this emits is a contest. A *third* device receives the peer's tombstone for
  * the loser alongside the winner's row, so there is nothing left to decide — but because
  * `applyPlan` orders tombstone DELETEs after the UPSERTs, the doomed row is still holding the
@@ -33,6 +39,7 @@
  * nothing, they only pull the already-decided DELETE forward. See `doomedByKey` below.
  */
 import type { SqlRow } from '@/db/rpc/driver';
+import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
 import { foldName } from '@/lib/name-fold';
 import { applyOffset } from './clock';
 import type { CollisionResolution, SyncSnapshot, SyncTable, TableRow, Tombstone } from './types';
@@ -65,7 +72,33 @@ interface UniqueKeySpec {
    * rows are pointed at by nothing, so a losing row can simply be retired.
    */
   readonly references: readonly UniqueKeyReference[];
+  /**
+   * Ids a `RAISE(ABORT)` delete trigger protects, and which this resolution must therefore
+   * never retire (issue #708).
+   *
+   * Retiring a row is a DELETE, and a protected row answers one with `RAISE(ABORT)` — which
+   * takes down the whole atomic apply rather than the single statement, the same wholesale
+   * failure issues #187 and #538 exist to prevent. So a protected row always wins its contest:
+   * see {@link winnerOf}.
+   *
+   * Named by **id**, not by reading the row's own `is_builtin` flag, for the reason
+   * `ALWAYS_PRESENT_ROW_IDS` gives: the ids are seeded by the baseline and are stable across
+   * every revision of it, whereas the column a filter would test may not exist in a
+   * differently-shaped database.
+   */
+  readonly protectedIds?: ReadonlySet<string>;
 }
+
+/**
+ * The four built-in roles, which `trg_roles_protect_builtin_delete` refuses to delete.
+ *
+ * Unlike the system locations and the built-in System/Admin accounts — excluded from the
+ * snapshot outright, because every device seeds them identically and never edits them —
+ * built-in roles are *editable*, so their edits must propagate and they are carried in the
+ * snapshot like any other row. That leaves them ordinary candidates in the `roles.name`
+ * contest below, and undeletable losers of it.
+ */
+const BUILTIN_ROLE_IDS: ReadonlySet<string> = new Set(BUILTIN_ROLES.map((role) => role.id));
 
 /**
  * Every non-primary-key UNIQUE index across {@link SYNC_TABLES}, in resolution order.
@@ -103,6 +136,11 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
     columns: ['name'],
     nocase: ['name'],
     references: [{ table: 'users', column: 'role_id' }],
+    // A built-in role cannot be deleted, so it cannot be retired either (issue #708). It also
+    // *should* not be: the seeded permission model grants through these ids, and folding one
+    // into a same-named role an operator invented would move that grant. The custom row is
+    // retired instead, and its users follow it onto the built-in through `role_id` above.
+    protectedIds: BUILTIN_ROLE_IDS,
   },
   // `users.username` is UNIQUE NOCASE over random-UUID ids, so two devices inventing the same
   // username would otherwise collide on the merge INSERT and brick sync (issue #79).
@@ -188,6 +226,8 @@ interface Candidate {
   readonly updatedAt: number;
   /** Index into `localUpserts`, when this candidate is a pending upsert rather than a local row. */
   readonly upsertIndex?: number;
+  /** True when a delete trigger protects this id — see {@link UniqueKeySpec.protectedIds}. */
+  readonly guarded: boolean;
 }
 
 function num(value: unknown): number {
@@ -218,11 +258,26 @@ function keyOf(spec: UniqueKeySpec, row: SqlRow): string {
 }
 
 /**
- * Pick the row that keeps the natural key. Newest `updated_at` wins; an exact tie is broken
- * by the lexicographically smaller id so that **both** devices reach the same verdict — see
- * the module note on why a local-wins tie would ping-pong forever.
+ * Pick the row that keeps the natural key. A protected row wins outright; otherwise the newest
+ * `updated_at` wins, and an exact tie is broken by the lexicographically smaller id so that
+ * **both** devices reach the same verdict — see the module note on why a local-wins tie would
+ * ping-pong forever.
+ *
+ * The protection clause keeps that property: `protectedIds` is a constant every device holds,
+ * so both sides of a pair agree on which of the two is protected before either looks at a
+ * timestamp (issue #708).
+ *
+ * When *both* are protected neither can be retired, and the tiebreak instead picks the one that
+ * costs nothing to keep: a stored local row, which is already sitting on the key and writes
+ * nothing. `retire` then refuses the contest outright rather than recording a verdict.
  */
 function winnerOf(a: Candidate, b: Candidate): { winner: Candidate; loser: Candidate } {
+  if (a.guarded !== b.guarded) {
+    return a.guarded ? { winner: a, loser: b } : { winner: b, loser: a };
+  }
+  if (a.guarded && (a.upsertIndex === undefined) !== (b.upsertIndex === undefined)) {
+    return a.upsertIndex === undefined ? { winner: a, loser: b } : { winner: b, loser: a };
+  }
   if (a.updatedAt !== b.updatedAt) {
     return a.updatedAt > b.updatedAt ? { winner: a, loser: b } : { winner: b, loser: a };
   }
@@ -250,6 +305,21 @@ function retire(
   collisions: CollisionResolution[],
 ): Candidate {
   const { winner, loser } = winnerOf(held, challenger);
+  if (loser.guarded) {
+    // Both rows are protected, so there is no verdict to reach: a `RAISE(ABORT)` delete trigger
+    // guards the loser, and issuing the DELETE anyway would abort the entire apply (issue #708).
+    // Reachable only by renaming two protected rows onto one name from opposite devices — each
+    // rename is legal against its own device's UNIQUE index, and the two meet in the merge.
+    //
+    // Refusing the contest keeps the key free for whoever already holds it: a losing *upsert* is
+    // dropped so its INSERT never runs, and a losing *local* row is simply left where it is,
+    // writing nothing. Nothing is retired and nothing is repointed, so both rows survive the
+    // apply intact. The two devices then disagree about one of the two names until a user
+    // renames one of them — a visible, editable divergence, where retiring the row would brick
+    // sync outright.
+    if (loser.upsertIndex !== undefined) droppedUpserts.add(loser.upsertIndex);
+    return winner;
+  }
   if (loser.upsertIndex !== undefined) droppedUpserts.add(loser.upsertIndex);
   for (const [from, to] of rekey) if (to === loser.id) rekey.set(from, winner.id);
   rekey.set(loser.id, winner.id);
@@ -367,7 +437,11 @@ function resolveTable(
       else doomedByKey.set(key, [id]);
       continue;
     }
-    const candidate: Candidate = { id, updatedAt: applyOffset(num(row.updated_at), offset) };
+    const candidate: Candidate = {
+      id,
+      updatedAt: applyOffset(num(row.updated_at), offset),
+      guarded: spec.protectedIds?.has(id) === true,
+    };
     const held = byKey.get(key);
     if (held === undefined) {
       byKey.set(key, candidate);
@@ -392,6 +466,7 @@ function resolveTable(
       id: String(u.row.id),
       updatedAt: num(u.row.updated_at),
       upsertIndex: i,
+      guarded: spec.protectedIds?.has(String(u.row.id)) === true,
     };
     const key = keyOf(spec, u.row);
     const held = byKey.get(key);

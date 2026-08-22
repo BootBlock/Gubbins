@@ -89,6 +89,13 @@ item on two devices — the more recent entry is kept, by the same last-write-wi
 > [[bridge token|Bridge-API-Tokens]] belonging to a merged **user account** — a token is a
 > credential, so it is revoked rather than handed to the surviving account. Issue a new one.
 
+> **ℹ️ Note**
+> A [[built-in role|Roles-and-Permissions]] is the one exception to "the more recent record is
+> kept". Gubbins ships with Administrator, Manager, Stocker and Viewer, and those four are
+> permanent — you can rename and retune them, but you cannot delete them. So if a role you created
+> ends up sharing a name with one of them, the built-in role is the one that survives, whichever
+> was edited last, and everyone assigned to your role is moved onto it.
+
 ### When one item is lent out on two devices
 
 A [[serialised item|Items]] is a single physical unit, so it can be on loan to only one borrower at

@@ -18,6 +18,7 @@ import { itemTagEdgeId } from '@/db/repositories/tombstone';
 import { runMigrations } from '@/db/migrations/engine';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
+import { STOCKER_ROLE_ID } from '@/features/users/builtin-roles';
 import { runSnapshotMerge } from './merge';
 import { buildLocalSnapshot, restoreSnapshot } from './snapshot';
 
@@ -379,6 +380,46 @@ describe('§2 merge restore resolves natural-key collisions (issue #538)', () =>
       "SELECT id, actor_user_id FROM item_history WHERE id = 'ih-uLocal';",
     );
     expect(ledger).toEqual([{ id: 'ih-uLocal', actor_user_id: 'uTop' }]);
+  });
+
+  it('retires the custom role rather than the built-in one the backup renamed (issue #708)', async () => {
+    // A built-in role is carried in a snapshot like any other row, because it is editable. It is
+    // not deletable, though: retiring one issues a DELETE that
+    // `trg_roles_protect_builtin_delete` answers with RAISE(ABORT), taking the whole restore
+    // down rather than the single statement.
+    await target.execute('UPDATE roles SET updated_at = 1;');
+    await source.execute('UPDATE roles SET updated_at = 1;');
+    await target.execute(
+      'INSERT INTO roles (id, name, permissions, is_builtin, updated_at) VALUES (?, ?, ?, 0, ?);',
+      ['role-custom', 'Curator', '[]', 100],
+    );
+    await target.execute(
+      'INSERT INTO users (id, username, display_name, role_id, updated_at) VALUES (?, ?, ?, ?, ?);',
+      ['uLocal', 'alex', 'Alex', 'role-custom', 100],
+    );
+    // The backup renamed the built-in Stocker onto the same name, and is the *older* of the two,
+    // so plain last-write-wins would have retired it.
+    await source.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Curator',
+      50,
+      STOCKER_ROLE_ID,
+    ]);
+
+    const backup = await buildLocalSnapshot(source);
+    await expect(restoreSnapshot(target, backup)).resolves.toBeUndefined();
+
+    const named = await target.query<{ id: string }>('SELECT id FROM roles WHERE name = ?;', ['Curator']);
+    expect(named).toEqual([{ id: STOCKER_ROLE_ID }]);
+    // The custom row went instead, and its user followed the winner rather than being left
+    // role-less by `role_id`'s ON DELETE SET NULL.
+    const users = await target.query<{ id: string; role_id: string | null }>(
+      "SELECT id, role_id FROM users WHERE kind = 'normal';",
+    );
+    expect(users).toEqual([{ id: 'uLocal', role_id: STOCKER_ROLE_ID }]);
+    const tombstones = await target.query<{ id: string }>(
+      "SELECT id FROM tombstones WHERE table_name = 'roles';",
+    );
+    expect(tombstones).toEqual([{ id: 'role-custom' }]);
   });
 
   it('retires nothing when the backup’s names do not collide', async () => {
