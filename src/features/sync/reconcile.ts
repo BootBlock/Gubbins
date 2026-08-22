@@ -46,7 +46,7 @@ import { resolveLww } from './lww';
 import { resolveLocationTarget, wouldCreateCycle } from './reparent';
 import { sanitiseRow } from './schema-dictionary';
 import { SUPPLIER_PART_FLAG_COLUMNS, flagWinner, type FlagRanked } from './supplier-part-flags';
-import { resolveUniqueKeyCollisions } from './unique-keys';
+import { planKeyParks, resolveUniqueKeyCollisions } from './unique-keys';
 import type {
   BookingOverlapCancellation,
   FlagRepair,
@@ -105,6 +105,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   serialisedLoansClosed: [],
   bookingsCancelled: [],
   collisions: [],
+  keyParks: [],
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],
@@ -340,6 +341,11 @@ export function reconcile(
     finalRegionIds,
   );
 
+  // --- Issue #707: free a natural key one upsert takes from another --------------
+  // Last of the upsert-facing passes on purpose. A parked row is restored only by its own
+  // upsert, so this must see the set every earlier pass has finished dropping from.
+  const keyParks = planKeyParks(local, localUpserts);
+
   return {
     localUpserts,
     localDeletes,
@@ -350,6 +356,7 @@ export function reconcile(
     serialisedLoansClosed,
     bookingsCancelled,
     collisions,
+    keyParks,
     flagRepairs,
     defaultLocationWinnerId,
     historyInserts,

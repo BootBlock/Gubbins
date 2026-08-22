@@ -37,6 +37,10 @@
  *   (issue #79);
  * - a retired **tag**'s M:N edges are re-pointed at the winner before the delete cascades them
  *   away, so the two devices' tagged items merge into one tag rather than losing a membership.
+ *
+ * It also emits the same ordering repair `applyPlan` does for a **rename swap** (issue #707) —
+ * see `planKeyParks` — which is not a retirement at all: both rows survive, and one is only
+ * moved off the key the other is about to take.
  */
 import {
   ITEM_HISTORY_TABLE,
@@ -47,7 +51,7 @@ import {
 import type { SqlStatement } from '@/db/rpc/driver';
 import { enforceForeignKeys } from './fk-refs';
 import type { SyncTable, TableRow, Tombstone } from './types';
-import { resolveUniqueKeyCollisions, type LocalTables } from './unique-keys';
+import { planKeyParks, resolveUniqueKeyCollisions, type LocalTables } from './unique-keys';
 
 /** Everything one wholesale apply needs to write its rows without tripping a UNIQUE index. */
 export interface UniqueKeyRepair {
@@ -114,7 +118,7 @@ export function repairUniqueKeys(
       // System. A `hoistOnly` entry is *not* a naming contest — that account was already deleted
       // — so it takes the plain path below, and its history is not handed to whoever now holds
       // the username.
-      before.push(park(table, 'username', loserId));
+      before.push(parkNaturalKey(table, 'username', loserId));
       after.push({
         sql: `UPDATE ${ITEM_HISTORY_TABLE} SET actor_user_id = ? WHERE actor_user_id = ?;`,
         params: [winnerId, loserId],
@@ -137,7 +141,7 @@ export function repairUniqueKeys(
       // A `hoistOnly` tag is skipped for a different reason than a user's: those edges belong to
       // a row a peer already deleted, so re-pointing them would resurrect a membership the user
       // removed.
-      before.push(park(table, 'name', loserId));
+      before.push(parkNaturalKey(table, 'name', loserId));
       after.push(repointTagEdges(ITEM_TAGS_TABLE, 'item_id', winnerId, loserId));
       after.push(repointTagEdges(LOCATION_TAGS_TABLE, 'location_id', winnerId, loserId));
       after.push(deleteRow(table, loserId));
@@ -161,6 +165,15 @@ export function repairUniqueKeys(
   // such pass, so it happens here.
   enforceForeignKeys(incoming, Object.fromEntries(retired));
 
+  // Issue #707: the ordering guarantee the contest above does not give. Where an incoming row
+  // takes a natural key a *different* stored row still holds, and that stored row is itself only
+  // being renamed by this same apply, park the holder before the writes and let its own row
+  // restore the real name. Computed here rather than inside the resolution because the FK guard
+  // above is the last pass that can drop a row, and a parked row is restored only by its own.
+  for (const { table, column, id } of planKeyParks(local, incoming)) {
+    before.push(parkNaturalKey(table, column, id));
+  }
+
   // Parents before children, the same FK-safe ordering `applyPlan` gives its upserts. The
   // resolution appends re-emitted rows for whatever referenced a retired id, so the incoming
   // list is no longer grouped by table by the time it comes back.
@@ -183,11 +196,14 @@ function deleteRow(table: SyncTable, id: string): SqlStatement {
 }
 
 /**
- * Move a losing row onto a throwaway natural key — its own id — so the winner's INSERT can take
- * the real one while the row itself waits to be deleted a few statements later, in this same
- * transaction. The parked value is never observable, and an id cannot collide with another id.
+ * Move a row onto a throwaway natural key — its own id — so another row's INSERT can take the
+ * real one. The parked value is never observable: the row is either deleted (a retirement) or
+ * re-written with its real new name (a rename, issue #707) a few statements later, in this same
+ * transaction. An id cannot collide with another id, so the throwaway is always free.
+ *
+ * Shared with `applyPlan`, which emits the identical statement for the delta merge.
  */
-function park(table: SyncTable, column: string, id: string): SqlStatement {
+export function parkNaturalKey(table: SyncTable, column: string, id: string): SqlStatement {
   return { sql: `UPDATE ${table} SET ${column} = ? WHERE id = ?;`, params: [id, id] };
 }
 

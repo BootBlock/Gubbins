@@ -32,6 +32,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   serialisedLoansClosed: [],
   bookingsCancelled: [],
   collisions: [],
+  keyParks: [],
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],
