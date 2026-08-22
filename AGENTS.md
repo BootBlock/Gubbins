@@ -21,6 +21,7 @@ click away and are **equally binding** — "I only read AGENTS.md" is not a defe
 | User-facing strings go through `t()`, translated in **every** catalog | [CLAUDE.md](CLAUDE.md#user-facing-strings-are-translated-i18n) |
 | The wiki reflects user-facing changes, in the same change | [CLAUDE.md](CLAUDE.md#the-wiki-must-reflect-user-facing-changes-mandatory) |
 | Plan docs under `docs/todo/` carry a status banner | [CLAUDE.md](CLAUDE.md#plan-docs-carry-a-status-docstodo) |
+| Dependency changes go through `npm run lock` | [CLAUDE.md](CLAUDE.md#dependency-changes-go-through-npm-run-lock) |
 | The GitHub issue workflow, end to end | [CLAUDE.md](CLAUDE.md#actioning-a-github-issue-workflow) |
 
 **Adding a rule to CLAUDE.md? It belongs in that table too.** A unit test
