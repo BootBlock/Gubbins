@@ -74,6 +74,22 @@ are attributed to a name you chose.
 > token in a URL, which is easier to leak than a request header. That's the strongest case of all
 > for giving that subscription its own narrow account.
 
+## The token Gubbins itself holds
+
+The Sync screen keeps one token so this device can push its snapshot to the bridge and read a
+[[Home Assistant scale|Counting-by-Weight]]. It is stored on that device only, and never travels in
+a [[backup|Backup-and-Restore]] or through [[settings sharing|Sharing-Settings-Between-Devices]].
+
+Two ways to remove it:
+
+- **[[Signing out|Signing-In]]** forgets it, where accounts are in use — so a shared tablet doesn't
+  hand your credential to whoever signs in next.
+- **Bridge access token** in the [[Danger Zone|Danger-Zone-Erasing-Data]] clears it on request,
+  without touching any other setting.
+
+Neither revokes the token. It keeps working for anything else already using it until you revoke it
+in **Users**, which is what to do if you think it has gone somewhere it shouldn't.
+
 ## When something is refused
 
 Two different refusals mean two different things:

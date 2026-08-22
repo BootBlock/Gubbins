@@ -23,7 +23,39 @@
 import type { IDatabaseDriver, SqlStatement } from '@/db/rpc/driver';
 import { getDatabaseDriver } from '@/db/client';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
+import { PREFERENCES_KEY } from '@/features/backup/settings-groups';
+import { parsePersistedBlob, serialisePersistedBlob } from '@/lib/persisted-state';
 import { ERASE_TARGETS, eraseTargetById, type EraseTargetId } from './erase-targets';
+
+/**
+ * Whether a preference field currently holds something the user actually set, for the count badge
+ * and nothing else. A field is "set" when it is present and is not an empty string — which is the
+ * "never configured" state for every field a target names this way (issue #521).
+ */
+function prefFieldSet(state: Readonly<Record<string, unknown>>, field: string): boolean {
+  const value = state[field];
+  if (value === undefined || value === null) return false;
+  return typeof value === 'string' ? value.trim() !== '' : true;
+}
+
+/**
+ * Drop the named fields from the persisted preferences blob, keeping every other preference and
+ * the blob's own version envelope. A blob that is missing or unparseable is left alone: there is
+ * nothing to strip, and rewriting it from a guess would lose preferences this erase never claimed.
+ *
+ * This clears **storage** only. The live Zustand store still holds the value and would write it
+ * straight back, so the caller resets the store too — the same division as {@link resetLocalStores}
+ * after a whole-key removal (issue #381).
+ */
+function stripPreferenceFields(local: Storage, fields: readonly string[]): void {
+  const raw = local.getItem(PREFERENCES_KEY);
+  if (raw === null) return;
+  const blob = parsePersistedBlob(raw);
+  if (!blob) return;
+  const state = { ...blob.state };
+  for (const field of fields) delete state[field];
+  local.setItem(PREFERENCES_KEY, serialisePersistedBlob(blob, state));
+}
 
 /** The side-effecting capabilities the executor needs, injected for testability. */
 export interface ErasePorts {
@@ -59,7 +91,14 @@ export async function countTargets(
       counts[id] = Number(row?.n ?? 0);
     } else {
       const keys = target.localKeys ?? [];
-      counts[id] = keys.reduce((n, key) => (ports.local.getItem(key) !== null ? n + 1 : n), 0);
+      let n = keys.reduce((total, key) => (ports.local.getItem(key) !== null ? total + 1 : total), 0);
+      const prefFields = target.prefFields ?? [];
+      if (prefFields.length > 0) {
+        const raw = ports.local.getItem(PREFERENCES_KEY);
+        const state = raw === null ? null : parsePersistedBlob(raw)?.state;
+        if (state) n += prefFields.filter((field) => prefFieldSet(state, field)).length;
+      }
+      counts[id] = n;
     }
   }
   return counts;
@@ -108,6 +147,9 @@ export async function eraseTargets(
     }
     for (const key of target.localKeys ?? []) {
       ports.local.removeItem(key);
+    }
+    if (target.prefFields && target.prefFields.length > 0) {
+      stripPreferenceFields(ports.local, target.prefFields);
     }
   }
 

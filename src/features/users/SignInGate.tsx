@@ -17,6 +17,7 @@ import type { SignInOutcome } from '@/db/repositories/UserRepository';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { useFeature } from '@/features/modules/useFeature';
 import { refreshAuthority } from './authority-refresh';
+import { forgetDeviceCredentials } from './device-credentials';
 import { userKeys } from './queries';
 import { SignInScreen } from './SignInScreen';
 
@@ -77,8 +78,14 @@ export function SignInGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Drop the dead session so the gate offers the account list again. Without this the app
-    // stays mounted refusing every action, with nothing on screen explaining why.
-    if (sessionRevoked) signOut();
+    // stays mounted refusing every action, with nothing on screen explaining why. The device's
+    // credentials go with it for the same reason a deliberate sign-out drops them (issue #521):
+    // this path fires when the account was disabled or deleted, which is precisely when its
+    // bridge token must stop being usable from this device.
+    if (sessionRevoked) {
+      forgetDeviceCredentials();
+      signOut();
+    }
   }, [sessionRevoked, signOut]);
 
   const candidates = useQuery({
@@ -127,22 +134,4 @@ export function SignInGate({ children }: { children: ReactNode }) {
   if (!resolved) return null;
 
   return <>{children}</>;
-}
-
-/**
- * Sign out of this device.
- *
- * Clears the session, returns the derived authority to its default, and drops every cached
- * query — leaving one user's data resident for the next person to sign in is the obvious way
- * this feature would leak.
- */
-export function useSignOut(): () => Promise<void> {
-  const signOut = useSessionStore((state) => state.signOut);
-  const queryClient = useQueryClient();
-
-  return useCallback(async () => {
-    signOut();
-    await refreshAuthority();
-    queryClient.clear();
-  }, [queryClient, signOut]);
 }

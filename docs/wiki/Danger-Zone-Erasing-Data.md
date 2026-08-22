@@ -98,6 +98,11 @@ need to reload:
   start: the [[first-run feature chooser|Modular-UI]] appears again. No data is deleted.
 - **Cloud sign-in** — signs you out of [[cloud sync|Cloud-Sync]] and discards the stored cloud
   access token. No data is deleted.
+- **Bridge access token** — forgets the [[API token|Bridge-API-Tokens]] this device uses to reach
+  the [[bridge|Bridge-Overview]]. Pushing a snapshot and reading a
+  [[Home Assistant scale|Counting-by-Weight]] stop working until a token is entered again. The
+  bridge address is kept, the token itself keeps working elsewhere until you revoke it in
+  **Users**, and nothing in your inventory is deleted.
 - **Sync links & pending deletions** — clears the links between this device and the cloud, along
   with any unresolved [[sync conflicts|Cloud-Sync]], so the next sync starts fresh. Your inventory
   is not deleted.

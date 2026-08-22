@@ -20,7 +20,7 @@ vi.mock('@/features/alerts/useAlerts', () => ({
 // The real `useSignOut` reaches for a QueryClient; the sign-out behaviour itself is covered by
 // the users suite, so this test only cares that the row is offered and wired.
 const signOutMock = vi.fn();
-vi.mock('@/features/users/SignInGate', () => ({ useSignOut: () => signOutMock }));
+vi.mock('@/features/users/useSignOut', () => ({ useSignOut: () => signOutMock }));
 
 import { AppNav } from './AppNav';
 import { NAV_DESTINATIONS } from './nav-destinations';

@@ -758,7 +758,7 @@ export function SyncScreen() {
             </FormField>
             <FormField
               label="Access token"
-              hint="An API token minted in Users → the account → API tokens. Treated as a secret — stored only on this device and never synced."
+              hint="An API token minted in Users → the account → API tokens. Treated as a secret — stored only on this device and never synced. Where accounts are in use, signing out forgets it."
             >
               <Input
                 type="password"

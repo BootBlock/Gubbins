@@ -26,6 +26,7 @@ const ALL_IDS: EraseTargetId[] = [
   'saved-searches',
   'dismissed-alerts',
   'cloud-signin',
+  'bridge-token',
   'sync-links',
   'enabled-features',
   'local-ui',
@@ -57,12 +58,15 @@ describe('ERASE_TARGETS catalog', () => {
     for (const target of ERASE_TARGETS) expect(sections.has(target.section)).toBe(true);
   });
 
-  it('gives db-scope targets a countSql and local-scope targets localKeys', () => {
+  it('gives db-scope targets a countSql and local-scope targets something to remove', () => {
     for (const target of ERASE_TARGETS) {
       if (target.scope === 'db') {
         expect(target.countSql, target.id).toBeDefined();
       } else {
-        expect(target.localKeys?.length, target.id).toBeGreaterThan(0);
+        // Whole keys or fields of the preferences blob (issue #521) — but never neither, which
+        // would put a target in the dialog that erases nothing at all.
+        const removes = (target.localKeys?.length ?? 0) + (target.prefFields?.length ?? 0);
+        expect(removes, target.id).toBeGreaterThan(0);
       }
     }
   });

@@ -41,6 +41,24 @@ say — or a general note if they didn't leave one.
 **Sign out** sits in the main menu, showing who's currently signed in. Signing out returns you to the
 tiles.
 
+Signing out also **forgets the credentials this device is holding for you**, so the next person to
+sign in doesn't inherit them:
+
+- The [[bridge access token|Bridge-API-Tokens]] entered on the Sync screen. The bridge *address* is
+  kept — it isn't a secret, and the next person needs it to enter a token of their own. Your token
+  keeps working elsewhere until you revoke it in **Users**.
+- The [[cloud sync|Cloud-Sync]] access token, so the device is signed out of your cloud account too.
+
+Two things stay put, because neither is a credential anybody could take away with them: the bridge
+address above, and the [[sync folder|Cloud-Sync]] this device is linked to. Clear the folder link
+from **Sync links & pending deletions** in the [[Danger Zone|Danger-Zone-Erasing-Data]] if you want
+it gone.
+
+> **ℹ️ Note**
+> This happens only where accounts are in use. With the Users module off there is no sign-out, so a
+> single-user device keeps its bridge token until you clear it — **Bridge access token** in the
+> [[Danger Zone|Danger-Zone-Erasing-Data]] does exactly that, without touching your other settings.
+
 ## What a password actually protects
 
 This is worth being plain about, because it would be easy to assume more.

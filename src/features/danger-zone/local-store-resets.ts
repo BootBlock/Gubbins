@@ -17,8 +17,8 @@
  *    persist middleware, which writes the fresh defaults straight back under the key the erase
  *    just deleted. {@link resetLocalStores} drops that write, leaving both memory and storage
  *    clean — otherwise the Danger Zone's affected-count badge would still read 1 after erasing.
- *  - **Not every key has a live copy.** Some values are read from storage on demand (the OAuth
- *    crumbs) or only at component mount (the emoji picker's panel size), so removing the key is
+ *  - **Not every key has a live copy.** Some values are read from storage on demand (the Drive
+ *    access token) or only at component mount (the emoji picker's panel size), so removing the key is
  *    already sufficient. Those declare `null` rather than being absent, so "nothing to reset" is
  *    a recorded decision — `local-store-resets.test.ts` checks this record against the shared key
  *    registry and fails when an erasable key appears in neither form.
@@ -90,10 +90,10 @@ export const LOCAL_STORE_RESETS: Readonly<Record<string, (() => void) | null>> =
   'gubbins:clock-skew': toDefaults(useClockSkewStore),
 
   // Read from storage on demand, so the erase already took effect — there is no retained copy to
-  // reset, and no later write that could resurrect the removed value.
+  // reset, and no later write that could resurrect the removed value. (The two OAuth redirect
+  // crumbs that used to sit here are `sessionStorage`, so no erase target removes them — see
+  // their notes in `lib/storage-keys.ts`.)
   'gubbins:google-drive-token': null,
-  'gubbins:google-oauth-pending': null,
-  'gubbins:google-oauth-error': null,
 
   // Read once when the picker mounts; the next open picks up the default size.
   [EMOJI_PICKER_SIZE_KEY]: null,
