@@ -1549,6 +1549,11 @@ private and cloud-metadata destinations. A hostname is **resolved** before the c
 it maps to must be public) so pointing a public name at a private address does not slip through, and
 a resolution failure is a refusal rather than a pass.
 
+The guard classifies the address you configured, so the delivery has to reach **that** address and no
+other: **redirects are not followed**. A receiver answering `3xx` would otherwise move the request —
+same method, same body, same headers — to an address the guard never saw. Such a delivery is
+recorded as `failed`, once, and is not retried; point the subscription at the final URL instead.
+
 **Most self-hosted receivers are on the LAN, so this flag is the expected setup rather than an
 override to be nervous about.** A Home Assistant instance at `homeassistant.local:8123`, or a
 Node-RED flow on `localhost`, needs:

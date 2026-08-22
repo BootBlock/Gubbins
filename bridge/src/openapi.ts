@@ -2719,9 +2719,11 @@ export const openapiDocument: JsonValue = {
             type: 'string',
             enum: ['delivered', 'failed', 'blocked', 'skipped'],
             description:
-              'delivered = the receiver answered 2xx; failed = every attempt was made and none ' +
-              'succeeded; blocked = refused before any request was issued (the SSRF guard, or an ' +
-              'unresolvable secret reference); skipped = the target’s failure circuit was open.',
+              'delivered = the receiver answered 2xx; failed = no attempt succeeded — either every ' +
+              'attempt was made, or the receiver answered with a redirect, which ends the delivery ' +
+              'at once because redirects are never followed; blocked = refused before any request ' +
+              'was issued (the SSRF guard, or an unresolvable secret reference); skipped = the ' +
+              'target’s failure circuit was open.',
           },
           attempts: {
             type: 'integer',
