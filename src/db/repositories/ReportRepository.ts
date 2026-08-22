@@ -13,10 +13,10 @@
  * alone answers what it **cost** (manual cost, else the preferred supplier cost, delegated to the
  * Phase-60 `supplier-cost` helper) and is what the consumption reports read. A valuation query
  * either projects the inputs with {@link valuedItemColumns} and folds them in JS, or restates the
- * rule in SQL as {@link effectiveUnitValueSql} to sum a whole inventory in the database
- * ({@link ReportRepository.partsCatalogue} is the one that spells its own projection out, because
- * a printed catalogue deliberately reads fewer of the columns). Reads are unpaginated *aggregates*
- * (a fixed, tiny result set), not row dumps.
+ * rule in SQL as {@link effectiveUnitValueSql} to sum a whole inventory in the database. Every
+ * valuation read takes one of those two; none spells a projection of its own out, because the one
+ * that did dropped `current_value` from it and priced a revalued asset at nothing (issue #706).
+ * Reads are unpaginated *aggregates* (a fixed, tiny result set), not row dumps.
  */
 import { BaseRepository } from './base';
 import { parsePriceBreaks } from './mappers';
@@ -44,6 +44,7 @@ import {
 } from '@/features/reports/data-hygiene';
 import {
   bucketMovement,
+  hasValuationSource,
   selectDeadStock,
   sortValueGroups,
   summariseConsumption,
@@ -892,14 +893,13 @@ export class ReportRepository extends BaseRepository {
    * its whole subtree, by a project's bill of materials, or by an explicit ad-hoc selection.
    * One row per active, non-parent item (a variant parent holds no stock of its own); the
    * pure {@link buildPartsCatalogue} groups them by location and rolls up value subtotals.
-   * A line is valued through the same `valuedUnitValue` seam as every other valuation — a unit
-   * cost, else the {@link preferredSupplierCostSql} supplier price, else the
-   * {@link depreciatedPurchasePriceSql} book value (issue #688). It is the one valuation read that
-   * spells its projection out rather than taking {@link valuedItemColumns}, and the difference is a
-   * real one: it selects no `current_value`, so no catalogue line is priced at a manual current
-   * value the way the valuation reports and the schedule price the same item. That predates issue
-   * #688 and is untouched by it. The columns the reader ultimately prints are a UI concern — every
-   * field is resolved here.
+   * A line is valued through the same `valuedUnitValue` seam as every other valuation — a manual
+   * `current_value`, else a unit cost, else the {@link preferredSupplierCostSql} supplier price,
+   * else the {@link depreciatedPurchasePriceSql} book value (issue #688) — and it takes the shared
+   * {@link valuedItemColumns} projection to get there. It used to spell that projection out and
+   * omit `current_value`, so a revalued asset printed as unpriced and contributed nothing to its
+   * room subtotal, while the insurance schedule listed the same asset at that value (issue #706).
+   * The columns the reader ultimately prints are a UI concern — every field is resolved here.
    */
   async partsCatalogue(
     scope: CatalogueScope,
@@ -932,6 +932,7 @@ export class ReportRepository extends BaseRepository {
       manufacturer: string | null;
       supplier_name: string | null;
       unit_cost: number | null;
+      current_value: number | null;
       depreciated_purchase_price: number | null;
       preferred_supplier_cost: number | null;
       tracking_mode: string;
@@ -950,9 +951,7 @@ export class ReportRepository extends BaseRepository {
               items.condition AS condition, items.serial_no AS serial_no,
               items.mpn AS mpn, items.manufacturer AS manufacturer,
               ${preferredSupplierNameSql('items.id')} AS supplier_name,
-              items.unit_cost AS unit_cost,
-              ${preferredSupplierCostSql('items.id', base)} AS preferred_supplier_cost,
-              ${depreciatedPurchasePriceSql('items', now)} AS depreciated_purchase_price,
+              ${valuedItemColumns('items', base, now)},
               items.tracking_mode AS tracking_mode,
               items.current_net_value AS current_net_value,
               items.cost_per_unit_of_measure AS cost_per_unit_of_measure,
@@ -988,6 +987,7 @@ export class ReportRepository extends BaseRepository {
       supplier: r.supplier_name,
       // Money columns are stored in micro-units (issue #286); back to major units at this boundary.
       unitCost: fromStoredMoney(r.unit_cost),
+      currentValuePerUnit: fromStoredMoney(r.current_value),
       preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
       depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
       // A gauge is priced per unit of *measure* and its count is always 0, so the catalogue
@@ -1792,6 +1792,7 @@ export class ReportRepository extends BaseRepository {
       category_id: string | null;
       location_id: string;
       unit_cost: number | null;
+      current_value: number | null;
       purchase_price: number | null;
       cost_per_unit_of_measure: number | null;
       tracking_mode: string;
@@ -1802,6 +1803,7 @@ export class ReportRepository extends BaseRepository {
     }>(
       `SELECT i.id AS id, i.name AS name, i.mpn AS mpn, i.category_id AS category_id,
               i.location_id AS location_id, i.unit_cost AS unit_cost,
+              i.current_value AS current_value,
               i.purchase_price AS purchase_price,
               i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
               i.tracking_mode AS tracking_mode,
@@ -1819,18 +1821,30 @@ export class ReportRepository extends BaseRepository {
       mpn: r.mpn,
       hasCategory: r.category_id != null,
       hasLocation: r.location_id !== UNASSIGNED_LOCATION_ID,
-      // "Priced" has to mean priced *the way this item is valued* (issue #683). A gauge is
-      // valued from its cost per unit of measure and never from a per-unit figure, so reading
-      // `unit_cost` here would both clear the flag on a gauge that is genuinely unpriced and
-      // raise it on one that is correctly priced — directly contradicting the unpriced-gauge
-      // notice on the same screen.
-      // A `purchase_price` is a priced source too (issue #688): it is the last fallback the
-      // valuation rule tries, so an asset carrying one is valued and flagging it as unpriced
-      // would send the user to fix something that is not broken.
-      hasPrice:
-        r.tracking_mode === 'CONSUMABLE_GAUGE'
-          ? r.cost_per_unit_of_measure != null
-          : r.unit_cost != null || r.preferred_supplier_cost != null || r.purchase_price != null,
+      // "Priced" has to mean priced *the way this item is valued*, so the flag asks the valuation
+      // seam itself rather than restating its sources here (issue #706) — restating them is how
+      // the manual `current_value` came to be left out, flagging a revalued asset as unpriced
+      // while every valuation surface priced it at that very figure. `hasValuationSource` also
+      // owns the gauge rule (issue #683): a gauge is priced by its cost per unit of measure and
+      // never by a per-unit figure, so reading `unit_cost` for one would contradict the
+      // unpriced-gauge notice on the same screen.
+      // Money columns are stored in micro-units (issue #286); back to major units at this boundary,
+      // as every other consumer of the seam does — only presence is read, but a seam typed in major
+      // units is never handed a stored integer.
+      hasPrice: hasValuationSource({
+        quantity: 0,
+        unitCost: fromStoredMoney(r.unit_cost),
+        currentValuePerUnit: fromStoredMoney(r.current_value),
+        preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+        // `depreciatedPurchasePriceSql` is NULL exactly when `purchase_price` is, and presence is
+        // all this flag reads — so the raw column stands in for it, sparing the whole active
+        // inventory a depreciation term the answer would then throw away (issue #688).
+        depreciatedPurchasePrice: fromStoredMoney(r.purchase_price),
+        gauge:
+          r.tracking_mode === 'CONSUMABLE_GAUGE'
+            ? { netValue: 0, costPerUnitOfMeasure: fromStoredMoney(r.cost_per_unit_of_measure) }
+            : null,
+      }),
       hasPhoto: r.has_photo === 1,
       everCounted: r.ever_counted === 1,
       lastActivityAt: Number(r.last_activity_at),

@@ -52,7 +52,7 @@ import type {
   TableRow,
   Tombstone,
 } from './types';
-import { repairUniqueKeys } from './unique-key-repair';
+import { parkNaturalKey, repairUniqueKeys } from './unique-key-repair';
 import { UNIQUE_KEY_TABLES } from './unique-keys';
 import { SYNC_FORMAT_VERSION } from './types';
 
@@ -748,6 +748,16 @@ export async function applyPlan(
       sql: 'INSERT OR REPLACE INTO tombstones (table_name, id, deleted_at) VALUES (?, ?, ?);',
       params: [table, loserId, deletedAt],
     });
+  }
+
+  // Issue #707: free a natural key that one upsert takes from another row this same merge is
+  // merely *renaming*. No id is retired here and both rows survive — the stored row is moved onto
+  // a throwaway value (its own id) so the taker's write can land, and its own upsert restores the
+  // real new name below, in this same transaction. Without it a swapped pair of names aborts the
+  // merge on the shared index, because the upserts are ordered only by table and source order.
+  // Both identifiers are `UNIQUE_KEY_SPECS` constants, never snapshot-supplied.
+  for (const { table, column, id } of plan.keyParks) {
+    statements.push(parkNaturalKey(table, column, id));
   }
 
   // Issues #157 / #192: reduce each one-of-N `supplier_parts` flag to a single winner per item,

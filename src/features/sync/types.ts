@@ -257,6 +257,23 @@ export interface CollisionResolution {
 }
 
 /**
+ * Issue #707: a stored row to move off its natural key **before** the upserts run, because a
+ * different incoming row takes that key while this one is itself only being renamed.
+ *
+ * Not a retirement and not a contest — both rows survive and both names are legitimate. The row
+ * is parked on a throwaway value (its own id), and its own upsert writes the real new name a few
+ * statements later in the same transaction, so the parked value is never observable. See
+ * `planKeyParks` for why the ordering cannot be left to the upserts themselves.
+ */
+export interface KeyPark {
+  readonly table: SyncTable;
+  /** The free-text column of the UNIQUE index to overwrite. */
+  readonly column: string;
+  /** The stored row holding the key someone else is about to take. */
+  readonly id: string;
+}
+
+/**
  * Issues #157 / #192: a "one flag per parent" invariant the merge had to repair. `supplier_parts`
  * carries two independent one-of-N flags per item — `is_preferred` (drives valuation) and
  * `is_price_source` (drives which supplier a price refresh fetches) — each maintained by an
@@ -313,6 +330,8 @@ export interface ReconciliationPlan {
   readonly bookingsCancelled: readonly BookingOverlapCancellation[];
   /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */
   readonly collisions: readonly CollisionResolution[];
+  /** Issue #707: rows to move off a natural key another upsert takes (see {@link KeyPark}). */
+  readonly keyParks: readonly KeyPark[];
   /** Issues #157 / #192: "one flag per item" reductions to apply before the upserts (see {@link FlagRepair}). */
   readonly flagRepairs: readonly FlagRepair[];
   /**

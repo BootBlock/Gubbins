@@ -333,6 +333,105 @@ describe('§7.5 natural-key collisions apply cleanly (issue #187)', () => {
     expect(tokens).toEqual([{ id: 'tok-uB', user_id: 'uB' }]);
   });
 
+  it('applies a peer’s swap of two tag names (issue #707)', async () => {
+    // Both devices already share the two tags; the peer then swaps the names round. There is no
+    // contest to settle — both names are legitimately the peer's and both rows survive — but the
+    // upserts are ordered only by `SYNC_TABLES` position and source order, so `aaa`'s new name
+    // used to land while `bbb` was still holding it: `UNIQUE constraint failed: tags.name`, and
+    // the whole atomic merge rolled back with the watermark unadvanced.
+    for (const driver of [deviceA, deviceB]) {
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('aaa', 'Fixings', 10);`);
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('bbb', 'Tools', 10);`);
+    }
+    // The peer's own swap has to free the name before it re-uses it — the very step the merge
+    // was missing. Its intermediate value never leaves that device: the snapshot carries only
+    // the settled pair below.
+    await deviceB.execute(`UPDATE tags SET name = 'Sundries', updated_at = 20 WHERE id = 'bbb';`);
+    await deviceB.execute(`UPDATE tags SET name = 'Tools', updated_at = 20 WHERE id = 'aaa';`);
+    await deviceB.execute(`UPDATE tags SET name = 'Spares', updated_at = 20 WHERE id = 'bbb';`);
+
+    const local = await buildLocalSnapshot(deviceA);
+    const remote = await buildLocalSnapshot(deviceB);
+    const dictionary = await buildSchemaDictionary(deviceA, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+
+    await expect(
+      applyPlan(deviceA, reconcile(local, remote, { offset: 0, dictionary }), dictionary),
+    ).resolves.toBeUndefined();
+
+    const tags = await deviceA.query<{ id: string; name: string }>('SELECT id, name FROM tags ORDER BY id;');
+    expect(tags).toEqual([
+      { id: 'aaa', name: 'Tools' },
+      { id: 'bbb', name: 'Spares' },
+    ]);
+
+    // Nothing was retired: a rename is not a collision, so no id is tombstoned and the peer is
+    // not told to drop a row it still holds.
+    const tombstones = await deviceA.query<{ c: number }>('SELECT COUNT(*) AS c FROM tombstones;');
+    expect(Number(tombstones[0]!.c)).toBe(0);
+  });
+
+  it('applies a three-way rotation of tag names (issue #707)', async () => {
+    // The ordering guarantee has to hold for a cycle, not just a pair: every holder is parked up
+    // front, so whichever INSERT the apply happens to run first finds its name free.
+    for (const driver of [deviceA, deviceB]) {
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('aaa', 'Fixings', 10);`);
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('bbb', 'Tools', 10);`);
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('ccc', 'Spares', 10);`);
+    }
+    await deviceB.execute(`UPDATE tags SET name = 'Sundries', updated_at = 20 WHERE id = 'ccc';`);
+    await deviceB.execute(`UPDATE tags SET name = 'Spares', updated_at = 20 WHERE id = 'bbb';`);
+    await deviceB.execute(`UPDATE tags SET name = 'Tools', updated_at = 20 WHERE id = 'aaa';`);
+    await deviceB.execute(`UPDATE tags SET name = 'Fixings', updated_at = 20 WHERE id = 'ccc';`);
+
+    const local = await buildLocalSnapshot(deviceA);
+    const remote = await buildLocalSnapshot(deviceB);
+    const dictionary = await buildSchemaDictionary(deviceA, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+
+    await expect(
+      applyPlan(deviceA, reconcile(local, remote, { offset: 0, dictionary }), dictionary),
+    ).resolves.toBeUndefined();
+
+    const tags = await deviceA.query<{ id: string; name: string }>('SELECT id, name FROM tags ORDER BY id;');
+    expect(tags).toEqual([
+      { id: 'aaa', name: 'Tools' },
+      { id: 'bbb', name: 'Spares' },
+      { id: 'ccc', name: 'Fixings' },
+    ]);
+  });
+
+  it('still retires a rival that a rename walks into (issue #707)', async () => {
+    // A rename is not a licence to skip the contest. The peer renames `aaa` onto a name this
+    // device invented independently under `ccc`, which no rename frees — so `ccc` must still be
+    // retired and its items follow, exactly as issue #187 settles it.
+    for (const driver of [deviceA, deviceB]) {
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('aaa', 'Fixings', 10);`);
+    }
+    await seedTaggedItem(deviceA, {
+      itemId: 'iA',
+      itemName: 'Item A',
+      tagId: 'ccc',
+      tagName: 'Tools',
+      at: 10,
+    });
+    await deviceB.execute(`UPDATE tags SET name = 'Tools', updated_at = 20 WHERE id = 'aaa';`);
+
+    const local = await buildLocalSnapshot(deviceA);
+    const remote = await buildLocalSnapshot(deviceB);
+    const dictionary = await buildSchemaDictionary(deviceA, [...SYNC_TABLES, ITEM_HISTORY_TABLE]);
+
+    await expect(
+      applyPlan(deviceA, reconcile(local, remote, { offset: 0, dictionary }), dictionary),
+    ).resolves.toBeUndefined();
+
+    const tags = await deviceA.query<{ id: string; name: string }>('SELECT id, name FROM tags ORDER BY id;');
+    expect(tags).toEqual([{ id: 'aaa', name: 'Tools' }]);
+
+    const tagged = await deviceA.query<{ item_id: string; tag_id: string }>(
+      'SELECT item_id, tag_id FROM item_tags;',
+    );
+    expect(tagged).toEqual([{ item_id: 'iA', tag_id: 'aaa' }]);
+  });
+
   it('converges: applying the mirrored merge on the peer reaches the same state', async () => {
     await seedTaggedItem(deviceA, {
       itemId: 'iA',
@@ -496,6 +595,40 @@ describe('§7.5 a protected row never loses its natural key (issue #708)', () =>
 
     const named = await deviceA.query<{ id: string }>('SELECT id FROM roles WHERE name = ?;', ['Curator']);
     expect(named).toEqual([{ id: 'role-foreign' }]);
+  });
+
+  it('lets the peer take a built-in name this device is renaming away from', async () => {
+    // Not a contest at all: the peer holds both roles' new names, so the local row sitting on
+    // "Keeper" is the one this same merge renames back to "Viewer". The §7.5 park (issue #707)
+    // frees the name ahead of the upserts, and the protection clause has nothing to decide.
+    await flattenRoleStamps(deviceA);
+    await flattenRoleStamps(deviceB);
+    await deviceA.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Keeper',
+      100,
+      VIEWER_ROLE_ID,
+    ]);
+    await deviceB.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
+      'Keeper',
+      200,
+      STOCKER_ROLE_ID,
+    ]);
+    await deviceB.execute('UPDATE roles SET description = ?, updated_at = ? WHERE id = ?;', [
+      'Read-only access.',
+      150,
+      VIEWER_ROLE_ID,
+    ]);
+
+    await expect(mergeInto(deviceA, deviceB)).resolves.toBeUndefined();
+
+    const roles = await deviceA.query<{ id: string; name: string }>(
+      'SELECT id, name FROM roles WHERE id IN (?, ?) ORDER BY id;',
+      [STOCKER_ROLE_ID, VIEWER_ROLE_ID],
+    );
+    expect(roles).toEqual([
+      { id: STOCKER_ROLE_ID, name: 'Keeper' },
+      { id: VIEWER_ROLE_ID, name: 'Viewer' },
+    ]);
   });
 
   it('refuses the contest when the peer renames a second built-in onto a built-in name', async () => {

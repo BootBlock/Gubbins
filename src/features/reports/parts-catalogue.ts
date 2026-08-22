@@ -14,12 +14,12 @@
  * Location grouping, hierarchy ordering and the trailing "Unassigned" bucket are shared with
  * the insurance schedule via {@link flattenLocationHierarchy}, so the two documents order
  * rooms identically. Per-unit cost flows through the same {@link valuedUnitValue} seam as every
- * other valuation (a manual cost wins, else the preferred supplier cost, else the depreciated
- * purchase price — or, for a gauge, its cost per unit of measure, since it holds a measure rather
- * than countable units); an item with none of those is *unpriced* — its cost and line value read
- * as "—" rather than a misleading £0.
+ * other valuation (a manual current value wins, else a manual cost, else the preferred supplier
+ * cost, else the depreciated purchase price — or, for a gauge, its cost per unit of measure, since
+ * it holds a measure rather than countable units); an item with none of those is *unpriced* — its
+ * cost and line value read as "—" rather than a misleading £0.
  */
-import { valuedAmount, valuedUnitValue, type ValuedStock } from './reports';
+import { hasValuationSource, valuedAmount, valuedUnitValue, type ValuedStock } from './reports';
 import {
   flattenLocationHierarchy,
   PRINT_FULL_LIMIT,
@@ -403,13 +403,10 @@ export interface CatalogueLine {
   readonly manufacturer: string | null;
   readonly supplier: string | null;
   /**
-   * The per-unit value `valuedUnitValue` resolved from the sources the catalogue supplies it — a
+   * The per-unit value `valuedUnitValue` resolved — a manual current value (issue #706), else a
    * manual unit cost, else the preferred supplier price, else the depreciated purchase price
    * (issue #688); for a gauge, its cost per unit of measure. Null when {@link isPriced} finds no
-   * source at all.
-   *
-   * A manual `current_value` outranks all of those in the valuation reports, but the catalogue's
-   * read does not select it, so no line is ever valued at one. That predates issue #688.
+   * source at all, which is what prints a dash instead of `0.00`.
    */
   readonly unitCost: number | null;
   /** `quantity × unitCost`, or null when the item is unpriced. */
@@ -451,19 +448,18 @@ export interface PartsCatalogue {
 }
 
 /**
- * An item is priced when a figure exists to value it by — a manual unit cost, a preferred
- * supplier cost or a depreciated purchase price (issue #688), or for a gauge its cost per unit of
- * measure (issue #683). A gauge is never priced from the first three: they price one *countable*
- * unit, and it holds a measure.
+ * An item is priced when a figure exists to value it by. The list of sources is **not** restated
+ * here: {@link hasValuationSource} owns it beside `valuedUnitValue`, so a source added to the
+ * valuation precedence cannot be missed by the catalogue. That is exactly how the manual
+ * `current_value` came to be omitted here (issue #706) — a line was printed as unpriced while the
+ * valuation reports and the insurance schedule priced the same item at its revalued worth.
  *
- * This must name exactly the sources `valuedUnitValue` can reach *from a catalogue row*. Leaving
- * one out prints a dash on a line the catalogue's own grand total counts a real figure for, and the
- * document would stop adding up. (`currentValuePerUnit` is absent from both because the catalogue's
- * read never selects `items.current_value` — a gap that predates issue #688.)
+ * The distinction still matters at this call site: the value seams answer `0` both for "worth
+ * nothing" and for "nothing prices it", and the document must print a dash for the second rather
+ * than a real-looking zero.
  */
 function isPriced(item: CatalogueItemInput): boolean {
-  if (item.gauge) return item.gauge.costPerUnitOfMeasure != null;
-  return item.unitCost != null || item.preferredSupplierCost != null || item.depreciatedPurchasePrice != null;
+  return hasValuationSource(item);
 }
 
 /** Resolve a single item input to its display line, valuing it through the cost seam. */

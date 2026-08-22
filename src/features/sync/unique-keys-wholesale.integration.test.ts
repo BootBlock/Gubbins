@@ -416,10 +416,37 @@ describe('§2 merge restore resolves natural-key collisions (issue #538)', () =>
       "SELECT id, role_id FROM users WHERE kind = 'normal';",
     );
     expect(users).toEqual([{ id: 'uLocal', role_id: STOCKER_ROLE_ID }]);
-    const tombstones = await target.query<{ id: string }>(
+    const roleTombstones = await target.query<{ id: string }>(
       "SELECT id FROM tombstones WHERE table_name = 'roles';",
     );
-    expect(tombstones).toEqual([{ id: 'role-custom' }]);
+    expect(roleTombstones).toEqual([{ id: 'role-custom' }]);
+  });
+
+  it('restores a backup that swaps two tag names (issue #707)', async () => {
+    // The backup was taken after the user swapped the two names round on the other device. Both
+    // rows survive and neither name is contested, so nothing is retired — but the row physically
+    // holding "Tools" at INSERT time is the one the restore is itself renaming to "Spares", and
+    // the upserts are ordered only by table and source order. The restore used to abort on
+    // `UNIQUE constraint failed: tags.name` and roll back with nothing restored.
+    for (const driver of [target, source]) {
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('aaa', 'Fixings', 10);`);
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('bbb', 'Tools', 10);`);
+    }
+    await source.execute(`UPDATE tags SET name = 'Sundries', updated_at = 20 WHERE id = 'bbb';`);
+    await source.execute(`UPDATE tags SET name = 'Tools', updated_at = 20 WHERE id = 'aaa';`);
+    await source.execute(`UPDATE tags SET name = 'Spares', updated_at = 20 WHERE id = 'bbb';`);
+
+    const backup = await buildLocalSnapshot(source);
+    await expect(restoreSnapshot(target, backup)).resolves.toBeUndefined();
+
+    const tags = await target.query<{ id: string; name: string }>('SELECT id, name FROM tags ORDER BY id;');
+    expect(tags).toEqual([
+      { id: 'aaa', name: 'Tools' },
+      { id: 'bbb', name: 'Spares' },
+    ]);
+
+    const tombstones = await target.query<{ c: number }>('SELECT COUNT(*) AS c FROM tombstones;');
+    expect(Number(tombstones[0]!.c)).toBe(0);
   });
 
   it('retires nothing when the backup’s names do not collide', async () => {
@@ -607,6 +634,29 @@ describe('§7.2 tombstone-TTL clone resolves natural-key collisions (issue #538)
       { item_id: 'iMid', tag_id: 'tagTop' },
       { item_id: 'iRemote', tag_id: 'tagTop' },
       { item_id: 'iTop', tag_id: 'tagTop' },
+    ]);
+  });
+
+  it('salvages an offline swap of two tag names (issue #707)', async () => {
+    // The clone's half of the same shape: the wipe-and-clone lays down the remote's two names,
+    // and the salvage then re-applies the swap the device made offline. The salvaged rows carry
+    // the peer's ids, so the row holding "Tools" when the salvage writes is the one being renamed
+    // to "Spares" — and the clone aborted on the shared index, the one recovery path this device
+    // still qualifies for.
+    for (const driver of [device, peer]) {
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('aaa', 'Fixings', 20);`);
+      await driver.execute(`INSERT INTO tags (id, name, updated_at) VALUES ('bbb', 'Tools', 20);`);
+    }
+    await device.execute(`UPDATE tags SET name = 'Sundries', updated_at = 50 WHERE id = 'bbb';`);
+    await device.execute(`UPDATE tags SET name = 'Tools', updated_at = 50 WHERE id = 'aaa';`);
+    await device.execute(`UPDATE tags SET name = 'Spares', updated_at = 50 WHERE id = 'bbb';`);
+
+    await expect(cloneWithSalvage(30)).resolves.toBeDefined();
+
+    const tags = await device.query<{ id: string; name: string }>('SELECT id, name FROM tags ORDER BY id;');
+    expect(tags).toEqual([
+      { id: 'aaa', name: 'Tools' },
+      { id: 'bbb', name: 'Spares' },
     ]);
   });
 

@@ -36,6 +36,21 @@ A narrower selection is usually the more useful document — a single collection
 supplier's parts — and it is also what to reach for if the whole inventory turns out to be too big
 to print (below).
 
+## How lines are valued
+
+With the money columns switched on, each line shows a **unit cost** and a **value** (unit cost ×
+what's on hand), and every section carries a subtotal beneath a grand total at the end.
+
+A line is priced by the same valuation as the rest of Gubbins: an item's manual
+**[[current value|Current-Value-and-Revaluation]]**, else its unit cost, else its preferred
+supplier's price, else its purchase price less [[depreciation|Warranty-and-Depreciation]] — or, for
+a [[consumable gauge|Low-Stock-and-Gauges]], what it holds × its *cost per unit of measure*. So a
+revalued collectible is catalogued at today's worth, and the figure agrees with the one on the
+[[insurance schedule|Insurance-and-Estate-Schedule]].
+
+An item **nothing** prices reads `—` in both columns rather than a misleading `0.00`, and adds
+nothing to the totals.
+
 ## Printing
 
 Beside the **Print / Save as PDF** button, Gubbins shows how big the job is: how many items the

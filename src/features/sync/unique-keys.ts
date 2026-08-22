@@ -37,12 +37,17 @@
  * natural key when the winner's INSERT runs, and the constraint aborts the merge exactly as
  * before. Those are emitted as `hoistOnly` resolutions: they carry no verdict and retire
  * nothing, they only pull the already-decided DELETE forward. See `doomedByKey` below.
+ *
+ * A contest is not the only way an apply meets one of these indexes. Two rows can simply *swap*
+ * their names, and neither has lost anything: the constraint is tripped only because the row
+ * still physically holding a name is the one this same apply is renaming. That is an ordering
+ * problem rather than a verdict, and `planKeyParks` answers it separately (issue #707).
  */
 import type { SqlRow } from '@/db/rpc/driver';
 import { BUILTIN_ROLE_IDS } from '@/features/users/builtin-roles';
 import { foldName } from '@/lib/name-fold';
 import { applyOffset } from './clock';
-import type { CollisionResolution, SyncSnapshot, SyncTable, TableRow, Tombstone } from './types';
+import type { CollisionResolution, KeyPark, SyncSnapshot, SyncTable, TableRow, Tombstone } from './types';
 
 /**
  * The one part of a snapshot this resolution reads: the per-table rows already on this device.
@@ -72,6 +77,17 @@ interface UniqueKeySpec {
    * rows are pointed at by nothing, so a losing row can simply be retired.
    */
   readonly references: readonly UniqueKeyReference[];
+  /**
+   * The free-text column of the index that a stored row can be moved off onto a throwaway value,
+   * so another row may take the key it is still holding (see {@link planKeyParks}).
+   *
+   * Absent where no column can carry one: the four specs keyed entirely on foreign keys, where
+   * writing a throwaway id into a column would trip the FK rather than free anything. Those
+   * tables cannot express the rename this parks around in any case — a value row's endpoints are
+   * chosen by picking a field or a component, not typed as a name. A composite key that *does*
+   * carry free text names that column: `capabilities` parks on `key`, leaving `item_id` alone.
+   */
+  readonly parkColumn?: string;
   /**
    * Whether a `RAISE(ABORT)` delete trigger protects this row, and this resolution must
    * therefore never retire it (issue #708).
@@ -110,7 +126,6 @@ const BUILTIN_ROLE_ID_SET: ReadonlySet<string> = new Set(BUILTIN_ROLE_IDS);
 function isProtectedRole(row: SqlRow): boolean {
   return num(row.is_builtin) === 1 || BUILTIN_ROLE_ID_SET.has(String(row.id));
 }
-
 /**
  * Every non-primary-key UNIQUE index across {@link SYNC_TABLES}, in resolution order.
  *
@@ -130,6 +145,7 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
     table: 'field_defs',
     columns: ['name'],
     nocase: ['name'],
+    parkColumn: 'name',
     references: [
       { table: 'category_fields', column: 'def_id' },
       { table: 'location_field_values', column: 'def_id' },
@@ -139,13 +155,14 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
   // `tags` is referenced by the M:N `item_tags` / `location_tags` joins, which carry no `id`
   // and are reconciled by membership rather than LWW. They cannot be repointed as rows, so
   // the caller maps their edges through this table's re-key map instead (see `reconcile`).
-  { table: 'tags', columns: ['name'], nocase: ['name'], references: [] },
+  { table: 'tags', columns: ['name'], nocase: ['name'], references: [], parkColumn: 'name' },
   // `roles` before `users` so a role re-key settles before users are resolved against it —
   // the same dictionaries-first ordering the block comment above describes.
   {
     table: 'roles',
     columns: ['name'],
     nocase: ['name'],
+    parkColumn: 'name',
     references: [{ table: 'users', column: 'role_id' }],
     // A built-in role cannot be deleted, so it cannot be retired either (issue #708). It also
     // *should* not be: the seeded permission model grants through these ids, and folding one
@@ -179,12 +196,14 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
     table: 'users',
     columns: ['username'],
     nocase: ['username'],
+    parkColumn: 'username',
     references: [{ table: 'location_history', column: 'actor_user_id' }],
   },
   {
     table: 'contacts',
     columns: ['name'],
     nocase: ['name'],
+    parkColumn: 'name',
     references: [
       { table: 'checkouts', column: 'contact_id' },
       { table: 'asset_bookings', column: 'contact_id' },
@@ -194,14 +213,14 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
   { table: 'category_fields', columns: ['category_id', 'def_id'], nocase: [], references: [] },
   { table: 'location_field_values', columns: ['location_id', 'def_id'], nocase: [], references: [] },
   { table: 'item_field_values', columns: ['item_id', 'def_id'], nocase: [], references: [] },
-  { table: 'capabilities', columns: ['item_id', 'key'], nocase: ['key'], references: [] },
+  { table: 'capabilities', columns: ['item_id', 'key'], nocase: ['key'], references: [], parkColumn: 'key' },
   // Kit → component edges (issue #151). Unlike `item_relations` (absent above because its id is
   // derived from its endpoints) a kit edge carries a random UUID, so two devices adding the same
   // component to the same kit invent two ids for one `UNIQUE (kit_item_id, component_item_id)`
   // pair. Nothing references a kit edge, so the loser is simply retired.
   { table: 'kit_components', columns: ['kit_item_id', 'component_item_id'], nocase: [], references: [] },
   // §4 Universal Alias Mapping — the one table whose text collisions were always resolved.
-  { table: 'item_aliases', columns: ['alias'], nocase: ['alias'], references: [] },
+  { table: 'item_aliases', columns: ['alias'], nocase: ['alias'], references: [], parkColumn: 'alias' },
 ];
 
 /**
@@ -374,6 +393,72 @@ export function resolveUniqueKeyCollisions(
   }
 
   return { collisions, rekeys };
+}
+
+/**
+ * Order the upserts around a **rename swap**: every stored row that must be moved off its
+ * current natural key before another incoming row can take it (issue #707).
+ *
+ * The contest above settles *who keeps a key* when two rows claim one. It says nothing about
+ * *when* each write lands, and it deliberately skips a stored row whose id this apply also
+ * upserts — the pending row supersedes the stored one, so seeding both would have a row collide
+ * with its own update. That is right for the contest and wrong for the index: the stored row is
+ * still physically sitting on its old name at the moment the upserts run. Rename tag `A` from
+ * "Fixings" to "Tools" and tag `B` from "Tools" to "Spares" on one device, and the two upserts
+ * are ordered only by `SYNC_TABLES` position and source order, so `A`'s new name can land while
+ * `B` still holds it — `UNIQUE constraint failed: tags.name`, and the whole atomic apply is lost.
+ *
+ * There is no contest to resolve here. Both names are legitimately the peer's and both rows
+ * survive; what is missing is only an ordering guarantee. So this parks the holder on a
+ * throwaway value (its own id, which no natural key can equal) *before* the upserts, and lets
+ * the holder's own upsert write the real new name a few statements later, inside the same
+ * transaction. The parked value is never observable — the same trick a retired user or tag
+ * already uses to break the delete-before-insert cycle.
+ *
+ * Parking every holder in a cycle is what makes the result independent of upsert order: a
+ * three-way rotation frees all three names up front, so whichever INSERT runs first finds its
+ * name vacant.
+ *
+ * Call this on the **final** upsert set, after every pass that can drop a row. A parked row is
+ * restored only by its own upsert, so parking one whose upsert a later pass then removes would
+ * leave the throwaway id standing as the user-visible name.
+ */
+export function planKeyParks(local: LocalTables, upserts: readonly TableRow[]): KeyPark[] {
+  const parks: KeyPark[] = [];
+
+  for (const spec of UNIQUE_KEY_SPECS) {
+    const parkColumn = spec.parkColumn;
+    if (parkColumn === undefined) continue;
+
+    // The incoming key of every row this apply writes, and who takes each key. At most one
+    // upsert can hold a given key by the time this runs — the contest has already retired any
+    // rival — so one id per key is exact rather than a last-writer-wins approximation.
+    const incomingKeyById = new Map<string, string>();
+    const takerByKey = new Map<string, string>();
+    for (const u of upserts) {
+      if (u.table !== spec.table) continue;
+      const id = String(u.row.id);
+      const key = keyOf(spec, u.row);
+      incomingKeyById.set(id, key);
+      takerByKey.set(key, id);
+    }
+    if (incomingKeyById.size === 0) continue;
+
+    for (const row of local.tables[spec.table] ?? []) {
+      const id = String(row.id);
+      const incomingKey = incomingKeyById.get(id);
+      // A stored row this apply does *not* upsert keeps its key, so it is a genuine rival and
+      // the contest has already retired whichever side lost. Nothing to free here.
+      if (incomingKey === undefined) continue;
+      const storedKey = keyOf(spec, row);
+      if (storedKey === incomingKey) continue; // not renamed — it is entitled to hold the key
+      const taker = takerByKey.get(storedKey);
+      if (taker === undefined || taker === id) continue; // nobody is waiting on the old key
+      parks.push({ table: spec.table, column: parkColumn, id });
+    }
+  }
+
+  return parks;
 }
 
 /** Resolve one table's collisions, returning its `loser id → winner id` map. */
