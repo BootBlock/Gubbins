@@ -47,9 +47,22 @@ one.
 
 **Self-hosting?** A deployment on your own address (see the repository `Dockerfile`) is
 deliberately not covered by a wildcard — one that admitted your origin would admit every
-unrelated site on it too. Add your own origin to `content_scripts[0].matches` in
-`extension/dist/manifest.json` (and to `GUBBINS_APP_ORIGINS` if you build from source), keeping
-it as narrow as your deployment allows, then reload the unpacked extension.
+unrelated site on it too. Adding it takes a **rebuild**, not a manifest edit: `isGubbinsAppUrl`
+is compiled into `content-script.js`, so a widened `matches` in the built manifest only injects a
+script that then refuses to install itself (and the worker would refuse its requests). Add your
+deployment to `GUBBINS_APP_ORIGINS` in `src/features/scraping/app-origins.ts`, giving the base
+path you built with — `/` for the `Dockerfile`'s default, `/gubbins/` for
+`--build-arg GUBBINS_BASE_PATH=/gubbins/`:
+
+```ts
+{ scheme: 'https', host: 'gubbins.example.com', path: '/' },
+```
+
+Mirror the entry's pattern (`https://gubbins.example.com/*`) into `content_scripts[0].matches` in
+`extension/manifest.json` — `app-origins.test.ts` pins the two together — then
+`npm run build:extension` and reload the unpacked extension. Keep the entry as narrow as your
+deployment allows: a `path` of `/` admits every page on that host, which is the right trade only
+when the host serves nothing but Gubbins.
 
 ### Amazon: active-tab only (Path A2), never background-fetched
 

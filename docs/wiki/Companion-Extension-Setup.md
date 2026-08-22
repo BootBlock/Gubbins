@@ -31,18 +31,21 @@ those controls stay hidden — nothing to configure and nothing running in the b
 
 ## Where it works
 
-The extension only ever runs on Gubbins itself — the hosted app at
-`https://bootblock.github.io/Gubbins/`, or a copy you run on your own machine at
-`http://localhost/Gubbins/`. On every other page in your browser it is not present at all: it
-reads nothing, adds nothing, and cannot be asked to do anything.
+The extension talks to Gubbins itself and nowhere else — the hosted app at
+`https://bootblock.github.io/Gubbins/`, or a development copy on your own machine at
+`http://localhost:5173/Gubbins/`. It is not present on any other page you browse: it reads
+nothing there and cannot be asked to do anything. The one exception is the Amazon listing page
+you point it at yourself, which it reads only for as long as it takes to answer the toolbar
+button or the **Add to Gubbins** menu item you clicked — see
+[[Scraping supplier data|Scraping-Supplier-Data]].
 
 > **ℹ️ Note**
-> If you [[host Gubbins yourself|Self-Hosting-with-Docker]] at your own web address, the
-> extension does not recognise it out of the box, and its **Scrape** controls stay hidden.
-> Add your address to the extension's own `matches` list (the `manifest.json` inside the
-> folder you loaded) and reload it in your browser's extensions page. The list is deliberately
-> narrow rather than a wildcard: a wildcard broad enough to cover your address would also cover
-> every unrelated site sharing it.
+> If you [[host Gubbins yourself|Self-Hosting-with-Docker]] — including the Docker image on
+> `http://localhost:8080/` — the extension does not recognise your copy, and its **Scrape**
+> controls stay hidden. Adding your address means rebuilding the extension from the repository
+> with that address listed, not editing the extension folder in place; `extension/README.md`
+> gives the two-line recipe. The list is deliberately narrow rather than a wildcard, because a
+> wildcard broad enough to cover your address would also cover every unrelated site sharing it.
 
 ## Related pages
 

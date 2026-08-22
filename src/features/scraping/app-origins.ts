@@ -19,33 +19,43 @@
  */
 import { DEFAULT_BASE_PATH } from '../../base-path';
 
-/** One origin the app is served from: a fixed scheme and host, on any port. */
-interface AppOrigin {
+/** One place the app is served from: a fixed scheme and host, a base path, and any port. */
+export interface AppOrigin {
   /** The exact scheme — GitHub Pages is https-only; a local dev server is http. */
   readonly scheme: 'http' | 'https';
   /** The exact host. Never a wildcard: `*.github.io` is every stranger's site too. */
   readonly host: string;
+  /**
+   * The base path the app is served under, with a leading and a trailing slash — the same value
+   * Vite is built with ({@link DEFAULT_BASE_PATH}, or a `GUBBINS_BASE_PATH` override). It is
+   * carried per origin rather than globally because a self-hosted deployment usually serves the
+   * app at the domain root (`'/'`) while the hosted one sits under `/Gubbins/`, and because the
+   * path is the only narrowing a match pattern has on `localhost`, where it cannot pin a port.
+   */
+  readonly path: string;
 }
 
 /**
  * The origins a Gubbins deployment is served from, matching the shipped build.
  *
  * `bootblock.github.io` is the hosted deployment (spec §1.2); `localhost`/`127.0.0.1` are a
- * developer's own dev server. Chrome match patterns cannot pin a port, so the two local
- * entries are narrowed by *path* instead — see {@link GUBBINS_APP_URL_PATTERNS}. A
- * self-hosted deployment on another origin (or another base path) is deliberately not
- * covered: the extension is optional, and a wildcard that admitted one self-hoster would
- * admit every unrelated site on the same host. See `extension/README.md` for the one-line
- * manifest edit a self-hoster makes to add their own origin.
+ * developer's own dev server, both serving the app under {@link DEFAULT_BASE_PATH}.
+ *
+ * A self-hosted deployment is deliberately **not** covered by a wildcard: the extension is
+ * optional, and a pattern broad enough to admit one self-hoster's address would admit every
+ * unrelated site sharing it — which is issue #493 again. A self-hoster adds their own entry
+ * here (scheme, host and the base path they built with), mirrors it into the manifest, and
+ * rebuilds; `extension/README.md` carries the recipe. Editing the built manifest alone is not
+ * enough, because {@link isGubbinsAppUrl} is compiled into the content script.
  */
 export const GUBBINS_APP_ORIGINS: readonly AppOrigin[] = [
-  { scheme: 'https', host: 'bootblock.github.io' },
-  { scheme: 'http', host: 'localhost' },
-  { scheme: 'http', host: '127.0.0.1' },
+  { scheme: 'https', host: 'bootblock.github.io', path: DEFAULT_BASE_PATH },
+  { scheme: 'http', host: 'localhost', path: DEFAULT_BASE_PATH },
+  { scheme: 'http', host: '127.0.0.1', path: DEFAULT_BASE_PATH },
 ];
 
 /**
- * The Chrome match patterns for those origins, path-scoped to the app's base path.
+ * The Chrome match patterns for those origins, each path-scoped to its own base path.
  *
  * The path component is what does the real narrowing on `localhost`, where the port cannot be
  * expressed: an unrelated dev server on `http://localhost:3000/` is no longer injected into,
@@ -53,7 +63,7 @@ export const GUBBINS_APP_ORIGINS: readonly AppOrigin[] = [
  * `content_scripts.matches` and for the worker's `chrome.tabs.query` delivery filter.
  */
 export const GUBBINS_APP_URL_PATTERNS: readonly string[] = GUBBINS_APP_ORIGINS.map(
-  ({ scheme, host }) => `${scheme}://${host}${DEFAULT_BASE_PATH}*`,
+  ({ scheme, host, path }) => `${scheme}://${host}${path}*`,
 );
 
 /**
@@ -61,8 +71,8 @@ export const GUBBINS_APP_URL_PATTERNS: readonly string[] = GUBBINS_APP_ORIGINS.m
  *
  * Kept deliberately strict, and in step with {@link GUBBINS_APP_URL_PATTERNS}: the scheme and
  * host must match an entry exactly (no subdomain, no look-alike suffix), and the path must sit
- * under the app's base path. Any port is accepted, because the match patterns cannot pin one
- * and the dev server's port varies.
+ * under *that entry's* base path. Any port is accepted, because the match patterns cannot pin
+ * one and the dev server's port varies.
  *
  * Used as defence-in-depth *inside* the code the manifest injects and the worker runs, so a
  * future widening of the patterns cannot silently re-open issue #493: the content script
@@ -70,6 +80,17 @@ export const GUBBINS_APP_URL_PATTERNS: readonly string[] = GUBBINS_APP_ORIGINS.m
  * anything else.
  */
 export function isGubbinsAppUrl(raw: string | undefined | null): boolean {
+  return matchesAppOrigin(raw, GUBBINS_APP_ORIGINS);
+}
+
+/**
+ * The rule {@link isGubbinsAppUrl} applies, against an arbitrary origin list.
+ *
+ * Split out so the rule can be exercised against an entry the shipped build does not carry — a
+ * self-hoster's own origin, served at the domain root — without a test being able to widen the
+ * list the extension actually runs on. Every caller in the extension uses `isGubbinsAppUrl`.
+ */
+export function matchesAppOrigin(raw: string | undefined | null, origins: readonly AppOrigin[]): boolean {
   if (typeof raw !== 'string' || raw.length === 0) return false;
   let url: URL;
   try {
@@ -81,8 +102,8 @@ export function isGubbinsAppUrl(raw: string | undefined | null): boolean {
   // and the real app never carries them.
   if (url.username !== '' || url.password !== '') return false;
   const scheme = url.protocol.replace(/:$/, '');
-  const matches = GUBBINS_APP_ORIGINS.some(
-    (origin) => origin.scheme === scheme && origin.host === url.hostname.toLowerCase(),
+  const host = url.hostname.toLowerCase();
+  return origins.some(
+    (origin) => origin.scheme === scheme && origin.host === host && url.pathname.startsWith(origin.path),
   );
-  return matches && url.pathname.startsWith(DEFAULT_BASE_PATH);
 }

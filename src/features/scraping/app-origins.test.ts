@@ -12,7 +12,13 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { repoPath } from '../../test/repo-path';
 import { DEFAULT_BASE_PATH } from '../../base-path';
-import { GUBBINS_APP_ORIGINS, GUBBINS_APP_URL_PATTERNS, isGubbinsAppUrl } from './app-origins';
+import {
+  GUBBINS_APP_ORIGINS,
+  GUBBINS_APP_URL_PATTERNS,
+  isGubbinsAppUrl,
+  matchesAppOrigin,
+  type AppOrigin,
+} from './app-origins';
 
 // Resolved from *this file's* checkout, never `process.cwd()` — see `repoPath`.
 const manifestPath = repoPath(import.meta.dirname, 'extension', 'manifest.json');
@@ -29,7 +35,9 @@ describe('extension content_scripts.matches (§9.1 injection surface)', () => {
 
   it('never injects by host wildcard or by bare host, on any origin', () => {
     // `https://*.github.io/*` is every GitHub Pages site on the internet; `http://localhost/*`
-    // is every dev server on the machine, because a match pattern cannot pin a port.
+    // is every dev server on the machine, because a match pattern cannot pin a port. Asserted
+    // over a list first proven non-empty, so an absent `matches` cannot pass by vacuity.
+    expect(matches.length).toBeGreaterThan(0);
     for (const pattern of matches) {
       expect(pattern).not.toContain('*.');
       expect(pattern).not.toContain('<all_urls>');
@@ -89,10 +97,25 @@ describe('isGubbinsAppUrl', () => {
     expect(isGubbinsAppUrl('not a url')).toBe(false);
   });
 
-  it('agrees with the match patterns it is derived from', () => {
-    expect(GUBBINS_APP_URL_PATTERNS).toHaveLength(GUBBINS_APP_ORIGINS.length);
-    for (const { scheme, host } of GUBBINS_APP_ORIGINS) {
-      expect(isGubbinsAppUrl(`${scheme}://${host}${DEFAULT_BASE_PATH}`)).toBe(true);
+  it('accepts every origin the match patterns name, and each pattern names its own path', () => {
+    for (const { scheme, host, path } of GUBBINS_APP_ORIGINS) {
+      expect(isGubbinsAppUrl(`${scheme}://${host}${path}`)).toBe(true);
+      expect(GUBBINS_APP_URL_PATTERNS).toContain(`${scheme}://${host}${path}*`);
     }
+  });
+
+  it('carries the base path per origin, so a self-hoster can add one served at the root', () => {
+    // The self-hosting recipe in `extension/README.md` turns on this: a Docker deployment serves
+    // the app at the domain root, so an entry that could only ever mean `/Gubbins/` would leave
+    // that user with no working edit to make.
+    const selfHosted: AppOrigin = { scheme: 'https', host: 'gubbins.example.test', path: '/' };
+    const origins = [...GUBBINS_APP_ORIGINS, selfHosted];
+    expect(matchesAppOrigin('https://gubbins.example.test/items/1', origins)).toBe(true);
+    // Their entry admits their deployment and nothing else — not a neighbouring host, and not a
+    // sibling project on one of the shipped origins.
+    expect(matchesAppOrigin('https://other.example.test/items/1', origins)).toBe(false);
+    expect(matchesAppOrigin('https://bootblock.github.io/other-project/', origins)).toBe(false);
+    // And it is absent from the shipped list, so the shipped build still refuses it.
+    expect(isGubbinsAppUrl('https://gubbins.example.test/items/1')).toBe(false);
   });
 });
