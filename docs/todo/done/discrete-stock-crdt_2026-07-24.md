@@ -272,6 +272,21 @@ kicked off with "implement S2".
     total is replay-equivalent to the era it replaces. The `quantity_delta` the checkpoint carries
     is the era's net movement, which the replay never reads on an assertion row but which keeps
     `SUM(quantity_delta)` over a placement's whole ledger unchanged.
+  - **Two conditions the substitution depends on**, both found by review rather than by design, and
+    both easy to leave out:
+    - **A checkpoint may only be minted from a complete ledger.** An assertion is authoritative
+      wherever it lands, so summarising a *baseline-less* placement (a history-excluded backup
+      restores the quantities with `stockDeltas = []`, and the movements after it replay short by
+      the whole missing base) would state that short figure as fact and destroy the correct base on
+      every peer that unions it in — unrecoverably, since the peer's own sweep then derives the same
+      id and rewrites its own history to match. The sweep applies the same
+      `replay(deltas) == stock_batches.quantity` gate `reconcileStock` uses, and leaves such a
+      placement alone: it stays merely incomplete rather than becoming authoritatively wrong.
+    - **The era must end strictly before the checkpoint's own stamp.** The era's rows do not stay
+      deleted — an unswept peer hands them back on the next merge — and it is the checkpoint sorting
+      *after* them that makes the replay discard them. A row stamped at exactly the checkpoint's
+      instant would tie, and the replay ranks an assertion before a movement at equal `created_at`,
+      so it would be applied on top of a total that already contained it.
   - **Why 180 days.** `STOCK_DELTA_RETENTION_MS` is deliberately equal to the §7.2 tombstone TTL and
     must never be shorter. An assertion supersedes everything before it, so a peer's unsynced
     movement inside a summarised era is discarded when it unions in — and at 180 days the only peer

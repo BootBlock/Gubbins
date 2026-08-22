@@ -41,7 +41,12 @@ const count = (
   createdAt: number,
 ): StockQuantityDelta => ({ id, quantityDelta, createdAt, assertedQuantity });
 
-/** The checkpoint {@link summariseEra} describes, as the replay would read it back. */
+/**
+ * The checkpoint {@link summariseEra} describes, as the replay would read it back.
+ *
+ * Stamped at `cutoff - 1`, mirroring the sweep. Every era row must be strictly older than that,
+ * which is what the sweep's own era bound guarantees.
+ */
 function checkpointOf(era: readonly StockQuantityDelta[], cutoff: number): StockQuantityDelta {
   const summary = summariseEra(era);
   return {
@@ -127,6 +132,14 @@ describe('compaction is replay-equivalent (issue #544)', () => {
       era: [move('a', 12, 10), move('b', -4, 20)],
       survivors: [],
     },
+    {
+      // The one instant a survivor can share with the checkpoint. It must still be applied on top:
+      // the checkpoint does not account for it, and the replay ranks an assertion before a movement
+      // at equal `createdAt` precisely so a movement in that instant is not lost.
+      name: 'a survivor stamped on the checkpoint itself',
+      era: [move('a', 30, 10), move('b', -5, 20)],
+      survivors: [move('x', -6, CUTOFF - 1), move('y', 2, CUTOFF)],
+    },
   ];
 
   for (const { name, era, survivors } of cases) {
@@ -134,11 +147,6 @@ describe('compaction is replay-equivalent (issue #544)', () => {
       const before = replayStockQuantity([...era, ...survivors]);
       const after = replayStockQuantity([checkpointOf(era, CUTOFF), ...survivors]);
       expect(after).toBe(before);
-    });
-
-    it(`leaves SUM(quantity_delta) unchanged — ${name}`, () => {
-      const sum = (rows: readonly StockQuantityDelta[]) => rows.reduce((t, d) => t + d.quantityDelta, 0);
-      expect(sum([checkpointOf(era, CUTOFF), ...survivors])).toBe(sum([...era, ...survivors]));
     });
 
     it(`converges with a peer that has not swept — ${name}`, () => {
@@ -201,6 +209,38 @@ describe('sweepStockDeltas — against the real schema (issue #544)', () => {
           r.asserted_quantity,
         ],
       })),
+    ]);
+  }
+
+  /** Move one delta's `created_at` to `at`, rewriting the row rather than updating it. */
+  async function restamp(id: string, at: number): Promise<void> {
+    const row = await driver.queryOne<{
+      item_id: string;
+      location_id: string;
+      batch_key: string;
+      quantity_delta: number;
+      asserted_quantity: number | null;
+    }>(
+      `SELECT item_id, location_id, batch_key, quantity_delta, asserted_quantity
+         FROM stock_deltas WHERE id = ?;`,
+      [id],
+    );
+    await driver.transaction([
+      { sql: 'DELETE FROM stock_deltas WHERE id = ?;', params: [id] },
+      {
+        sql: `INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta,
+                                        created_at, asserted_quantity)
+              VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        params: [
+          id,
+          row!.item_id,
+          row!.location_id,
+          row!.batch_key,
+          row!.quantity_delta,
+          at,
+          row!.asserted_quantity,
+        ],
+      },
     ]);
   }
 
@@ -320,6 +360,87 @@ describe('sweepStockDeltas — against the real schema (issue #544)', () => {
     expect(await ledger(item.id)).toEqual(once);
   });
 
+  it('refuses to summarise a placement whose ledger does not explain its own quantity', async () => {
+    const drawer = await locations.create({ name: 'Drawer A' });
+    const item = await items.create({ name: 'Rivet', quantity: 100, locationId: drawer.id });
+    await items.adjustQuantity(item.id, -5);
+    await items.adjustQuantity(item.id, -3);
+
+    // Stand in for a history-excluded backup restore: the quantities came back, the ledger did not,
+    // so the two movements recorded since replay to −8 against a stored 92.
+    await driver.execute('DELETE FROM stock_deltas WHERE quantity_delta = 100;');
+    await age(item.id, 2 * STOCK_DELTA_RETENTION_MS);
+    const before = await ledger(item.id);
+    expect(replayStockQuantity(before)).toBe(-8);
+
+    // Summarising that into a checkpoint would assert −8 as the physically observed figure, and an
+    // assertion is authoritative on every peer that unions it in — it would destroy their correct
+    // base rather than merely being incomplete here.
+    const result = await sweepStockDeltas(driver, stockDeltaCompactionCutoff(Date.now()));
+    expect(result.placementsCompacted).toBe(0);
+    expect(await ledger(item.id)).toEqual(before);
+  });
+
+  it('leaves SUM(quantity_delta) over the placement unchanged, sweep after sweep', async () => {
+    const drawer = await locations.create({ name: 'Drawer A' });
+    const item = await items.create({ name: 'Grommet', quantity: 50, locationId: drawer.id });
+    await items.adjustQuantity(item.id, -12);
+    await items.adjustQuantity(item.id, 7);
+
+    const sum = async () =>
+      Number(
+        (
+          await driver.queryOne<{ s: number }>(
+            'SELECT COALESCE(SUM(quantity_delta), 0) AS s FROM stock_deltas WHERE item_id = ?;',
+            [item.id],
+          )
+        )?.s,
+      );
+    const before = await sum();
+    expect(before).toBe(45);
+
+    // Two sweeps a long way apart, the second folding the first's checkpoint into a new era.
+    await age(item.id, 2 * STOCK_DELTA_RETENTION_MS);
+    await sweepStockDeltas(driver, stockDeltaCompactionCutoff(Date.now()));
+    await items.adjustQuantity(item.id, -5);
+    await age(item.id, 2 * STOCK_DELTA_RETENTION_MS);
+    await sweepStockDeltas(driver, stockDeltaCompactionCutoff(Date.now()));
+
+    expect(await ledger(item.id)).toHaveLength(1);
+    expect(await sum()).toBe(40);
+    await expectPlacementsReconstruct(item.id);
+  });
+
+  it('never summarises a movement stamped on the checkpoint instant itself', async () => {
+    // The era bound is the property this guards. The summarised rows do not stay deleted — an
+    // unswept peer hands them back on the next merge — and only a checkpoint that sorts *after*
+    // them makes the replay discard them as superseded. A row sharing the checkpoint's instant
+    // would tie, and the replay ranks an assertion before a movement at equal `createdAt`, so it
+    // would be applied on top of a total that already contained it.
+    const drawer = await locations.create({ name: 'Drawer A' });
+    const item = await items.create({ name: 'Ferrule', quantity: 20, locationId: drawer.id });
+    await items.adjustQuantity(item.id, -4);
+    await items.adjustQuantity(item.id, -1);
+    await age(item.id, 2 * STOCK_DELTA_RETENTION_MS);
+
+    // Re-stamp the newest movement onto the exact instant the sweep will use for its checkpoint.
+    const cutoff = stockDeltaCompactionCutoff(Date.now());
+    const rows = await ledger(item.id);
+    await restamp(rows[rows.length - 1]!.id, cutoff - 1);
+
+    const before = replayStockQuantity(await ledger(item.id));
+    const result = await sweepStockDeltas(driver, cutoff);
+
+    // Two rows summarised, not three: the one on the instant survives as a movement on top.
+    expect(result.erasCompacted).toBe(2);
+    const after = await ledger(item.id);
+    expect(after).toHaveLength(2);
+    expect(after.filter((d) => d.assertedQuantity !== null)).toHaveLength(1);
+    expect(after.every((d) => d.createdAt <= cutoff - 1)).toBe(true);
+    expect(replayStockQuantity(after)).toBe(before);
+    await expectPlacementsReconstruct(item.id);
+  });
+
   it('gives two devices sweeping the same placement the same checkpoint row', async () => {
     const drawer = await locations.create({ name: 'Drawer A' });
     const item = await items.create({ name: 'Screw', quantity: 25, locationId: drawer.id });
@@ -347,9 +468,9 @@ describe('sweepStockDeltas — against the real schema (issue #544)', () => {
       'SELECT id, location_id, batch_key FROM stock_deltas WHERE item_id = ?;',
       [itemId],
     );
-    const placementOf = new Map(rows.map((r) => [String(r.id), `${r.location_id} ${r.batch_key}`]));
+    const placementOf = new Map(rows.map((r) => [String(r.id), `${r.location_id}\0${r.batch_key}`]));
     for (const p of placements) {
-      const mine = all.filter((d) => placementOf.get(d.id) === `${p.location_id} ${p.batch_key}`);
+      const mine = all.filter((d) => placementOf.get(d.id) === `${p.location_id}\0${p.batch_key}`);
       expect(replayStockQuantity(mine), `replay must reconstruct ${p.location_id}/${p.batch_key}`).toBe(
         Number(p.quantity),
       );

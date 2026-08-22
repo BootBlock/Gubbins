@@ -26,6 +26,11 @@
  * for every peer that unions it in. No schema change, no new column, no second reconciliation
  * rule: the checkpoint is an ordinary ledger row that the CRDT already knows how to read.
  *
+ * Two things make that substitution safe, and neither is optional. A checkpoint is an
+ * **assertion**, so it is only minted for a placement whose whole ledger already reconstructs its
+ * stored quantity — see the completeness gate in {@link sweepStockDeltas}. And it is stamped
+ * strictly after every row it summarises — see {@link checkpointStamp}.
+ *
  * The safety argument for discarding the era is `STOCK_DELTA_RETENTION_MS`'s, and it rests on the
  * horizon being no shorter than the tombstone TTL. Read that note before changing either.
  */
@@ -160,14 +165,33 @@ async function pruneOrphans(driver: IDatabaseDriver): Promise<number> {
 }
 
 /**
- * The placements worth compacting: those holding **two or more** rows older than `cutoff`.
+ * The instant a sweep at `cutoff` stamps its checkpoints at, and the exclusive upper bound of the
+ * era each one summarises.
+ *
+ * One millisecond below the cutoff, and the era is everything strictly older *than the stamp* —
+ * not than the cutoff. The gap matters because the era's rows do not stay deleted: an unswept peer
+ * still holds them and hands them straight back on the next merge, and it is the checkpoint sorting
+ * **after** them that makes the replay discard them as superseded. Were the era `< cutoff` while
+ * the stamp sat at `cutoff − 1`, a row stamped at exactly `cutoff − 1` would be summarised *and*
+ * tie with the checkpoint on re-import — and `replayStockQuantity` orders an assertion before a
+ * movement at equal `createdAt`, so that row would be applied on top of a checkpoint that already
+ * contained it. Excluding the stamp from the era leaves nothing that can tie from below. A
+ * *survivor* at the stamp still ties, and that tie is correct: a movement the checkpoint does not
+ * account for belongs on top of it.
+ */
+function checkpointStamp(cutoff: number): number {
+  return cutoff - 1;
+}
+
+/**
+ * The placements worth compacting: those holding **two or more** rows older than the stamp.
  *
  * The threshold is what stops the sweep churning. A placement whose expired era is already a single
  * row — the checkpoint a previous sweep left — has nothing to save by being rewritten, and
  * rewriting it would mint a *new* id at the newer cutoff every pass, so each sync would push a
  * changed ledger and every peer would union in another dead checkpoint.
  */
-async function expiredPlacements(driver: IDatabaseDriver, cutoff: number): Promise<PlacementKey[]> {
+async function expiredPlacements(driver: IDatabaseDriver, stamp: number): Promise<PlacementKey[]> {
   const rows = await driver.query<{ item_id: string; location_id: string; batch_key: string }>(
     `SELECT item_id, location_id, batch_key
        FROM stock_deltas
@@ -175,7 +199,7 @@ async function expiredPlacements(driver: IDatabaseDriver, cutoff: number): Promi
       GROUP BY item_id, location_id, batch_key
      HAVING COUNT(*) >= 2
       ORDER BY item_id, location_id, batch_key;`,
-    [cutoff],
+    [stamp],
   );
   return rows.map((r) => ({
     itemId: String(r.item_id),
@@ -184,25 +208,48 @@ async function expiredPlacements(driver: IDatabaseDriver, cutoff: number): Promi
   }));
 }
 
+/** One placement's whole ledger, plus the quantity the checkpoint has to be able to explain. */
+interface PlacementLedger {
+  readonly deltas: StockQuantityDelta[];
+  /** `undefined` when the placement has no `stock_batches` row at all. */
+  readonly quantity: number | undefined;
+}
+
+/** Read every delta of `key`, projected for the replay, beside its stored quantity. */
+async function readPlacement(driver: IDatabaseDriver, key: PlacementKey): Promise<PlacementLedger> {
+  const rows = await driver.query<SqlRow>(
+    `SELECT id, quantity_delta, created_at, asserted_quantity
+       FROM stock_deltas
+      WHERE item_id = ? AND location_id = ? AND batch_key = ?;`,
+    [key.itemId, key.locationId, key.batchKey],
+  );
+  const batch = await driver.queryOne<{ quantity: number }>(
+    `SELECT quantity FROM stock_batches
+      WHERE item_id = ? AND location_id = ? AND batch_key = ?;`,
+    [key.itemId, key.locationId, key.batchKey],
+  );
+  return {
+    deltas: rows.map(toDelta),
+    quantity: batch === undefined ? undefined : num(batch.quantity),
+  };
+}
+
 /**
- * Replace one placement's pre-`cutoff` era with its checkpoint, atomically.
+ * Replace one placement's era with its checkpoint, atomically.
  *
- * The delete names the era's rows by **id** rather than repeating the `created_at < cutoff`
- * predicate, so a row captured between the read and the write is never swept up in a summary that
- * did not account for it.
+ * The delete names the era's rows by **id** rather than repeating the `created_at` predicate, so a
+ * row captured between the read and the write is never swept up in a summary that did not account
+ * for it.
  *
- * The checkpoint is stamped at `cutoff − 1`, one millisecond *below* the horizon, so it sorts
- * strictly before every surviving row: a movement stamped exactly at `cutoff` survives the sweep,
- * and were the checkpoint stamped there too the two would tie and the replay would have to break
- * it by id. `INSERT OR REPLACE` because a peer's copy of this very checkpoint may already have
- * unioned in and be part of the era being summarised — the same id, the same figures, written once.
+ * `INSERT OR REPLACE` because a peer's copy of this very checkpoint may already have unioned in and
+ * be part of the era being summarised — the same id, the same figures, written once.
  */
 function compactStatements(
   key: PlacementKey,
   era: readonly StockQuantityDelta[],
   summary: EraSummary,
   id: string,
-  cutoff: number,
+  stamp: number,
 ): SqlStatement[] {
   return [
     ...era.map((d) => ({
@@ -219,7 +266,7 @@ function compactStatements(
         key.locationId,
         key.batchKey,
         summary.netDelta,
-        cutoff - 1,
+        stamp,
         summary.assertedQuantity,
       ],
     },
@@ -251,20 +298,30 @@ export async function sweepStockDeltas(
     batch = [];
   };
 
-  for (const key of await expiredPlacements(driver, cutoff)) {
-    const rows = await driver.query<SqlRow>(
-      `SELECT id, quantity_delta, created_at, asserted_quantity
-         FROM stock_deltas
-        WHERE item_id = ? AND location_id = ? AND batch_key = ? AND created_at < ?;`,
-      [key.itemId, key.locationId, key.batchKey, cutoff],
-    );
+  const stamp = checkpointStamp(cutoff);
+  for (const key of await expiredPlacements(driver, stamp)) {
+    const { deltas, quantity } = await readPlacement(driver, key);
+    // The completeness gate, and the reason the whole ledger is read rather than just the era.
+    // A checkpoint is an **assertion**, and an assertion is authoritative wherever it lands: the
+    // replay restarts from it, and every peer that unions it in adopts it as their base. So it may
+    // only be minted from a ledger that demonstrably explains its own placement — the same
+    // `replay(deltas) == stock_batches.quantity` test `reconcileStock` applies before it will trust
+    // a replay. A *baseline-less* placement fails it: a history-excluded backup restores the
+    // quantities with `stockDeltas = []`, so the movements recorded afterwards replay to a figure
+    // short by the whole missing base. Summarising those into an assertion would state that short
+    // figure as fact and destroy the correct base on every peer that still holds it —
+    // unrecoverably, because the peer's own sweep then derives the same id and rewrites its own
+    // history to match. Such a placement is left uncompacted: it is already on Last-Write-Wins
+    // locally, and it stays merely incomplete rather than becoming authoritatively wrong.
+    if (quantity === undefined) continue;
+    if (replayStockQuantity(deltas) !== quantity) continue;
+    const era = deltas.filter((d) => d.createdAt < stamp);
     // The grouping query already excluded a one-row era; a concurrent delete could still have
     // reduced one, and rewriting that single row under a new id is the churn the threshold exists
     // to avoid.
-    if (rows.length < 2) continue;
-    const era = rows.map(toDelta);
+    if (era.length < 2) continue;
     const id = await checkpointId(key, cutoff);
-    batch.push(...compactStatements(key, era, summariseEra(era), id, cutoff));
+    batch.push(...compactStatements(key, era, summariseEra(era), id, stamp));
     erasCompacted += era.length;
     placementsCompacted += 1;
     if (batch.length >= COMPACTION_BATCH_STATEMENTS) await flush();
