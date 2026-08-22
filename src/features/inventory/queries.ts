@@ -105,13 +105,14 @@ export const inventoryKeys = {
    *  (batch lots plus serialised instances) — under `itemList` so a stock write refreshes it. */
   locationCycleCount: (locationId: string) =>
     [...inventoryKeys.itemList({ locationId }), 'cycle-count'] as const,
-  /** The **stock-derived** status counts (low/out of stock) — under items(), so every item
-   *  mutation including a bare quantity change invalidates them by prefix. */
+  /** The **stock-derived** status counts (low/out of stock, and expiring — which a stock write
+   *  moves through the lots' own expiry dates) — under items(), so every item mutation including
+   *  a bare quantity change invalidates them by prefix. */
   applicableStatuses: (tuning: ApplicableStatusTuning) =>
     [...inventoryKeys.items(), 'applicable-statuses', tuning] as const,
-  /** The status counts a stock write cannot move (on order, expiring, warranty, on loan,
-   *  overdue, maintenance due) — under itemAttention() so a stepper tap does not recompute
-   *  them. These carry the correlated per-row subqueries, so they are the costly half. */
+  /** The status counts a stock write cannot move (on order, warranty, on loan, overdue,
+   *  maintenance due) — under itemAttention() so a stepper tap does not recompute them. These
+   *  carry the correlated per-row subqueries, so they are the costly half. */
   stableStatuses: (tuning: ApplicableStatusTuning) =>
     [...inventoryKeys.itemAttention(), 'stable-statuses', tuning] as const,
   item: (id: string) => [...inventoryKeys.items(), 'detail', id] as const,
@@ -551,10 +552,10 @@ const EMPTY_STATUS_COUNTS: readonly ItemStatusCount[] = [];
  *
  * **Split across two caches by what can invalidate them (issue #166).** The counts used to sit
  * under one key beneath `items()`, so *every* item mutation recomputed all of them — a single
- * tap of a card's quantity stepper re-probed all eight statuses, and the six that a stock write
+ * tap of a card's quantity stepper re-probed all eight statuses, and the ones a stock write
  * cannot possibly move are the expensive ones (each carries a correlated per-row subquery
  * against purchase-order lines, checkouts or maintenance schedules). They are therefore keyed
- * separately: the two {@link STOCK_DEPENDENT_STATUSES} stay under `items()` and recompute on
+ * separately: the {@link STOCK_DEPENDENT_STATUSES} stay under `items()` and recompute on
  * any write, while the rest live under `itemAttention()`, which {@link invalidateItemStock}
  * deliberately leaves alone. The two result sets are merged back into one list here, so callers
  * see the same shape as before.

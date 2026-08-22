@@ -34,6 +34,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT, type MessageKey } from '@/features/i18n';
 import { resolveSupplyState } from '@/features/inventory/supply-state';
+import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
 import {
   useExpiringItems,
   useLowStockItems,
@@ -326,15 +327,19 @@ function ExpiringWidget() {
       {rows.length === 0 ? (
         <EmptyRow>{t('dashboard.widget.expiring.empty')}</EmptyRow>
       ) : (
-        rows
-          .slice(0, 3)
-          .map((item) => (
+        rows.slice(0, 3).map((item) => {
+          // The feed selects on the *effective* expiry — the earlier of the item's own date and
+          // its earliest stocked lot's — so the row must show that date too, or an item that is
+          // here purely because a lot expires next week would show no date at all (issue #684).
+          const expires = effectiveExpiryDate(item.expiryDate, item.earliestBatchExpiryDate);
+          return (
             <WidgetRow
               key={item.id}
               label={item.name}
-              meta={item.expiryDate ? fmt.calendarDate(item.expiryDate) : undefined}
+              meta={expires ? fmt.calendarDate(expires) : undefined}
             />
-          ))
+          );
+        })
       )}
     </WidgetShell>
   );

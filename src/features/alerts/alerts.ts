@@ -145,8 +145,13 @@ export interface LowStockSource {
 export interface ExpirySource {
   readonly id: string;
   readonly name: string;
-  /** UNIX-ms expiry instant; null = no expiry set (item is skipped). */
-  readonly expiryDate: number | null;
+  /**
+   * UNIX-ms **effective** expiry instant — the earlier of the item's own date and its earliest
+   * stocked lot's, as `effectiveExpiryDate` resolves it (issue #684). Null = neither exists, and
+   * the item is skipped. Named for what it carries rather than for the item column, because a
+   * perishable received against a purchase order or a BOM is dated on its lot, not on its row.
+   */
+  readonly effectiveExpiryDate: number | null;
 }
 
 /** Minimum maintenance schedule fields required for a maintenance-due alert. */
@@ -227,14 +232,14 @@ function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert
   for (const item of sources) {
     // An item with no date grades NONE and is skipped either way; settling it here also settles
     // the type, so the day below needs no "what if there is no date" fallback.
-    if (item.expiryDate == null) continue;
+    if (item.effectiveExpiryDate == null) continue;
 
-    const status = expiryStatus(item.expiryDate, now);
+    const status = expiryStatus(item.effectiveExpiryDate, now);
     if (status === 'FRESH') continue;
 
     const expired = status === 'EXPIRED';
     const severity: AlertSeverity = expired ? 'critical' : 'warning';
-    const dueAt = new Date(item.expiryDate).toISOString();
+    const dueAt = new Date(item.effectiveExpiryDate).toISOString();
     const day = dueAt.slice(0, 10);
     const detail = expired ? `Expiry date has passed (${day}).` : `Expires soon on ${day}.`;
 

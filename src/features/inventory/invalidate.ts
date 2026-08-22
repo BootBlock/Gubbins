@@ -33,6 +33,10 @@ import { inventoryKeys } from './queries';
 export function invalidateItems(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
   void client.invalidateQueries({ queryKey: inventoryKeys.itemAttention() });
+  // Sibling of `items()`, not a child, so the prefix above misses it — the same shape as the
+  // due-date feed named below. It moves on an expiry-date edit *and* on a stock write that
+  // receives or empties a dated lot, since the feed reads the effective expiry (issue #684).
+  void client.invalidateQueries({ queryKey: inventoryKeys.expiring() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
   void client.invalidateQueries({ queryKey: agendaKeys.all });
   // Named rather than delegated to `invalidateFieldDueDates`, which would sweep the agenda
@@ -64,11 +68,15 @@ export function invalidateFieldDueDates(client: QueryClient): void {
  * stock level** — the quantity stepper, a gauge adjust (issue #166).
  *
  * Identical to `invalidateItems` except that it leaves the `itemAttention()` prefix alone. That
- * prefix holds the status counts a stock write cannot move — *on order*, *expiring*,
- * *warranty*, *on loan*, *overdue*, *maintenance due* — which are decided by fields and tables
- * a stock write never touches (see `STOCK_DEPENDENT_STATUSES`). They are also the expensive
- * half: each carries a correlated per-row subquery, so recomputing them per stepper tap was
- * most of the cost of a tap.
+ * prefix holds the status counts a stock write cannot move — *on order*, *warranty*, *on loan*,
+ * *overdue*, *maintenance due* — which are decided by fields and tables a stock write never
+ * touches (see `STOCK_DEPENDENT_STATUSES`). They are also the expensive half: each carries a
+ * correlated per-row subquery, so recomputing them per stepper tap was most of the cost of a tap.
+ *
+ * *Expiring* is **not** among them: a stock write that receives a dated lot, or draws the last
+ * unit out of one, moves that count through the item's effective expiry (issue #684). Its status
+ * count therefore lives under `items()` and is swept by the first line below, and the "Soon to
+ * Expire" feed — a sibling key — is swept by name.
  *
  * **Use this only where that claim genuinely holds.** `invalidateItems` is the safe default and
  * the right choice for anything that touches a row's other fields, its active flag, or the
@@ -81,6 +89,7 @@ export function invalidateFieldDueDates(client: QueryClient): void {
  */
 export function invalidateItemStock(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
+  void client.invalidateQueries({ queryKey: inventoryKeys.expiring() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
   void client.invalidateQueries({ queryKey: agendaKeys.all });
 }

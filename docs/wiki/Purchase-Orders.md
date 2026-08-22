@@ -88,8 +88,15 @@ When a delivery arrives, **receive** it against the PO. Gubbins supports:
 - **Partial receipts** — receive some now, the rest later; the outstanding quantity stays on
   order.
 - **Split lines** — a line delivered across multiple shipments is handled cleanly.
+- **Batch, lot and expiry** — tag the arriving units with the delivery's batch number, lot number
+  and expiry date. Any one of the three is enough to record them as their own
+  [[batch|Batches-and-Lots]].
 
 Received stock lands in your inventory and the in-transit figure drops accordingly.
+
+> **💡 Tip**
+> Recording the expiry date on a perishable delivery is what lets Gubbins use that batch first and
+> warn you before it lapses — see [[Batches & lots|Batches-and-Lots]].
 
 > **⚠️ Heads-up**
 > If the *same* line is received (or returned) twice at the same moment — from two devices, or two

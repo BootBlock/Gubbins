@@ -135,6 +135,16 @@ describe('useAlerts — all features on (default)', () => {
     expect(laneEnabled('warranty-expiring')).toBe(true);
     expect(laneEnabled('field-due-dates')).toBe(true);
   });
+
+  it('raises an expiry alert for an item dated only on its lots (issue #684)', () => {
+    // The feed selects such a row on its *effective* expiry, so the projection has to hand the
+    // alert builder that date too — reading `expiryDate` alone drops exactly the rows the
+    // repository went to the trouble of finding.
+    h.useExpiringItems.mockReturnValue(
+      loaded([{ id: 'exp-2', name: 'Culture', expiryDate: null, earliestBatchExpiryDate: EXPIRED_AT }]),
+    );
+    expect(kinds().has('expiry')).toBe(true);
+  });
 });
 
 describe('useAlerts — Custom fields off', () => {

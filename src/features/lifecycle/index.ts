@@ -14,7 +14,7 @@
  * from its own module — `@/features/lifecycle/components/<Name>` — and keep this
  * barrel free of them.
  */
-export { expiryStatus, daysUntilExpiry, type ExpiryStatus } from './expiry';
+export { expiryStatus, daysUntilExpiry, effectiveExpiryDate, type ExpiryStatus } from './expiry';
 export { fieldDueStatus, clampFieldDueLeadDays, type FieldDueStatus } from './field-due';
 export { maintenanceStatus, maintenancePerformedNote, type MaintenanceScheduleState } from './maintenance';
 export {

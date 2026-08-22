@@ -25,6 +25,7 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     serialNumber: null,
     unitCost: null,
     expiryDate: null,
+    earliestBatchExpiryDate: null,
     batchNumber: null,
     lotNumber: null,
     condition: null,

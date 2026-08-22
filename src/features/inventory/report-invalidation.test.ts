@@ -43,9 +43,12 @@ describe('invalidateItems', () => {
     // The custom-field due-date feed (W1a) is a sibling of `items()` too, so it likewise has to
     // be named — and it is asserted here exactly once, since sweeping the agenda prefix already
     // covers that lane's agenda twin.
+    // The "Soon to Expire" feed is a sibling too, and had to be named once it started reading a
+    // lot's expiry date as well as the item's own (issue #684).
     expect(invalidated).toEqual([
       [...inventoryKeys.items()],
       [...inventoryKeys.itemAttention()],
+      [...inventoryKeys.expiring()],
       [...reportKeys.all],
       [...agendaKeys.all],
       [...inventoryKeys.fieldDueDates()],

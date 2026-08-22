@@ -16,6 +16,27 @@ import { addCalendarDays, startOfLocalDay, utcDayToLocalDay } from '@/lib/calend
  */
 export type ExpiryStatus = 'NONE' | 'FRESH' | 'EXPIRING_SOON' | 'EXPIRED';
 
+/**
+ * The date an item is judged to expire on: the earlier of its own `expiryDate` and the earliest
+ * date across its lots that still hold stock, or `null` when it has neither (issue #684).
+ *
+ * The pure twin of `effectiveExpirySql`, and the seam every expiry surface reads. An item can be
+ * perishable purely through its lots — the purchase-order and BOM receipts record a batch date,
+ * not an item one — so reading `expiryDate` alone drops exactly the rows the SQL predicate went
+ * to the trouble of finding.
+ *
+ * Takes the two dates rather than a whole `Item` so the alert and agenda projections, which
+ * narrow an item down to a handful of fields before classifying it, can call it on either shape.
+ */
+export function effectiveExpiryDate(
+  expiryDate: number | null | undefined,
+  earliestBatchExpiryDate: number | null | undefined,
+): number | null {
+  if (expiryDate == null) return earliestBatchExpiryDate ?? null;
+  if (earliestBatchExpiryDate == null) return expiryDate;
+  return Math.min(expiryDate, earliestBatchExpiryDate);
+}
+
 export function expiryStatus(
   expiryDate: number | null | undefined,
   now: number,

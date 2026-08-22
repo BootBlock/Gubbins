@@ -259,12 +259,15 @@ shelf-life-after-opening cannot be derived. The same pattern recurs as `Sealed` 
 and `Seasoned` on wood stock, and `adhesive`'s `Cure time (min)` is a duration with no start, so
 there is **no curing or ageing window** (no "ready at" or "not before" on any table).
 
-And most sharply: **batch expiry never alerts.** `stock_batches.expiry_date` drives FEFO consumption
-correctly, but every attention feed reads `items.expiry_date` only — the predicate is a bare
-`expiry_date IS NOT NULL AND expiry_date <= ?` against `items`
-([attention-sql.ts:93-95](../../src/db/repositories/item/attention-sql.ts#L93-L95)), and the
-stock-recompute triggers propagate quantity only, so nothing lifts a lot's date to the item.
-`idx_stock_batches_expiry` is an index no predicate ever uses. See §5.
+And most sharply: **batch expiry never alerts.** ✅ **Fixed** — the shared predicate now judges an
+item on its *effective* expiry, the earlier of its own `expiry_date` and the soonest date across the
+lots still holding stock, so the alert centre, the Upcoming agenda, the "Soon to Expire" widget, the
+status filter and the bridge's status counts all see a lot's date. The purchase-order receive dialog
+gained the expiry field it was missing, so a dated lot can arrive that way too. As found:
+`stock_batches.expiry_date` drove FEFO consumption correctly, but every attention feed read
+`items.expiry_date` only — the predicate was a bare `expiry_date IS NOT NULL AND expiry_date <= ?`
+against `items`, and the stock-recompute triggers propagate quantity only, so nothing lifted a lot's
+date to the item. `idx_stock_batches_expiry` was an index no predicate ever used. See §5.
 
 ### 3.9 Vehicles and metered assets
 Cars, vans, mowers, generators, compressors, 3D printers, anything serviced on hours or distance.
@@ -1125,12 +1128,15 @@ behaviour that does not exist.
    offering Unit cost on every tracking mode with the help text that it "drives inventory
    valuation". Contrast the foreign-currency case, which is handled honestly: excluded stock is
    counted and surfaced by a notice rather than silently dropped.
-2. **Batch expiry never raises an alert** ([#684](https://github.com/BootBlock/Gubbins/issues/684)) — §3.8 above. The stock-recompute triggers propagate
-   quantity only, so nothing lifts a lot's expiry to the item. **The wiki asserts the opposite**
-   under a section headed "Batches and expiry alerts": "Batch expiry dates feed the expiry tracking
-   and the Alerts / Upcoming feeds, so a batch approaching its date surfaces before it lapses"
+2. **Batch expiry never raises an alert** ([#684](https://github.com/BootBlock/Gubbins/issues/684)) — §3.8 above. ✅ **Fixed** — the expiry
+   predicate reaches into `stock_batches` for the earliest dated lot still in stock and compares it
+   against the item's own date, and the derived date is projected onto every item read so the pure
+   classifiers judge it the same way. As found: the stock-recompute triggers propagate quantity
+   only, so nothing lifted a lot's expiry to the item. **The wiki asserted the opposite** under a
+   section headed "Batches and expiry alerts": "Batch expiry dates feed the expiry tracking and the
+   Alerts / Upcoming feeds, so a batch approaching its date surfaces before it lapses"
    ([Batches-and-Lots.md](../wiki/Batches-and-Lots.md)) — a second, user-facing defect alongside the
-   behavioural one.
+   behavioural one, and the one the fix makes true rather than retracts.
 3. **Consumption rate sums incommensurable units** ([#685](https://github.com/BootBlock/Gubbins/issues/685)). ✅ **Fixed** — the read joins `items`
    and the report is now one line per unit of measure, with no total across them; the Reports
    screen, its per-unit panel and the CSV all label every figure. As found: grams, millilitres and

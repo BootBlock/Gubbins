@@ -26,7 +26,12 @@ import type {
   PageParams,
 } from '../types';
 import { ITEM_READ_COLUMNS_NO_THUMBNAIL, type ItemRowNoThumbnail } from './sql';
-import { expiringPredicateSql, lowStockPredicateSql, warrantyExpiringPredicateSql } from './attention-sql';
+import {
+  effectiveExpirySql,
+  expiringPredicateSql,
+  lowStockPredicateSql,
+  warrantyExpiringPredicateSql,
+} from './attention-sql';
 import { ITEM_STATUS_FILTERS, buildStatusFilter, type ItemStatusFilter } from './status-filter';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
@@ -163,6 +168,12 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      * Active perishable items expiring on or before `before` (a UNIX-ms cutoff,
      * typically `now + N days`), soonest first — the §3 "Soon to Expire" widget feed.
      * Already-expired items are included (their expiry is in the past, ≤ cutoff).
+     *
+     * "Expiring" means the item's *effective* expiry — the earlier of its own `expiry_date` and
+     * its earliest stocked lot's — so a dated lot on an otherwise undated item surfaces here
+     * (issue #684). The ordering uses that same expression: sorting by the bare `expiry_date`
+     * would put every lot-only item at the head of the list regardless of its date, since
+     * SQLite sorts NULL first ascending.
      */
     async listExpiring(before: number, params: PageParams = {}): Promise<Page<Item>> {
       const { limit, offset } = this.resolvePage(params);
@@ -171,7 +182,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         // `attention-sql.ts` — so the widget feed and the filter can never diverge.
         `SELECT ${ITEM_READ_COLUMNS_NO_THUMBNAIL} FROM items
          WHERE is_active = 1 AND ${expiringPredicateSql()}
-         ORDER BY expiry_date ASC LIMIT ? OFFSET ?;`,
+         ORDER BY ${effectiveExpirySql()} ASC LIMIT ? OFFSET ?;`,
         [before, limit, offset],
       );
       return this.toPage(rows.map(rowToItem), limit, offset);

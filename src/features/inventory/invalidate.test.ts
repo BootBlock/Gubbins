@@ -4,9 +4,9 @@
  * `invalidateItems` is the broad, always-correct sweep every item write uses.
  * `invalidateItemStock` is its narrow counterpart for a write that moves **only** an item's
  * stock level (the quantity stepper, a gauge adjust): it deliberately leaves the
- * `item-attention` prefix cached, because the six status counts living there — on order,
- * expiring, warranty, on loan, overdue, maintenance due — are decided by fields and tables a
- * stock write never touches, and each carries a correlated per-row subquery.
+ * `item-attention` prefix cached, because the five status counts living there — on order,
+ * warranty, on loan, overdue, maintenance due — are decided by fields and tables a stock write
+ * never touches, and each carries a correlated per-row subquery.
  *
  * These tests pin the boundary in both directions. Getting it wrong is quiet in either
  * direction — too narrow leaves a stale chip count on screen, too broad silently gives back
@@ -29,12 +29,14 @@ function stubClient() {
 describe('invalidateItemStock — the narrow sweep (#166)', () => {
   // The broad `invalidateItems` is pinned in `report-invalidation.test.ts`, which owns the
   // items ⇄ reports invariant (#375); only the narrow helper is tested here.
-  it('invalidates items, reports and the agenda', () => {
+  it('invalidates items, the expiring feed, reports and the agenda', () => {
     // The agenda rides along because the reorder-now lane is on-hand quantity against the reorder
-    // point — the one thing a stock-only write is guaranteed to move (issue #374).
+    // point — the one thing a stock-only write is guaranteed to move (issue #374). The expiring
+    // feed joined it for the mirror-image reason: it reads the item's *effective* expiry, which a
+    // stock write moves whenever it receives a dated lot or empties the last one (issue #684).
     const { client, keys } = stubClient();
     invalidateItemStock(client);
-    expect(keys()).toEqual([inventoryKeys.items(), reportKeys.all, agendaKeys.all]);
+    expect(keys()).toEqual([inventoryKeys.items(), inventoryKeys.expiring(), reportKeys.all, agendaKeys.all]);
   });
 
   it('leaves the item-attention prefix cached', () => {

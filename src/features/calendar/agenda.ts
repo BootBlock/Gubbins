@@ -95,8 +95,11 @@ export interface WarrantyAgendaSource {
 export interface ExpiryAgendaSource {
   readonly id: string;
   readonly name: string;
-  /** UNIX-ms expiry instant; null ⇒ no expiry event. */
-  readonly expiryDate: number | null;
+  /**
+   * UNIX-ms **effective** expiry instant — the earlier of the item's own date and its earliest
+   * stocked lot's, as `effectiveExpiryDate` resolves it (issue #684); null ⇒ no expiry event.
+   */
+  readonly effectiveExpiryDate: number | null;
 }
 
 /** An open checkout with a due-back date. */
@@ -241,13 +244,13 @@ function buildExpiryEvents(
 ): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   for (const s of sources) {
-    if (s.expiryDate == null) continue;
+    if (s.effectiveExpiryDate == null) continue;
     events.push({
       id: `expiry:${s.id}`,
       kind: 'expiry',
       title: `Expiry — ${s.name}`,
-      detail: `Expires ${formatDate(s.expiryDate)}.`,
-      dueAt: s.expiryDate,
+      detail: `Expires ${formatDate(s.effectiveExpiryDate)}.`,
+      dueAt: s.effectiveExpiryDate,
       hasDate: true,
       target: { route: '/inventory', itemId: s.id },
     });
