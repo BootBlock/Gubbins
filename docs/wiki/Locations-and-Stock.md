@@ -18,7 +18,7 @@ Each location can have:
 
 - **A name** — a room, shelf, drawer, box, or anywhere else things live.
 - **An icon** — any glyph from the icon library, shown beside the location in the tree and in
-  every picker. A location without one shows a plain folder.
+  the details panel above the item list. A location without one shows a plain folder.
 - **A colour** — a swatch that tints the location and the cards of items stored in it, so the
   grid reads at a glance.
 - **A description** — free notes about the location (what it holds, how to get to it, a link).
@@ -82,9 +82,10 @@ can carry a wine glass and a fish tank a fish. Type in its search box to narrow 
 (`box`, `car`, `plant`), pick the one you want, and select **Use**. The **✕** beside the field
 clears the icon again, and the location goes back to a plain folder.
 
-The icon shows beside the location everywhere it appears: in the tree, in the details panel, in
-the sub-location cards and in every location picker. It is purely a visual cue — it changes
-nothing about how the location behaves.
+The icon shows beside the location in the tree, in the details panel above the item list, on the
+sub-location cards and on the group headings when the inventory is grouped by location. It is
+purely a visual cue — it changes nothing about how the location behaves. The location *pickers*
+show the colour swatch rather than the icon.
 
 ## Finding a location
 
