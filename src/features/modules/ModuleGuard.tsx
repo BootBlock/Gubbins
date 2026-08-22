@@ -14,11 +14,12 @@
  *    touching intent — the module stays hidden everywhere else.
  *
  * The interstitial composes the Foundry `PageHeader` (so the global nav + skip-link wiring
- * stay intact) and its own `<main>`, mirroring every other screen.
+ * stay intact) over the shared `Interstitial` primitive, which owns the `<main>` landmark and the
+ * centred-notice shell it has in common with the read-permission refusal (issue #522).
  */
 import { useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Button, PageContainer, PageHeader, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { Button, Interstitial, PageContainer, PageHeader } from '@/components/foundry';
 import { HideIcon, ModulesIcon, ShowIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/foundry/button';
@@ -88,27 +89,15 @@ function ModuleHiddenInterstitial({
     <PageContainer>
       <PageHeader icon={<def.Icon />} title={def.label} />
 
-      <main
-        id={MAIN_CONTENT_ID}
-        tabIndex={-1}
-        className="flex flex-1 animate-rise flex-col items-center justify-center py-10 outline-none"
-      >
-        <Surface className="flex max-w-md flex-col items-center gap-4 p-8 text-center">
-          <span
-            aria-hidden
-            className="flex size-12 items-center justify-center rounded-full bg-secondary text-muted-foreground [&_svg]:size-6"
-          >
-            <HideIcon />
-          </span>
-          <div className="flex flex-col gap-1.5">
-            <h2 className="text-lg font-semibold text-foreground">{def.label} is hidden</h2>
-            <p className="text-sm text-muted-foreground">{def.description}</p>
-            <p className="text-sm text-muted-foreground">
-              You’ve switched this module off for a leaner app. Your data is untouched — switch it back on
-              whenever you like.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-2">
+      <Interstitial
+        icon={<HideIcon />}
+        heading={`${def.label} is hidden`}
+        body={[
+          def.description,
+          'You’ve switched this module off for a leaner app. Your data is untouched — switch it back on whenever you like.',
+        ]}
+        actions={
+          <>
             <Button data-testid="module-guard-show" onClick={showModule}>
               <ShowIcon aria-hidden />
               Show this module
@@ -116,13 +105,15 @@ function ModuleHiddenInterstitial({
             <Button variant="outline" data-testid="module-guard-continue" onClick={onContinue}>
               Continue anyway
             </Button>
-          </div>
+          </>
+        }
+        footer={
           <Link to="/modules" className={cn(buttonVariants({ variant: 'link' }), 'h-auto px-0')}>
             <ModulesIcon aria-hidden />
             Manage modules
           </Link>
-        </Surface>
-      </main>
+        }
+      />
 
       {pending ? (
         <ConfirmCascadeModal pending={pending} onCancel={() => setPending(null)} onConfirm={confirmEnable} />

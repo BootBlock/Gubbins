@@ -325,12 +325,37 @@ export const PALETTE_DESTINATIONS: readonly PaletteDestination[] = [
 export const NAV_GROUP_ORDER: readonly NavGroup[] = ['primary', 'manage', 'system'];
 
 /**
+ * Routes that are **not** navigable destinations — no nav row, no palette entry — but still put a
+ * gated subject's records on screen, so the route guard has to know about them anyway.
+ *
+ * `/deep-link` is the `web+gubbins:` protocol-handler landing: it loads an item by id and opens
+ * its full detail dialog, which is the same record `/inventory` shows. `/share-target` is the Web
+ * Share Target landing, which creates an item from the shared payload. Both are reached by URL
+ * from outside the app, which is precisely the door a hidden nav row does not close.
+ *
+ * The other off-nav routes are deliberately absent: `/import` and `/lab` write or configure rather
+ * than disclose, and the repository layer already refuses a write the role may not make.
+ */
+const OFF_NAV_ROUTE_PERMISSIONS: readonly (readonly [string, PermissionKey])[] = [
+  ['/deep-link', 'items:read'],
+  ['/share-target', 'items:write'],
+];
+
+/**
  * The read permission each route requires, keyed by path (issue #522).
  *
  * Derived from {@link PALETTE_DESTINATIONS} rather than written out a second time, so a screen
  * cannot be hidden from the navigation while still answering to its own URL — the nav surfaces
- * and the route guard read one list. A path absent from this map carries no read gate.
+ * and the route guard read one list — plus the off-nav routes above. A path absent from this map
+ * carries no read gate.
+ *
+ * Keys are lower-cased because the router matches static segments case-insensitively: `/Activity`
+ * renders the Activity screen, so an exact-case lookup would let it past the gate. Every path
+ * here is already lower-case; the normalisation is stated rather than assumed.
  */
-export const ROUTE_PERMISSIONS: ReadonlyMap<AppRoutePath, PermissionKey> = new Map(
-  PALETTE_DESTINATIONS.flatMap((d) => (d.permission ? [[d.to, d.permission] as const] : [])),
+export const ROUTE_PERMISSIONS: ReadonlyMap<string, PermissionKey> = new Map(
+  [
+    ...PALETTE_DESTINATIONS.flatMap((d) => (d.permission ? [[d.to as string, d.permission] as const] : [])),
+    ...OFF_NAV_ROUTE_PERMISSIONS,
+  ].map(([path, key]) => [path.toLowerCase(), key] as const),
 );

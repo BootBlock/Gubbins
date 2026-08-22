@@ -37,8 +37,9 @@
  * a handler for them (see `useHotkeyScope`). An unhandled scoped press is left for the browser,
  * so `/` still types a slash on a screen that offers no search.
  */
-import type { AppRoutePath } from '@/components/nav/nav-destinations';
+import { ROUTE_PERMISSIONS, type AppRoutePath } from '@/components/nav/nav-destinations';
 import type { FeatureId } from '@/features/modules/feature-registry';
+import type { PermissionKey } from '@/features/users/permission-registry';
 import type { MessageKey } from '@/features/i18n';
 
 /**
@@ -845,4 +846,19 @@ export function isTypingTarget(
   if (target.isContentEditable === true) return true;
   const role = target.getAttribute?.('role');
   return role === 'combobox' || role === 'textbox' || role === 'searchbox';
+}
+
+/**
+ * The read permission a hotkey's destination needs, or `undefined` when it needs none
+ * (issue #522).
+ *
+ * Derived from `ROUTE_PERMISSIONS` rather than declared a second time on each action: the four
+ * surfaces that list shortcuts — the global listener, the overlay, the header hints and the
+ * settings list — must agree with the nav menu about which screens exist for this role, and a
+ * parallel field per action is exactly the list that drifts. A non-navigating action (the palette,
+ * Add item, the scanner) has no destination and so no gate here.
+ */
+export function hotkeyPermission(action: HotkeyAction): PermissionKey | undefined {
+  if (action.effect.kind !== 'navigate') return undefined;
+  return ROUTE_PERMISSIONS.get(action.effect.to.toLowerCase());
 }

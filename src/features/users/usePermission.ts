@@ -20,7 +20,7 @@ import { can, type Authority } from './permissions';
 import type { PermissionKey } from './permission-registry';
 
 /** The current session's resolved authority (subscribes to the store). */
-export function useAuthority(): Authority {
+function useAuthority(): Authority {
   return useSessionStore((state) => state.authority);
 }
 

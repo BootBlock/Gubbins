@@ -18,7 +18,7 @@ people are assigned to them.
 | --- | --- |
 | **Administrator** | Everything, including managing users and roles |
 | **Manager** | Everything across inventory, projects and settings, but can't manage users |
-| **Stocker** | Add and edit items, move stock and run counts. No deleting, and no activity history, projects, contacts, suppliers, purchase orders or bookings |
+| **Stocker** | Add and edit items, move stock and run counts. No deleting, and no activity history, projects, contacts, suppliers, purchase orders, bookings, user accounts, sync or bridge setup |
 | **Viewer** | Look at inventory, projects, contacts, suppliers, purchase orders, bookings and reports; change nothing. No activity history, user accounts, sync or bridge setup |
 
 Add your own with **Add role** whenever none of these quite fits. Role names are matched **ignoring
@@ -105,8 +105,8 @@ permissions until you give them another one.
 A role also governs what an outside tool can do. An [[API token|Bridge-API-Tokens]] minted against
 an account is held to that account's role, so a role that can't see suppliers in the app can't read
 them through the [[bridge|Bridge-Overview]] either. The bridge is the stricter of the two: it checks
-the permission on **every request**, so a role without *View* on suppliers is refused the supplier
-data itself, not merely the screen that shows it.
+the permission on **every request**, so a role without *View* on the [[activity log|Activity-Log]]
+is refused the activity feed itself, not merely the screen that shows it.
 
 > **⚠️ Heads-up**
 > Permissions decide what Gubbins *lets someone do in the app*. They are not a lock on the data

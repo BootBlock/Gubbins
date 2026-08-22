@@ -28,6 +28,7 @@ import { Button, LiveRegion, Select } from '@/components/foundry';
 import { CloseIcon, HotkeyIcon, ResetIcon, WarningIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from '@/features/settings/SettingsSection';
 import { SEQUENCE_TIMEOUT_MS } from './useGlobalHotkeys';
@@ -46,6 +47,7 @@ import {
   type HotkeyAction,
   type HotkeyActionId,
   type HotkeyPresetId,
+  hotkeyPermission,
 } from './hotkeys';
 
 /** On/off pair, mirroring the Settings dialog's own boolean control convention. */
@@ -88,6 +90,7 @@ export function HotkeySettings() {
   const setBindings = usePreferencesStore((s) => s.setHotkeyBindings);
   const resetBindings = usePreferencesStore((s) => s.resetHotkeyBindings);
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
 
   // Which row is currently listening for a chord, or null while idle.
   const [recording, setRecording] = useState<HotkeyActionId | null>(null);
@@ -109,9 +112,10 @@ export function HotkeySettings() {
       HOTKEY_ACTIONS.filter(
         (a) =>
           (a.feature === undefined || enabledFeatures.has(a.feature)) &&
+          allows(hotkeyPermission(a)) &&
           (a.requiresPref !== 'dashboardCommandPalette' || paletteEnabled),
       ),
-    [enabledFeatures, paletteEnabled],
+    [enabledFeatures, allows, paletteEnabled],
   );
 
   return (

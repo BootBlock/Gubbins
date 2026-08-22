@@ -32,6 +32,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { openModalCount } from '@/components/foundry';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useCommandPaletteStore } from '@/features/command-palette/useCommandPaletteStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
@@ -46,6 +47,7 @@ import {
   normaliseHotkeyBindings,
   stepHotkeySequence,
   type HotkeyAction,
+  hotkeyPermission,
 } from './hotkeys';
 
 /** Mac keyboards fold Command into the primary modifier — settled once, not per key press. */
@@ -64,6 +66,7 @@ export function useGlobalHotkeys(): void {
   const bindings = usePreferencesStore((s) => s.hotkeyBindings);
   const paletteEnabled = usePreferencesStore((s) => s.dashboardCommandPalette);
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
   // The armed sequence prefix, in a ref rather than state: it changes on a key press and must not
   // re-render the whole app (nor tear down and re-add the listener) to do so.
   const pending = useRef<string | null>(null);
@@ -75,6 +78,10 @@ export function useGlobalHotkeys(): void {
     const resolved = normaliseHotkeyBindings(bindings);
     const isEnabled = (action: HotkeyAction): boolean => {
       if (action.feature !== undefined && !enabledFeatures.has(action.feature)) return false;
+      // A shortcut into a screen this role cannot read does not fire (issue #522) — the guard
+      // would refuse the landing anyway, and a keypress that navigates to a refusal page is a
+      // worse answer than one that does nothing.
+      if (!allows(hotkeyPermission(action))) return false;
       if (action.requiresPref === 'dashboardCommandPalette' && !paletteEnabled) return false;
       return true;
     };
@@ -182,5 +189,5 @@ export function useGlobalHotkeys(): void {
       document.removeEventListener('keydown', onKey);
       disarm();
     };
-  }, [enabled, bindings, paletteEnabled, enabledFeatures, navigate]);
+  }, [enabled, bindings, paletteEnabled, enabledFeatures, allows, navigate]);
 }

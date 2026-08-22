@@ -149,12 +149,49 @@ describe('RoutePermissionGuard', () => {
     );
     expect(screen.queryByTestId('real-screen')).toBeNull();
   });
+
+  /**
+   * The router matches static segments case-insensitively, and `location.pathname` keeps the
+   * casing that was typed — so an exact-case registry lookup opened the gate for anyone who
+   * typed `/Activity`. The screen renders either way; only the guard's lookup was fooled.
+   */
+  it('does not let a differently-cased URL walk around the gate', () => {
+    pathname = '/Activity';
+    grant('items:read');
+    render(
+      <RoutePermissionGuard>
+        <Screen />
+      </RoutePermissionGuard>,
+    );
+    expect(screen.queryByTestId('real-screen')).toBeNull();
+  });
+
+  /**
+   * `/deep-link` is the `web+gubbins:` protocol-handler landing. It has no nav row and no palette
+   * entry, so nothing hides it — and it opens an item's full detail dialog, which is the record
+   * `/inventory` shows. A URL arriving from outside the app is exactly the door a hidden nav row
+   * does not close.
+   */
+  it('gates the off-nav routes that render a gated subject', () => {
+    pathname = '/deep-link';
+    grant('projects:read');
+    render(
+      <RoutePermissionGuard>
+        <Screen />
+      </RoutePermissionGuard>,
+    );
+    expect(screen.queryByTestId('real-screen')).toBeNull();
+  });
 });
 
 describe('ROUTE_PERMISSIONS — the promises the wiki makes', () => {
   it('gates the two screens the built-in Viewer role is described as not seeing', () => {
     expect(ROUTE_PERMISSIONS.get('/activity')).toBe('audit:view');
     expect(ROUTE_PERMISSIONS.get('/users')).toBe('users:read');
+  });
+
+  it('keys every entry in lower case, so a differently-cased URL still resolves', () => {
+    for (const path of ROUTE_PERMISSIONS.keys()) expect(path).toBe(path.toLowerCase());
   });
 
   it('leaves the ways back from a restricted session ungated', () => {

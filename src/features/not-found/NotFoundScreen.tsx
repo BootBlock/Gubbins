@@ -3,6 +3,7 @@ import { PageContainer, PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } f
 import { CompassIcon, HomeIcon, type LucideIcon } from '@/components/icons';
 import { NAV_DESTINATIONS } from '@/components/nav/nav-destinations';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { useT } from '@/features/i18n';
 import { cn } from '@/lib/utils';
 import { suggestRoutes } from './route-suggestions';
@@ -28,11 +29,14 @@ export function NotFoundScreen() {
   const t = useT();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
 
-  // Only suggest destinations the user can actually reach (Modular UI may hide some), and skip
-  // the Dashboard — it already has its own prominent call-to-action below.
+  // Only suggest destinations the user can actually reach — Modular UI may hide some, and a role
+  // may not be allowed to read others (issue #522), in which case the suggestion would land
+  // straight on the refusal page. Skip the Dashboard: it already has its own prominent
+  // call-to-action below.
   const candidates: readonly SuggestCandidate[] = NAV_DESTINATIONS.filter(
-    (d) => d.to !== '/' && enabledFeatures.has(d.feature),
+    (d) => d.to !== '/' && enabledFeatures.has(d.feature) && allows(d.permission),
   ).map((d) => ({ to: d.to, label: t(d.messageKey), Icon: d.Icon }));
 
   const suggestions = suggestRoutes(pathname, candidates);

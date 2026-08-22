@@ -142,6 +142,7 @@ export {
   type TooltipSize,
 } from './tooltip';
 export { SkipLink, MAIN_CONTENT_ID } from './skip-link';
+export { Interstitial, type InterstitialProps } from './interstitial';
 export { PageHeader, type PageHeaderProps } from './page-header';
 export { PageContainer, type PageContainerProps } from './page-container';
 export {

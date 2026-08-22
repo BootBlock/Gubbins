@@ -20,13 +20,13 @@
  * - **Not a lock on the data.** The database is local and readable by anyone holding the
  *   device (plan §1.1). This gates the application.
  *
- * It composes {@link PageHeader} and its own `<main>` exactly as {@link ModuleGuard} does, so
- * the global nav and skip-link wiring survive the interstitial.
+ * It composes `PageHeader` over the shared `Interstitial` primitive, exactly as the Modular UI's
+ * "module hidden" screen does, so the global nav and skip-link wiring survive the refusal.
  */
 import type { ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { ROUTE_PERMISSIONS, type AppRoutePath } from '@/components/nav/nav-destinations';
-import { Button, PageContainer, PageHeader, Surface, MAIN_CONTENT_ID } from '@/components/foundry';
+import { ROUTE_PERMISSIONS } from '@/components/nav/nav-destinations';
+import { Button, Interstitial, PageContainer, PageHeader } from '@/components/foundry';
 import { BlockedIcon, HomeIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import type { PermissionKey } from './permission-registry';
@@ -64,13 +64,22 @@ export function RoutePermissionGuard({ children }: { readonly children: ReactNod
 }
 
 /**
- * Reduce a location pathname to the registry's key form. The router does not add a trailing
- * slash, but a hand-typed or shared URL can carry one, and `/inventory/` must not slip past a
- * gate `/inventory` holds.
+ * Reduce a location pathname to the registry's key form.
+ *
+ * Two normalisations, both of which a hand-typed or shared URL will otherwise walk straight
+ * through:
+ *
+ * - **Case.** TanStack matches static segments case-insensitively unless a route opts out, and
+ *   Gubbins does not, so `/Activity` renders the Activity screen — while `location.pathname`
+ *   keeps the casing that was typed. An exact lookup would miss and the gate would open. Every
+ *   registry path is already lower-case, so lower-casing here is lossless.
+ * - **Trailing slash.** The router does not add one, but a pasted URL can carry it, and
+ *   `/inventory/` must not slip past a gate `/inventory` holds.
  */
-function normalisePath(pathname: string): AppRoutePath {
-  const trimmed = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-  return (trimmed || '/') as AppRoutePath;
+function normalisePath(pathname: string): string {
+  const lowered = pathname.toLowerCase();
+  const trimmed = lowered.length > 1 ? lowered.replace(/\/+$/, '') : lowered;
+  return trimmed || '/';
 }
 
 /** The in-place "your role doesn't allow this" screen. */
@@ -82,35 +91,24 @@ function PermissionDeniedInterstitial({ permission }: { readonly permission: Per
     <PageContainer>
       <PageHeader icon={<BlockedIcon />} title={t('permission.denied.title')} />
 
-      <main
-        id={MAIN_CONTENT_ID}
-        tabIndex={-1}
-        className="flex flex-1 animate-rise flex-col items-center justify-center py-10 outline-none"
-      >
-        <Surface className="flex max-w-md flex-col items-center gap-4 p-8 text-center">
-          <span
-            aria-hidden
-            className="flex size-12 items-center justify-center rounded-full bg-secondary text-muted-foreground [&_svg]:size-6"
-          >
-            <BlockedIcon />
-          </span>
-          <div className="flex flex-col gap-1.5">
-            <h2 className="text-lg font-semibold text-foreground">{t('permission.denied.heading')}</h2>
-            <p className="text-sm text-muted-foreground">
-              {t('permission.denied.body', {
-                vars: { permission: `${t(subjectKey)} · ${t(actionKey)}` },
-              })}
-            </p>
-            <p className="text-sm text-muted-foreground">{t('permission.denied.ask')}</p>
-          </div>
+      <Interstitial
+        icon={<BlockedIcon />}
+        heading={t('permission.denied.heading')}
+        body={[
+          t('permission.denied.body', {
+            vars: { permission: `${t(subjectKey)} · ${t(actionKey)}` },
+          }),
+          t('permission.denied.ask'),
+        ]}
+        actions={
           <Button asChild>
             <Link to="/">
               <HomeIcon aria-hidden />
               {t('permission.denied.home')}
             </Link>
           </Button>
-        </Surface>
-      </main>
+        }
+      />
     </PageContainer>
   );
 }

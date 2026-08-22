@@ -44,7 +44,7 @@ import { PALETTE_DESTINATIONS, type PaletteDestination } from '@/components/nav/
 import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
-import { usePermissionCheck } from '@/features/users/usePermission';
+import { usePermission, usePermissionCheck } from '@/features/users/usePermission';
 import { useErrorMessage } from '@/features/errors';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryItems, useItem, useLocations } from '@/features/inventory/queries';
@@ -131,7 +131,12 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     setActing(null);
   }, [query]);
 
-  const itemSearch = isScreenMode ? '' : debounced;
+  // Item search answers only for a session that may read items (issue #522). The palette is
+  // reachable from every screen, including the ones a restricted role *can* open, so leaving it
+  // ungated would hand back the item records the guard just refused at `/inventory` — a
+  // different case from "a screen you can open shows everything on it".
+  const mayReadItems = usePermission('items:read');
+  const itemSearch = isScreenMode || !mayReadItems ? '' : debounced;
   const hasItemQuery = itemSearch.length > 0;
   const itemsQuery = useInventoryItems(hasItemQuery ? { search: itemSearch } : {});
   const loading = hasItemQuery && itemsQuery.isPending;
