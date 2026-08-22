@@ -66,6 +66,11 @@ out. Accounts without one are marked plainly, both in this list and on the
 > puts a name against each change. Anyone who can reach this device's files can still read your
 > inventory, whatever passwords you set. If you need more than that, use your device's own passcode
 > or disk encryption — see [[Privacy & security|Privacy-and-Security]].
+>
+> Accounts are part of your data, so they travel with it: a [[backup|Backup-and-Restore]] or a
+> [[synced|Cloud-Sync]] copy carries every account and the scrambled form of its password. That is
+> what lets people sign in on a restored or second device — it is also a reason to keep a backup
+> file somewhere you trust, and to pick a password rather than a short PIN if it matters to you.
 
 ## Deleting an account
 

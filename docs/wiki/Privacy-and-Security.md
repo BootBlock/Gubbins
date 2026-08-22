@@ -22,7 +22,7 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 | Feature | What it does | Your control |
 | --- | --- | --- |
 | **[[Cloud sync\|Cloud-Sync]]** | Keeps devices in step | Through *your own* folder or Drive; no Gubbins server in between |
-| **[[Backup & restore\|Backup-and-Restore]]** | Portable copy of your data | A file *you* save, where *you* choose |
+| **[[Backup & restore\|Backup-and-Restore]]** | Portable copy of your data | A file *you* save, where *you* choose. It is a copy of the whole database, so treat it like one — it carries your accounts, the scrambled form of their passwords, and any webhook secret stored in Gubbins |
 | **[[Export & import\|Export-and-Import]]** | Open-format data out/in | Only what you export leaves |
 | **[[Bridge\|Bridge-Overview]]** | Exposes data to other tools | You run it; loopback-only by default, and every caller presents an [[API token\|Bridge-API-Tokens]] that can only do what its owning account can; read-only unless you allow writes or *push*. It speaks plain HTTP, so if you [[expose it beyond your own machine\|Running-the-Bridge]] put it behind HTTPS on any network you don't trust |
 | **[[Webhooks]]** (delivered by the bridge) | Calls a URL you chose when something changes | Off until you add one; goes only where you point it. Sign it so your receiver can confirm it's genuine — and prefer a secret held by the bridge, since one stored on the webhook travels with your synced data |
