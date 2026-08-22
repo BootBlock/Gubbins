@@ -41,6 +41,8 @@ const ItemRowBody = memo(function ItemRow({
   customFields = EMPTY_CUSTOM_FIELDS,
   customValues,
   tags,
+  ariaPosInSet,
+  ariaSetSize,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
@@ -62,6 +64,14 @@ const ItemRowBody = memo(function ItemRow({
   customValues?: ReadonlyMap<string, CardFieldStoredValue>;
   /** This item's tag names (issue #84), if the Tags card field is shown and they've loaded. */
   tags?: readonly string[];
+  /**
+   * This row's 1-based position in the whole result set, and how big that set is (issue #208).
+   * The list is virtualised, so only ~20 rows exist in the DOM at once — without these a screen
+   * reader would report "3 of 20" and browse-mode would appear to end at the overscan boundary.
+   * `ariaSetSize` is `-1` when the total isn't known yet (ARIA's "unknown size").
+   */
+  ariaPosInSet?: number;
+  ariaSetSize?: number;
 }) {
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
   const fields = useResolvedCardFields(item, {
@@ -79,9 +89,14 @@ const ItemRowBody = memo(function ItemRow({
   // Suppressed during batch selection, where a body click means "toggle this row".
   const { actionsRef, onClick, clickable } = useCardClickAction(selection != null);
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the body click is a pointer-only shortcut that only ever mirrors one of the row's own focusable, labelled action buttons (details/move/label), so keyboard/AT users already have full parity; giving the row itself a role + tabindex would wrap those buttons in a redundant, confusing nested tab stop.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- the body click is a pointer-only shortcut that only ever mirrors one of the row's own focusable, labelled action buttons (details/move/label), so keyboard/AT users already have full parity; giving the row itself an interactive role + tabindex would wrap those buttons in a redundant, confusing nested tab stop (its `listitem` role is structural, and adds no tab stop).
     <div
       ref={ref}
+      // The row is one item of the list its container declares (`role="list"`), with its
+      // absolute position/size so virtualisation stays invisible to assistive tech.
+      role="listitem"
+      aria-posinset={ariaPosInSet}
+      aria-setsize={ariaSetSize}
       {...dragProps}
       onClick={onClick}
       className={cn(

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/foundry';
 import { PackageIcon } from '@/components/icons';
 import type { Item, LocationWithCount } from '@/db/repositories';
+import { useT } from '@/features/i18n';
 import type { ItemDensity } from '@/state/stores/useLayoutStore';
 import { inventoryEmptyState, type InventoryEmptyContext } from '../inventory-empty-state';
 import { LIST_ROW_HEIGHT as ROW_HEIGHT, listRowCount, resolveListRow } from '../list-window';
@@ -45,6 +46,7 @@ export function ItemList({
   selectedIds,
   cardFields,
   emptyContext,
+  totalCount,
 }: {
   items: readonly Item[];
   /** Absolute index of the first resident item — non-zero once front pages are trimmed. */
@@ -92,7 +94,15 @@ export function ItemList({
     InventoryEmptyContext,
     'search' | 'visualSearch' | 'statusFilterCount' | 'categoryFilter' | 'tagFilterCount'
   >;
+  /**
+   * How many items match in total — a `COUNT(*)`, never the resident row count (issue #220) —
+   * so each card/row can announce "item 12 of 340" (issue #208). Omit it while the count is
+   * still loading; the list then reports an unknown set size rather than under-counting to the
+   * handful of rows virtualisation happens to have mounted.
+   */
+  totalCount?: number;
 }) {
+  const t = useT();
   const { columns, scrollRef: parentRef, setScrollEl } = useColumns(density);
   const isTable = density === 'table';
 
@@ -112,6 +122,13 @@ export function ItemList({
   // Absolute row count: the virtualizer indexes the full loaded-so-far span, so a
   // trimmed-off front page never shifts the rows the user is looking at.
   const rowCount = listRowCount(firstItemIndex, items.length, columns);
+  // The set size every list item announces. Prefer the true match total; without it, the loaded
+  // span is only the whole set once there is no further page to fetch, so otherwise say -1 —
+  // ARIA's "size unknown", which reads far better than a number that grows as the user scrolls.
+  // A total that lags the rows on screen (the count is a separate read, so it settles a beat
+  // later) is raised to the loaded span rather than announced below a position it contradicts.
+  const loadedCount = firstItemIndex + items.length;
+  const setSize = totalCount == null ? (hasNextPage ? -1 : loadedCount) : Math.max(totalCount, loadedCount);
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
@@ -179,11 +196,15 @@ export function ItemList({
       data-testid="item-list-scroll"
       // The Table view keeps its header above (a sibling) rather than scrolling with the body,
       // so its scroll box drops the top padding the card/row views use for hover-glow room.
-      role={isTable ? 'presentation' : undefined}
+      // Presentational in every density: the Table view re-parents its rows to the `role="table"`
+      // wrapper below, and the card/row views declare the list on the sized element inside — which
+      // keeps the "loading more" spinner, a sibling of that element, out of the list.
+      role="presentation"
       className={cn('min-h-0 flex-1 overflow-auto px-4 pb-4', isTable ? 'pt-0' : 'pt-2')}
     >
       <div
-        role={isTable ? 'presentation' : undefined}
+        role={isTable ? 'presentation' : 'list'}
+        aria-label={isTable ? undefined : t('inventory.list.label')}
         className="relative w-full"
         style={{ height: virtualizer.getTotalSize() }}
       >
@@ -201,7 +222,8 @@ export function ItemList({
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={virtualizer.measureElement}
-              role={isTable ? 'presentation' : undefined}
+              // Positioning only — the row's items re-parent to the `table`/`list` above.
+              role="presentation"
               className="absolute left-0 top-0 w-full"
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
@@ -228,6 +250,7 @@ export function ItemList({
                   ) : null
                 ) : (
                   <div
+                    role="presentation"
                     className={density === 'data' ? 'pb-1.5' : 'grid gap-4 pb-4'}
                     style={
                       density === 'data'
@@ -235,8 +258,11 @@ export function ItemList({
                         : { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
                     }
                   >
-                    {rowItems.map((item) => {
+                    {rowItems.map((item, column) => {
                       const selected = selectedIds?.has(item.id) ?? false;
+                      // 1-based absolute position: the resident window starts at `firstItemIndex`,
+                      // and `start` is this row's offset into it.
+                      const posInSet = firstItemIndex + start + column + 1;
                       return density === 'data' ? (
                         <ItemRow
                           key={item.id}
@@ -247,6 +273,8 @@ export function ItemList({
                           locationTintClass={locationTintClass?.(item.locationId)}
                           selection={selection}
                           selected={selected}
+                          ariaPosInSet={posInSet}
+                          ariaSetSize={setSize}
                           {...cardFieldProps(cardFields, item)}
                         />
                       ) : (
@@ -259,6 +287,8 @@ export function ItemList({
                           locationTintClass={locationTintClass?.(item.locationId)}
                           selection={selection}
                           selected={selected}
+                          ariaPosInSet={posInSet}
+                          ariaSetSize={setSize}
                           {...itemCardProps(cardFields, item)}
                         />
                       );
@@ -288,7 +318,7 @@ export function ItemList({
     return (
       <div
         role="table"
-        aria-label="Inventory items"
+        aria-label={t('inventory.list.label')}
         // Absolute row span (header + every virtual row), matching the absolute `aria-rowindex`
         // each row carries — so a front-trimmed page at 100k+ scale doesn't under-count.
         aria-rowcount={rowCount + 1}

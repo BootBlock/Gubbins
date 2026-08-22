@@ -282,6 +282,22 @@ describe('ItemCard — content branches', () => {
     expect(checkbox.checked).toBe(true);
   });
 
+  // Issue #208: the card is one item of a virtualised grid, so it must say where it sits in the
+  // whole result set — the DOM only ever holds a screenful of cards.
+  it('is a list item carrying its absolute position and set size', () => {
+    renderCard(makeItem(), { ariaPosInSet: 12, ariaSetSize: 340 });
+    const root = screen.getByRole('listitem');
+    expect(root).toHaveAttribute('aria-posinset', '12');
+    expect(root).toHaveAttribute('aria-setsize', '340');
+  });
+
+  it('omits the position attributes entirely when it is rendered outside a counted list', () => {
+    renderCard(makeItem());
+    const root = screen.getByRole('listitem');
+    expect(root).not.toHaveAttribute('aria-posinset');
+    expect(root).not.toHaveAttribute('aria-setsize');
+  });
+
   it('renders the configured card fields (E1): condition, total value and a custom field', () => {
     const customFields = new Map([
       [
@@ -441,6 +457,24 @@ describe('ItemCard — crash containment (issue #313)', () => {
     // …and the healthy sibling beside it is untouched.
     expect(screen.getByRole('heading', { name: /NE555 timer/ })).not.toBeNull();
     expect(container.querySelectorAll('[data-testid="item-crashed"]')).toHaveLength(1);
+  });
+
+  // Issue #208: a crashed card must still count as one item at its own position, or the list
+  // would renumber itself around the hole.
+  it('keeps the crashed stand-in a list item at its absolute position', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(
+      <ItemCard
+        item={poisonedItem()}
+        locations={[]}
+        locationName="Workshop"
+        ariaPosInSet={12}
+        ariaSetSize={340}
+      />,
+    );
+    const root = screen.getByRole('listitem');
+    expect(root).toHaveAttribute('aria-posinset', '12');
+    expect(root).toHaveAttribute('aria-setsize', '340');
   });
 });
 

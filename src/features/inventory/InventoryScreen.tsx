@@ -1306,6 +1306,11 @@ function InventoryWorkspace() {
                   <ItemList
                     items={flatItems}
                     firstItemIndex={firstItemIndex}
+                    // The true match total, so each card/row announces "item 12 of 340" even though
+                    // only a screenful is mounted (issue #208). Left undefined while the count is
+                    // still resolving, and in paginated mode — there the list *is* the page, so its
+                    // own resident rows are the honest set size.
+                    totalCount={paginated ? undefined : resultCount.data}
                     locations={flatLocations}
                     density={density}
                     selectedLocationId={selectedLocationId}

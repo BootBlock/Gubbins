@@ -11,6 +11,7 @@ import type {
   LowStockThresholds,
 } from '@/db/repositories';
 import { DEFAULT_PAGE_SIZE } from '@/db/repositories/constants';
+import { useT } from '@/features/i18n';
 import { useLayoutStore, type ItemDensity } from '@/state/stores/useLayoutStore';
 import { pruneArchivedTree } from '../location-tree';
 import { useItemFieldValues } from '../categories';
@@ -242,6 +243,7 @@ function SectionItems({
   readonly isLeaf: boolean;
   readonly scrollRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const t = useT();
   // The ordering axis (issue #128) is read straight from the layout store rather than drilled
   // through the section tree: it is one global choice that every section obeys, and each section
   // owns its own query, so there is nothing for a parent to coordinate.
@@ -324,6 +326,11 @@ function SectionItems({
     ) : null;
   }
 
+  // Every section is its own list, so each one is named by its location — several sections are
+  // open at once by default, and a run of identically-named lists gives assistive tech no way to
+  // tell the Workshop list from the Garage one.
+  const listLabel = t('inventory.list.sectionLabel', { vars: { location: locationName(locationId) } });
+
   // Past its first page a section is large enough that mounting every card is the problem the
   // flat list already solved (issue #171), so its body switches to the virtualiser. Trimmed-off
   // front pages force the same choice: only absolute indexing renders them without jumping.
@@ -333,6 +340,8 @@ function SectionItems({
         <VirtualSectionBody
           items={items}
           firstItemIndex={firstItemIndex}
+          hasNextPage={hasNextPage}
+          listLabel={listLabel}
           density={density}
           scrollRef={scrollRef}
           locations={locations}
@@ -357,11 +366,17 @@ function SectionItems({
     );
   }
 
+  // A section has no `COUNT(*)` of its own, so the loaded span is the whole set only once there
+  // is no further page to fetch; otherwise say -1 (ARIA's "size unknown") rather than a total
+  // that would grow as the user pages in more.
+  const sectionSetSize = hasNextPage ? -1 : items.length;
+
   return (
     <div className="pb-2 pl-6">
       {density === 'table' ? (
         <SectionTable
           items={items}
+          listLabel={listLabel}
           locations={locations}
           locationName={locationName}
           locationColorClass={locationColorClass}
@@ -372,6 +387,8 @@ function SectionItems({
         />
       ) : (
         <div
+          role="list"
+          aria-label={listLabel}
           className={density === 'data' ? 'flex flex-col gap-1.5' : 'grid gap-4'}
           style={
             density === 'data'
@@ -379,7 +396,7 @@ function SectionItems({
               : { gridTemplateColumns: `repeat(auto-fill, minmax(${VISUAL_CARD_MIN_WIDTH}px, 1fr))` }
           }
         >
-          {items.map((item) =>
+          {items.map((item, index) =>
             density === 'data' ? (
               <ItemRow
                 key={item.id}
@@ -390,6 +407,8 @@ function SectionItems({
                 locationTintClass={locationTintClass?.(item.locationId)}
                 selection={selection}
                 selected={selectedIds?.has(item.id) ?? false}
+                ariaPosInSet={index + 1}
+                ariaSetSize={sectionSetSize}
                 {...cardFieldProps(cardFields, item)}
               />
             ) : (
@@ -402,6 +421,8 @@ function SectionItems({
                 locationTintClass={locationTintClass?.(item.locationId)}
                 selection={selection}
                 selected={selectedIds?.has(item.id) ?? false}
+                ariaPosInSet={index + 1}
+                ariaSetSize={sectionSetSize}
                 {...itemCardProps(cardFields, item)}
               />
             ),
@@ -474,6 +495,8 @@ function SectionPager({
 function VirtualSectionBody({
   items,
   firstItemIndex,
+  hasNextPage,
+  listLabel,
   density,
   scrollRef,
   locations,
@@ -489,6 +512,13 @@ function VirtualSectionBody({
 }: {
   readonly items: readonly Item[];
   readonly firstItemIndex: number;
+  /**
+   * Whether the section has a further page to load — it decides whether the set size the rows
+   * announce is the loaded span or "unknown" (issue #208).
+   */
+  readonly hasNextPage: boolean;
+  /** This section's accessible name — "Items in <location>" (issue #208). */
+  readonly listLabel: string;
   readonly density: ItemDensity;
   readonly scrollRef: React.RefObject<HTMLDivElement | null>;
   readonly locations: readonly LocationWithCount[];
@@ -508,6 +538,9 @@ function VirtualSectionBody({
   const scrollMargin = useSectionScrollMargin(scrollRef, bodyRef);
 
   const rowCount = listRowCount(firstItemIndex, items.length, columns);
+  // Matches the plain section body: the loaded span is the whole set only once no further page
+  // remains; otherwise -1, ARIA's "size unknown".
+  const setSize = hasNextPage ? -1 : firstItemIndex + items.length;
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
@@ -543,7 +576,8 @@ function VirtualSectionBody({
   const body = (
     <div
       ref={bodyRef}
-      role={isTable ? 'presentation' : undefined}
+      role={isTable ? 'presentation' : 'list'}
+      aria-label={isTable ? undefined : listLabel}
       data-testid="location-section-virtual-body"
       className="relative w-full"
       style={{ height: virtualizer.getTotalSize() }}
@@ -562,7 +596,8 @@ function VirtualSectionBody({
             key={virtualRow.key}
             data-index={virtualRow.index}
             ref={virtualizer.measureElement}
-            role={isTable ? 'presentation' : undefined}
+            // Positioning only — the row's items re-parent to the `table`/`list` above.
+            role="presentation"
             className="absolute left-0 top-0 w-full"
             style={{ transform: `translateY(${virtualRow.start - scrollMargin}px)` }}
           >
@@ -591,6 +626,7 @@ function VirtualSectionBody({
               ) : null
             ) : (
               <div
+                role="presentation"
                 className={density === 'data' ? 'pb-1.5' : 'grid gap-4 pb-4'}
                 style={
                   density === 'data'
@@ -598,7 +634,7 @@ function VirtualSectionBody({
                     : { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
                 }
               >
-                {rowItems.map((item) =>
+                {rowItems.map((item, column) =>
                   density === 'data' ? (
                     <ItemRow
                       key={item.id}
@@ -609,6 +645,8 @@ function VirtualSectionBody({
                       locationTintClass={locationTintClass?.(item.locationId)}
                       selection={selection}
                       selected={selectedIds?.has(item.id) ?? false}
+                      ariaPosInSet={firstItemIndex + start + column + 1}
+                      ariaSetSize={setSize}
                       {...cardFieldProps(cardFields, item)}
                     />
                   ) : (
@@ -621,6 +659,8 @@ function VirtualSectionBody({
                       locationTintClass={locationTintClass?.(item.locationId)}
                       selection={selection}
                       selected={selectedIds?.has(item.id) ?? false}
+                      ariaPosInSet={firstItemIndex + start + column + 1}
+                      ariaSetSize={setSize}
                       {...itemCardProps(cardFields, item)}
                     />
                   ),
@@ -638,7 +678,7 @@ function VirtualSectionBody({
   // A spreadsheet table: the column header sits above the virtualised body, and the
   // intermediate wrappers are `role="presentation"` so the rows re-parent to this `role="table"`.
   return (
-    <div role="table" aria-label="Items in this location" aria-rowcount={rowCount + 1}>
+    <div role="table" aria-label={listLabel} aria-rowcount={rowCount + 1}>
       <ItemTableHeader columns={tableColumns} selecting={selecting} gridTemplate={tableGrid} />
       <div role="rowgroup">{body}</div>
     </div>
@@ -751,6 +791,7 @@ function useSectionScrollMargin(
  */
 function SectionTable({
   items,
+  listLabel,
   locations,
   locationName,
   locationColorClass,
@@ -760,6 +801,8 @@ function SectionTable({
   cardFields,
 }: {
   readonly items: readonly Item[];
+  /** This section's accessible name — "Items in <location>" (issue #208). */
+  readonly listLabel: string;
   readonly locations: readonly LocationWithCount[];
   readonly locationName: (id: string) => string;
   readonly locationColorClass?: (id: string) => string | undefined;
@@ -771,7 +814,7 @@ function SectionTable({
   const selecting = selection != null;
   const { columns, columnIds, gridTemplate } = useTableColumnModel(cardFields, selecting);
   return (
-    <div role="table" aria-label="Items in this location" aria-rowcount={items.length + 1}>
+    <div role="table" aria-label={listLabel} aria-rowcount={items.length + 1}>
       <ItemTableHeader columns={columns} selecting={selecting} gridTemplate={gridTemplate} />
       <div role="rowgroup">
         {items.map((item, i) => (
