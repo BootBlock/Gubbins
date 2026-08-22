@@ -107,6 +107,26 @@ describe('repairSnapshotIntegrity (issue #405)', () => {
     expect(result.tables.items?.[0]?.location_id).toBe(UNASSIGNED_LOCATION_ID);
   });
 
+  it('clears a variant link whose base item is absent instead of dropping the variant', () => {
+    // Issue #602: `items.parent_id` is a nullable self-reference, exposed to exactly the mid-read
+    // miss `locations.parent_id` already covered. The variant is real inventory, so the link goes
+    // and the item stays standalone.
+    const result = repairSnapshotIntegrity(
+      snapshot({ tables: { items: [item('i-1', { parent_id: 'i-base-late' })], locations: [] } }),
+    );
+
+    expect(result.tables.items).toHaveLength(1);
+    expect(result.tables.items?.[0]?.parent_id).toBeNull();
+  });
+
+  it('keeps a variant link whose base item is present in the same table', () => {
+    const result = repairSnapshotIntegrity(
+      snapshot({ tables: { items: [item('i-base'), item('i-1', { parent_id: 'i-base' })], locations: [] } }),
+    );
+
+    expect(result.tables.items?.[1]?.parent_id).toBe('i-base');
+  });
+
   it('cascades a drop down a two-deep chain in a single pass', () => {
     // locations → location_photos → location_regions. The photo's location is absent, so the
     // photo goes; the region hanging off that photo must go with it, not dangle one level down.
