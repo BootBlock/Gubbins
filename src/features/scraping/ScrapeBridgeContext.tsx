@@ -27,6 +27,7 @@ import {
   initialBridgeState,
   pendingScrapeCount,
   type IncomingScrapeState,
+  type BridgeAction,
   type ProductLookupState,
   type ScrapeRequestState,
 } from './bridge-reducer';
@@ -107,6 +108,9 @@ export const DATA_FETCH_TIMEOUT_MS = 20_000;
  */
 export const BRIDGE_REQUEST_TIMEOUT_MS = 30_000;
 
+/** Which of the two correlated request maps a deadline belongs to. */
+type TrackedKind = 'scrape' | 'lookup';
+
 /** The §9.4.2 error a request is settled with when nothing ever answered it. */
 function timedOut(domain: string): ScrapeErrorPayload {
   return {
@@ -131,15 +135,36 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
   // the reducer would re-render every bridge consumer for an outcome nothing displays.
   const pendingDataFetches = useRef(new Map<string, PendingDataFetch>());
   // Deadline timers for tracked scrapes/lookups, keyed by the same `requestId` the reducer uses.
-  // A ref for the same reason: arming and disarming a timer is not a render.
-  const requestTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // A ref for the same reason: arming and disarming a timer is not a render. The `kind` rides
+  // along because the reducer routes a reply by kind *and* id, and a disarm that ignored the kind
+  // would not match it: a SCRAPE_RESULT stamped with a lookup's id would cancel that lookup's
+  // deadline while the reducer, finding no such scrape, dropped the reply — leaving the lookup
+  // pending forever with nothing left to rescue it, which is the hang this whole guard removes.
+  const requestTimers = useRef(
+    new Map<string, { kind: TrackedKind; timer: ReturnType<typeof setTimeout> }>(),
+  );
 
-  /** Stop a request's deadline — it settled, or it was cleared before the deadline arrived. */
-  const disarm = useCallback((id: string) => {
-    const timer = requestTimers.current.get(id);
-    if (timer === undefined) return;
-    clearTimeout(timer);
+  /**
+   * Stop a request's deadline — it settled, or it was cleared before the deadline arrived.
+   * Silently ignores an id this kind has no deadline for, so a stale or cross-kind reply
+   * cannot cancel a guard that is still the only thing standing behind its request.
+   */
+  const disarm = useCallback((id: string, kind: TrackedKind) => {
+    const entry = requestTimers.current.get(id);
+    if (entry === undefined || entry.kind !== kind) return;
+    clearTimeout(entry.timer);
     requestTimers.current.delete(id);
+  }, []);
+
+  /** Arm one request's deadline, dispatching `expired` if nothing answers in time. */
+  const arm = useCallback((id: string, kind: TrackedKind, expired: BridgeAction) => {
+    requestTimers.current.set(id, {
+      kind,
+      timer: setTimeout(() => {
+        requestTimers.current.delete(id);
+        dispatch(expired);
+      }, BRIDGE_REQUEST_TIMEOUT_MS),
+    });
   }, []);
 
   // Settle every outstanding data fetch on unmount, so an awaiting caller can never be left
@@ -154,7 +179,7 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
       }
       pending.clear();
       // Nothing is left to render an expiry into, so the deadlines just go with the provider.
-      for (const timer of timers.values()) clearTimeout(timer);
+      for (const entry of timers.values()) clearTimeout(entry.timer);
       timers.clear();
     };
   }, []);
@@ -172,21 +197,22 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'READY' });
           break;
         case 'SCRAPE_RESULT':
-          // Correlate by requestId — the reducer ignores a stale/foreign id (§9). Disarming an
-          // unknown id is a no-op, so a foreign echo cannot cancel anyone else's deadline.
-          disarm(msg.requestId);
+          // Correlate by requestId — the reducer ignores a stale/foreign id (§9). The disarm is
+          // correlated the same way, by kind *and* id, so a foreign or mis-kinded echo cannot
+          // cancel a deadline the reducer will then decline to settle.
+          disarm(msg.requestId, 'scrape');
           dispatch({ type: 'RESULT', id: msg.requestId, payload: msg.payload });
           break;
         case 'SCRAPE_ERROR':
-          disarm(msg.requestId);
+          disarm(msg.requestId, 'scrape');
           dispatch({ type: 'ERROR', id: msg.requestId, payload: msg.payload });
           break;
         case 'PRODUCT_LOOKUP_RESULT':
-          disarm(msg.requestId);
+          disarm(msg.requestId, 'lookup');
           dispatch({ type: 'LOOKUP_RESULT', id: msg.requestId, payload: msg.payload });
           break;
         case 'PRODUCT_LOOKUP_ERROR':
-          disarm(msg.requestId);
+          disarm(msg.requestId, 'lookup');
           dispatch({ type: 'LOOKUP_ERROR', id: msg.requestId, payload: msg.payload });
           break;
         case 'ACTIVE_TAB_RESULT':
@@ -228,49 +254,43 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('message', onMessage);
   }, [disarm]);
 
-  const requestScrape = useCallback((url: string) => {
-    const id = crypto.randomUUID();
-    dispatch({ type: 'REQUEST', id, url });
-    // Armed before the message goes out, so a peer that never answers is still bounded. The
-    // host is the one thing the user can recognise in the toast; an unparseable target has
-    // none, so the raw text they gave stands in for it.
-    requestTimers.current.set(
-      id,
-      setTimeout(() => {
-        requestTimers.current.delete(id);
-        dispatch({ type: 'ERROR', id, payload: timedOut(hostOf(url) || url) });
-      }, BRIDGE_REQUEST_TIMEOUT_MS),
-    );
-    window.postMessage(makeMessage('SCRAPE_REQUEST', { url }, id), window.location.origin);
-    return id;
-  }, []);
+  const requestScrape = useCallback(
+    (url: string) => {
+      const id = crypto.randomUUID();
+      dispatch({ type: 'REQUEST', id, url });
+      // Armed before the message goes out, so a peer that never answers is still bounded. The
+      // host is the one thing the user can recognise in the toast; an unparseable target has
+      // none, so the raw text they gave stands in for it.
+      arm(id, 'scrape', { type: 'ERROR', id, payload: timedOut(hostOf(url) || url) });
+      window.postMessage(makeMessage('SCRAPE_REQUEST', { url }, id), window.location.origin);
+      return id;
+    },
+    [arm],
+  );
 
   const clear = useCallback(
     (id: string) => {
-      disarm(id);
+      disarm(id, 'scrape');
       dispatch({ type: 'CLEAR', id });
     },
     [disarm],
   );
 
-  const requestLookup = useCallback((gtin: string) => {
-    const id = crypto.randomUUID();
-    dispatch({ type: 'LOOKUP_REQUEST', id, gtin });
-    // A lookup names no URL, so the database it would have queried is the domain to report.
-    requestTimers.current.set(
-      id,
-      setTimeout(() => {
-        requestTimers.current.delete(id);
-        dispatch({ type: 'LOOKUP_ERROR', id, payload: timedOut(OPEN_FOOD_FACTS_HOST) });
-      }, BRIDGE_REQUEST_TIMEOUT_MS),
-    );
-    window.postMessage(makeMessage('PRODUCT_LOOKUP_REQUEST', { gtin }, id), window.location.origin);
-    return id;
-  }, []);
+  const requestLookup = useCallback(
+    (gtin: string) => {
+      const id = crypto.randomUUID();
+      dispatch({ type: 'LOOKUP_REQUEST', id, gtin });
+      // A lookup names no URL, so the database it would have queried is the domain to report.
+      arm(id, 'lookup', { type: 'LOOKUP_ERROR', id, payload: timedOut(OPEN_FOOD_FACTS_HOST) });
+      window.postMessage(makeMessage('PRODUCT_LOOKUP_REQUEST', { gtin }, id), window.location.origin);
+      return id;
+    },
+    [arm],
+  );
 
   const clearLookup = useCallback(
     (id: string) => {
-      disarm(id);
+      disarm(id, 'lookup');
       dispatch({ type: 'LOOKUP_CLEAR', id });
     },
     [disarm],

@@ -35,6 +35,15 @@ function expire(): void {
   });
 }
 
+/**
+ * How many timers are pending. Reducer state cannot show a *cancelled* deadline — the reducer
+ * declines a late settle anyway — so a disarm is only observable here. Without this, a test that
+ * removed every `disarm` call would still pass.
+ */
+function armedDeadlines(): number {
+  return vi.getTimerCount();
+}
+
 let post: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -81,11 +90,12 @@ describe('scrape request deadline', () => {
     expect(bridge.requests[id]?.error?.domain).toBe('digikey.co.uk/product/123');
   });
 
-  it('does not disturb a scrape that answered before its deadline', () => {
+  it('disarms the deadline of a scrape that answered, and leaves its outcome alone', () => {
     let id = '';
     act(() => {
       id = bridge.requestScrape(SUPPLIER_URL);
     });
+    expect(armedDeadlines()).toBe(1);
     deliver(
       makeMessage(
         'SCRAPE_RESULT',
@@ -100,6 +110,8 @@ describe('scrape request deadline', () => {
       ),
     );
     expect(bridge.requests[id]?.status).toBe('SUCCESS');
+    // The reply cancelled the deadline rather than leaving it to fire into a settled entry.
+    expect(armedDeadlines()).toBe(0);
 
     expire();
 
@@ -112,11 +124,14 @@ describe('scrape request deadline', () => {
     act(() => {
       id = bridge.requestScrape(SUPPLIER_URL);
     });
+    expect(armedDeadlines()).toBe(1);
     act(() => {
       bridge.clear(id);
     });
+    // Clearing an abandoned request takes its deadline with it, rather than leaving a timer to
+    // fire minutes later into a provider that no longer tracks it.
+    expect(armedDeadlines()).toBe(0);
     expire();
-    // A re-armed entry would be the failure — the cleared id must not come back as an error.
     expect(bridge.requests[id]).toBeUndefined();
   });
 });
@@ -136,7 +151,7 @@ describe('product lookup deadline', () => {
     expect(bridge.lookups[id]?.error?.domain).toBe(OPEN_FOOD_FACTS_HOST);
   });
 
-  it('does not disturb a lookup that answered before its deadline', () => {
+  it('disarms the deadline of a lookup that answered, and leaves its outcome alone', () => {
     let id = '';
     act(() => {
       id = bridge.requestLookup('4006381333931');
@@ -148,7 +163,38 @@ describe('product lookup deadline', () => {
         id,
       ),
     );
+    expect(armedDeadlines()).toBe(0);
     expire();
     expect(bridge.lookups[id]?.error?.error_type).toBe('NOT_FOUND');
+  });
+
+  it('keeps the deadline when a reply of the wrong kind carries the id', () => {
+    // The reducer routes a reply by kind *and* id, so a SCRAPE_RESULT bearing a lookup's id
+    // settles nothing. A disarm matching on the id alone would still cancel that lookup's
+    // deadline, leaving it pending forever — the very hang the deadline exists to prevent.
+    let id = '';
+    act(() => {
+      id = bridge.requestLookup('4006381333931');
+    });
+    deliver(
+      makeMessage(
+        'SCRAPE_RESULT',
+        {
+          mpn: 'ABC-123',
+          manufacturer: 'Acme',
+          description: 'A part',
+          distributor_url: SUPPLIER_URL,
+          scraped_pricing: null,
+        },
+        id,
+      ),
+    );
+    expect(bridge.lookups[id]?.status).toBe('LOOKING_UP');
+    expect(armedDeadlines()).toBe(1);
+
+    expire();
+
+    expect(bridge.lookups[id]?.status).toBe('ERROR');
+    expect(bridge.lookups[id]?.error?.error_type).toBe('NETWORK_TIMEOUT');
   });
 });
