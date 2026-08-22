@@ -17,14 +17,8 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories/tombstone';
 import { reconcile } from './reconcile';
-import {
-  applyPlan,
-  buildCloneStatements,
-  buildLocalSnapshot,
-  restoreSnapshot,
-  withCaptureDisabled,
-  withDeferredForeignKeys,
-} from './snapshot';
+import { applyPlan, buildLocalSnapshot, restoreSnapshot } from './snapshot';
+import { runSnapshotMerge } from './merge';
 import { buildSchemaDictionary } from './schema-dictionary';
 import type { SyncSnapshot } from './types';
 
@@ -170,17 +164,23 @@ describe('a self-referencing row applied before its parent (issue #602)', () => 
   });
 
   it('clones a remote snapshot carrying a location tree and an item variant', async () => {
+    // The §7.2 tombstone-TTL clone, driven through its real entry point rather than by
+    // re-composing the builder here — the destructive "Replace" restore wipes and clones the
+    // same statements the same way.
     const remote = await peerSnapshot(async (d) => {
       await seedLocationTree(d);
       await seedItemVariant(d);
     });
-    const dictionary = await dictionaryFor(driver);
 
-    // The composition both clone callers use — the §7.2 TTL clone-with-salvage and the
-    // destructive "Replace" restore.
-    await driver.transaction(
-      withDeferredForeignKeys(withCaptureDisabled(buildCloneStatements(remote, dictionary))),
-    );
+    await runSnapshotMerge(driver, {
+      mode: 'clone',
+      remote,
+      offset: 0,
+      effectiveNow: 2000,
+      lastSyncTimestamp: 2000,
+      historyPrunedBefore: 0,
+      forceTies: false,
+    });
 
     expect(await parentOf('locations', CHILD_LOCATION)).toBe(PARENT_LOCATION);
     expect(await parentOf('items', VARIANT_ITEM)).toBe(BASE_ITEM);

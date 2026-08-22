@@ -704,8 +704,12 @@ export function withCaptureDisabled(statements: readonly SqlStatement[]): SqlSta
  * to produce rather than a half-applied one. The same pragma guards the danger-zone erase
  * (`features/danger-zone/erase-actions.ts`) for the same reason.
  *
- * `RESTRICT` actions are **not** deferrable (SQLite raises them as soon as the row is touched), so
- * the explicit null-outs and re-homes the location-delete path already performs stay load-bearing.
+ * Every reference in the batch moves to that one check, which is why the explicit null-outs and
+ * re-homes the location-delete path performs are as necessary as they ever were. A checkout or a
+ * maintenance schedule still pointing at a removed location no longer fails on the DELETE; it
+ * fails at COMMIT instead. Clearing the pointer is what makes the batch consistent, and nothing
+ * here replaces it.
+ *
  * SQLite resets the pragma to OFF at the end of every transaction, so there is nothing to undo.
  */
 export function withDeferredForeignKeys(statements: readonly SqlStatement[]): SqlStatement[] {
