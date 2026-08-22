@@ -103,7 +103,7 @@ async function smokeMcp() {
         return; // ignore any non-JSON noise on stdout
       }
       if (msg.id != null) responses.set(msg.id, msg);
-      if (responses.has(1) && responses.has(2) && responses.has(3)) resolve();
+      if (responses.has(1) && responses.has(2) && responses.has(3) && responses.has(4)) resolve();
     });
   });
 
@@ -121,6 +121,14 @@ async function smokeMcp() {
       method: 'tools/call',
       params: { name: 'gubbins_search', arguments: { q: 'esp32' } },
     },
+    // A revision the server does not implement: it must name one it does, not echo this back
+    // (issue #568). Sent last so the two handshakes cannot be confused for one another.
+    {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'initialize',
+      params: { protocolVersion: '2099-01-01', capabilities: {} },
+    },
   ];
   child.stdin.write(requests.map((r) => JSON.stringify(r)).join('\n') + '\n');
 
@@ -135,6 +143,13 @@ async function smokeMcp() {
   if (init?.serverInfo?.name !== 'gubbins-bridge-mcp') {
     fail(`initialize returned unexpected serverInfo: ${JSON.stringify(init?.serverInfo)}`);
   }
+  if (init?.protocolVersion !== '2024-11-05') {
+    fail(`initialize did not agree to the supported revision: ${JSON.stringify(init?.protocolVersion)}`);
+  }
+  const unsupported = responses.get(4)?.result;
+  if (unsupported?.protocolVersion === '2099-01-01' || typeof unsupported?.protocolVersion !== 'string') {
+    fail(`initialize echoed an unsupported protocol version: ${JSON.stringify(unsupported)}`);
+  }
   const tools = responses.get(2)?.result?.tools;
   if (!Array.isArray(tools) || tools.length < 6) {
     fail(`tools/list returned ${Array.isArray(tools) ? tools.length : 'no'} tools (expected >= 6)`);
@@ -144,7 +159,10 @@ async function smokeMcp() {
   if (search?.isError !== false || !Array.isArray(matches) || matches.length === 0) {
     fail(`gubbins_search over the fixture returned no matches (${JSON.stringify(search)?.slice(0, 200)})`);
   }
-  log(`mcp.mjs OK — ${tools.length} tools; gubbins_search matched "${matches[0].name}".`);
+  log(
+    `mcp.mjs OK — ${tools.length} tools; gubbins_search matched "${matches[0].name}"; ` +
+      `an unsupported revision was answered with ${unsupported.protocolVersion}.`,
+  );
 }
 
 /**

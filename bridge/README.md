@@ -1173,6 +1173,15 @@ writes)` when the write opt-in is on. A missing snapshot file is
 loaded yet" message until the file appears, so you can wire everything up before the first
 sync has written `gubbins-sync.json`.
 
+### Protocol revisions
+
+The server implements MCP **`2024-11-05`**, **`2025-03-26`** and **`2025-06-18`**, and negotiates
+in the ordinary way: it agrees to the revision your client asks for when it is one of those, and
+otherwise replies with the newest it implements (`2025-06-18`) for the client to accept or
+disconnect on. It does not echo an unrecognised revision back, so a mismatch surfaces at the
+handshake rather than as a tool that half-works later. The one thing it does not implement is
+JSON-RPC batching, which the two older revisions permit and `2025-06-18` removed.
+
 ### Tools
 
 These six tools are **read-only** and always present. Each returns both human-readable `text`
