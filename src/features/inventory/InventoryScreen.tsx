@@ -56,7 +56,8 @@ import {
   useViewTransitionsEnabled,
   withViewTransition,
 } from '@/components/foundry';
-import { AuditDayDialog, CycleCountDialog } from '@/features/lifecycle';
+import { AuditDayDialog } from '@/features/lifecycle/components/AuditDayDialog';
+import { CycleCountDialog } from '@/features/lifecycle/components/CycleCountDialog';
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import type { ProductLookupResultPayload } from '@/features/scraping';
 import { ExportWizard } from '@/features/export/ExportWizard';

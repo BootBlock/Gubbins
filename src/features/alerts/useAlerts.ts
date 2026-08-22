@@ -13,7 +13,7 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getItemRepository } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
-import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/features/lifecycle';
+import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/features/lifecycle/hooks';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
