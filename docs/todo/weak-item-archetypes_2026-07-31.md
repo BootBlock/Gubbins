@@ -570,14 +570,18 @@ label-and-control pair, so the unit has to travel with the value. The table keep
 in its header for the same reason — the cell carries the unit, so a table agrees with the cards
 rather than needing a second rule.
 
-**The range is enforced in the pure seam, and only there.** A `NUMBER` *value* box is a Foundry
+**The save is gated in the pure seam, and only there.** A `NUMBER` *value* box is a Foundry
 `Input type="number"`, which delegates to the micro-calculator `NumberInput` — a `type="text"` field,
-because it must hold `/` and `*`. `min`/`max` on it would be inert attributes that are not even valid
-for a text input, so passing them would look like enforcement while doing nothing. `validateFieldValue`
-is the real gate; it already runs on every render of the item editor, so an out-of-range value shows
-its reason as the user types and blocks the save, and it covers a **location's** value on the same
-path (a location feeds every item inheriting it, so it must not be the one place a range is
-side-stepped).
+because it must hold `/` and `*`. `validateFieldValue` is the gate that blocks a save; it already
+runs on every render of the item editor, so an out-of-range value shows its reason as the user types,
+and it covers a **location's** value on the same path (a location feeds every item inheriting it, so
+it must not be the one place a range is side-stepped).
+
+Pass `min`/`max`/`step` on the box as well, though. They were inert on a text input when this was
+written; since issue #676 the control reads them itself and gives them the three jobs a native number
+field does — they bound the Up/Down stepper, they mark an out-of-range value `aria-invalid`, and they
+are announced through `role="spinbutton"`. They still do not block a save, so none of the above moves:
+they are the affordance and the announcement, and `validateFieldValue` remains the gate.
 
 **One thing the tests caught that types could not.** The range boxes in the *definition* editor are
 text inputs with `inputMode="decimal"`, not `type="number"`. A native number input reports `''` for

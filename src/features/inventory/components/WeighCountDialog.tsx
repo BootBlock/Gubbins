@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
-import { Banner, Button, FormField, Input, Modal } from '@/components/foundry';
+import { Banner, Button, FormField, Input, Modal, parseNumericText } from '@/components/foundry';
 import { ScaleIcon, WarningIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
 import { useT } from '@/features/i18n';
@@ -95,12 +95,17 @@ export function WeighCountDialog({
    * Resolve a pair of entered weights. Takes the raw text rather than reading state so the
    * Enter handler can pass the *live DOM values*: the calculator-enabled field rewrites itself
    * on Enter (`40+3` → `43`) and only then calls our `onKeyDown`, so React state is still one
-   * step behind at that moment. Reading state there would submit `Number.parseFloat('40+3')`
-   * — a silently truncated `40` — and write the wrong quantity.
+   * step behind at that moment. Reading state there would submit the truncated `40` from `40+3`
+   * and write the wrong quantity.
+   *
+   * The text is read through the shared {@link parseNumericText} seam rather than `parseFloat`,
+   * which stops at the first character it cannot use: `1.2.5` used to weigh in as `1.2` here
+   * while every other editor in the app refused it (issue #676).
    */
   const resolve = (grossText: string, tareText: string) => {
-    const grossGrams = toGrams(Number.parseFloat(grossText), weightUnit);
-    const tareGrams = tareText.trim() === '' ? 0 : toGrams(Number.parseFloat(tareText), weightUnit);
+    const grossGrams = toGrams(parseNumericText(grossText) ?? Number.NaN, weightUnit);
+    const tareGrams =
+      tareText.trim() === '' ? 0 : toGrams(parseNumericText(tareText) ?? Number.NaN, weightUnit);
     return {
       grossGrams,
       tareGrams,
@@ -264,7 +269,9 @@ export function WeighCountDialog({
               ) : null}
               <div className="mt-field-gap-compact">
                 <TarePresetPickerButton
-                  currentTareGrams={tare.trim() === '' ? null : toGrams(Number.parseFloat(tare), weightUnit)}
+                  currentTareGrams={
+                    tare.trim() === '' ? null : toGrams(parseNumericText(tare) ?? Number.NaN, weightUnit)
+                  }
                   onSelect={(grams) => {
                     setTare(tareFieldValue(grams, weightUnit));
                     // The value no longer came off the scale, so the "from the scale" note

@@ -16,6 +16,39 @@ reorder points, warranty windows, and the rest.
 If what you typed isn't a valid sum, the field is left exactly as you typed it — nothing is
 guessed or thrown away — so you can fix it and try again.
 
+## What a number box will accept
+
+A number box only takes characters a figure can contain: digits, a full stop for decimals, the
+operators listed below, and the `e` of an exponent. A letter, a symbol or a pasted line break
+simply does not appear as you type it, so `12kg` leaves `12` in the box. Enter the unit somewhere
+it belongs — a note, or the field's own unit setting — rather than in the figure.
+
+A **comma is the one exception**: it stays in the box and is reported as unusable rather than
+removed. `1,250` means one thousand two hundred and fifty in English and `250,00` means two
+hundred and fifty in German, so dropping the character would have to guess which you meant.
+Retype the figure with no separator, using a full stop for any decimals.
+
+## Staying inside the allowed range
+
+Many fields accept only part of the number line: a pack size is at least `1`, a percentage runs
+from `0` to `100`, a label is between `10 mm` and `300 mm` across.
+
+- **The arrow keys step the value.** Press **Up** or **Down** to move it by one step — or by the
+  field's own increment, such as `0.1` for a label size — and it stops at either end of the
+  range rather than running past it.
+- **The box itself does not rewrite what you type.** A figure outside the range is marked as
+  out of range and left alone, so working out `500/2` is the only thing that ever changes a
+  number you entered. Where a field also shows a message beneath it, that message explains what
+  is wrong.
+- **A few screens do settle a value for you.** Label sizes and some Settings thresholds bring an
+  out-of-range figure back to the nearest one they accept as you leave the box. Where that
+  happens you see the new figure straight away, before anything is saved.
+
+> **ℹ️ Note**
+> Some fields carry no message of their own, and simply keep their button unavailable until the
+> figure is one they can use. Check the range shown in the field's help if a button stays greyed
+> out.
+
 ## What you can type
 
 | You type | You get | Notes |
@@ -47,7 +80,12 @@ The feature is built to be usable by everyone:
   never hidden behind a hover.
 - The **worked-out result is announced** when the field settles, so you don't have to see the
   preview to know what it became.
-- Everything works from the keyboard — type the sum and press **Enter**.
+- Everything works from the keyboard — type the sum and press **Enter**, and use **Up** and
+  **Down** to step a field that has a range.
+- A field with a range reports that range to assistive technology, along with the value it
+  currently holds, so its limits are spoken rather than only shown.
+- A value outside the range is **marked as invalid** for assistive technology, so it is announced
+  and not only outlined.
 
 ## Related pages
 

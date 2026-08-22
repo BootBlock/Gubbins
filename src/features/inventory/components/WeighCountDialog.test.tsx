@@ -111,11 +111,20 @@ describe('WeighCountDialog (issue #101)', () => {
   });
 
   it('explains an unreadable entry rather than silently greying out Apply', () => {
+    // `1.2.5` rather than `abc`: a letter no longer reaches the field at all (issue #676), and
+    // `parseFloat` used to read this one as `1.2` here while every other editor refused it.
     render(<WeighCountDialog item={screws} open onClose={() => {}} />);
-    fireEvent.change(grossField(), { target: { value: 'abc' } });
+    fireEvent.change(grossField(), { target: { value: '1.2.5' } });
 
     expect(screen.getByRole('alert')).toHaveTextContent(/as a number/i);
     expect(screen.getByTestId('weigh-count-apply')).toBeDisabled();
+  });
+
+  it('refuses the letters outright rather than letting them become a reading (issue #676)', () => {
+    render(<WeighCountDialog item={screws} open onClose={() => {}} />);
+    fireEvent.change(grossField(), { target: { value: '12abc' } });
+
+    expect(grossField()).toHaveValue('12');
   });
 
   it('rejects a container heavier than the reading instead of counting zero', () => {

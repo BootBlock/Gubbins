@@ -26,6 +26,10 @@ export {
   formatCalcResult,
   type EvalResult,
 } from './evaluate-expression';
+// Only the parser is app-wide surface — a call site reading its own field's text needs the same
+// rules the control applies. The bound arithmetic beside it belongs to `NumberInput` alone, which
+// imports it directly, so exporting it here would make a private seam a public API with no caller.
+export { parseNumericText } from './numeric-bounds';
 export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';
 export {
   CurrencySelect,

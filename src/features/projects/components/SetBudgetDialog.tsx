@@ -64,7 +64,7 @@ export function SetBudgetDialog({
             ref={valueRef}
             type="number"
             min={0}
-            step="0.01"
+            step="any"
             inputMode="decimal"
             placeholder="e.g. 500"
             data-testid="budget-amount-input"

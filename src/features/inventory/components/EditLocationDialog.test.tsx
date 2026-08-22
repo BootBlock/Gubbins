@@ -473,7 +473,8 @@ describe('EditLocationDialog — saving', () => {
     expect(dialog().getByTestId('location-volume-preview')).toBeTruthy();
     // Typing rubbish keeps the stored value under the hood (so nothing is erased) but must not
     // leave a volume on screen that contradicts the "Enter a number." error beside the field.
-    fireEvent.change(dialog().getByTestId('location-width'), { target: { value: 'abc' } });
+    // `1.2.5` rather than `abc`: a letter no longer reaches the field at all (issue #676).
+    fireEvent.change(dialog().getByTestId('location-width'), { target: { value: '1.2.5' } });
     expect(dialog().queryByTestId('location-volume-preview')).toBeNull();
     expect(saveButton().disabled).toBe(true);
   });
