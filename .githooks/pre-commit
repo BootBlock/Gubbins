@@ -29,9 +29,10 @@ err() { printf '%spre-commit: %s%s\n' "$red" "$*" "$reset" >&2; }
 staged="$(git diff --cached --name-only --diff-filter=ACM)"
 
 # --- (a) Secret scan of the staged diff ------------------------------------------------
-# The credential patterns live in one place — `scripts/secret-scan.mjs` — so the hook and the
-# CI backstop can never drift apart. The script scans only ADDED lines and drops obvious
-# placeholders, and exits non-zero (printing the suspect lines) if anything looks credential-shaped.
+# The credential patterns live in one place — `scripts/secret-detect.mjs`, behind the
+# `scripts/secret-scan.mjs` entry point — so the hook and the CI backstop can never drift apart.
+# The script scans only ADDED lines, drops values that are obvious placeholders, and exits
+# non-zero (printing the suspect lines) if anything looks credential-shaped.
 if ! node scripts/secret-scan.mjs --staged; then
   note 'In a genuine emergency this check can be skipped with `git commit --no-verify`.'
   fail=1
