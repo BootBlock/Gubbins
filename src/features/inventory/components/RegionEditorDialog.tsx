@@ -19,7 +19,7 @@
  * *update*). One rule, no ambiguous state, and no way for a drag of an existing region to
  * silently duplicate it.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Autocomplete,
   Button,
@@ -112,6 +112,11 @@ export function RegionEditorDialog({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // The region a create just produced, so its name box can take focus with the placeholder name
+  // selected. Held as an *id* rather than a boolean because the request outlives the create: the
+  // panel only mounts once the refetched list carries the new row, so the id is what stops the
+  // request landing on whichever region happens to be selected when it does.
+  const [nameToFocusId, setNameToFocusId] = useState<string | null>(null);
 
   const rows = useMemo(() => regions ?? [], [regions]);
   const selected = rows.find((region) => region.id === selectedId) ?? null;
@@ -134,6 +139,10 @@ export function RegionEditorDialog({
   const select = (id: string | null) => {
     setTool('select');
     setSelectedId(id);
+    // Any deliberate selection supersedes a pending focus request. Without this the request could
+    // outlive the gap between the create and the list refetch — the user selects elsewhere, the
+    // panel never mounts to spend it, and it lies in wait to yank focus on some later click.
+    setNameToFocusId(null);
     const region = rows.find((r) => r.id === id);
     if (region) setAnnouncement(t('inventory.regions.selected', { vars: { name: region.name } }));
   };
@@ -141,6 +150,7 @@ export function RegionEditorDialog({
   /** Arming a drawing tool clears the selection, so a commit under it can only be a create. */
   const chooseTool = (next: DrawTool) => {
     setTool(next);
+    setNameToFocusId(null);
     if (next !== 'select') setSelectedId(null);
   };
 
@@ -161,6 +171,9 @@ export function RegionEditorDialog({
         onSuccess: (region) => {
           setTool('select');
           setSelectedId(region.id);
+          // A new region is born with a placeholder name that the user almost always replaces,
+          // so the box is focused with that name selected — typing overwrites it outright.
+          setNameToFocusId(region.id);
           setAnnouncement(t('inventory.regions.created', { vars: { name: region.name } }));
         },
         onError: onFailure,
@@ -288,6 +301,8 @@ export function RegionEditorDialog({
                   photoId={photo.id}
                   region={selected}
                   onError={onFailure}
+                  selectName={nameToFocusId === selected.id}
+                  onNameSelected={() => setNameToFocusId(null)}
                   onRename={(name) =>
                     updateRegion.mutate(
                       { id: selected.id, input: { name } },
@@ -416,6 +431,8 @@ function SelectedRegionEditor({
   onRename,
   onRecolour,
   onError,
+  selectName,
+  onNameSelected,
 }: {
   photoId: string;
   region: LocationRegionWithCount;
@@ -423,10 +440,24 @@ function SelectedRegionEditor({
   onRecolour: (color: string | null) => void;
   /** Surfaces a failed placement — otherwise the row simply never appears, with no reason given. */
   onError: (error: unknown) => void;
+  /** Focus the name box and select its text — set when this region was just created. */
+  selectName: boolean;
+  /** Clears the parent's request, so re-selecting this region later does not steal focus again. */
+  onNameSelected: () => void;
 }) {
   const t = useT();
   const [name, setName] = useState(region.name);
   const [picked, setPicked] = useState('');
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!selectName) return;
+    // Both calls, in this order: a selection in an unfocused control shows nothing and takes no
+    // keystrokes, so the focus is what makes the selection mean anything.
+    nameRef.current?.focus();
+    nameRef.current?.select();
+    onNameSelected();
+  }, [selectName, onNameSelected]);
 
   const { data: itemIds } = useRegionItemIds(region.id);
   const ids = useMemo(() => itemIds ?? [], [itemIds]);
@@ -486,6 +517,7 @@ function SelectedRegionEditor({
     <div className="space-y-3 rounded-lg border border-border p-3" data-testid="region-editor-panel">
       <FormField label={t('inventory.regions.nameLabel')}>
         <Input
+          ref={nameRef}
           value={name}
           onChange={(event) => setName(event.target.value)}
           onBlur={commitName}

@@ -46,8 +46,9 @@ door". Open a photo and choose a shape:
 | **Polygon** | Awkward areas — a corner, an L-shaped shelf, anything not a neat box |
 
 Draw by dragging on the photo (for a polygon, click each corner, then click the first point
-again to close it). Give the region a name, and optionally a colour so it stands out against
-the photo.
+again to close it). The **Region name** box takes focus with its placeholder name already
+selected, so you can type the real name straight away. Add a colour too, if you want the region
+to stand out against the photo.
 
 ![The region editor, with a rectangle drawn around the second bay of a shelving unit and named "Bay 2 — capacitors"](images/location-region-editor.png)
 

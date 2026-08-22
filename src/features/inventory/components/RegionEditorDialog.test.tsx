@@ -234,6 +234,91 @@ describe('RegionEditorDialog — creating a region', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Region “New region” created.');
   });
 
+  // A created region carries a placeholder name the user replaces immediately, so the box takes
+  // focus with that name selected — typing overwrites it without a select-all first.
+  it('focuses the name box with its placeholder name selected, ready to be typed over', () => {
+    h.addRegion.mockImplementation(
+      (_input: unknown, opts?: { onSuccess?: (r: { id: string; name: string }) => void }) => {
+        h.regions = [region({ id: 'new-1', name: 'New region' })];
+        opts?.onSuccess?.({ id: 'new-1', name: 'New region' });
+      },
+    );
+    renderDialog();
+    fireEvent.click(dialog().getByRole('button', { name: 'Add region' }));
+    const field = screen.getByLabelText('Region name') as HTMLInputElement;
+    expect(field).toHaveFocus();
+    expect(field.selectionStart).toBe(0);
+    expect(field.selectionEnd).toBe('New region'.length);
+  });
+
+  it('leaves focus alone when an existing region is selected from the list', () => {
+    h.regions = [region()];
+    renderDialog();
+    fireEvent.click(selectRow(0));
+    expect(screen.getByLabelText('Region name')).not.toHaveFocus();
+  });
+
+  // The request is spent on use, not latched to the region: re-selecting the same region later
+  // must not yank focus out of whatever the user was doing.
+  it('does not re-focus the name box when the created region is selected again', () => {
+    h.addRegion.mockImplementation(
+      (_input: unknown, opts?: { onSuccess?: (r: { id: string; name: string }) => void }) => {
+        h.regions = [region({ id: 'new-1', name: 'New region' })];
+        opts?.onSuccess?.({ id: 'new-1', name: 'New region' });
+      },
+    );
+    renderDialog();
+    fireEvent.click(dialog().getByRole('button', { name: 'Add region' }));
+    fireEvent.click(screen.getByTestId('region-tool-rect'));
+    expect(screen.queryByTestId('region-editor-panel')).not.toBeInTheDocument();
+    fireEvent.click(selectRow(0));
+    expect(screen.getByLabelText('Region name')).not.toHaveFocus();
+  });
+
+  // The panel can only mount once the refetched list carries the new row, so the focus request
+  // has to survive that gap rather than being spent on a panel that isn't there yet.
+  it('still focuses the name box when the created region arrives on a later render', () => {
+    h.addRegion.mockImplementation(
+      (_input: unknown, opts?: { onSuccess?: (r: { id: string; name: string }) => void }) => {
+        opts?.onSuccess?.({ id: 'new-1', name: 'New region' });
+      },
+    );
+    const { rerender } = renderDialog();
+    fireEvent.click(dialog().getByRole('button', { name: 'Add region' }));
+    expect(screen.queryByTestId('region-editor-panel')).not.toBeInTheDocument();
+
+    h.regions = [region({ id: 'new-1', name: 'New region' })];
+    rerender(
+      <ToastProvider>
+        <RegionEditorDialog open onClose={vi.fn()} photo={PHOTO} locationName="Workshop" />
+      </ToastProvider>,
+    );
+    expect(screen.getByLabelText('Region name')).toHaveFocus();
+  });
+
+  // …but it must not lie in wait. Selecting something else inside that gap is the user saying they
+  // have moved on, and the request would otherwise steal focus on an ordinary click much later.
+  it('drops the focus request when the user selects another region before the new one arrives', () => {
+    h.regions = [region({ id: 'r1', name: 'Top shelf' })];
+    h.addRegion.mockImplementation(
+      (_input: unknown, opts?: { onSuccess?: (r: { id: string; name: string }) => void }) => {
+        opts?.onSuccess?.({ id: 'new-1', name: 'New region' });
+      },
+    );
+    const { rerender } = renderDialog();
+    fireEvent.click(dialog().getByRole('button', { name: 'Add region' }));
+    fireEvent.click(selectRow(0));
+
+    h.regions = [region({ id: 'r1', name: 'Top shelf' }), region({ id: 'new-1', name: 'New region' })];
+    rerender(
+      <ToastProvider>
+        <RegionEditorDialog open onClose={vi.fn()} photo={PHOTO} locationName="Workshop" />
+      </ToastProvider>,
+    );
+    fireEvent.click(selectRow(1));
+    expect(screen.getByLabelText('Region name')).not.toHaveFocus();
+  });
+
   it('clears the selection when a drawing tool is armed, so a drag cannot duplicate a region', () => {
     h.regions = [region()];
     renderDialog();
