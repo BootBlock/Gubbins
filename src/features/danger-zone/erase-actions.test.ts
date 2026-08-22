@@ -412,6 +412,31 @@ describe('eraseTargets (memory-driver integration)', () => {
       expect(p.local.getItem('gubbins:keep')).toBe('1');
     });
 
+    it('bridge-token strips only that field, keeping the rest of the blob and its version', async () => {
+      const blob = JSON.stringify({
+        state: { bridgeToken: 'example-bridge-token', bridgeUrl: 'http://127.0.0.1:8787', mode: 'dark' },
+        version: 3,
+      });
+      const p = ports({ 'gubbins:preferences': blob });
+
+      await eraseTargets(['bridge-token'], { tombstone: false }, p);
+
+      const after = JSON.parse(p.local.getItem('gubbins:preferences') as string);
+      expect(after.state).toEqual({ bridgeUrl: 'http://127.0.0.1:8787', mode: 'dark' });
+      // The envelope has to survive, or the next load migrates a v3 blob as though it were v0.
+      expect(after.version).toBe(3);
+    });
+
+    it('bridge-token leaves an absent or unparseable preferences blob alone', async () => {
+      const missing = ports({});
+      await eraseTargets(['bridge-token'], { tombstone: false }, missing);
+      expect(missing.local.getItem('gubbins:preferences')).toBeNull();
+
+      const corrupt = ports({ 'gubbins:preferences': 'not json' });
+      await eraseTargets(['bridge-token'], { tombstone: false }, corrupt);
+      expect(corrupt.local.getItem('gubbins:preferences')).toBe('not json');
+    });
+
     it('sync-links deletes gubbins-fs, clears tombstones and zeroes the sync cursor', async () => {
       // Seed a tombstone + non-zero sync cursor.
       await exec("INSERT INTO tombstones (table_name, id) VALUES ('items', 'x');");
@@ -459,5 +484,19 @@ describe('countTargets', () => {
     const counts = await countTargets(['items', 'preferences'], { db: driver, local });
     expect(counts.items).toBe(1);
     expect(counts.preferences).toBe(1);
+  });
+
+  it('counts a preference-field target only while the field actually holds something', async () => {
+    const blob = (state: Record<string, unknown>) => JSON.stringify({ state, version: 3 });
+
+    const set = fakeStorage({ 'gubbins:preferences': blob({ bridgeToken: 'example-bridge-token' }) });
+    expect((await countTargets(['bridge-token'], { db: driver, local: set }))['bridge-token']).toBe(1);
+
+    // Empty (and whitespace-only) is the "never configured" state, not a stored credential.
+    const blank = fakeStorage({ 'gubbins:preferences': blob({ bridgeToken: '  ' }) });
+    expect((await countTargets(['bridge-token'], { db: driver, local: blank }))['bridge-token']).toBe(0);
+
+    const none = fakeStorage({});
+    expect((await countTargets(['bridge-token'], { db: driver, local: none }))['bridge-token']).toBe(0);
   });
 });

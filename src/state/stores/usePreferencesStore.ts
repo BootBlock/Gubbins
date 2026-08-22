@@ -1183,3 +1183,27 @@ export const usePreferencesStore = create<PreferencesStore>()(
     },
   ),
 );
+
+/**
+ * Return the named preference fields to the values a fresh install starts on, leaving every other
+ * preference exactly as the user set it (issue #521).
+ *
+ * The live-store counterpart to stripping those fields from the persisted blob. Removing a value
+ * from `localStorage` on its own is never enough: the running store still holds it, and its next
+ * write puts the whole blob — the removed field included — straight back. That is the same trap
+ * `features/danger-zone/local-store-resets.ts` exists to close for a whole-key erase (issue #381),
+ * and it applies field-by-field for a credential that shares its key with everything else.
+ *
+ * Unknown field names are ignored rather than written as `undefined`, so a stale name from an
+ * older build can never blank a preference the store still has.
+ */
+export function resetPreferenceFields(fields: readonly string[]): void {
+  const defaults = usePreferencesStore.getInitialState() as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (!(field in defaults) || typeof defaults[field] === 'function') continue;
+    patch[field] = defaults[field];
+  }
+  if (Object.keys(patch).length === 0) return;
+  usePreferencesStore.setState(patch as Partial<PreferencesStore>);
+}

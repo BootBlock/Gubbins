@@ -54,6 +54,7 @@ export type EraseTargetId =
   | 'saved-searches'
   | 'dismissed-alerts'
   | 'cloud-signin'
+  | 'bridge-token'
   | 'sync-links'
   | 'enabled-features'
   | 'local-ui';
@@ -86,6 +87,16 @@ export interface EraseTarget {
    * the registry — not this catalog — decides which keys belong to which target (issue #378).
    */
   readonly localKeys?: readonly string[];
+  /**
+   * Fields of the persisted preferences blob this target clears (issue #521).
+   *
+   * {@link localKeys} removes a whole key; these name individual fields *inside*
+   * `gubbins:preferences`, for a value that is erasable in its own right but shares its key with
+   * every other preference the user has set. The executor strips them from storage, and the UI
+   * resets the live store's copy afterwards for exactly the reason a key removal needs it
+   * (issue #381): the running store still holds the value and its next write would restore it.
+   */
+  readonly prefFields?: readonly string[];
   /** When true, the executor removes the whole OPFS `images/` directory. */
   readonly clearsImages?: boolean;
   /** IndexedDB database names the executor deletes after the DB transaction. */
@@ -629,6 +640,17 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
       'Signs you out of cloud sync on this device and discards the stored cloud access token. Your data is not deleted.',
     scope: 'local',
     localKeys: localKeysFor('cloud-signin'),
+  },
+  {
+    id: 'bridge-token',
+    section: 'local',
+    label: 'Bridge access token',
+    tooltip:
+      'Forgets the API token this device uses to reach the bridge, so everything that needs it — pushing a snapshot, reading a Home Assistant scale, the webhook delivery log — stops working until a token is entered again. The bridge address is kept, the token itself keeps working elsewhere until you revoke it in Users, and nothing in your inventory is deleted.',
+    // A field of the preferences blob rather than a key of its own, so it clears without taking
+    // every other preference with it — which erasing "App preferences" would.
+    scope: 'local',
+    prefFields: ['bridgeToken'],
   },
   {
     id: 'sync-links',

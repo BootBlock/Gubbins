@@ -4,6 +4,7 @@ import {
   DEFAULT_SCRAPE_NOTIFICATIONS,
   normaliseAttachmentMode,
   normaliseScrapeNotifications,
+  resetPreferenceFields,
   usePreferencesStore,
 } from './usePreferencesStore';
 import { DEFAULT_ITEMS_PER_PAGE, PAGE_SIZE_BOUNDS } from '@/features/settings/settings';
@@ -214,5 +215,44 @@ describe('usePreferencesStore — setters', () => {
     expect(state().baseCurrency).toBe('EUR');
     state().setBaseCurrency('nonsense');
     expect(state().baseCurrency).toBe(DEFAULT_CURRENCY);
+  });
+});
+
+describe('resetPreferenceFields (issue #521)', () => {
+  it('returns just the named fields to their defaults, leaving the rest untouched', () => {
+    state().setBridgeToken('example-bridge-token');
+    state().setBridgeUrl('http://127.0.0.1:8787');
+    state().setKioskMode(true);
+
+    resetPreferenceFields(['bridgeToken']);
+
+    expect(state().bridgeToken).toBe(DEFAULTS.bridgeToken);
+    // The address is not a secret and the next person needs it, so it must survive.
+    expect(state().bridgeUrl).toBe('http://127.0.0.1:8787');
+    expect(state().kioskMode).toBe(true);
+  });
+
+  it('ignores a field name the store does not have, rather than blanking anything', () => {
+    state().setBridgeToken('example-bridge-token');
+
+    resetPreferenceFields(['fieldFromAnOlderBuild']);
+
+    expect(state().bridgeToken).toBe('example-bridge-token');
+    expect('fieldFromAnOlderBuild' in state()).toBe(false);
+  });
+
+  it('does not touch the store at all when no named field is a resettable one', () => {
+    // Not merely "the action survives" — assigning an action its own value would leave that
+    // assertion green. What must not happen is a write: it would re-persist the whole blob, and
+    // the Danger Zone relies on a field reset provoking exactly one, controllable write.
+    const writes: unknown[] = [];
+    const unsubscribe = usePreferencesStore.subscribe((next) => writes.push(next));
+    try {
+      resetPreferenceFields(['setBridgeToken', 'fieldFromAnOlderBuild']);
+    } finally {
+      unsubscribe();
+    }
+
+    expect(writes).toEqual([]);
   });
 });

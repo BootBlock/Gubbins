@@ -4,7 +4,7 @@ import { Kbd, Menu, MenuLink, MenuAction, MenuExternalLink, MenuSeparator } from
 import { MenuIcon, WikiIcon, ExternalLinkIcon, SignOutIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
-import { useSignOut } from '@/features/users/SignInGate';
+import { useSignOut } from '@/features/users/useSignOut';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';

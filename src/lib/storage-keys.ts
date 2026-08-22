@@ -190,16 +190,21 @@ export const STORAGE_KEYS = [
   {
     key: 'gubbins:google-oauth-pending',
     store: 'sync/providers/google-oauth',
-    storage: 'local',
-    eraseGroup: 'cloud-signin',
+    // sessionStorage, not localStorage (issue #521): the OAuth `state` nonce is written and read
+    // back within one redirect round-trip, so it must die with the tab. It was registered as
+    // `local` in error, which made the Danger Zone remove a key that never lived there.
+    storage: 'session',
+    eraseGroup: null,
     backupIncluded: false,
+    note: 'sessionStorage, not localStorage — the one-shot OAuth `state` nonce, consumed by the redirect that follows it.',
   },
   {
     key: 'gubbins:google-oauth-error',
     store: 'sync/providers/google-oauth',
-    storage: 'local',
-    eraseGroup: 'cloud-signin',
+    storage: 'session',
+    eraseGroup: null,
     backupIncluded: false,
+    note: 'sessionStorage, not localStorage — a one-shot failure reason handed to the Sync screen after the redirect, then removed.',
   },
   {
     key: 'gubbins:sync-conflicts',

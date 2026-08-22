@@ -17,8 +17,8 @@
  *    persist middleware, which writes the fresh defaults straight back under the key the erase
  *    just deleted. {@link resetLocalStores} drops that write, leaving both memory and storage
  *    clean — otherwise the Danger Zone's affected-count badge would still read 1 after erasing.
- *  - **Not every key has a live copy.** Some values are read from storage on demand (the OAuth
- *    crumbs) or only at component mount (the emoji picker's panel size), so removing the key is
+ *  - **Not every key has a live copy.** Some values are read from storage on demand (the Drive
+ *    access token) or only at component mount (the emoji picker's panel size), so removing the key is
  *    already sufficient. Those declare `null` rather than being absent, so "nothing to reset" is
  *    a recorded decision — `local-store-resets.test.ts` checks this record against the shared key
  *    registry and fails when an erasable key appears in neither form.
@@ -39,6 +39,8 @@ import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnooze
 import { useLocationExpansionStore } from '@/features/inventory/useLocationExpansionStore';
 import { useAuditSessionStore } from '@/features/lifecycle/useAuditSessionStore';
 import { useCountDraftStore } from '@/features/lifecycle/useCountDraftStore';
+import { resetPreferenceFields } from '@/state/stores/usePreferencesStore';
+import { eraseTargetById, type EraseTargetId } from './erase-targets';
 import { EMOJI_PICKER_SIZE_KEY, LAST_ORPHAN_SWEEP_KEY, TEXTAREA_SIZES_KEY } from '@/lib/storage-keys';
 
 /** The slice of a Zustand store API this module needs — narrow enough to fake in a test. */
@@ -90,10 +92,10 @@ export const LOCAL_STORE_RESETS: Readonly<Record<string, (() => void) | null>> =
   'gubbins:clock-skew': toDefaults(useClockSkewStore),
 
   // Read from storage on demand, so the erase already took effect — there is no retained copy to
-  // reset, and no later write that could resurrect the removed value.
+  // reset, and no later write that could resurrect the removed value. (The two OAuth redirect
+  // crumbs that used to sit here are `sessionStorage`, so no erase target removes them — see
+  // their notes in `lib/storage-keys.ts`.)
   'gubbins:google-drive-token': null,
-  'gubbins:google-oauth-pending': null,
-  'gubbins:google-oauth-error': null,
 
   // Read once when the picker mounts; the next open picks up the default size.
   [EMOJI_PICKER_SIZE_KEY]: null,
@@ -135,4 +137,33 @@ export function resetLocalStores(
       // remaining keys — the erase itself has already committed.
     }
   }
+}
+
+/**
+ * Reset every live store behind a completed erase, in the one order that leaves storage clean.
+ *
+ * A target erases either whole keys ({@link EraseTarget.localKeys}) or individual fields of the
+ * preferences blob ({@link EraseTarget.prefFields}, issue #521), and a single erase can select
+ * both — "App preferences" and "Bridge access token" sit in the same Danger-Zone section.
+ *
+ * **The field resets must run first.** {@link resetLocalStores} finishes each key by removing it
+ * again, precisely so the write its store reset provoked does not resurrect the key. A field reset
+ * is another `setState` on `usePreferencesStore`, so running it *after* that removal writes
+ * `gubbins:preferences` straight back — the erase reports success and the affected-count badge
+ * still reads 1, which is the exact symptom issue #381's ordering exists to prevent. Run it first
+ * and the key removal drops that write too.
+ */
+export function resetErasedLocalState(
+  erased: readonly EraseTargetId[],
+  storage: Storage = localStorage,
+  resets: StoreResets = LOCAL_STORE_RESETS,
+  resetFields: (fields: readonly string[]) => void = resetPreferenceFields,
+): void {
+  const targets = erased.map((id) => eraseTargetById(id)).filter((t) => t !== undefined);
+  resetFields(targets.flatMap((target) => target.prefFields ?? []));
+  resetLocalStores(
+    targets.flatMap((target) => target.localKeys ?? []),
+    storage,
+    resets,
+  );
 }

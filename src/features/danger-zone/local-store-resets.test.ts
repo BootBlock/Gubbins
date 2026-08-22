@@ -14,7 +14,12 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { STORAGE_KEYS } from '@/lib/storage-keys';
 import { useMilestonesStore } from '@/state/stores/useMilestonesStore';
-import { LOCAL_STORE_RESETS, resetLocalStores, toDefaults } from './local-store-resets';
+import {
+  LOCAL_STORE_RESETS,
+  resetErasedLocalState,
+  resetLocalStores,
+  toDefaults,
+} from './local-store-resets';
 
 /** Every key an erase target actually removes, per the registry. */
 const ERASABLE_LOCAL_KEYS = STORAGE_KEYS.filter(
@@ -127,5 +132,48 @@ describe('resetLocalStores', () => {
 
     expect(boom).toHaveBeenCalled();
     expect(after, 'a throwing reset must not strand the keys after it').toHaveBeenCalled();
+  });
+});
+
+describe('resetErasedLocalState', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  /**
+   * Erasing "App preferences" and "Bridge access token" together (issue #521): the second target
+   * clears a *field* of the same blob the first removes wholesale. Both resets write through the
+   * persist middleware, so the field reset has to happen before the key removal that drops it —
+   * the other way round, the erase reports success and leaves `gubbins:preferences` behind with a
+   * full set of defaults, and the affected-count badge reads 1 again.
+   */
+  it('regression: a field reset cannot resurrect a key the same erase removed', () => {
+    // The real key the `preferences` target owns, so the stand-in store stands in for the store
+    // the ordering bug actually resurrected.
+    const prefsKey = 'gubbins:preferences';
+    const store = makeStore(prefsKey);
+    store.getState().add('x');
+    // What `eraseTargets` already did for the whole-key target.
+    localStorage.removeItem(prefsKey);
+
+    const order: string[] = [];
+    resetErasedLocalState(
+      ['preferences', 'bridge-token'],
+      localStorage,
+      {
+        [prefsKey]: () => {
+          order.push('key');
+          toDefaults(store)();
+        },
+      },
+      (fields) => {
+        order.push('fields');
+        // Stand in for `resetPreferenceFields`: a write through the same store's middleware.
+        if (fields.length > 0) store.getState().add('reset-marker');
+      },
+    );
+
+    expect(order).toEqual(['fields', 'key']);
+    expect(localStorage.getItem(prefsKey)).toBeNull();
   });
 });
