@@ -104,7 +104,7 @@ const node = (over: Partial<LocationTreeNode> & Pick<LocationTreeNode, 'id' | 'n
     isSystem: false,
     description: null,
     color: null,
-    kind: null,
+    icon: null,
     capacity: null,
     isDefault: false,
     archivedAt: null,

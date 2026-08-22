@@ -15,7 +15,7 @@ function loc(over: Partial<LocationWithCount> & Pick<LocationWithCount, 'id' | '
     isSystem: false,
     description: null,
     color: null,
-    kind: null,
+    icon: null,
     capacity: null,
     isDefault: false,
     archivedAt: null,

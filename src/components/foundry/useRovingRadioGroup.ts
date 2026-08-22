@@ -16,7 +16,8 @@ import { useCallback, useRef, type KeyboardEvent } from 'react';
  * {@link refs} so focus can follow selection.
  *
  * Mirrors the codebase's "extract the logic out of the DOM glue" seam — the three original
- * copies (LocationKindPicker, ColorSwatchPicker, FirstRunModules) collapse onto this.
+ * copies (the since-removed location type picker, ColorSwatchPicker, FirstRunModules) collapse
+ * onto this.
  */
 export function useRovingRadioGroup<E extends HTMLElement = HTMLElement>({
   count,

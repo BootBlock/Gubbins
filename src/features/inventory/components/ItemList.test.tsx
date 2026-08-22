@@ -12,7 +12,7 @@ function loc(id: string, name: string, parentId: string | null): LocationWithCou
     isSystem: false,
     description: null,
     color: null,
-    kind: null,
+    icon: null,
     capacity: null,
     isDefault: false,
     archivedAt: null,
