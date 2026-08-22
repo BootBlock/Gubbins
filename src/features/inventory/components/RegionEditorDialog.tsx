@@ -113,8 +113,9 @@ export function RegionEditorDialog({
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   // The region a create just produced, so its name box can take focus with the placeholder name
-  // selected. Held as an *id* rather than a boolean: the editor is keyed on the region, so a
-  // stale flag would re-focus the box every time that same region was re-selected later.
+  // selected. Held as an *id* rather than a boolean because the request outlives the create: the
+  // panel only mounts once the refetched list carries the new row, so the id is what stops the
+  // request landing on whichever region happens to be selected when it does.
   const [nameToFocusId, setNameToFocusId] = useState<string | null>(null);
 
   const rows = useMemo(() => regions ?? [], [regions]);
@@ -138,6 +139,10 @@ export function RegionEditorDialog({
   const select = (id: string | null) => {
     setTool('select');
     setSelectedId(id);
+    // Any deliberate selection supersedes a pending focus request. Without this the request could
+    // outlive the gap between the create and the list refetch — the user selects elsewhere, the
+    // panel never mounts to spend it, and it lies in wait to yank focus on some later click.
+    setNameToFocusId(null);
     const region = rows.find((r) => r.id === id);
     if (region) setAnnouncement(t('inventory.regions.selected', { vars: { name: region.name } }));
   };
@@ -145,6 +150,7 @@ export function RegionEditorDialog({
   /** Arming a drawing tool clears the selection, so a commit under it can only be a create. */
   const chooseTool = (next: DrawTool) => {
     setTool(next);
+    setNameToFocusId(null);
     if (next !== 'select') setSelectedId(null);
   };
 
