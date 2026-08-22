@@ -39,7 +39,7 @@ import {
   useLowStockItems,
   useInTransitLines,
   useDueMaintenance,
-} from '@/features/lifecycle';
+} from '@/features/lifecycle/hooks';
 import { useOpenCheckouts } from '@/features/contacts/contacts';
 import { daysOverdue, overdueLabel } from '@/features/contacts/overdue';
 import { useOnOrderQtys } from '@/features/purchasing/queries';

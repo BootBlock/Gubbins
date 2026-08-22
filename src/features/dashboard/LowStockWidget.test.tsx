@@ -12,7 +12,7 @@ import { widgetById } from './widgets';
  */
 const spies = vi.hoisted(() => ({ lowStock: vi.fn(), onOrder: vi.fn() }));
 
-vi.mock('@/features/lifecycle', () => ({
+vi.mock('@/features/lifecycle/hooks', () => ({
   useLowStockItems: () => spies.lowStock(),
 }));
 

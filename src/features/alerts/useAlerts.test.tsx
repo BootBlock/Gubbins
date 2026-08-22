@@ -23,7 +23,7 @@ const h = vi.hoisted(() => ({
   useQuery: vi.fn(),
 }));
 
-vi.mock('@/features/lifecycle', () => ({
+vi.mock('@/features/lifecycle/hooks', () => ({
   useLowStockItems: h.useLowStockItems,
   useExpiringItems: h.useExpiringItems,
   useDueMaintenance: h.useDueMaintenance,

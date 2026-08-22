@@ -38,7 +38,9 @@ import {
   type FieldProminenceMode,
 } from '../field-prominence';
 import { useItemSectionPresence } from '../queries';
-import { KitEditor, LifecycleEditor, MaintenanceEditor } from '@/features/lifecycle';
+import { KitEditor } from '@/features/lifecycle/components/KitEditor';
+import { LifecycleEditor } from '@/features/lifecycle/components/LifecycleEditor';
+import { MaintenanceEditor } from '@/features/lifecycle/components/MaintenanceEditor';
 import { ActivityLog } from './ActivityLog';
 import { AttachmentManager } from './AttachmentManager';
 import { CapabilityEditor } from './CapabilityEditor';
