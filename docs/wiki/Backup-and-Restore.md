@@ -63,6 +63,16 @@ There are two ways to restore:
 > [[Cloud Sync|Cloud-Sync]] won't bring those records back from another device. Do expect a merge
 > to restore records that *are* in the backup but you've since deleted — that's the point of it.
 
+> **ℹ️ Note**
+> A few things are identified by their **name** rather than by which device made them — tags,
+> contacts, custom fields, item aliases, roles and user accounts. If the backup was taken on another
+> device, both of you may have created a tag called *Tools* independently. A merge treats those as
+> the one tag and joins them together, rather than refusing the restore: the surviving tag carries
+> **both** sides' items, a merged contact keeps the loans from either side, and a merged custom
+> field keeps the values recorded on both. It is the same rule syncing uses — see
+> [[When two devices create the same thing|Cloud-Sync#when-two-devices-create-the-same-thing]] for
+> the detail, including the one thing that is *not* carried across.
+
 > **⚠️ Heads-up**
 > **Replace** overwrites everything currently in Gubbins. It's deliberately well-guarded — an
 > automatic restore-point is saved first, you get an impact preview and a storage-space check, and

@@ -49,8 +49,11 @@ import type {
   SchemaDictionary,
   SyncSnapshot,
   SyncTable,
+  TableRow,
   Tombstone,
 } from './types';
+import { repairUniqueKeys } from './unique-key-repair';
+import { UNIQUE_KEY_TABLES } from './unique-keys';
 import { SYNC_FORMAT_VERSION } from './types';
 
 const PAGE = 100;
@@ -208,6 +211,30 @@ function rowForSnapshot(table: SyncTable, row: SqlRow): SqlRow {
     for (const col of drop) delete clean[col];
   }
   return encodeRowForTable(table, clean);
+}
+
+/**
+ * Read just `tables` into the `tables` half of a {@link SyncSnapshot} (issue #538).
+ *
+ * A cut-down {@link buildLocalSnapshot} for the one caller that needs a *subset* of the local
+ * rows rather than all of them: the §2 merge restore, whose natural-key resolution has to compare
+ * a backup against the live local tables it might collide with. Reading the whole snapshot for
+ * that would inflate every image thumbnail and page both ledgers, none of which the comparison
+ * looks at.
+ *
+ * Rows come back snapshot-shaped (held-back columns dropped, BLOBs base64-encoded), so they are
+ * directly comparable with — and interchangeable with — the rows of an incoming snapshot.
+ */
+async function readSnapshotTables(
+  driver: IDatabaseDriver,
+  tables: readonly SyncTable[],
+): Promise<Record<string, SqlRow[]>> {
+  const read: Record<string, SqlRow[]> = {};
+  for (const table of tables) {
+    const rows = await pageRows(driver, table, TABLE_FILTER[table] ?? '');
+    read[table] = rows.map((row) => rowForSnapshot(table, row));
+  }
+  return read;
 }
 
 /** Options for {@link buildLocalSnapshot}. */
@@ -1088,6 +1115,7 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   const held = new Set(localTombstones.map((t) => tombstoneKey(t.table_name, t.id)));
   const statements: SqlStatement[] = [];
 
+  const incoming: TableRow[] = [];
   for (const table of SYNC_TABLES) {
     // Reduce a foreign backup's rows to one winner per partial-unique flag — a pinned supplier part
     // per item (issues #157 / #192) or a single default location (#191) — then, because this
@@ -1117,26 +1145,60 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
         });
       }
     }
-    for (const snapshotRow of rows) {
-      const row = decodeRowForTable(table, snapshotRow);
-      const cols = requireColumns(dictionary, table).filter((c) => c in row);
-      const updates = cols
-        .filter((c) => c !== 'id')
-        .map((c) => `${c} = excluded.${c}`)
-        .join(', ');
-      statements.push({
-        sql:
-          `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')}) ` +
-          `ON CONFLICT(id) DO UPDATE SET ${updates};`,
-        params: cols.map((c) => row[c] as SqlValue),
-      });
-    }
+    for (const row of rows) incoming.push({ table, row });
   }
+
+  // §7.5 natural-key collision resolution (issue #538). The upserts below target `id`, and that
+  // conflict target does **not** cover a `UNIQUE(name)` index — so a backup carrying a tag,
+  // contact, custom field or alias this device independently invented under a different id raises
+  // `SQLITE_CONSTRAINT_UNIQUE` and aborts the whole restore. Two devices that both have a tag
+  // "Tools" is the ordinary state of a synced pair, not an edge case, so this is a data-recovery
+  // path failing on the common shape. Settle who keeps each natural key first, on the same
+  // last-write-wins footing the delta merge uses, and re-key the loser onto the winner so the two
+  // devices' associations merge into one rather than either side's being dropped.
+  //
+  // The resolution compares the backup against the live local rows, so it needs them — but only
+  // the tables a natural key can be contested in, which is why this reads `UNIQUE_KEY_TABLES`
+  // rather than taking a whole local snapshot it would otherwise have no use for. No tombstone
+  // list is passed: a merge restore only ever adds, so no local row is on its way out and there
+  // is no already-decided DELETE to hoist.
+  const repair = repairUniqueKeys({ tables: await readSnapshotTables(driver, UNIQUE_KEY_TABLES) }, incoming);
+  statements.push(...repair.before);
+
+  for (const { table, row: snapshotRow } of repair.rows) {
+    const row = decodeRowForTable(table, snapshotRow);
+    const cols = requireColumns(dictionary, table).filter((c) => c in row);
+    const updates = cols
+      .filter((c) => c !== 'id')
+      .map((c) => `${c} = excluded.${c}`)
+      .join(', ');
+    statements.push({
+      sql:
+        `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')}) ` +
+        `ON CONFLICT(id) DO UPDATE SET ${updates};`,
+      params: cols.map((c) => row[c] as SqlValue),
+    });
+  }
+  statements.push(...repair.after);
 
   // Append-only ledger (union-by-id) + M:N membership edges (union; the backup's edge
   // tombstones below remove any that were unlinked).
+  // Issue #538: neither `item_history` nor the two tag joins is a `SyncTable`, so the collision
+  // resolution cannot repoint them as rows — the same structural gap `reconcile` closes by hand
+  // for the delta merge. A backup row still naming a retired user or tag names a row this restore
+  // has just deleted, and an absent FK parent aborts the whole transaction rather than that one
+  // row (issue #405), so both are mapped through the re-key maps here. Both are no-ops on the
+  // ordinary collision-free restore, where the maps are empty.
+  const restoredTag = (tagId: string) => repair.tagRekeys.get(tagId) ?? tagId;
   for (const row of snapshot.itemHistory ?? []) {
-    statements.push(historyInsertStatement(row, dictionary[ITEM_HISTORY_TABLE]));
+    const actor = row.actor_user_id;
+    const winner = actor === null || actor === undefined ? undefined : repair.userRekeys.get(String(actor));
+    statements.push(
+      historyInsertStatement(
+        winner === undefined ? row : { ...row, actor_user_id: winner },
+        dictionary[ITEM_HISTORY_TABLE],
+      ),
+    );
   }
   // Issue #188: the stock-delta convergence ledger, union-by-id like the history ledger above.
   for (const row of snapshot.stockDeltas ?? []) {
@@ -1145,13 +1207,13 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   for (const { itemId, tagId } of snapshot.itemTags ?? []) {
     statements.push({
       sql: `INSERT OR IGNORE INTO ${ITEM_TAGS_TABLE} (item_id, tag_id) VALUES (?, ?);`,
-      params: [itemId, tagId],
+      params: [itemId, restoredTag(tagId)],
     });
   }
   for (const { locationId, tagId } of snapshot.locationTags ?? []) {
     statements.push({
       sql: `INSERT OR IGNORE INTO ${LOCATION_TAGS_TABLE} (location_id, tag_id) VALUES (?, ?);`,
-      params: [locationId, tagId],
+      params: [locationId, restoredTag(tagId)],
     });
   }
   for (const { itemId, regionId } of snapshot.itemRegions ?? []) {
@@ -1180,20 +1242,40 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
   const clearIfHeld = (tableName: string, id: string) => {
     if (held.has(tombstoneKey(tableName, id))) statements.push(clearTombstoneStatement(tableName, id));
   };
+  // An id retired just above is skipped: this restore deliberately recorded a tombstone for it,
+  // and clearing that would both undo the retirement and re-publish the losing id to every peer
+  // at the next sync (issue #538).
   for (const table of SYNC_TABLES) {
-    for (const row of snapshot.tables[table] ?? []) clearIfHeld(table, String(row.id));
+    const retired = repair.retired.get(table);
+    for (const row of snapshot.tables[table] ?? []) {
+      const id = String(row.id);
+      if (retired?.has(id)) continue;
+      clearIfHeld(table, id);
+    }
   }
   for (const { itemId, tagId } of snapshot.itemTags ?? []) {
-    clearIfHeld(ITEM_TAGS_TABLE, itemTagEdgeId(itemId, tagId));
+    clearIfHeld(ITEM_TAGS_TABLE, itemTagEdgeId(itemId, restoredTag(tagId)));
   }
   for (const { locationId, tagId } of snapshot.locationTags ?? []) {
-    clearIfHeld(LOCATION_TAGS_TABLE, locationTagEdgeId(locationId, tagId));
+    clearIfHeld(LOCATION_TAGS_TABLE, locationTagEdgeId(locationId, restoredTag(tagId)));
   }
   for (const { itemId, regionId } of snapshot.itemRegions ?? []) {
     clearIfHeld(ITEM_REGIONS_TABLE, itemRegionEdgeId(itemId, regionId));
   }
   for (const t of snapshot.tombstones) {
-    statements.push(conditionalTombstoneStatement(t.tableName, t.id, t.deletedAt));
+    // An edge tombstone is keyed by its tag id, so it follows a re-key like the edge itself
+    // (issue #538) — otherwise this device would record the backup's deletion against an id that
+    // exists nowhere and re-publish it to peers. A no-op on an ordinary restore.
+    const id =
+      repair.tagRekeys.size > 0 && t.tableName === ITEM_TAGS_TABLE
+        ? itemTagEdgeId(parseItemTagEdgeId(t.id).itemId, restoredTag(parseItemTagEdgeId(t.id).tagId))
+        : repair.tagRekeys.size > 0 && t.tableName === LOCATION_TAGS_TABLE
+          ? locationTagEdgeId(
+              parseLocationTagEdgeId(t.id).locationId,
+              restoredTag(parseLocationTagEdgeId(t.id).tagId),
+            )
+          : t.id;
+    statements.push(conditionalTombstoneStatement(t.tableName, id, t.deletedAt));
   }
 
   // Issue #188: a restore re-inserts `stock_batches` rows whose deltas travel in the ledger

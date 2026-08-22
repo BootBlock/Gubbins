@@ -37,6 +37,17 @@ import { foldName } from '@/lib/name-fold';
 import { applyOffset } from './clock';
 import type { CollisionResolution, SyncSnapshot, SyncTable, TableRow, Tombstone } from './types';
 
+/**
+ * The one part of a snapshot this resolution reads: the per-table rows already on this device.
+ *
+ * Narrower than {@link SyncSnapshot} on purpose (issue #538). The delta merge passes its full
+ * local snapshot, but the §2 merge restore has no snapshot to pass — it reads only the tables
+ * {@link UNIQUE_KEY_TABLES} names — and the TTL clone passes the *remote* it has just written
+ * over the wiped tables. All three are the same question ("what rows already hold these natural
+ * keys?"), so the parameter asks for that and nothing more.
+ */
+export type LocalTables = Pick<SyncSnapshot, 'tables'>;
+
 /** An inbound FK whose column points at a table resolved here, to repoint on a re-key. */
 interface UniqueKeyReference {
   readonly table: SyncTable;
@@ -157,6 +168,20 @@ export const FOLDED_UNIQUE_COLUMNS: readonly string[] = UNIQUE_KEY_SPECS.flatMap
   spec.nocase.map((column) => `${spec.table}.${column}`),
 );
 
+/**
+ * Every table {@link resolveUniqueKeyCollisions} reads out of the "local" snapshot it is given:
+ * the contested tables themselves, plus the tables whose rows must follow a re-keyed id.
+ *
+ * The delta merge hands it a full local snapshot and never needs this. The §2 merge restore does
+ * (issue #538): it holds no snapshot of its own, so it reads exactly these tables and nothing
+ * else — a backup restore has no reason to pay for the image thumbnails or the ledger. Derived
+ * from the specs rather than written out, so a table added above cannot be silently left unread,
+ * which would make its collisions invisible instead of resolved.
+ */
+export const UNIQUE_KEY_TABLES: readonly SyncTable[] = [
+  ...new Set(UNIQUE_KEY_SPECS.flatMap((spec) => [spec.table, ...spec.references.map((r) => r.table)])),
+];
+
 /** A row competing for one natural key: either a surviving local row or a pending upsert. */
 interface Candidate {
   readonly id: string;
@@ -247,7 +272,7 @@ function retire(
  * M:N edge sections.
  */
 export function resolveUniqueKeyCollisions(
-  local: SyncSnapshot,
+  local: LocalTables,
   localUpserts: TableRow[],
   localDeletes: readonly Tombstone[],
   offset: number,
@@ -269,13 +294,16 @@ export function resolveUniqueKeyCollisions(
 /** Resolve one table's collisions, returning its `loser id → winner id` map. */
 function resolveTable(
   spec: UniqueKeySpec,
-  local: SyncSnapshot,
+  local: LocalTables,
   localUpserts: TableRow[],
   localDeletes: readonly Tombstone[],
   offset: number,
   collisions: CollisionResolution[],
 ): Map<string, string> {
   const rekey = new Map<string, string>();
+  // Where this table's verdicts start, so the chain collapse at the end of this function rewrites
+  // only its own and leaves an earlier table's alone (`collisions` is shared across the specs).
+  const firstVerdict = collisions.length;
   const deletedAtById = new Map<string, number>();
   for (const d of localDeletes) if (d.tableName === spec.table) deletedAtById.set(d.id, d.deletedAt);
   const deletedIds = new Set(deletedAtById.keys());
@@ -391,6 +419,22 @@ function resolveTable(
     localUpserts.push(...kept);
   }
 
+  // Collapse re-key chains in the recorded verdicts, as `retire` already does in `rekey` itself.
+  // A verdict pushed earlier names the winner of *that* contest, and a third row on the same
+  // folded key can beat it afterwards — at which point that id is retired too, and if it was an
+  // incoming upsert it was dropped and is never written at all. `rekey` is kept collapsed as the
+  // contests happen, so no target of it is ever also a key and a single hop is exhaustive.
+  //
+  // The reference repointing below works off `rekey`, so it was always correct. What was not is a
+  // caller building SQL straight from `winnerId` — `applyPlan`'s ledger repoint for a retired
+  // account, or the wholesale paths' tag-edge repoint (issue #538). Naming a row that does not
+  // exist trips the foreign key, and that aborts the whole atomic apply rather than one statement.
+  for (let i = firstVerdict; i < collisions.length; i += 1) {
+    const verdict = collisions[i]!;
+    const winnerId = rekey.get(verdict.winnerId);
+    if (winnerId !== undefined) collisions[i] = { ...verdict, winnerId };
+  }
+
   return rekey;
 }
 
@@ -401,7 +445,7 @@ function resolveTable(
  */
 function repointReferences(
   spec: UniqueKeySpec,
-  local: SyncSnapshot,
+  local: LocalTables,
   localUpserts: TableRow[],
   rekey: ReadonlyMap<string, string>,
 ): void {

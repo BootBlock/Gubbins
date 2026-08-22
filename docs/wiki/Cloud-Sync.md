@@ -69,9 +69,10 @@ point rather than the last word.
 ### When two devices create the same thing
 
 Some things are identified by their **name** rather than by which device made them — tags,
-contacts, and custom fields. If you add a tag called *Bolts* on your phone while your laptop is
-offline, and the laptop adds its own *Bolts* too, syncing does **not** leave you with two
-identical tags: Gubbins recognises them as the same thing and merges them into one.
+contacts, custom fields, item aliases, roles and user accounts. If you add a tag called *Bolts* on
+your phone while your laptop is offline, and the laptop adds its own *Bolts* too, syncing does
+**not** leave you with two identical tags: Gubbins recognises them as the same thing and merges
+them into one.
 
 Nothing is lost in the merge. The surviving tag carries **both** devices' items, a merged contact
 keeps the checkout history from either side, and a merged custom field keeps the values recorded on
