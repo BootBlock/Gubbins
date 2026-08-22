@@ -736,10 +736,10 @@ export default function SettingsDialog({
             </SettingRow>
             <SettingRow
               label="Hide cards with nothing to report"
-              description="Hide alert cards that are all clear (e.g. Low stock when everything is in stock), so the dashboard shows only what needs attention."
+              description="Hide cards that are all clear or empty (e.g. Low stock when everything is in stock), so the dashboard shows only what needs attention."
               hint={
-                'Hides a dashboard **alert card** whenever it has nothing to report — Low stock with everything in stock, Overdue with no late loans, Soon to expire with nothing due, Maintenance due when nothing is due, and Budget alerts when every project is on track.\n\n' +
-                'The informational cards (Inventory totals, Recent activity, and the system-status cards) are always shown — they have no “problem” to clear. A hidden card reappears the moment it has something to report, and **Customise** always shows every card so you can still arrange them.'
+                'Hides a dashboard card whenever it has nothing to report — Low stock with everything in stock, Overdue with no late loans, Soon to expire with nothing due, Maintenance due when nothing is due, Budget alerts when every project is on track, In transit with nothing on its way, and Project statuses with no live projects.\n\n' +
+                'The cards that always have something to say (Inventory totals, Recent activity, and the system-status cards) are always shown. A hidden card reappears the moment it has something to report, and **Customise** always shows every card so you can still arrange them.'
               }
             >
               <Select
