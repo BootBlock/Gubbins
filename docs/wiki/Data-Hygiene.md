@@ -11,7 +11,9 @@ you can tidy them up.
 Data hygiene flags records with gaps that undermine other features, such as items missing:
 
 - A **price** (needed for [[valuation and spend|Valuation-and-Spend]] and the
-  [[insurance schedule|Insurance-and-Estate-Schedule]]).
+  [[insurance schedule|Insurance-and-Estate-Schedule]]). Any source valuation uses counts — a
+  manual [[current value|Current-Value-and-Revaluation]], a unit cost, a supplier price or a
+  purchase price — so an item is only flagged when *nothing* prices it.
 - A **location** (so you actually know where it is).
 - A **category** or a **photo**.
 - Stock that's **never been counted**, or a record that's gone **stale** (untouched for a long time).

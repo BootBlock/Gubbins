@@ -3,6 +3,7 @@ import { MS_PER_DAY } from '@/db/repositories';
 import {
   bucketMovement,
   effectiveUnitCost,
+  hasValuationSource,
   selectDeadStock,
   sortValueGroups,
   stockValue,
@@ -85,6 +86,49 @@ describe('valuedUnitValue — the depreciated purchase price as the last fallbac
         gauge: { netValue: 400, costPerUnitOfMeasure: null },
       }),
     ).toBe(0);
+  });
+});
+
+// Issue #706 — "is it priced at all?" has to name exactly the sources the value seam prices from.
+// Two surfaces used to restate that list and each dropped `current_value`, so a revalued asset was
+// flagged as unpriced by data hygiene and printed as unpriced by the parts catalogue.
+describe('hasValuationSource — priced by anything valuation prices from', () => {
+  const asset = { quantity: 1, unitCost: null } as const;
+
+  it('is true for every source the valuation precedence reaches, one at a time', () => {
+    expect(hasValuationSource({ ...asset, currentValuePerUnit: 900 })).toBe(true);
+    expect(hasValuationSource({ ...asset, unitCost: 3 })).toBe(true);
+    expect(hasValuationSource({ ...asset, preferredSupplierCost: 2 })).toBe(true);
+    expect(hasValuationSource({ ...asset, depreciatedPurchasePrice: 750 })).toBe(true);
+  });
+
+  it('is false only when nothing prices the item', () => {
+    expect(hasValuationSource(asset)).toBe(false);
+    expect(
+      hasValuationSource({
+        ...asset,
+        currentValuePerUnit: null,
+        preferredSupplierCost: null,
+        depreciatedPurchasePrice: null,
+      }),
+    ).toBe(false);
+  });
+
+  // "Worth nothing" is a price; "we do not know" is not. The seam keeps the two apart, which is
+  // the whole reason a caller cannot just test `valuedUnitValue(item) > 0`.
+  it('reads a deliberate zero as priced', () => {
+    expect(hasValuationSource({ ...asset, currentValuePerUnit: 0 })).toBe(true);
+    expect(hasValuationSource({ ...asset, unitCost: 0 })).toBe(true);
+    expect(valuedUnitValue({ ...asset, currentValuePerUnit: 0 })).toBe(0);
+  });
+
+  // A gauge is priced per unit of *measure* and by nothing else, exactly as it is valued.
+  it('prices a gauge from its cost per unit of measure alone', () => {
+    const gauged = { ...asset, quantity: 0, currentValuePerUnit: 900, unitCost: 25 };
+    expect(hasValuationSource({ ...gauged, gauge: { netValue: 400, costPerUnitOfMeasure: null } })).toBe(
+      false,
+    );
+    expect(hasValuationSource({ ...gauged, gauge: { netValue: 400, costPerUnitOfMeasure: 0.5 } })).toBe(true);
   });
 });
 

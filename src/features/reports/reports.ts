@@ -176,6 +176,37 @@ export function valuedUnitValue(item: ValuedStock): number {
   return Math.max(0, effectiveUnitValue(item.currentValuePerUnit, valuationUnitCost(item)));
 }
 
+/**
+ * Whether **any** source prices this item — the "is it priced at all?" question, answered by the
+ * same precedence {@link valuedUnitValue} resolves a figure from, so the two can never disagree.
+ *
+ * It exists because `valuedUnitValue` collapses "genuinely unpriced" and "deliberately worth
+ * nothing" onto the same `0`, and two surfaces have to tell those apart: the data-hygiene
+ * **Missing price** flag, and the parts catalogue, which prints `—` rather than a `0.00` on a line
+ * nothing prices. Both used to restate the list of sources themselves, and both drifted from it —
+ * each silently omitting `current_value`, so an item priced *only* by a manual revaluation was
+ * flagged as unpriced and printed as unpriced while every valuation surface valued it (issue #706).
+ * Naming the sources once here is what stops the next addition to the precedence being missed by
+ * one caller and not the other.
+ *
+ * A gauge is priced by its cost per unit of measure and by nothing else, exactly as
+ * {@link valuedUnitValue} values it — the four per-unit sources price one *countable* unit, so none
+ * of them makes a gauge priced (issue #683).
+ *
+ * The test is **presence**, not usability: a stored price is already normalised (`normaliseUnitCost`,
+ * `normaliseCurrentValue` and the supplier-part writer all reject a non-finite or negative figure),
+ * so a source that is there is a source that prices. A real `0` is a price and counts as one.
+ */
+export function hasValuationSource(item: ValuedStock): boolean {
+  if (item.gauge) return item.gauge.costPerUnitOfMeasure != null;
+  return (
+    item.currentValuePerUnit != null ||
+    item.unitCost != null ||
+    item.preferredSupplierCost != null ||
+    item.depreciatedPurchasePrice != null
+  );
+}
+
 /** The value of one item's on-hand stock: {@link valuedAmount} × {@link valuedUnitValue}. */
 export function stockValue(item: ValuedStock): number {
   return valuedAmount(item) * valuedUnitValue(item);

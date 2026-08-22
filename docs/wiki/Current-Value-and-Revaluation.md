@@ -17,9 +17,10 @@ a figure you control, which can move in either direction.
 
 > **ℹ️ Note**
 > When an item has a manual current value, that figure wins over the depreciated book value
-> everywhere it matters — the valuation [[reports|Reports-Overview]] and the
-> [[insurance schedule|Insurance-and-Estate-Schedule]] both use today's value. The depreciated
-> figure is still shown, relabelled **Book value**, so you can see both.
+> everywhere it matters — the valuation [[reports|Reports-Overview]], the
+> [[insurance schedule|Insurance-and-Estate-Schedule]] and the
+> [[parts catalogue|Parts-Catalogue]] all use today's value. The depreciated figure is still
+> shown, relabelled **Book value**, so you can see both.
 
 ## Revaluation history
 
@@ -45,4 +46,5 @@ how a collectible has appreciated over the years, not just its latest number.
 
 - **[[Warranty & depreciation|Warranty-and-Depreciation]]** — the book-value side.
 - **[[Insurance & estate schedule|Insurance-and-Estate-Schedule]]** — where current value is used.
+- **[[Parts catalogue|Parts-Catalogue]]** — the printed catalogue values items the same way.
 - **[[Reports overview|Reports-Overview]]** — valuation over time.
