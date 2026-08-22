@@ -61,7 +61,7 @@ the fact:
   up — and the sub-locations themselves each record the move, so a shelf that ends up somewhere
   new because the room above it was deleted says so.
 
-Everything else about a location — its colour, type, capacity, dimensions, walk order, the default
+Everything else about a location — its colour, icon, capacity, dimensions, walk order, the default
 flag and the dead-stock setting — describes the place rather than the shape of your storage, so it
 isn't recorded. Nor is a save that didn't actually change anything.
 

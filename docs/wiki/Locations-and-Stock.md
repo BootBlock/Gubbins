@@ -430,7 +430,7 @@ the container's location.
 The Locations pane has its own **Export** button, beside the button that adds a location. It saves
 the whole tree as a **CSV**, **TSV**, an **Excel workbook (.xlsx)**, **JSON**, a **Markdown**
 table, a printable **HTML** page or **plain text** — one row per location, carrying its full path
-(so *"Drawer 3"* still means something outside Gubbins), its type and description, how many items
+(so *"Drawer 3"* still means something outside Gubbins), its icon and description, how many items
 it holds, its capacity, size, walk order and dead-stock setting.
 
 The file always covers **every** location, including archived ones and anything a tag chip or the

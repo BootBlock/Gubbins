@@ -18,7 +18,7 @@ Get your data out in whichever form suits:
   format cards; whichever you choose is remembered for next time.
 - **Markdown vault** — a folder of readable Markdown files (one per item), with **full-resolution
   images** extracted alongside. Each location folder also gets a page of its own, carrying that
-  location's description, type, capacity, size and walk order. Great for archiving or reading
+  location's description, icon, capacity, size and walk order. Great for archiving or reading
   outside Gubbins.
 - **Raw `.sqlite`** — the database file itself, for anyone who wants the data directly.
 - **CSV** — from [[reports|Reports-Overview]], for spreadsheets.
@@ -48,7 +48,7 @@ Look for the **Export** button and pick a format — **CSV**, **TSV**, an **Exce
 | [[Alerts]] | Alert centre | The alerts you can currently see, with their urgency and due date |
 | [[On loan\|Loans-Check-Out-and-In]] | Contacts & borrowing | Who has what, how many, when it went out and when it's due |
 | [[Contacts]] | Contacts & borrowing | Names, contact details and how many items each person has out |
-| [[Locations\|Locations-and-Stock]] | Inventory → the Locations pane | Every location with its full path, type, description, item count, capacity, size, walk order and dead-stock setting |
+| [[Locations\|Locations-and-Stock]] | Inventory → the Locations pane | Every location with its full path, icon, description, item count, capacity, size, walk order and dead-stock setting |
 | [[Bookings]] | Bookings | Which asset is reserved for whom, over which days, and its status |
 | [[Purchase orders\|Purchase-Orders]] | Purchase orders | One row per order — supplier, reference, status, quantities and total |
 | [[Tags\|Tags-Attachments-and-Related-Items]] | Tags | Every tag and how many items and locations use it |

@@ -99,7 +99,7 @@ renaming a shelf raises one of these and moves nothing.
 > Subscribe to location events on a webhook of their own with **no filter**, and send Gubbins'
 > standard event so the payload carries the fields you need.
 
-The rest of a location — its colour, type, capacity, dimensions, walk order and settings — is a
+The rest of a location — its colour, icon, capacity, dimensions, walk order and settings — is a
 description of the place rather than the shape of your storage, and raises nothing.
 
 These **cannot** raise a webhook at all: [[purchase-order status|Purchase-Orders]],
