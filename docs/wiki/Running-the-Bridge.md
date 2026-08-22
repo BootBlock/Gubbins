@@ -130,6 +130,16 @@ you're connected to against the app you're using and tells you when they've drif
 > repository contains. If you need to stay on a particular release, keep your copy on that release
 > yourself.
 
+> **⚠️ Heads-up**
+> If you point the bridge at a raw `.sqlite` copy, that copy has to share the bridge's **data
+> structure**. Most updates leave it alone, so an older copy usually keeps working — but while
+> Gubbins is pre-release, some updates change it, and a copy from either side of such a change
+> can't be read by the other. The bridge now checks before it starts: a copy it can't read is
+> **refused**, with a message saying so, rather than served and then failing question by question.
+> Re-export from the version you're running, or update the bridge to match the copy. A
+> `gubbins-sync.json` snapshot isn't affected: it carries your data rather than a whole database,
+> and the bridge builds the structure around it itself.
+
 ## Read-only unless you say otherwise
 
 The bridge **can't modify your inventory** by default — it's a window onto your data, not a way
