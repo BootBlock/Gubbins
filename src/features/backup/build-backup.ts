@@ -7,6 +7,7 @@
  * the download. All format decisions live in `backup-format.ts`; this file only does IO.
  */
 import { getDatabaseDriver, getRescueDatabaseDriver } from '@/db/client';
+import { assertPermissions, currentAuthority } from '@/features/users/assert-permission';
 import { buildLocalSnapshot } from '@/features/sync/snapshot';
 import { readAllImages } from '@/features/images/opfs-images';
 import { downloadBlob, fileTimestamp } from '@/lib/download';
@@ -95,6 +96,12 @@ export async function createBackup(
   options: CreateBackupOptions = {},
 ): Promise<BackupResult> {
   const rescue = options.rescue === true;
+  // Issue #519: a backup reads every table in the database and hands the lot to a file, so it is
+  // gated on `backup:read` — the key the role editor already offers for exactly this. The rescue
+  // path is exempt: it runs on the crash screen, where the database will not open, no authority
+  // can be resolved, and refusing the export would only cost the user their data.
+  if (!rescue) assertPermissions(currentAuthority(), ['backup:read']);
+
   // A rescue runs on the crash screen, where a dead worker latches the driver unusable and every
   // read would be rejected without one being replaced first (issue #503). An ordinary backup runs
   // in a healthy app and must not quietly rebuild the worker under a live session.

@@ -15,12 +15,21 @@ import { CriticalIcon, RefreshIcon } from '@/components/icons';
 import { resetServiceWorkerOnly } from '@/app/error/safe-mode-actions';
 import { useT } from '@/features/i18n';
 import { SettingsSection, SettingRow } from '@/features/settings/SettingsSection';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { ERASE_TARGETS, mayEraseTarget } from '@/features/danger-zone';
 import { EraseDataDialog } from './EraseDataDialog';
 
 export function DangerZone() {
   const [open, setOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const t = useT();
+
+  // Issue #519: a role that may erase nothing is not offered the erase. The app-shell reset
+  // above stays for everyone — it destroys no data, which is exactly why it comes first.
+  // One category is enough: the factory reset needs every category's key, so a role that can
+  // reach it can necessarily reach a category too.
+  const authority = useSessionStore((state) => state.authority);
+  const mayErase = ERASE_TARGETS.some((target) => mayEraseTarget(authority, target.id));
 
   return (
     <>
@@ -50,19 +59,21 @@ export function DangerZone() {
           </Button>
         </SettingRow>
 
-        <SettingRow
-          label="Erase data"
-          description="Selectively wipe inventory, photos, settings, sign-in or sync links from this device — or factory-reset everything."
-        >
-          <Button variant="destructive" data-testid="open-erase-data" onClick={() => setOpen(true)}>
-            <CriticalIcon />
-            Erase data&hellip;
-          </Button>
-        </SettingRow>
+        {mayErase ? (
+          <SettingRow
+            label="Erase data"
+            description="Selectively wipe inventory, photos, settings, sign-in or sync links from this device — or factory-reset everything."
+          >
+            <Button variant="destructive" data-testid="open-erase-data" onClick={() => setOpen(true)}>
+              <CriticalIcon />
+              Erase data&hellip;
+            </Button>
+          </SettingRow>
+        ) : null}
       </SettingsSection>
 
       {/* Mounted on demand so counts are fetched fresh each time it opens. */}
-      {open ? <EraseDataDialog open onClose={() => setOpen(false)} /> : null}
+      {open && mayErase ? <EraseDataDialog open onClose={() => setOpen(false)} /> : null}
     </>
   );
 }

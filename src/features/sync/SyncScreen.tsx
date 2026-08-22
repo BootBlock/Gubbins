@@ -33,6 +33,8 @@ import { useFormatters } from '@/lib/useFormatters';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { BackupDialog } from '@/features/backup/BackupDialog';
+import { canAny } from '@/features/users/permissions';
+import { useSessionStore } from '@/state/stores/useSessionStore';
 import { consumeRestoreNotice, type RestoreNotice } from '@/features/backup/restore-backup';
 import { SettingsGroupPicker } from '@/features/backup/SettingsGroupPicker';
 import { LIVE_SYNCABLE_SETTINGS_GROUP_IDS } from '@/features/backup/settings-groups';
@@ -121,6 +123,8 @@ export function SyncScreen() {
   // the sync stopped short of overwriting it. Offers an explicit republish.
   const [remoteMissing, setRemoteMissing] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
+  const authority = useSessionStore((state) => state.authority);
+  const mayUseBackup = canAny(authority, ['backup:read', 'backup:write']);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   // Issue #72: device-local record of edits a sync overwrote — surfaced for review below.
   const conflictCount = useSyncConflictsStore((s) => s.conflicts.length);
@@ -649,31 +653,34 @@ export function SyncScreen() {
           </section>
         ) : null}
 
-        {/* Backup & restore */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Backup &amp; restore
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Save a complete backup — your inventory and records, full-resolution images, and settings — to a
-            single file, then restore it later on this or another device. Choose exactly what to include.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Gubbins stores its data separately in each browser, so this is also how you move your library
-            between them — export here, then restore in the other browser (e.g. Firefox to Edge).
-          </p>
-          <Tooltip
-            content="Create a complete `.zip` backup (data + images + settings) or restore a previously saved backup."
-            triggerTabIndex={-1}
-          >
-            <span>
-              <Button variant="outline" onClick={() => setBackupOpen(true)} data-testid="open-backup">
-                <ArchiveIcon />
-                Backup &amp; restore…
-              </Button>
-            </span>
-          </Tooltip>
-        </section>
+        {/* Backup & restore — hidden outright for a role holding neither `backup:read` nor
+            `backup:write`, because both actions behind it now refuse that session (issue #519). */}
+        {mayUseBackup ? (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Backup &amp; restore
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Save a complete backup — your inventory and records, full-resolution images, and settings — to a
+              single file, then restore it later on this or another device. Choose exactly what to include.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Gubbins stores its data separately in each browser, so this is also how you move your library
+              between them — export here, then restore in the other browser (e.g. Firefox to Edge).
+            </p>
+            <Tooltip
+              content="Create a complete `.zip` backup (data + images + settings) or restore a previously saved backup."
+              triggerTabIndex={-1}
+            >
+              <span>
+                <Button variant="outline" onClick={() => setBackupOpen(true)} data-testid="open-backup">
+                  <ArchiveIcon />
+                  Backup &amp; restore…
+                </Button>
+              </span>
+            </Tooltip>
+          </section>
+        ) : null}
 
         {/* Push to bridge — for users without folder sync, hand the dataset straight to the
           optional Home Assistant query bridge over HTTP (the bridge re-hydrates it). */}

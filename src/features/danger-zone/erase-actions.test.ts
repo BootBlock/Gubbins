@@ -3,6 +3,7 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { eraseTargets, countTargets, type ErasePorts } from './erase-actions';
 
 /** A minimal in-memory Storage stand-in (only the methods the engine uses). */
@@ -37,7 +38,7 @@ describe('eraseTargets (memory-driver integration)', () => {
   /** Build the ports bag against the live driver + fakes. */
   function ports(localState?: Record<string, string>): ErasePorts {
     local = fakeStorage(localState);
-    return { db: driver, removeImagesDirectory, deleteIdb, local };
+    return { db: driver, removeImagesDirectory, deleteIdb, local, authority: () => UNRESTRICTED_AUTHORITY };
   }
 
   async function count(table: string): Promise<number> {

@@ -49,6 +49,35 @@ Permissions are a grid: a **row for each area** of Gubbins and a **column for ea
 > photos, capabilities and BOM lines are all part of changing the item. **Delete** means deleting
 > the item itself.
 
+## What the destructive actions are held to
+
+Permissions are not only about the buttons on an item. The actions that can remove or overwrite
+everything at once are held to the same role:
+
+- The [[danger zone|Danger-Zone-Erasing-Data]] entries are held to the **Delete** permission for
+  the area each one erases — *All items* to **Items → Delete**, *Tags* to **Tags → Delete**, and so
+  on. Areas with no Delete action use **Change** instead, because that is the strongest permission
+  they have. The **App & this device** entries are held to **Settings → Change**, except the two
+  with an area of their own: sync links and cloud sign-in need **Sync → Change**, and the bridge
+  token needs **Bridge → Change**.
+- **Erase everything** — the factory reset — needs *all* of those at once, because it removes
+  everything they cover.
+- Creating a [[backup|Backup-and-Restore]] needs **Backups → View**: a backup file contains the
+  whole database. Restoring one needs **Backups → Change**, in either Merge or Replace mode.
+
+Entries and buttons someone's role doesn't allow aren't shown to them at all, so nothing is offered
+that would only be refused.
+
+> **ℹ️ Note**
+> Someone who is refused **Items → Delete** on a single item is refused *All items* in the danger
+> zone too. **Change** is not enough for either — which is why the built-in **Stocker** role, which
+> can edit items but not delete them, cannot erase the catalogue.
+
+> **⚠️ Heads-up**
+> The **rescue screen** Gubbins shows when it can't start is deliberately outside all of this. It
+> can't read a role from a database that won't open, so its backup and reset actions stay available
+> to whoever holds the device. See [[Privacy & security|Privacy-and-Security]].
+
 ## Allowing a whole area, or everything
 
 Two shortcuts save a lot of ticking:

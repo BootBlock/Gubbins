@@ -6,9 +6,17 @@
  * says what it had to leave behind, and does not claim a schema baseline it does not have.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createRescueBackup } from './build-backup';
+import { createBackup, createRescueBackup } from './build-backup';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { ADMIN_USER_ID } from '@/db/repositories/constants';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { UnreadableDatabaseError } from '@/features/sync/snapshot';
-import { MANIFEST_ENTRY, SNAPSHOT_ENTRY, type BackupManifest } from './backup-format';
+import {
+  DEFAULT_BACKUP_SELECTION,
+  MANIFEST_ENTRY,
+  SNAPSHOT_ENTRY,
+  type BackupManifest,
+} from './backup-format';
 import { BASELINE_REVISION, BASELINE_REVISION_KEY } from '@/db/migrations';
 import type { IDatabaseDriver, SqlParams, SqlRow } from '@/db/rpc/driver';
 import { pageOf } from '@/test/drivers/keyset-page';
@@ -156,5 +164,38 @@ describe('createRescueBackup against a crashed worker (issue #503)', () => {
     await expect(createRescueBackup()).rejects.toThrow();
 
     expect(downloadBlob).not.toHaveBeenCalled();
+  });
+});
+
+describe('createBackup is inside the permission boundary (issue #519)', () => {
+  const items: SqlRow[] = [{ id: 'i1', name: 'Widget', is_active: 1 }];
+
+  afterEach(() => {
+    useSessionStore.getState().setResolved(UNRESTRICTED_AUTHORITY, ADMIN_USER_ID);
+  });
+
+  /** A Viewer: reads the app, holds no backup key. */
+  function signInWithoutBackupRead(): void {
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(['items:read']) }, 'user-1');
+  }
+
+  it('refuses an ordinary backup to a session without `backup:read`', async () => {
+    mockGetDriver.mockReturnValue(fakeDriver({ items }));
+    signInWithoutBackupRead();
+
+    await expect(createBackup(DEFAULT_BACKUP_SELECTION)).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    });
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('still hands the crash screen its rescue backup, which runs with no session at all', async () => {
+    mockGetDriver.mockReturnValue(fakeDriver({ items }));
+    signInWithoutBackupRead();
+
+    // The rescue path is the exemption: refusing it would only cost an already-broken device
+    // the one artefact that can bring its data back.
+    await expect(createRescueBackup()).resolves.toBeDefined();
+    expect(downloadBlob).toHaveBeenCalledOnce();
   });
 });

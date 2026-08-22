@@ -26,9 +26,16 @@
  *
  * The builders emit ONLY data statements (no `PRAGMA`, no `BEGIN`/`COMMIT`); the executor in
  * `erase-actions.ts` prepends the deferred-FK pragma and wraps the whole batch atomically.
+ *
+ * Every target also declares the permissions it needs ({@link EraseTarget.permissions}, issue
+ * #519). The check belongs beside the definition of what a target destroys, not in the dialog:
+ * these statements go straight to the driver, so the repository guard that refuses a Viewer one
+ * item never sees them, and without a key here the most destructive screen in the app would be
+ * the one the permission model does not cover.
  */
 import type { SqlStatement } from '@/db/rpc/driver';
 import { eraseGroupKeys, type LocalEraseGroupId } from '@/lib/storage-keys';
+import type { PermissionKey } from '@/features/users/permission-registry';
 
 /** Every distinct thing a user can erase. The UI codes against these ids verbatim. */
 export type EraseTargetId =
@@ -77,6 +84,28 @@ export interface EraseTarget {
   readonly id: EraseTargetId;
   readonly section: EraseSection;
   readonly label: string;
+  /**
+   * Every permission the session must hold before this target may be erased (issue #519).
+   * The executor refuses the whole run unless every one of them is held for each selected target,
+   * so a Viewer who is refused `items:delete` on one item is refused the catalogue too.
+   *
+   * **Which key a target names.** The Danger Zone destroys wholesale, so a target names the
+   * *delete-strength* key of the subject it is presented as erasing — `items:delete`, not
+   * `items:write`, because the roles that stop at `write` (Stocker) are defined as the ones
+   * that cannot delete. Where a subject has no `delete` action (`checkouts`, `stock`) its
+   * `write` key is the strongest thing there is, so that is what the target names. Cascades
+   * follow the convention the repositories already use — deleting an item takes its checkouts
+   * with it under `items:delete` alone — rather than inventing a stricter composite. The two
+   * exceptions name more than one key because they delete rows belonging to a subject they are
+   * not named for, and which no per-record delete of that subject would cascade: `categories`
+   * and `field-dictionary` both clear stored custom-field values outright.
+   *
+   * Local-scope targets are gated on `settings:write`, except where a more specific capability
+   * owns the value (`sync:write` for the sync links and the cloud sign-in, `bridge:write` for
+   * the bridge token). They are device-local, but they are still settings, and a role that
+   * cannot change a setting should not be able to reset one either.
+   */
+  readonly permissions: readonly PermissionKey[];
   /** User-facing guidance rendered verbatim by the UI — explains exactly what goes. */
   readonly tooltip: string;
   readonly scope: 'db' | 'local';
@@ -167,6 +196,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   // --- Inventory -------------------------------------------------------------------
   {
     id: 'items',
+    permissions: ['items:delete'],
     section: 'inventory',
     label: 'All items',
     tooltip:
@@ -218,6 +248,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'item-photos',
+    permissions: ['items:delete'],
     section: 'inventory',
     label: 'Item photos',
     tooltip:
@@ -234,6 +265,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'location-photos',
+    permissions: ['locations:delete'],
     section: 'organisation',
     label: 'Location photos',
     tooltip:
@@ -260,6 +292,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'item-history',
+    permissions: ['audit:delete'],
     section: 'inventory',
     label: 'Activity history',
     tooltip:
@@ -275,6 +308,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'checkouts',
+    permissions: ['checkouts:write'],
     section: 'inventory',
     label: 'Checkout & loan records',
     tooltip: 'Removes every checkout/loan record. Items and contacts are kept.',
@@ -289,6 +323,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'maintenance',
+    permissions: ['maintenance:delete'],
     section: 'inventory',
     label: 'Maintenance schedules',
     tooltip: 'Removes every maintenance and calibration schedule. The items they were attached to are kept.',
@@ -305,6 +340,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'supplier-parts',
+    permissions: ['suppliers:delete'],
     section: 'inventory',
     label: 'Supplier parts',
     tooltip:
@@ -325,6 +361,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'suppliers',
+    permissions: ['suppliers:delete'],
     section: 'projects',
     label: 'Suppliers',
     tooltip:
@@ -353,6 +390,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'custom-field-values',
+    permissions: ['items:delete'],
     section: 'inventory',
     label: 'Custom field values',
     tooltip:
@@ -368,6 +406,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'tags',
+    permissions: ['tags:delete'],
     section: 'inventory',
     label: 'Tags',
     tooltip: 'Deletes every tag and removes it from all items. The items themselves are kept.',
@@ -391,6 +430,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   // --- Organisation ----------------------------------------------------------------
   {
     id: 'categories',
+    permissions: ['categories:delete', 'items:delete'],
     section: 'organisation',
     label: 'Categories & schemas',
     tooltip:
@@ -424,6 +464,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'field-dictionary',
+    permissions: ['categories:delete', 'items:delete', 'locations:delete'],
     section: 'organisation',
     label: 'Custom field dictionary',
     tooltip:
@@ -449,6 +490,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'locations',
+    permissions: ['locations:delete'],
     section: 'organisation',
     label: 'Empty custom locations',
     tooltip:
@@ -500,6 +542,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'location-history',
+    permissions: ['locations:delete'],
     section: 'organisation',
     label: 'Location history',
     tooltip:
@@ -519,6 +562,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   // --- Projects & purchasing -------------------------------------------------------
   {
     id: 'projects',
+    permissions: ['projects:delete'],
     section: 'projects',
     label: 'Projects',
     tooltip:
@@ -542,6 +586,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'purchase-orders',
+    permissions: ['purchase-orders:delete'],
     section: 'projects',
     label: 'Purchase orders',
     tooltip:
@@ -564,6 +609,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   // --- Contacts --------------------------------------------------------------------
   {
     id: 'contacts',
+    permissions: ['contacts:delete'],
     section: 'contacts',
     label: 'Contacts',
     tooltip:
@@ -598,6 +644,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   //    sharing on the restored defaults publish and reach the other devices on their next sync.
   {
     id: 'preferences',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'App preferences',
     tooltip:
@@ -607,6 +654,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'dashboard-layout',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Dashboard layout',
     tooltip:
@@ -616,6 +664,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'saved-searches',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Saved searches',
     tooltip:
@@ -625,6 +674,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'dismissed-alerts',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Dismissed alerts',
     tooltip:
@@ -634,6 +684,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'cloud-signin',
+    permissions: ['sync:write'],
     section: 'local',
     label: 'Cloud sign-in',
     tooltip:
@@ -643,6 +694,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'bridge-token',
+    permissions: ['bridge:write'],
     section: 'local',
     label: 'Bridge access token',
     tooltip:
@@ -654,6 +706,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'sync-links',
+    permissions: ['sync:write'],
     section: 'local',
     label: 'Sync links & pending deletions',
     tooltip:
@@ -675,6 +728,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'enabled-features',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Enabled features',
     tooltip:
@@ -684,6 +738,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'local-ui',
+    permissions: ['settings:write'],
     section: 'local',
     label: 'Drafts & reminders',
     tooltip:
@@ -697,3 +752,14 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
 export function eraseTargetById(id: EraseTargetId): EraseTarget | undefined {
   return ERASE_TARGETS.find((target) => target.id === id);
 }
+
+/**
+ * What the factory reset ("Erase everything") demands: every permission the catalog names,
+ * because it destroys everything the catalog covers and then some (issue #519).
+ *
+ * Derived rather than enumerated so a target added later cannot leave the strongest action in
+ * the app asking for less than the individual one beside it.
+ */
+export const ERASE_EVERYTHING_PERMISSIONS: readonly PermissionKey[] = [
+  ...new Set(ERASE_TARGETS.flatMap((target) => target.permissions)),
+];

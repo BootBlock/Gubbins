@@ -7,6 +7,13 @@ browser wiping its storage.
 **Where to find it:** the **Sync** screen → **Backup & restore** (in the menu, when the module is
 enabled).
 
+> **ℹ️ Note**
+> With the [[Users module|Users-and-Accounts]] switched on, creating a backup needs the
+> **Backups → View** [[permission|Roles-and-Permissions]] and restoring one needs **Backups →
+> Change**. A role with neither isn't shown the **Backup & restore** section at all. The
+> [[rescue backup|#backing-up-when-gubbins-wont-start]] the crash screen offers is the exception —
+> it has no signed-in session to check.
+
 ## What's in a backup
 
 A backup is one portable **`.zip`** that bundles:

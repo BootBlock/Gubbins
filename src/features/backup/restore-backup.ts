@@ -26,6 +26,7 @@
  * records that are no longer anywhere else.
  */
 import { getDatabaseDriver } from '@/db/client';
+import { assertPermissions, currentAuthority } from '@/features/users/assert-permission';
 import {
   buildCloneStatements,
   buildSchemaDictionary,
@@ -121,6 +122,12 @@ export async function restoreBackup(
   mode: RestoreMode,
   settingGroups: SettingsGroupSelection = DEFAULT_SETTINGS_GROUPS,
 ): Promise<RestoreOutcome> {
+  // Issue #519: a restore upserts arbitrary rows into every synced table — in `replace` mode it
+  // overwrites the vault outright — and it composes its own statements, so the repository guard
+  // never sees it. `backup:write` is the key the role editor already offers for this, and until
+  // now unticking it withheld nothing.
+  assertPermissions(currentAuthority(), ['backup:write']);
+
   // Issue #382: the picker has to narrow the *shared* copy of the settings as well as the
   // device-local one below, or on a device that shares settings live the unticked groups would land
   // in the `settings` table anyway and be adopted into those preferences by the next sync.
