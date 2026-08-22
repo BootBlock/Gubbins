@@ -30,6 +30,8 @@ import {
   type ProductLookupState,
   type ScrapeRequestState,
 } from './bridge-reducer';
+import { hostOf } from './parsers/types';
+import { OPEN_FOOD_FACTS_HOST } from './product-lookup';
 import { makeMessage, parseExtensionMessage, type ScrapeErrorPayload } from './protocol';
 
 interface ScrapeBridgeValue {
@@ -89,6 +91,31 @@ export type DataFetchOutcome =
  */
 export const DATA_FETCH_TIMEOUT_MS = 20_000;
 
+/**
+ * How long a tracked scrape or product lookup may stay in flight before the bridge settles it
+ * itself as a `NETWORK_TIMEOUT` (issue #665).
+ *
+ * The bridge is `postMessage` over a peer that is entitled to say nothing at all: §9.1 has the
+ * *receiving* side silently drop any message that fails the wire schema, so a request the peer
+ * refuses produces no reply, no error and no log. Without a deadline the reducer entry stays
+ * `SCRAPING` for the rest of the session — the panel's button stays disabled with nothing to act
+ * on, and `pendingCount` never returns to zero. A dropped message is only one cause; an extension
+ * disabled mid-session, or one too old to know the request kind, ends the same way.
+ *
+ * Matches `RefreshPricesButton`'s own run deadline, which this generalises: the guard belongs to
+ * the bridge, where every caller gets it, not to one of the three components that use it.
+ */
+export const BRIDGE_REQUEST_TIMEOUT_MS = 30_000;
+
+/** The §9.4.2 error a request is settled with when nothing ever answered it. */
+function timedOut(domain: string): ScrapeErrorPayload {
+  return {
+    domain,
+    error_type: 'NETWORK_TIMEOUT',
+    reason: `No reply from the extension within ${BRIDGE_REQUEST_TIMEOUT_MS / 1000}s.`,
+  };
+}
+
 /** One outstanding {@link ScrapeBridgeValue.fetchDataUrl}, awaiting its correlated reply. */
 interface PendingDataFetch {
   readonly url: string;
@@ -103,17 +130,32 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
   // Held in a ref rather than in state: resolving a promise is not a render, and putting these in
   // the reducer would re-render every bridge consumer for an outcome nothing displays.
   const pendingDataFetches = useRef(new Map<string, PendingDataFetch>());
+  // Deadline timers for tracked scrapes/lookups, keyed by the same `requestId` the reducer uses.
+  // A ref for the same reason: arming and disarming a timer is not a render.
+  const requestTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  /** Stop a request's deadline — it settled, or it was cleared before the deadline arrived. */
+  const disarm = useCallback((id: string) => {
+    const timer = requestTimers.current.get(id);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    requestTimers.current.delete(id);
+  }, []);
 
   // Settle every outstanding data fetch on unmount, so an awaiting caller can never be left
   // hanging on a promise whose listener has gone.
   useEffect(() => {
     const pending = pendingDataFetches.current;
+    const timers = requestTimers.current;
     return () => {
       for (const entry of pending.values()) {
         clearTimeout(entry.timer);
         entry.settle(null);
       }
       pending.clear();
+      // Nothing is left to render an expiry into, so the deadlines just go with the provider.
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
     };
   }, []);
 
@@ -130,16 +172,21 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'READY' });
           break;
         case 'SCRAPE_RESULT':
-          // Correlate by requestId — the reducer ignores a stale/foreign id (§9).
+          // Correlate by requestId — the reducer ignores a stale/foreign id (§9). Disarming an
+          // unknown id is a no-op, so a foreign echo cannot cancel anyone else's deadline.
+          disarm(msg.requestId);
           dispatch({ type: 'RESULT', id: msg.requestId, payload: msg.payload });
           break;
         case 'SCRAPE_ERROR':
+          disarm(msg.requestId);
           dispatch({ type: 'ERROR', id: msg.requestId, payload: msg.payload });
           break;
         case 'PRODUCT_LOOKUP_RESULT':
+          disarm(msg.requestId);
           dispatch({ type: 'LOOKUP_RESULT', id: msg.requestId, payload: msg.payload });
           break;
         case 'PRODUCT_LOOKUP_ERROR':
+          disarm(msg.requestId);
           dispatch({ type: 'LOOKUP_ERROR', id: msg.requestId, payload: msg.payload });
           break;
         case 'ACTIVE_TAB_RESULT':
@@ -179,25 +226,55 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, [disarm]);
 
   const requestScrape = useCallback((url: string) => {
     const id = crypto.randomUUID();
     dispatch({ type: 'REQUEST', id, url });
+    // Armed before the message goes out, so a peer that never answers is still bounded. The
+    // host is the one thing the user can recognise in the toast; an unparseable target has
+    // none, so the raw text they gave stands in for it.
+    requestTimers.current.set(
+      id,
+      setTimeout(() => {
+        requestTimers.current.delete(id);
+        dispatch({ type: 'ERROR', id, payload: timedOut(hostOf(url) || url) });
+      }, BRIDGE_REQUEST_TIMEOUT_MS),
+    );
     window.postMessage(makeMessage('SCRAPE_REQUEST', { url }, id), window.location.origin);
     return id;
   }, []);
 
-  const clear = useCallback((id: string) => dispatch({ type: 'CLEAR', id }), []);
+  const clear = useCallback(
+    (id: string) => {
+      disarm(id);
+      dispatch({ type: 'CLEAR', id });
+    },
+    [disarm],
+  );
 
   const requestLookup = useCallback((gtin: string) => {
     const id = crypto.randomUUID();
     dispatch({ type: 'LOOKUP_REQUEST', id, gtin });
+    // A lookup names no URL, so the database it would have queried is the domain to report.
+    requestTimers.current.set(
+      id,
+      setTimeout(() => {
+        requestTimers.current.delete(id);
+        dispatch({ type: 'LOOKUP_ERROR', id, payload: timedOut(OPEN_FOOD_FACTS_HOST) });
+      }, BRIDGE_REQUEST_TIMEOUT_MS),
+    );
     window.postMessage(makeMessage('PRODUCT_LOOKUP_REQUEST', { gtin }, id), window.location.origin);
     return id;
   }, []);
 
-  const clearLookup = useCallback((id: string) => dispatch({ type: 'LOOKUP_CLEAR', id }), []);
+  const clearLookup = useCallback(
+    (id: string) => {
+      disarm(id);
+      dispatch({ type: 'LOOKUP_CLEAR', id });
+    },
+    [disarm],
+  );
 
   const clearIncoming = useCallback((id: string) => dispatch({ type: 'INCOMING_CLEAR', id }), []);
 
