@@ -210,10 +210,11 @@ export function useExpiringItems(
  * default to the repository constants; passing them as a key segment keeps the cache
  * correct if a caller ever overrides them.
  */
-export function useLowStockItems(thresholds?: LowStockThresholds) {
+export function useLowStockItems(thresholds?: LowStockThresholds, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: inventoryKeys.lowStockFor(thresholds ?? null),
     queryFn: () => getItemRepository().listLowStock(thresholds, { limit: 100 }),
+    enabled: options?.enabled ?? true,
   });
 }
 

@@ -48,6 +48,16 @@ vi.mock('./widgets', () => {
     // Ungated widget whose link targets `/reports` — survives when Reports is off, but its
     // link must drop (the dead-link case).
     { id: 'gamma', title: 'Gamma', icon: null, to: '/reports', Component: () => <p>Gamma body</p> },
+    // Gated on a read permission rather than a module (issue #522) — disappears entirely for a
+    // role that cannot view the audit trail, exactly as `/activity` itself does.
+    {
+      id: 'tau',
+      title: 'Tau',
+      icon: null,
+      to: '/activity',
+      permission: 'audit:view',
+      Component: () => <p>Tau body</p>,
+    },
     // A tile targeting `/settings` — Settings is a dialog, so this must render as a button
     // that opens the dialog, never a `<Link>` (a link prefetch-opens it on hover).
     { id: 'sigma', title: 'Sigma', icon: null, to: '/settings', Component: () => <p>Sigma body</p> },
@@ -80,6 +90,8 @@ import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { useDashboardCustomise } from './useDashboardCustomise';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 /** The widget board no longer owns the Customise toggle — enter edit mode via the shared store. */
 function enterCustomise(): void {
@@ -91,6 +103,7 @@ beforeEach(() => {
   useLayoutStore.setState({ dashboardLayout: [] });
   useDashboardCustomise.setState({ editing: false });
   usePreferencesStore.setState({ hideHealthyDashboardCards: false });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
   mockHealthyIds = new Set<string>();
 });
 afterEach(() => {
@@ -100,6 +113,7 @@ afterEach(() => {
   useDashboardCustomise.setState({ editing: false });
   useSettingsDialog.setState({ open: false, initialTab: undefined });
   usePreferencesStore.setState({ hideHealthyDashboardCards: false });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
   mockHealthyIds = new Set<string>();
 });
 
@@ -339,5 +353,42 @@ describe('DashboardGrid — touch-friendly move controls (issue #11)', () => {
     // The up control is disabled, so drive the clamped nudge through the keyboard path.
     fireEvent.keyDown(screen.getByTestId('widget-alpha'), { key: 'ArrowUp' });
     expect(screen.getByRole('status').textContent).toBe('');
+  });
+});
+
+/**
+ * Issue #522: the Dashboard carries no read gate of its own — it is where a refused screen
+ * sends people — so a widget summarising a subject the role cannot view has to drop itself,
+ * or the board shows the very ledger `/activity` just withheld.
+ */
+describe('DashboardGrid — read permissions', () => {
+  it('drops a widget whose read permission the session lacks, from the board and the picker', () => {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['items:read']) } });
+    render(<DashboardGrid />);
+
+    expect(screen.queryByTestId('widget-tau')).toBeNull();
+    expect(screen.getByTestId('widget-alpha')).toBeInTheDocument();
+
+    enterCustomise();
+    expect(screen.queryByTestId('widget-add-tau')).toBeNull();
+  });
+
+  it('keeps the widget when the role grants its permission', () => {
+    useSessionStore.setState({
+      authority: { mode: 'granted', grants: new Set(['items:read', 'audit:view']) },
+    });
+    render(<DashboardGrid />);
+    expect(screen.getByTestId('widget-tau')).toBeInTheDocument();
+  });
+
+  it('drops a surviving widget’s quick-link into a route the role cannot read', () => {
+    // `gamma` itself is ungated, but it links to /reports — which needs `reports:read`.
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['items:read']) } });
+    render(<DashboardGrid />);
+
+    expect(screen.getByTestId('widget-gamma')).toBeInTheDocument();
+    expect(tileLink('gamma')).toBeNull();
+    // The core-inventory link stays live: `items:read` covers /inventory.
+    expect(tileLink('alpha')?.getAttribute('href')).toBe('/inventory');
   });
 });

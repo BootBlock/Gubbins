@@ -1,6 +1,7 @@
 import type { LucideIcon } from '@/components/icons';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import type { MessageKey } from '@/features/i18n';
+import type { PermissionKey } from '@/features/users/permission-registry';
 import {
   AlertIcon,
   BookingIcon,
@@ -88,6 +89,19 @@ export interface PaletteDestination {
   readonly Icon: LucideIcon;
   /** The Modular UI feature that gates this destination, or `undefined` when always reachable. */
   readonly feature?: FeatureId;
+  /**
+   * The read permission a signed-in account needs before this screen is offered or rendered
+   * (issue #522). `undefined` means the screen carries no read gate — either because it shows
+   * nothing a role can withhold (the Dashboard shell, About), because it is this device's own
+   * preferences rather than the vault's data (Settings), or because it is the one way back from
+   * a hidden module (Modules).
+   *
+   * This is deliberately *screen*-level, not row-level: the same key also guards the matching
+   * route via `PermissionGuard`, so a denied account cannot reach the screen by typing its URL.
+   * Reads inside a screen the account may open are not filtered further — the repository layer
+   * gates writes, and the database file itself is readable by anyone holding the device.
+   */
+  readonly permission?: PermissionKey;
 }
 
 export interface NavDestination extends PaletteDestination {
@@ -124,6 +138,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: PackageIcon,
     group: 'primary',
     feature: 'inventory',
+    permission: 'items:read',
   },
   {
     to: '/projects',
@@ -132,6 +147,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: ProjectIcon,
     group: 'primary',
     feature: 'projects',
+    permission: 'projects:read',
   },
   {
     to: '/purchase-orders',
@@ -140,6 +156,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: ShoppingCartIcon,
     group: 'primary',
     feature: 'purchase-orders',
+    permission: 'purchase-orders:read',
   },
   {
     to: '/suppliers',
@@ -148,6 +165,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: SupplierIcon,
     group: 'primary',
     feature: 'suppliers',
+    permission: 'suppliers:read',
   },
   {
     to: '/reports',
@@ -156,6 +174,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: ReportIcon,
     group: 'primary',
     feature: 'reports',
+    permission: 'reports:read',
   },
   // Manage — people, time and what needs attention.
   {
@@ -165,6 +184,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: ContactsIcon,
     group: 'manage',
     feature: 'contacts',
+    permission: 'contacts:read',
   },
   {
     to: '/bookings',
@@ -173,6 +193,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: BookingIcon,
     group: 'manage',
     feature: 'bookings',
+    permission: 'bookings:read',
   },
   {
     to: '/upcoming',
@@ -189,6 +210,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: HistoryIcon,
     group: 'manage',
     feature: 'activity',
+    permission: 'audit:view',
   },
   {
     to: '/alerts',
@@ -199,7 +221,15 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     feature: 'alerts',
   },
   // System — sync, preferences and app info.
-  { to: '/sync', label: 'Sync', messageKey: 'nav.sync', Icon: CloudIcon, group: 'system', feature: 'sync' },
+  {
+    to: '/sync',
+    label: 'Sync',
+    messageKey: 'nav.sync',
+    Icon: CloudIcon,
+    group: 'system',
+    feature: 'sync',
+    permission: 'sync:read',
+  },
   {
     to: '/webhooks',
     label: 'Webhooks',
@@ -207,6 +237,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: WebhookIcon,
     group: 'system',
     feature: 'webhooks',
+    permission: 'bridge:read',
   },
   {
     to: '/home-assistant',
@@ -215,6 +246,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: ExtensionIcon,
     group: 'system',
     feature: 'home-assistant',
+    permission: 'bridge:read',
   },
   {
     to: '/users',
@@ -223,6 +255,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: UsersIcon,
     group: 'system',
     feature: 'users',
+    permission: 'users:read',
   },
   {
     to: '/settings',
@@ -257,17 +290,25 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
  * English {@link PaletteDestination.label} directly, matching how it already lists nav screens.
  */
 export const PALETTE_EXTRA_DESTINATIONS: readonly PaletteDestination[] = [
-  { to: '/catalogue', label: 'Catalogue', Icon: CatalogueIcon, feature: 'reports' },
+  {
+    to: '/catalogue',
+    label: 'Catalogue',
+    Icon: CatalogueIcon,
+    feature: 'reports',
+    permission: 'reports:read',
+  },
   {
     to: '/insurance-schedule',
     label: 'Insurance schedule',
     Icon: InsuranceScheduleIcon,
     feature: 'reports',
+    permission: 'reports:read',
   },
   { to: '/modules', label: 'Manage modules', Icon: ModulesIcon },
   // The tag dictionary manager (issue #84), reached from an item/location's tag editor and the
-  // palette. Ungated — tags are a core inventory concept, always available.
-  { to: '/tags', label: 'Manage tags', Icon: TagIcon },
+  // palette. No module gate — tags are a core inventory concept — but a role that cannot read
+  // tags has no business in the dictionary that defines them.
+  { to: '/tags', label: 'Manage tags', Icon: TagIcon, permission: 'tags:read' },
 ];
 
 /**
@@ -282,3 +323,14 @@ export const PALETTE_DESTINATIONS: readonly PaletteDestination[] = [
 
 /** The groups in display order, for rendering separators between them. */
 export const NAV_GROUP_ORDER: readonly NavGroup[] = ['primary', 'manage', 'system'];
+
+/**
+ * The read permission each route requires, keyed by path (issue #522).
+ *
+ * Derived from {@link PALETTE_DESTINATIONS} rather than written out a second time, so a screen
+ * cannot be hidden from the navigation while still answering to its own URL — the nav surfaces
+ * and the route guard read one list. A path absent from this map carries no read gate.
+ */
+export const ROUTE_PERMISSIONS: ReadonlyMap<AppRoutePath, PermissionKey> = new Map(
+  PALETTE_DESTINATIONS.flatMap((d) => (d.permission ? [[d.to, d.permission] as const] : [])),
+);

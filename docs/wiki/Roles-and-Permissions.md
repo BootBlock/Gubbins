@@ -18,8 +18,8 @@ people are assigned to them.
 | --- | --- |
 | **Administrator** | Everything, including managing users and roles |
 | **Manager** | Everything across inventory, projects and settings, but can't manage users |
-| **Stocker** | Add and edit items, move stock and run counts — but no deleting and no activity history |
-| **Viewer** | Look at everything except the activity history and user accounts; change nothing |
+| **Stocker** | Add and edit items, move stock and run counts. No deleting, and no activity history, projects, contacts, suppliers, purchase orders or bookings |
+| **Viewer** | Look at inventory, projects, contacts, suppliers, purchase orders, bookings and reports; change nothing. No activity history, user accounts, sync or bridge setup |
 
 Add your own with **Add role** whenever none of these quite fits. Role names are matched **ignoring
 case, in any language**, so `Workshop Lead` and `WORKSHOP LEAD` are one role rather than two that
@@ -48,6 +48,30 @@ Permissions are a grid: a **row for each area** of Gubbins and a **column for ea
 > **Change** covers an entity's own details *and* the things attached to it — an item's attachments,
 > photos, capabilities and BOM lines are all part of changing the item. **Delete** means deleting
 > the item itself.
+
+## What **View** actually does
+
+**View** decides which screens open. Take **View** away from an area and its screen disappears from
+the navigation menu, from the Dashboard's tile grid and from the
+[[command palette|Command-Palette-and-Shortcuts]] — and typing the address by hand lands on a short
+"your role doesn't allow this" page instead of the screen. Any [[dashboard|Dashboard-and-Widgets]] card that
+summarises that area drops off the board too, so nothing quietly reports what the screen won't show.
+
+Two screens gather several areas at once — [[Upcoming|Upcoming-Agenda]] and [[Alerts|Alerts]] — so
+they stay available and simply leave out the entries a role can't view.
+
+Withholding **View** is not the same as hiding individual records:
+
+- A screen someone *can* open shows **everything on it**. There is no per-item or per-location
+  visibility — Gubbins has no concept of "this item is hidden from Sam".
+- Some information travels between areas by design. An item's own page names the project it's
+  committed to and the supplier it came from, whether or not that person can open the Projects or
+  Suppliers screen.
+
+> **⚠️ Heads-up**
+> If a piece of information genuinely must not be seen by someone, don't rely on **View** to keep it
+> out of sight — keep it out of that vault. Permissions decide which screens and actions a person
+> gets, not which rows exist.
 
 ## Allowing a whole area, or everything
 
@@ -80,7 +104,9 @@ permissions until you give them another one.
 
 A role also governs what an outside tool can do. An [[API token|Bridge-API-Tokens]] minted against
 an account is held to that account's role, so a role that can't see suppliers in the app can't read
-them through the [[bridge|Bridge-Overview]] either.
+them through the [[bridge|Bridge-Overview]] either. The bridge is the stricter of the two: it checks
+the permission on **every request**, so a role without *View* on suppliers is refused the supplier
+data itself, not merely the screen that shows it.
 
 > **⚠️ Heads-up**
 > Permissions decide what Gubbins *lets someone do in the app*. They are not a lock on the data

@@ -33,6 +33,7 @@ import { useStorageStore, useStoragePersisted } from '@/state/stores/useStorageS
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT, type MessageKey } from '@/features/i18n';
+import type { PermissionKey } from '@/features/users/permission-registry';
 import { resolveSupplyState } from '@/features/inventory/supply-state';
 import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
 import {
@@ -88,6 +89,15 @@ export interface WidgetDefinition {
    * `featureForRoute`), it isn't removed.
    */
   readonly feature?: FeatureId;
+  /**
+   * The read permission a signed-in account needs before this widget is drawn or offered in
+   * the "Customise" picker (issue #522). The Dashboard itself carries no read gate — it is
+   * where a refused screen sends people — so a widget that summarises a gated subject has to
+   * gate itself, or the board would show the very ledger `/activity` just refused. `undefined`
+   * means the widget draws nothing a role can withhold: core inventory totals, or app-status
+   * plumbing about this device.
+   */
+  readonly permission?: PermissionKey;
   readonly Component: ComponentType;
 }
 
@@ -715,6 +725,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     titleKey: 'dashboard.widget.totals.title',
     icon: <ValueIcon />,
     to: '/reports',
+    permission: 'items:read',
     Component: InventoryTotalsWidget,
   },
   // Low stock is core reorder inventory — always meaningful, so no feature gate.
@@ -724,6 +735,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     titleKey: 'dashboard.widget.lowStock.title',
     icon: <LowStockIcon />,
     to: '/inventory',
+    permission: 'items:read',
     Component: LowStockWidget,
   },
   {
@@ -733,6 +745,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     icon: <ExpiryIcon />,
     to: '/inventory',
     feature: 'perishables',
+    permission: 'items:read',
     Component: ExpiringWidget,
   },
   {
@@ -742,6 +755,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     icon: <DueDateIcon />,
     to: '/contacts',
     feature: 'contacts',
+    permission: 'checkouts:read',
     Component: OverdueWidget,
   },
   {
@@ -751,6 +765,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     icon: <MaintenanceIcon />,
     to: '/inventory',
     feature: 'maintenance',
+    permission: 'maintenance:read',
     Component: MaintenanceWidget,
   },
   {
@@ -763,6 +778,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     // than the plain, unfiltered list — that's where incoming stock actually sits.
     onLinkClick: () => useInventoryEntry.getState().requestLocation(IN_TRANSIT_LOCATION_ID),
     feature: 'purchase-orders',
+    permission: 'purchase-orders:read',
     Component: InTransitWidget,
   },
   {
@@ -772,6 +788,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     icon: <ProjectIcon />,
     to: '/projects',
     feature: 'projects',
+    permission: 'projects:read',
     Component: ProjectsWidget,
   },
   {
@@ -782,6 +799,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     to: '/projects',
     // Budgets live inside Projects (no separate flag in v1), so they gate together.
     feature: 'projects',
+    permission: 'projects:read',
     Component: BudgetAlertsWidget,
   },
   {
@@ -791,6 +809,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     icon: <HistoryIcon />,
     to: '/activity',
     feature: 'activity',
+    permission: 'audit:view',
     Component: RecentActivityWidget,
   },
   // System-status board — app plumbing, meaningful whatever modules are on (no gate).

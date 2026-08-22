@@ -25,6 +25,7 @@ import {
   type NavGroup,
 } from '@/components/nav/nav-destinations';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import {
   moveTile,
@@ -45,6 +46,7 @@ const NAV_TILE_DEFAULTS: readonly NavTileDefault[] = NAV_DESTINATIONS.filter((d)
 
 const DEST_BY_ROUTE = new Map<string, NavDestination>(NAV_DESTINATIONS.map((d) => [d.to, d]));
 const FEATURE_BY_ROUTE = new Map(NAV_DESTINATIONS.map((d) => [d.to as string, d.feature] as const));
+const PERMISSION_BY_ROUTE = new Map(NAV_DESTINATIONS.map((d) => [d.to as string, d.permission] as const));
 
 /** One tile ready to render: its destination plus whether it is pinned. */
 export interface OrderedNavTile {
@@ -92,21 +94,23 @@ export function useNavOrder(): UseNavOrder {
   const stored = useLayoutStore((s) => s.navTileOrder);
   const setStored = useLayoutStore((s) => s.setNavTileOrder);
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
 
   // Reconcile against the live tile set every render so the arrangement survives the nav
   // destinations changing across releases (unknown ids dropped, new tiles appended).
   const full = useMemo(() => reconcileOrder(stored, NAV_TILE_DEFAULTS, NAV_GROUP_ORDER), [stored]);
 
-  // Split off the tiles whose module is switched off: `enabled` is what the hub draws and
-  // every edit operates on; `gated` is kept verbatim and merged back on persist so a hidden
-  // module's tiles never lose their place.
+  // Split off the tiles whose module is switched off, or whose read permission this session
+  // lacks (issue #522): `enabled` is what the hub draws and every edit operates on; `gated` is
+  // kept verbatim and merged back on persist so a hidden tile never loses its place — which is
+  // what lets a tile reappear where it was when the module comes back or the role changes.
   const { enabled, gated } = useMemo(
     () =>
       partitionByEnabled(full, (id) => {
         const feature = FEATURE_BY_ROUTE.get(id);
-        return !feature || enabledFeatures.has(feature);
+        return (!feature || enabledFeatures.has(feature)) && allows(PERMISSION_BY_ROUTE.get(id));
       }),
-    [full, enabledFeatures],
+    [full, enabledFeatures, allows],
   );
 
   const groups = useMemo<readonly NavOrderGroup[]>(

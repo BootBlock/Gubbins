@@ -11,15 +11,11 @@
  */
 import { useId, useState } from 'react';
 import { Banner, Button, Checkbox, FormField, Input, Modal, Surface } from '@/components/foundry';
-import { useT, type MessageKey } from '@/features/i18n';
+import { useT } from '@/features/i18n';
 import type { Role } from '@/db/repositories/types';
-import {
-  PERMISSION_SUBJECT_IDS,
-  permissionKeysFor,
-  splitGrant,
-  type PermissionSubject,
-} from '../permission-registry';
+import { PERMISSION_SUBJECT_IDS, permissionKeysFor, splitGrant } from '../permission-registry';
 import { builtinRoleDescription, builtinRoleName } from '../builtin-role-labels';
+import { actionLabelKey, subjectLabelKey } from '../permission-labels';
 import {
   fromGrantModel,
   isKeyTicked,
@@ -43,16 +39,6 @@ export interface RoleFormDialogProps {
   readonly error: string | null;
   readonly onSubmit: (values: RoleFormValues) => void;
   readonly onClose: () => void;
-}
-
-/** A subject's display label key. Generated per subject so the grid needs no hand-written list. */
-function subjectLabelKey(subject: PermissionSubject): MessageKey {
-  return `users.subject.${subject}` as MessageKey;
-}
-
-/** An action's display label key, shared across every subject that supports that action. */
-function actionLabelKey(action: string): MessageKey {
-  return `users.action.${action}` as MessageKey;
 }
 
 export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFormDialogProps) {

@@ -32,7 +32,9 @@ import { useBoardPointerDrag, type DragSourceProps, type DropTargetProps } from 
 import { BoardMoveButtons, type MoveDir } from './BoardMoveButtons';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { featureForRoute } from '@/features/modules/feature-registry';
+import { ROUTE_PERMISSIONS, type AppRoutePath } from '@/components/nav/nav-destinations';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { useT } from '@/features/i18n';
 import {
   DASHBOARD_COLUMNS,
@@ -125,26 +127,33 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
   // Which Modular UI features are on (modular-ui-plan §4). Drives both what appears on the
   // board and whether a surviving widget's quick-link stays live.
   const enabled = useEnabledFeatures();
+  // Which read permissions this session holds (issue #522). The Dashboard carries no read gate
+  // of its own — it is where a refused screen sends people — so each widget that summarises a
+  // gated subject is dropped here rather than showing the data the screen just withheld.
+  const allows = usePermissionCheck();
 
   // Reconcile the persisted layout against the live registry every render so the board
   // survives the widget set changing across releases (new widgets appear, removed ones
   // drop). The reconciled layout is what we render and what edits mutate.
   const fullLayout = useMemo(() => reconcileLayout(stored, DASHBOARD_WIDGET_IDS), [stored]);
 
-  // Gate on top of the stored layout: a widget whose feature is off is split out into
-  // `gated` and never rendered, while `layout` (its enabled complement) is what the board
-  // draws and what every edit operates on. The gated placements are kept verbatim and
-  // concatenated back on each persist (`apply`), so a hidden module's widgets keep their
-  // exact coordinates — turning the module back on restores the prior layout untouched.
+  // Gate on top of the stored layout: a widget whose feature is off, or whose read permission
+  // this session lacks, is split out into `gated` and never rendered, while `layout` (its
+  // enabled complement) is what the board draws and what every edit operates on. The gated
+  // placements are kept verbatim and concatenated back on each persist (`apply`), so a hidden
+  // widget keeps its exact coordinates — turning the module back on, or being granted the
+  // permission, restores the prior layout untouched.
   const { layout, gated } = useMemo(() => {
     const onBoard: WidgetPlacement[] = [];
     const gatedOut: WidgetPlacement[] = [];
     for (const p of fullLayout) {
-      const feature = widgetById(p.id)?.feature;
-      (!feature || enabled.has(feature) ? onBoard : gatedOut).push(p);
+      const widget = widgetById(p.id);
+      const feature = widget?.feature;
+      const visible = (!feature || enabled.has(feature)) && allows(widget?.permission);
+      (visible ? onBoard : gatedOut).push(p);
     }
     return { layout: onBoard as DashboardLayout, gated: gatedOut as DashboardLayout };
-  }, [fullLayout, enabled]);
+  }, [fullLayout, enabled, allows]);
 
   // "Hide healthy cards" (issue #111) only bites in view mode — while customising, every card
   // stays on the board so it can be arranged, so the healthy set is ignored then. The reflow
@@ -268,11 +277,14 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
         {placed.map((p, i) => {
           const def = widgetById(p.id);
           if (!def) return null;
-          // Resolve the quick-link through the enabled set: a surviving widget whose `to`
-          // targets a now-hidden route drops its link rather than navigate into a hidden
-          // module (modular-ui-plan §4). An ungated route (or no `to`) stays live.
+          // Resolve the quick-link through the enabled set *and* this session's permissions: a
+          // surviving widget whose `to` targets a now-hidden route drops its link rather than
+          // navigate into a hidden module (modular-ui-plan §4), and the same applies to a route
+          // the role cannot read (issue #522) — the link would land straight on the refusal
+          // page. An ungated route (or no `to`) stays live.
           const linkFeature = def.to ? featureForRoute(def.to) : undefined;
-          const linkActive = !linkFeature || enabled.has(linkFeature);
+          const linkPermission = def.to ? ROUTE_PERMISSIONS.get(def.to as AppRoutePath) : undefined;
+          const linkActive = (!linkFeature || enabled.has(linkFeature)) && allows(linkPermission);
           return (
             <WidgetTile
               key={p.id}

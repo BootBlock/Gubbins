@@ -17,7 +17,8 @@ An account does two things:
 - **Attribution.** Every change is recorded against the person who made it, so the
   [[activity log|Activity-Log]] answers *who* as well as *what* and *when*.
 - **Permissions.** Each account holds a [[role|Roles-and-Permissions]], and the role decides which
-  parts of Gubbins that person may see and change.
+  screens that person can open and what they can change. A screen they can open shows everything on
+  it — permissions work by area, not by individual record.
 
 An account is also what an outside tool acts *as*: if you run the [[bridge|Bridge-Overview]], each
 integration presents an [[API token|Bridge-API-Tokens]] minted against an account and is held to

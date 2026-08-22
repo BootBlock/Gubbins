@@ -37,8 +37,9 @@ A few optional features exist precisely to move data. Each is opt-in and stays u
 If several people share a device you can turn on [[accounts and sign-in|Users-and-Accounts]]. It is
 worth being precise about what that buys you, because it would be easy to assume more:
 
-- ✅ It **controls who gets into the app** on that device, and keeps each person to what their
-  [[role|Roles-and-Permissions]] allows.
+- ✅ It **controls who gets into the app** on that device, and keeps each person to the screens and
+  actions their [[role|Roles-and-Permissions]] allows. That is a screen-and-action boundary, not a
+  per-record one: a screen someone can open shows everything on it.
 - ✅ It **attributes every change to a person**, so the [[activity log|Activity-Log]] records who.
 - ❌ It **does not encrypt your data.** The database still sits in your browser's storage in the
   clear, and anyone who can reach that device's files can read the lot — whatever passwords are set.
