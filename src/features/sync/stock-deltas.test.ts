@@ -4,6 +4,8 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { LocationRepository } from '@/db/repositories/LocationRepository';
+import { ProjectRepository } from '@/db/repositories/ProjectRepository';
+import { assemblyId } from '@/db/repositories/project/assembly';
 import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE, SYNC_TABLES } from '@/db/repositories/tombstone';
 import { UNTRACKED_BATCH } from '@/db/repositories/stock-batches';
 import {
@@ -218,6 +220,21 @@ describe('reconcileStockQuantity — pure replay (issue #188, S1)', () => {
     const local = [d('seed', 10), d('a', -8)];
     const remote = [d('seed', 10), d('b', -8)];
     expect(reconcileStockQuantity(local, remote)).toBe(0);
+  });
+
+  // --- Derived ids (issue #696) ------------------------------------------------------------
+  //
+  // A one-shot terminal operation derives its delta ids, so the *same* id can be minted
+  // independently on two devices, each stamped by its own clock. The union must then pick a copy
+  // from the rows' own content, or the two devices order the ledger differently.
+
+  it('keeps the earliest copy of an id both devices minted, whichever side it came from', () => {
+    // Device A ran the operation at 100, device B at 200; a count on B fell between the two.
+    // Taking "the local copy" would put the operation before the count on A and after it on B.
+    const local = [d('seed', 10), d('op', -4, 100)];
+    const remote = [d('seed', 10), counted('c', -1, 9, 150), d('op', -4, 200)];
+    expect(reconcileStockQuantity(local, remote)).toBe(9);
+    expect(reconcileStockQuantity(remote, local)).toBe(9);
   });
 
   // --- Absolute counts (issue #633) --------------------------------------------------------
@@ -598,6 +615,128 @@ describe('absolute cycle counts — the #633 scenario end-to-end', () => {
         [item.id],
       );
       expect(Number(asserted?.n)).toBe(0);
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+});
+
+describe('one-shot finalise — the #696 scenario end-to-end', () => {
+  const dictOf = (driver: MemoryDriver) =>
+    buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE]);
+
+  /** Merge each device's view of the other, exactly as the real sync does from both ends. */
+  async function syncBothWays(a: MemoryDriver, b: MemoryDriver) {
+    const snapA = await buildLocalSnapshot(a);
+    const snapB = await buildLocalSnapshot(b);
+    const dictA = await dictOf(a);
+    const dictB = await dictOf(b);
+    await applyPlan(a, reconcile(snapA, snapB, { offset: 0, dictionary: dictA }), dictA);
+    await applyPlan(b, reconcile(snapB, snapA, { offset: 0, dictionary: dictB }), dictB);
+  }
+
+  /** Clone device A's whole state onto a fresh device B — the shared starting point. */
+  async function cloneTo(a: MemoryDriver, b: MemoryDriver) {
+    await runMigrations(b, migrations);
+    await b.transaction(
+      withCaptureDisabled(buildCloneStatements(await buildLocalSnapshot(a), await dictOf(b))),
+    );
+  }
+
+  it('draws each BOM line once when both devices finalise the same project offline', async () => {
+    // 500 screws, a BOM line for 4, both devices finalise before they sync. Each device's own
+    // −4 used to carry a different random id, so the id-union replayed 500 − 4 − 4 = 492 while
+    // the Activity Log correctly held one CONSUMED −4. Four units vanished, permanently.
+    const a = createMemoryDriver();
+    const b = createMemoryDriver();
+    try {
+      await runMigrations(a, migrations);
+      const itemsA = new ItemRepository(a);
+      const projectsA = new ProjectRepository(a);
+      const shelf = await new LocationRepository(a).create({ name: 'Shelf' });
+      const screws = await itemsA.create({ name: 'Screw', quantity: 500, locationId: shelf.id });
+      const project = await projectsA.create({ name: 'Bench' });
+      await projectsA.addLine(project.id, { itemId: screws.id, requiredQty: 4 });
+
+      await cloneTo(a, b);
+      const itemsB = new ItemRepository(b);
+      const projectsB = new ProjectRepository(b);
+
+      // Concurrent and offline: the same terminal operation, run once on each device.
+      await projectsA.finaliseAssembly(project.id, { outcome: 'PERMANENT_CONSUMPTION' });
+      await projectsB.finaliseAssembly(project.id, { outcome: 'PERMANENT_CONSUMPTION' });
+      expect((await itemsA.getById(screws.id))!.quantity).toBe(496);
+      expect((await itemsB.getById(screws.id))!.quantity).toBe(496);
+
+      await syncBothWays(a, b);
+
+      // The build took 4 units, not 8 — and both devices agree with their own Activity Log.
+      for (const driver of [a, b]) {
+        expect((await new ItemRepository(driver).getById(screws.id))!.quantity).toBe(496);
+        const draws = await driver.query<{ id: string }>(
+          'SELECT id FROM stock_deltas WHERE item_id = ? AND quantity_delta = -4;',
+          [screws.id],
+        );
+        expect(draws, 'one movement for one logical draw').toHaveLength(1);
+        // Derived from the finalise's own key, so both devices minted this very id.
+        expect(draws[0]!.id.startsWith(await assemblyId('stock', project.id))).toBe(true);
+      }
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+
+  it('gives one operation’s two writes to the same placement distinct ids', async () => {
+    // The CONTAINER outcome gathers lots from every shelf, so two shelves holding the same
+    // (untracked) lot both land on the container's single placement row. The derived id carries
+    // a per-placement ordinal precisely so the second write does not collide with the first.
+    const a = createMemoryDriver();
+    const b = createMemoryDriver();
+    try {
+      await runMigrations(a, migrations);
+      const itemsA = new ItemRepository(a);
+      const projectsA = new ProjectRepository(a);
+      const locationsA = new LocationRepository(a);
+      const shelf = await locationsA.create({ name: 'Shelf' });
+      const bin = await locationsA.create({ name: 'Bin' });
+      const rivets = await itemsA.create({ name: 'Rivet', quantity: 10, locationId: shelf.id });
+      await itemsA.transferStock(rivets.id, shelf.id, bin.id, 6);
+      const project = await projectsA.create({ name: 'Frame' });
+      await projectsA.addLine(project.id, { itemId: rivets.id, requiredQty: 8 });
+
+      await cloneTo(a, b);
+      const projectsB = new ProjectRepository(b);
+
+      await projectsA.finaliseAssembly(project.id, { outcome: 'CONTAINER' });
+      await projectsB.finaliseAssembly(project.id, { outcome: 'CONTAINER' });
+      const container = await assemblyId('container', project.id);
+
+      // The draw spans both shelves, so the container's one placement row is written twice —
+      // once per arrival — and each write needs an id of its own.
+      for (const driver of [a, b]) {
+        const rows = await driver.query<{ id: string; quantity_delta: number }>(
+          `SELECT id, quantity_delta FROM stock_deltas
+            WHERE item_id = ? AND location_id = ? ORDER BY id;`,
+          [rivets.id, container],
+        );
+        expect(rows, 'one arrival per shelf drawn from').toHaveLength(2);
+        expect(new Set(rows.map((r) => r.id)).size).toBe(2);
+        expect(rows.reduce((sum, r) => sum + Number(r.quantity_delta), 0)).toBe(8);
+      }
+
+      await syncBothWays(a, b);
+
+      // One gather, not two: the container holds the 8 the BOM asked for, and 2 stay behind.
+      for (const driver of [a, b]) {
+        const held = await driver.queryOne<{ q: number }>(
+          'SELECT COALESCE(SUM(quantity), 0) AS q FROM stock_batches WHERE item_id = ? AND location_id = ?;',
+          [rivets.id, container],
+        );
+        expect(Number(held?.q)).toBe(8);
+        expect((await new ItemRepository(driver).getById(rivets.id))!.quantity).toBe(10);
+      }
     } finally {
       await a.close();
       await b.close();
