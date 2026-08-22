@@ -299,6 +299,88 @@ describe('§2 merge restore resolves natural-key collisions (issue #538)', () =>
     expect(tokens).toEqual([{ id: 'tok-uLocal', user_id: 'uLocal' }]);
   });
 
+  it('follows a three-way contest through to the row that really keeps the name', async () => {
+    // The fold this resolution applies is wider than the index's — it trims and case-folds the
+    // whole of Unicode — so one device can legitimately hold two rows the index accepted as
+    // distinct. All three then contest one folded key, and the row that beat the local one is
+    // itself beaten afterwards. Anything still pointing at that intermediate winner points at a
+    // row that is never written, and an absent foreign-key parent aborts the whole restore.
+    await seedTaggedItem(target, { itemId: 'iLocal', tagId: 'tagLocal', tagName: 'Tools', at: 10 });
+    await seedTaggedItem(source, { itemId: 'iMid', tagId: 'tagMid', tagName: 'Tools ', at: 20 });
+    await seedTaggedItem(source, { itemId: 'iTop', tagId: 'tagTop', tagName: 'tools', at: 30 });
+
+    const backup = await buildLocalSnapshot(source);
+    await expect(restoreSnapshot(target, backup)).resolves.toBeUndefined();
+
+    const tags = await target.query<{ id: string }>('SELECT id FROM tags;');
+    expect(tags.map((t) => t.id)).toEqual(['tagTop']);
+
+    // Every item ends up on the one surviving tag, including the local one whose edge was
+    // repointed at the intermediate winner mid-resolution.
+    const tagged = await target.query<{ item_id: string; tag_id: string }>(
+      'SELECT item_id, tag_id FROM item_tags ORDER BY item_id;',
+    );
+    expect(tagged).toEqual([
+      { item_id: 'iLocal', tag_id: 'tagTop' },
+      { item_id: 'iMid', tag_id: 'tagTop' },
+      { item_id: 'iTop', tag_id: 'tagTop' },
+    ]);
+  });
+
+  it('follows a three-way username contest for the history it re-attributes', async () => {
+    // The same chain, on the table whose ledger cannot be repointed as a row. A retired account's
+    // history is moved to the winner by an UPDATE, so naming an intermediate winner would leave
+    // the entries pointing at an account that was never written.
+    await target.execute(
+      `INSERT INTO users (id, username, display_name, kind, updated_at) VALUES (?, ?, ?, 'normal', ?);`,
+      ['uLocal', 'ada', 'ada', 10],
+    );
+    await target.execute(
+      `INSERT INTO location_history (id, location_id, location_name, action, actor_user_id, updated_at)
+       VALUES (?, ?, 'Unassigned', 'RENAMED', ?, ?);`,
+      ['lh-uLocal', UNASSIGNED_LOCATION_ID, 'uLocal', 10],
+    );
+    await target.execute('INSERT INTO items (id, name, location_id, updated_at) VALUES (?, ?, ?, ?);', [
+      'iLocal',
+      'iLocal',
+      UNASSIGNED_LOCATION_ID,
+      10,
+    ]);
+    await target.execute(
+      `INSERT INTO item_history (id, item_id, action, actor_user_id, created_at) VALUES (?, ?, 'CREATED', ?, ?);`,
+      ['ih-uLocal', 'iLocal', 'uLocal', 10],
+    );
+    for (const [id, username, at] of [
+      ['uMid', 'ada ', 20],
+      ['uTop', 'ADA', 30],
+    ] as const) {
+      await source.execute(
+        `INSERT INTO users (id, username, display_name, kind, updated_at) VALUES (?, ?, ?, 'normal', ?);`,
+        [id, username, username, at],
+      );
+    }
+
+    const backup = await buildLocalSnapshot(source);
+    await expect(restoreSnapshot(target, backup)).resolves.toBeUndefined();
+
+    const users = await target.query<{ id: string }>(
+      "SELECT id FROM users WHERE kind = 'normal' ORDER BY id;",
+    );
+    expect(users.map((u) => u.id)).toEqual(['uTop']);
+
+    const history = await target.query<{ id: string; actor_user_id: string }>(
+      'SELECT id, actor_user_id FROM location_history;',
+    );
+    expect(history).toEqual([{ id: 'lh-uLocal', actor_user_id: 'uTop' }]);
+
+    // The Activity Ledger is not a synced table, so it is moved by an UPDATE naming the winner
+    // rather than re-emitted as a row — the statement that names a stale intermediate winner.
+    const ledger = await target.query<{ id: string; actor_user_id: string }>(
+      "SELECT id, actor_user_id FROM item_history WHERE id = 'ih-uLocal';",
+    );
+    expect(ledger).toEqual([{ id: 'ih-uLocal', actor_user_id: 'uTop' }]);
+  });
+
   it('retires nothing when the backup’s names do not collide', async () => {
     // The guard against the resolution doing anything at all on the common path.
     await seedTaggedItem(target, { itemId: 'iLocal', tagId: 'tagLocal', tagName: 'Tools', at: 10 });
@@ -463,6 +545,28 @@ describe('§7.2 tombstone-TTL clone resolves natural-key collisions (issue #538)
       "SELECT id FROM tombstones WHERE table_name = 'item_tags';",
     );
     expect(tombstones.map((t) => t.id)).toContain(itemTagEdgeId('iShared', 'tagRemote'));
+  });
+
+  it('follows a three-way contest through to the surviving tag', async () => {
+    // The clone's half of the chain case: two offline rows the index accepted as distinct both
+    // beat the remote's, so the id that won the first contest is retired by the second.
+    await seedTaggedItem(peer, { itemId: 'iRemote', tagId: 'tagRemote', tagName: 'Tools', at: 20 });
+    await seedTaggedItem(device, { itemId: 'iMid', tagId: 'tagMid', tagName: 'Tools ', at: 40 });
+    await seedTaggedItem(device, { itemId: 'iTop', tagId: 'tagTop', tagName: 'tools', at: 50 });
+
+    await expect(cloneWithSalvage(10)).resolves.toBeDefined();
+
+    const tags = await device.query<{ id: string }>('SELECT id FROM tags;');
+    expect(tags.map((t) => t.id)).toEqual(['tagTop']);
+
+    const tagged = await device.query<{ item_id: string; tag_id: string }>(
+      'SELECT item_id, tag_id FROM item_tags ORDER BY item_id;',
+    );
+    expect(tagged).toEqual([
+      { item_id: 'iMid', tag_id: 'tagTop' },
+      { item_id: 'iRemote', tag_id: 'tagTop' },
+      { item_id: 'iTop', tag_id: 'tagTop' },
+    ]);
   });
 
   it('leaves an ordinary collision-free clone alone', async () => {

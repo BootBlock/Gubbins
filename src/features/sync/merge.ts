@@ -322,10 +322,13 @@ async function cloneWithSalvage(
   // keeps each name, re-keying the loser so the offline work merges into the surviving row.
   //
   // The cloned remote *is* the local state these rows land on, so it stands in as the "local" side
-  // of the comparison: the wipe a few statements above left behind only the rows every device
-  // seeds identically (the system locations and the built-in accounts), none of which a salvaged
-  // row can contest for a name. The salvage tombstones are passed too: their DELETEs run after
-  // these upserts, so a doomed row would still be holding its name when a winner arrived for it.
+  // of the comparison. `WIPE_FILTER` spares three sets of rows, and each is accounted for: the
+  // system locations and the built-in accounts are excluded from every snapshot because every
+  // device seeds them identically, and neither table can be contested for a name here; the
+  // built-in roles are spared too, but `roles` carries no read filter, so the remote snapshot
+  // does carry them and the resolution contests them as ordinary rows. The salvage tombstones are
+  // passed too: their DELETEs run after these upserts, so a doomed row would still be holding its
+  // name when a winner arrived for it.
   const repair = repairUniqueKeys({ tables: remote.tables }, salvageRows, salvageTombstones);
   // Issue #538: the M:N joins carry no `id`, so a retired tag cannot be repointed as a row the way
   // a checkout or a field value can — a salvaged edge naming one would name a tag the clone never

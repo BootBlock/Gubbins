@@ -301,6 +301,9 @@ function resolveTable(
   collisions: CollisionResolution[],
 ): Map<string, string> {
   const rekey = new Map<string, string>();
+  // Where this table's verdicts start, so the chain collapse at the end of this function rewrites
+  // only its own and leaves an earlier table's alone (`collisions` is shared across the specs).
+  const firstVerdict = collisions.length;
   const deletedAtById = new Map<string, number>();
   for (const d of localDeletes) if (d.tableName === spec.table) deletedAtById.set(d.id, d.deletedAt);
   const deletedIds = new Set(deletedAtById.keys());
@@ -414,6 +417,22 @@ function resolveTable(
     const kept = localUpserts.filter((_, i) => !droppedUpserts.has(i));
     localUpserts.length = 0;
     localUpserts.push(...kept);
+  }
+
+  // Collapse re-key chains in the recorded verdicts, as `retire` already does in `rekey` itself.
+  // A verdict pushed earlier names the winner of *that* contest, and a third row on the same
+  // folded key can beat it afterwards — at which point that id is retired too, and if it was an
+  // incoming upsert it was dropped and is never written at all. `rekey` is kept collapsed as the
+  // contests happen, so no target of it is ever also a key and a single hop is exhaustive.
+  //
+  // The reference repointing below works off `rekey`, so it was always correct. What was not is a
+  // caller building SQL straight from `winnerId` — `applyPlan`'s ledger repoint for a retired
+  // account, or the wholesale paths' tag-edge repoint (issue #538). Naming a row that does not
+  // exist trips the foreign key, and that aborts the whole atomic apply rather than one statement.
+  for (let i = firstVerdict; i < collisions.length; i += 1) {
+    const verdict = collisions[i]!;
+    const winnerId = rekey.get(verdict.winnerId);
+    if (winnerId !== undefined) collisions[i] = { ...verdict, winnerId };
   }
 
   return rekey;

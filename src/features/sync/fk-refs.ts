@@ -2,11 +2,13 @@
  * The foreign-key reference registry (spec §7.5) — the single source of truth for which
  * snapshot column points at which parent table, and what a dangling reference means.
  *
- * Two consumers share it, and both need the *same* answer or a snapshot stops importing:
- * the reconciliation engine ({@link import('./reconcile')}) repairs rows whose parent did
- * not survive a merge, and the backup codec
- * ({@link import('@/features/backup/backup-format')}) repairs rows whose item the user
- * chose to exclude from the file. Adding a table/column here is what keeps both honest.
+ * Every consumer needs the *same* answer or a snapshot stops importing: the reconciliation engine
+ * ({@link import('./reconcile')}) and the §7.5 natural-key resolution
+ * ({@link import('./unique-key-repair')}) each repair rows whose parent did not survive an apply,
+ * the snapshot integrity repair ({@link import('./snapshot-integrity')}) repairs rows torn from
+ * their parent by a concurrent write, and the backup codec
+ * ({@link import('@/features/backup/backup-format')}) repairs rows whose item the user chose to
+ * exclude from the file. Adding a table/column here is what keeps them all honest.
  */
 import type { SyncTable } from '@/db/repositories';
 import type { TableRow } from './types';
