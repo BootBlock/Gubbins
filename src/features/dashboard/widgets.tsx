@@ -822,15 +822,16 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
 ];
 
 /**
- * Which "attention" cards are currently **all clear** (issue #111) — the exception trackers
- * (low stock, soon to expire, overdue, maintenance due, budget alerts) whose empty state
- * genuinely means "nothing to report". The informational cards (totals, recent activity,
- * projects, in transit, system status) have no problem/clear semantic and so are never probed
- * or hidden.
+ * Which cards currently have **nothing to report** (issue #111) — the exception trackers
+ * (low stock, soon to expire, overdue, maintenance due, budget alerts) whose empty state means
+ * "all clear", plus the two feed cards (in transit, project statuses) whose empty state means
+ * "nothing there yet". The remaining informational cards (totals, recent activity, system
+ * status) always describe *something* — a count of zero items is still the answer to "how many
+ * items?" — so they have no empty state to hide on and are never probed.
  *
- * For each tracker this mirrors that widget's own "empty" condition — an id is added only once
- * its query has actually resolved to zero rows, so a card is never hidden while its data is
- * still loading or errored (it stays shown until we can confirm there's nothing to report).
+ * For each card this mirrors that widget's own "empty" condition — an id is added only once its
+ * query has actually resolved to zero rows, so a card is never hidden while its data is still
+ * loading or errored (it stays shown until we can confirm there's nothing to report).
  * react-query dedupes these against the widgets' own subscriptions, so no extra database
  * round-trip is incurred.
  *
@@ -848,6 +849,8 @@ export function useHealthyWidgetIds(): ReadonlySet<string> {
   const openCheckouts = useOpenCheckouts();
   const dueMaintenance = useDueMaintenance();
   const alerts = useBudgetAlerts();
+  const inTransit = useInTransitLines();
+  const projects = useProjects();
 
   const healthy = new Set<string>();
   // LowStockWidget: empty when no item is at/below its reorder point.
@@ -866,6 +869,11 @@ export function useHealthyWidgetIds(): ReadonlySet<string> {
     });
     if (flagged.length === 0) healthy.add('budget-alerts');
   }
+  // InTransitWidget: empty when no purchase-order line is still on its way.
+  if (inTransit.data && inTransit.data.rows.length === 0) healthy.add('in-transit');
+  // ProjectsWidget: empty when there is no live project — it lists the non-archived ones, so a
+  // board holding only archived projects has nothing to show and matches the card's empty state.
+  if (projects.data && projects.data.rows.every((p) => p.status === 'ARCHIVED')) healthy.add('projects');
   return healthy;
 }
 

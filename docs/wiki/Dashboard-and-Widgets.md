@@ -43,13 +43,14 @@ provides, including which **storage engine** holds the database — see
 ## Hide cards with nothing to report
 
 If you'd rather the dashboard stayed quiet when all is well, turn on **Hide cards with nothing to
-report** under **Settings → Dashboard**. While it's on, an **alert card** is hidden whenever it has
-nothing to flag — Low stock when everything's in stock, Overdue with no late loans, Soon to expire
-with nothing due, Maintenance due when nothing is due, and Budget alerts when every project is on
-track. A card reappears the moment it has something to report, so you never miss anything.
+report** under **Settings → Dashboard**. While it's on, a card is hidden whenever it has nothing
+to flag — Low stock when everything's in stock, Overdue with no late loans, Soon to expire with
+nothing due, Maintenance due when nothing is due, Budget alerts when every project is on track,
+In transit with nothing on its way, and Project statuses with no live projects. A card reappears
+the moment it has something to report, so you never miss anything.
 
-The informational cards — Inventory totals, Recent activity, and the system-status cards — are
-always shown, since they have no "problem" to clear.
+The cards that always have something to say — Inventory totals, Recent activity, and the
+system-status cards — are always shown, since they describe your data rather than flag a problem.
 
 > **ℹ️ Note**
 > **Customise** always shows every card, even the ones currently hidden, so you can still rearrange
