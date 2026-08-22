@@ -112,7 +112,8 @@ describe('buildPartsCatalogue', () => {
 
   it('reads an unpriced gauge as unpriced, never as a line worth zero', () => {
     // A unit cost prices one countable unit, so it must not stand in per gram — that would be
-    // wrong by the container's whole capacity.
+    // wrong by the container's whole capacity. A manual current value is refused for the same
+    // reason, even though it outranks every other source on a counted item (issue #706).
     const catalogue = buildPartsCatalogue(
       [
         item({
@@ -122,6 +123,7 @@ describe('buildPartsCatalogue', () => {
           unitOfMeasure: 'g',
           unitCost: 25,
           preferredSupplierCost: 30,
+          currentValuePerUnit: 40,
           gauge: { netValue: 500, costPerUnitOfMeasure: null },
         }),
       ],
@@ -144,6 +146,37 @@ describe('buildPartsCatalogue', () => {
     const line = catalogue.groups[0]!.lines[0]!;
     expect(line.unitCost).toBe(5);
     expect(line.lineValue).toBe(15);
+  });
+
+  it('prices a revalued asset at its manual current value, and counts it in the totals (issue #706)', () => {
+    // The catalogue used to select no `current_value` at all, so an asset priced only by a manual
+    // revaluation printed a dash in both money columns and added nothing to its room subtotal —
+    // while the insurance schedule listed that same asset at that same figure.
+    const catalogue = buildPartsCatalogue(
+      [
+        item({ id: 'coin', locationId: 'garage', quantity: 2, currentValuePerUnit: 400 }),
+        // …and it still outranks every source beneath it, exactly as it does everywhere else.
+        item({
+          id: 'guitar',
+          locationId: 'garage',
+          quantity: 1,
+          currentValuePerUnit: 900,
+          unitCost: 300,
+          preferredSupplierCost: 250,
+          depreciatedPurchasePrice: 120,
+        }),
+      ],
+      LOCATIONS,
+      NOW,
+    );
+    const [coin, guitar] = catalogue.groups[0]!.lines;
+    expect(coin!.unitCost).toBe(400);
+    expect(coin!.lineValue).toBe(800);
+    expect(guitar!.unitCost).toBe(900);
+    expect(guitar!.lineValue).toBe(900);
+    expect(catalogue.groups[0]!.subtotal).toBe(1700);
+    expect(catalogue.grandTotal).toBe(1700);
+    expect(catalogue.hasValue).toBe(true);
   });
 
   it('leaves an unpriced item without a cost or line value (never a misleading zero)', () => {

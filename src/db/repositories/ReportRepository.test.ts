@@ -1919,6 +1919,38 @@ describe('ReportRepository', () => {
       expect(report.sections.find((s) => s.kind === 'stale')!.samples.map((s) => s.id)).toContain(item.id);
     });
 
+    it('does not flag an item priced only by a manual current value (issue #706)', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      // Priced by a revaluation and nothing else — every valuation surface prices it at 900, so
+      // "Missing price" would send the user to fix something that is not broken.
+      const revalued = await items.create({
+        name: 'Collectible',
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: null,
+        currentValue: 900,
+      });
+      // A deliberate "worth nothing" mark is a price too, exactly as valuation reads it.
+      const worthless = await items.create({
+        name: 'Keepsake',
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: null,
+        currentValue: 0,
+      });
+      const unpriced = await items.create({
+        name: 'Unpriced',
+        locationId: shelf.id,
+        quantity: 1,
+        unitCost: null,
+      });
+
+      const report = await reports.dataHygiene(180);
+      expect(sampleIds(report, 'missing-price')).toEqual([unpriced.id]);
+      expect(sampleIds(report, 'missing-price')).not.toContain(revalued.id);
+      expect(sampleIds(report, 'missing-price')).not.toContain(worthless.id);
+    });
+
     it('excludes inactive items and abstract variant parents', async () => {
       const shelf = await locations.create({ name: 'Shelf A' });
       const removed = await items.create({ name: 'Removed', locationId: shelf.id, quantity: 1, unitCost: 1 });
@@ -2357,6 +2389,34 @@ describe('ReportRepository', () => {
       expect(catalogue.groups.find((g) => g.groupId === shelf.id)?.subtotal).toBe(6);
       expect(catalogue.grandTotal).toBe(16);
       expect(catalogue.totalQuantity).toBe(4); // 1 anvil + 3 widget (the new variant holds 0)
+      expect(catalogue.hasValue).toBe(true);
+    });
+
+    it('prices a revalued asset at its current value, agreeing with the insurance schedule (issue #706)', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      // Priced only by a revaluation: the catalogue used to select no `current_value`, so this
+      // line printed a dash and added nothing to the totals while the schedule listed it at 900.
+      const coin = await items.create({
+        name: 'Coin',
+        locationId: garage.id,
+        quantity: 2,
+        unitCost: null,
+        currentValue: 900,
+      });
+      // And it still outranks the sources beneath it, as it does on every other valuation surface.
+      await items.create({
+        name: 'Guitar',
+        locationId: garage.id,
+        quantity: 1,
+        unitCost: 300,
+        currentValue: 1200,
+      });
+
+      const catalogue = await reports.partsCatalogue({ kind: 'all' });
+      const lines = catalogue.groups.flatMap((g) => g.lines);
+      expect(lines.find((l) => l.id === coin.id)).toMatchObject({ unitCost: 900, lineValue: 1800 });
+      expect(lines.find((l) => l.name === 'Guitar')).toMatchObject({ unitCost: 1200, lineValue: 1200 });
+      expect(catalogue.grandTotal).toBe(3000);
       expect(catalogue.hasValue).toBe(true);
     });
 
