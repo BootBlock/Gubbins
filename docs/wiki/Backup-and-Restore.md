@@ -37,11 +37,22 @@ thresholds, and vice versa.
 > machine rather than how you like Gubbins to work. Tick it when creating *and* when restoring if
 > you're rebuilding the *same* device.
 
-> **💡 Tip**
-> No usable credential is ever included in a backup, whatever you tick. The bridge URL and token
-> you set up on a device stay on that device, so you'll re-enter them after restoring; and an
-> [[API token|Bridge-API-Tokens]] itself is never stored anywhere — only a scrambled fingerprint
-> of it — so a `.zip` you share or store elsewhere can't leak one.
+> **⚠️ Heads-up — treat a backup like the database it is**
+> A backup is a full copy of your Gubbins, so it carries everything your data carries — including
+> your [[accounts|Users-and-Accounts]] and their roles, the scrambled form of each account's
+> password, and the signing secret of any [[webhook|Webhooks]] that holds one *in Gubbins* rather
+> than on the bridge. Keep the file somewhere you'd be comfortable keeping the database itself, and
+> think twice before mailing it to yourself or attaching it to a support thread.
+>
+> Two things genuinely *aren't* in there. The bridge URL and token you set up on a device stay on
+> that device, so you'll re-enter them after restoring; and an [[API token|Bridge-API-Tokens]]
+> itself is never stored anywhere — only a scrambled fingerprint of it — so a backup can't leak
+> one.
+>
+> If a webhook's signing secret is the part that worries you, give the webhook the *name* of a
+> secret held by your bridge instead of storing one in Gubbins: only the name travels, in a backup
+> or in your synced data — see
+> [[Signing a webhook|Webhooks#signing-proving-the-request-came-from-you]].
 
 > **💡 Tip**
 > A backup carries settings **on demand**, in one direction, to a file. If what you actually want is
