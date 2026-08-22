@@ -60,6 +60,7 @@ import {
   stockDeltaInsertStatement,
   tombstoneDeleteStatement,
   withCaptureDisabled,
+  withRecomputeDeferred,
   withDeferredForeignKeys,
 } from './snapshot';
 import type { SchemaDictionary, SyncConflict, SyncSnapshot, SyncTable, TableRow, Tombstone } from './types';
@@ -484,7 +485,10 @@ async function cloneWithSalvage(
   // the guard wraps everything here at the transaction boundary.
   // Issue #602: the batch also defers the foreign-key check to COMMIT — the cloned rows arrive in
   // each table's id order, which cannot put a self-referencing parent ahead of its child.
-  await driver.transaction(withDeferredForeignKeys(withCaptureDisabled(statements)));
+  // Issue #548: the clone and the salvage both carry settled derived quantities, so the recompute
+  // triggers would only watch the ledger rebuild itself and re-stamp each multi-placement item.
+  // Defer the projection to one settle pass at the end, which also folds the salvaged stock in.
+  await driver.transaction(withDeferredForeignKeys(withCaptureDisabled(withRecomputeDeferred(statements))));
 }
 
 // --- statement builders ----------------------------------------------------------

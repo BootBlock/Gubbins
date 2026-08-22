@@ -773,7 +773,7 @@
       "type": "table",
       "name": "stock_delta_capture",
       "tbl_name": "stock_delta_capture",
-      "sql": "CREATE TABLE stock_delta_capture (\n          id            INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),\n          enabled       INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n          asserting     INTEGER NOT NULL DEFAULT 0 CHECK (asserting IN (0, 1)),\n          operation_key TEXT CHECK (operation_key IS NULL OR operation_key NOT GLOB '*[|%_]*')\n        ) STRICT"
+      "sql": "CREATE TABLE stock_delta_capture (\n          id            INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),\n          enabled       INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),\n          asserting     INTEGER NOT NULL DEFAULT 0 CHECK (asserting IN (0, 1)),\n          operation_key TEXT CHECK (operation_key IS NULL OR operation_key NOT GLOB '*[|%_]*'),\n          recompute     INTEGER NOT NULL DEFAULT 1 CHECK (recompute IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -959,19 +959,19 @@
       "type": "trigger",
       "name": "trg_item_stock_recompute_del",
       "tbl_name": "item_stock",
-      "sql": "CREATE TRIGGER trg_item_stock_recompute_del\n        AFTER DELETE ON item_stock\n        FOR EACH ROW\n        BEGIN\n          UPDATE items\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = OLD.item_id)\n          WHERE id = OLD.item_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = OLD.item_id);\n        END"
+      "sql": "CREATE TRIGGER trg_item_stock_recompute_del\n        AFTER DELETE ON item_stock\n        FOR EACH ROW\n        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          UPDATE items\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = OLD.item_id)\n          WHERE id = OLD.item_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = OLD.item_id);\n        END"
     },
     {
       "type": "trigger",
       "name": "trg_item_stock_recompute_ins",
       "tbl_name": "item_stock",
-      "sql": "CREATE TRIGGER trg_item_stock_recompute_ins\n        AFTER INSERT ON item_stock\n        FOR EACH ROW\n        BEGIN\n          UPDATE items\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id)\n          WHERE id = NEW.item_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id);\n        END"
+      "sql": "CREATE TRIGGER trg_item_stock_recompute_ins\n        AFTER INSERT ON item_stock\n        FOR EACH ROW\n        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          UPDATE items\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id)\n          WHERE id = NEW.item_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id);\n        END"
     },
     {
       "type": "trigger",
       "name": "trg_item_stock_recompute_upd",
       "tbl_name": "item_stock",
-      "sql": "CREATE TRIGGER trg_item_stock_recompute_upd\n        AFTER UPDATE ON item_stock\n        FOR EACH ROW\n        BEGIN\n          UPDATE items\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id)\n          WHERE id = NEW.item_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id);\n        END"
+      "sql": "CREATE TRIGGER trg_item_stock_recompute_upd\n        AFTER UPDATE ON item_stock\n        FOR EACH ROW\n        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          UPDATE items\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id)\n          WHERE id = NEW.item_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = NEW.item_id);\n        END"
     },
     {
       "type": "trigger",
@@ -1145,19 +1145,19 @@
       "type": "trigger",
       "name": "trg_stock_batches_recompute_del",
       "tbl_name": "stock_batches",
-      "sql": "CREATE TRIGGER trg_stock_batches_recompute_del\n        AFTER DELETE ON stock_batches\n        FOR EACH ROW\n        BEGIN\n          UPDATE item_stock\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                           WHERE item_id = OLD.item_id AND location_id = OLD.location_id)\n          WHERE id = OLD.item_id || '|' || OLD.location_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                              WHERE item_id = OLD.item_id AND location_id = OLD.location_id);\n        END"
+      "sql": "CREATE TRIGGER trg_stock_batches_recompute_del\n        AFTER DELETE ON stock_batches\n        FOR EACH ROW\n        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          UPDATE item_stock\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                           WHERE item_id = OLD.item_id AND location_id = OLD.location_id)\n          WHERE id = OLD.item_id || '|' || OLD.location_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                              WHERE item_id = OLD.item_id AND location_id = OLD.location_id);\n        END"
     },
     {
       "type": "trigger",
       "name": "trg_stock_batches_recompute_ins",
       "tbl_name": "stock_batches",
-      "sql": "CREATE TRIGGER trg_stock_batches_recompute_ins\n        AFTER INSERT ON stock_batches\n        FOR EACH ROW\n        BEGIN\n          INSERT INTO item_stock (id, item_id, location_id, quantity)\n          VALUES (\n            NEW.item_id || '|' || NEW.location_id, NEW.item_id, NEW.location_id,\n            (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n              WHERE item_id = NEW.item_id AND location_id = NEW.location_id)\n          )\n          ON CONFLICT(id) DO UPDATE SET quantity = excluded.quantity\n          WHERE item_stock.quantity <> excluded.quantity;\n        END"
+      "sql": "CREATE TRIGGER trg_stock_batches_recompute_ins\n        AFTER INSERT ON stock_batches\n        FOR EACH ROW\n        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          INSERT INTO item_stock (id, item_id, location_id, quantity)\n          VALUES (\n            NEW.item_id || '|' || NEW.location_id, NEW.item_id, NEW.location_id,\n            (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n              WHERE item_id = NEW.item_id AND location_id = NEW.location_id)\n          )\n          ON CONFLICT(id) DO UPDATE SET quantity = excluded.quantity\n          WHERE item_stock.quantity <> excluded.quantity;\n        END"
     },
     {
       "type": "trigger",
       "name": "trg_stock_batches_recompute_upd",
       "tbl_name": "stock_batches",
-      "sql": "CREATE TRIGGER trg_stock_batches_recompute_upd\n        AFTER UPDATE ON stock_batches\n        FOR EACH ROW\n        BEGIN\n          UPDATE item_stock\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                           WHERE item_id = NEW.item_id AND location_id = NEW.location_id)\n          WHERE id = NEW.item_id || '|' || NEW.location_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                              WHERE item_id = NEW.item_id AND location_id = NEW.location_id);\n        END"
+      "sql": "CREATE TRIGGER trg_stock_batches_recompute_upd\n        AFTER UPDATE ON stock_batches\n        FOR EACH ROW\n        WHEN (SELECT recompute FROM stock_delta_capture WHERE id = 1) = 1\n        BEGIN\n          UPDATE item_stock\n          SET quantity = (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                           WHERE item_id = NEW.item_id AND location_id = NEW.location_id)\n          WHERE id = NEW.item_id || '|' || NEW.location_id\n            AND quantity <> (SELECT COALESCE(SUM(quantity), 0) FROM stock_batches\n                              WHERE item_id = NEW.item_id AND location_id = NEW.location_id);\n        END"
     },
     {
       "type": "trigger",
@@ -5904,6 +5904,14 @@
           "type": "TEXT",
           "notnull": 0,
           "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "recompute",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "1",
           "pk": 0
         }
       ],

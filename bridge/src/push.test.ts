@@ -53,6 +53,16 @@ async function* bodyOf(text: string, chunks = 1): AsyncGenerator<Uint8Array> {
   for (let i = 0; i < buf.length; i += size) yield buf.subarray(i, i + size);
 }
 
+/** The name of one item in a JSON snapshot, via a throwaway hydration. */
+async function nameIn(json: string, itemId: string): Promise<string> {
+  const { driver } = await hydrateFromJson(json);
+  try {
+    return (await new ItemRepository(driver).getById(itemId))!.name;
+  } finally {
+    await driver.close();
+  }
+}
+
 /** The quantity of one item in a JSON snapshot, via a throwaway hydration. */
 async function quantityIn(json: string, itemId: string): Promise<number> {
   const { driver } = await hydrateFromJson(json);
@@ -151,6 +161,36 @@ describe('ingestSnapshot', () => {
     const merged = await readFile(snapshotPath, 'utf8');
     expect(await quantityIn(merged, 'item-m3-bolt')).toBe(47); // bridge change preserved
     expect(await quantityIn(merged, 'item-esp32')).toBe(10); // device change applied
+  });
+
+  // Issue #548: `item-esp32` is the fixture's one item with stock in two locations (5 + 2), and
+  // hydrating the served file used to re-stamp exactly that shape — the recompute triggers walked
+  // its `quantity` through the partial sums of a ledger being rebuilt row by row, writing `items`
+  // without touching `updated_at`, so the auto-stamp trigger stamped it to the hydrate instant.
+  // The push then arrived carrying the real edit time and lost last-write-wins to a row nobody had
+  // edited, and the app was told `{ ok: true }`. Renaming is the plainest form of it: no quantity
+  // is in dispute, so the only thing that can drop the rename is the stamp.
+  it('keeps a pushed rename of an item whose stock sits in two locations', async () => {
+    // The served snapshot is the fixture verbatim — the bridge has changed nothing.
+    await writeFile(snapshotPath, fixtureText, 'utf8');
+
+    // The device renames the multi-placement item and pushes.
+    const device = await hydrateFromJson(fixtureText);
+    await new ItemRepository(device.driver).update('item-esp32', { name: 'ESP32 Dev Board (rev C)' });
+    const deviceJson = await snapshotOf(device.driver);
+    await device.driver.close();
+
+    await ingestSnapshot({
+      snapshotPath,
+      body: bodyOf(deviceJson),
+      maxBytes: 1_000_000,
+      now: () => 1752000000000,
+    });
+
+    const merged = await readFile(snapshotPath, 'utf8');
+    expect(await nameIn(merged, 'item-esp32')).toBe('ESP32 Dev Board (rev C)');
+    // The split placement is still the sum of its parts, so nothing was traded for the stamp.
+    expect(await quantityIn(merged, 'item-esp32')).toBe(7);
   });
 
   // The issue's exact example: a consumable gauge decremented on the bridge (a Home Assistant

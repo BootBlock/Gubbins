@@ -31,6 +31,7 @@ import {
   buildSchemaDictionary,
   restoreSnapshot,
   withCaptureDisabled,
+  withRecomputeDeferred,
   withDeferredForeignKeys,
   SYNC_TABLES,
 } from '@/features/sync/snapshot';
@@ -239,7 +240,9 @@ async function restoreReplace(parsed: ParsedBackup): Promise<ReplaceResult> {
   // Issue #602: it also runs with the foreign-key check deferred to COMMIT, because a snapshot's
   // rows arrive in id order and a sub-location or a variant can precede the row it points at.
   await driver.transaction(
-    withDeferredForeignKeys(withCaptureDisabled(buildCloneStatements(parsed.snapshot, dictionary))),
+    withDeferredForeignKeys(
+      withCaptureDisabled(withRecomputeDeferred(buildCloneStatements(parsed.snapshot, dictionary))),
+    ),
   );
   const imagesMissed = await rehydrateImages(parsed);
   return { reloadRequired: false, imagesMissed };
