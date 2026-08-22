@@ -596,7 +596,7 @@ describe('startPrecip snow depth & weather (issue #455)', () => {
     const frames = Math.ceil(stormT / 0.05) + 4;
     for (let i = 0; i < frames; i++) pump((now += 50));
     const stormMark = rec.drawImages.length;
-    pump((now += 50));
+    pump(now + 50);
     const stormDraws = rec.drawImages.slice(stormMark);
     // The storm pool has woken and the whiteout haze blits, so the frame draws far more…
     expect(stormDraws.length).toBeGreaterThan(calmFrame * 1.3);

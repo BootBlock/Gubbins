@@ -331,7 +331,7 @@ async function flushQueueTo(tabId: number): Promise<void> {
 /** Inject the active-tab scraper into the user's Amazon tab (explicit-gesture only). */
 async function scrapeAmazonTab(tab: Tab): Promise<void> {
   if (tab.id === undefined || !tab.url) return;
-  let host = '';
+  let host: string;
   try {
     host = new URL(tab.url).hostname;
   } catch {

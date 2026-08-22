@@ -128,7 +128,7 @@ export async function restoreBackup(
   };
 
   let reloadRequired = false;
-  let imagesMissed = 0;
+  let imagesMissed: number;
   if (mode === 'replace') {
     ({ reloadRequired, imagesMissed } = await restoreReplace(narrowed));
   } else {
