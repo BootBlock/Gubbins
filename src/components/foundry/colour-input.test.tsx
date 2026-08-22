@@ -93,12 +93,39 @@ describe('ColourInput', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('does not drift the colour when a rounded notation is shown and then left', async () => {
+    // `hsl()` is rendered at whole degrees and percent, so it cannot name every 8-bit colour:
+    // #4ab66a shows as hsl(138, 43%, 50%), which reads back as #49b66a. Settling must return
+    // the colour the box was rendered *from*, or merely looking at it would change it.
+    const onChange = vi.fn();
+    render(<Harness initial="#4ab66a" onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show as' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /HSL/ }));
+    fireEvent.focus(box());
+    fireEvent.blur(box());
+    fireEvent.focus(box());
+    fireEvent.blur(box());
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('keeps any alpha when a colour is picked from the native swatch', () => {
     const onChange = vi.fn();
     render(<Harness initial="#ff000080" onChange={onChange} />);
     fireEvent.change(swatch(), { target: { value: '#00ff00' } });
-    fireEvent.blur(swatch());
     expect(onChange).toHaveBeenLastCalledWith('#00ff0080');
+  });
+
+  it('stores exactly the picked colour, whatever notation the box is showing', async () => {
+    // The pick must not be laundered through the displayed spelling: rendering #4ab66a as HSL
+    // and reading it back gives #49b66a, so a colour picked while showing HSL would be stored
+    // as a neighbouring one.
+    const onChange = vi.fn();
+    render(<Harness initial="#000000" onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show as' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: /HSL/ }));
+    fireEvent.change(swatch(), { target: { value: '#4ab66a' } });
+    fireEvent.blur(swatch());
+    expect(onChange).toHaveBeenLastCalledWith('#4ab66a');
   });
 
   it('settles a swatch pick on its own blur, so a blur-committing caller hears about it', () => {
@@ -123,8 +150,22 @@ describe('ColourInput', () => {
   it('offers no notation previews for a value that is not a colour', async () => {
     render(<Harness initial="office" />);
     fireEvent.click(screen.getByRole('button', { name: 'Show as' }));
-    const menu = await screen.findByRole('menu');
-    expect(menu.textContent ?? '').not.toContain('NaN');
+    await screen.findByRole('menu');
+    // Absent entirely, rather than previews of some substituted colour the user never entered.
+    expect(screen.queryAllByTestId('colour-preview')).toHaveLength(0);
+  });
+
+  it('previews every notation for a colour that reads', async () => {
+    render(<Harness initial="#ff0000" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show as' }));
+    await screen.findByRole('menu');
+    expect(screen.getAllByTestId('colour-preview').map((el) => el.textContent)).toEqual([
+      '#FF0000',
+      'rgb(255, 0, 0)',
+      'hsl(0, 100%, 50%)',
+      'hsb(0, 100%, 100%)',
+      'red',
+    ]);
   });
 
   it('follows the value when it changes from outside', () => {

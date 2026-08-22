@@ -154,10 +154,21 @@ describe('conversions', () => {
     expect(rgbToHsb({ r: 255, g: 255, b: 255 })).toEqual({ h: 0, s: 0, b: 100 });
   });
 
-  it('matches the HSV definition exactly, rather than routing through HSL', () => {
-    // Via HSL this came out `#b2a1a1`: `(0.07 + 0.63) * 255` evaluates to 178.49999999999997,
-    // which rounds down where the definition's 178.5 rounds up.
+  it('matches the HSV definition exactly, rather than reaching a channel by addition', () => {
+    // Both the via-HSL route and the chroma-plus-offset form reach the brightest channel by
+    // adding a residual back, and the sum lands just under the value it should equal:
+    // `0.9 * 0.35 + (0.9 - 0.9 * 0.35)` is 0.8999999999999999, so × 255 rounds to 229 where
+    // the definition gives 230. One shade, but it breaks the rgb → hsb → rgb identity.
     expect(hsbToRgb({ h: 0, s: 10, b: 70 })).toEqual({ r: 179, g: 161, b: 161 });
+    expect(hsbToRgb({ h: 0, s: 35, b: 90 })).toEqual({ r: 230, g: 149, b: 149 });
+    expect(parseColour('hsb(0, 35%, 90%)')).toBe('#e69595');
+    // The brightest channel is exactly `b`% of 255, for every hue and saturation.
+    for (let hue = 0; hue < 360; hue += 7) {
+      for (let sat = 0; sat <= 100; sat += 3) {
+        const { r, g, b } = hsbToRgb({ h: hue, s: sat, b: 90 });
+        expect(Math.max(r, g, b), `hsb(${hue}, ${sat}%, 90%)`).toBe(230);
+      }
+    }
   });
 
   it('separates the two saturation models on a mid-tone', () => {

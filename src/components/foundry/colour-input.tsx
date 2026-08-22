@@ -16,21 +16,39 @@ const FORMAT_LABEL: Record<ColourFormat, MessageKey> = {
   NAME: 'field.colour.format.name',
 };
 
-/** What a stored value should read as in the box, in `format`. */
-function textFor(value: string, format: ColourFormat): string {
-  if (value === '') return '';
+/**
+ * What the box is showing, and — when the control wrote that text itself — the exact colour it
+ * was rendered *from*.
+ *
+ * The pairing is what keeps a colour from drifting. `hsl()` and `hsb()` are rendered at the
+ * whole degrees and percent a person reads, so they cannot name every 8-bit colour: showing
+ * `#4ab66a` as `hsl(138, 43%, 50%)` and then reading that text back gives `#49b66a`. Without
+ * `from`, merely looking at a colour in another notation and clicking away would re-enter a
+ * neighbouring colour as if the user had typed it. `from` is `null` once the user types,
+ * because from then on the text genuinely is the source of truth.
+ */
+interface Shown {
+  readonly text: string;
+  readonly from: string | null;
+}
+
+/** How a stored value should read in the box, paired with the colour it renders. */
+function show(value: string, format: ColourFormat): Shown {
+  if (value === '') return { text: '', from: null };
   const canonical = parseColour(value);
-  // A value that is not a colour is shown exactly as stored. It can happen — a field retyped
-  // from TEXT keeps its old text, and so does an import or a peer on an older build — and
-  // running such a string through the formatter would print a mangling of it (`office` →
-  // `OFFICE`) rather than the thing the user has to correct.
-  return canonical === null ? value : formatColour(canonical, format);
+  // A value that is not a colour is shown exactly as stored. It happens — a field retyped from
+  // TEXT keeps its old text, and so does an import or a peer on an older build — and running
+  // such a string through the formatter would print a mangling of it (`office` → `OFFICE`)
+  // rather than the thing the user has to correct.
+  return canonical === null
+    ? { text: value, from: null }
+    : { text: formatColour(canonical, format), from: canonical };
 }
 
 export interface ColourInputProps {
   /** The current value: a canonical `#rrggbb` / `#rrggbbaa`, whatever the user has typed so far, or `''`. */
   readonly value: string;
-  /** Fired with the raw text as it is typed, and with the canonical colour on blur or on a pick. */
+  /** Fired with the raw text as it is typed, and with the canonical colour on a pick or once the edit settles. */
   readonly onChange: (value: string) => void;
   readonly onBlur?: () => void;
   readonly 'aria-label'?: string;
@@ -54,9 +72,10 @@ export interface ColourInputProps {
  * parsed colours would be wrong twice over: a partly-typed hex is frequently a valid colour of
  * its own (`#ff0` is yellow, `#ff00` is transparent yellow), so a user backspacing through
  * `#ff0000` would silently store two colours they never chose; and text that is *not* a colour
- * would never reach `validateFieldValue`, leaving the field marked invalid with no message
- * anywhere saying why. Sending the draft up means what the box shows and what would be saved
- * are the same string, and the one validation seam names any problem with it.
+ * would never reach `validateFieldValue`, leaving the field marked invalid with nothing saying
+ * why. Sending the draft up means what the box shows and what the field validates are the same
+ * string. (On an item that message is rendered beside the field; a location's field editor has
+ * no per-field error surface yet, so there the write is simply refused — issue #389.)
  *
  * The "Show as" menu changes only what the box *displays*; it never changes what is stored,
  * and it is not persisted, because which notation a user thinks in is a property of the
@@ -77,23 +96,23 @@ export function ColourInput({
 }: ColourInputProps) {
   const t = useT();
   const [format, setFormat] = useState<ColourFormat>('HEX');
-  const [draft, setDraft] = useState(() => textFor(value, 'HEX'));
+  const [shown, setShown] = useState<Shown>(() => show(value, 'HEX'));
 
-  // What `draft` was last rendered *from*, so a change to `value` from outside (a reset, a
-  // lookup filling the field, switching to another item) rewrites the box, while the value
-  // this control itself just reported leaves the user's own text alone.
+  // What the box was last rendered *for*, so a change to `value` from outside (a reset, a
+  // lookup filling the field, switching to another item) rewrites it, while the value this
+  // control itself just reported leaves the user's own text alone.
   const shownFor = useRef(value);
   useEffect(() => {
     if (shownFor.current === value) return;
     shownFor.current = value;
-    setDraft(textFor(value, format));
+    setShown(show(value, format));
   }, [value, format]);
 
-  /** Adopt `next` as both the box's text and the reported value. */
-  const commit = (next: string) => {
-    setDraft(next);
-    shownFor.current = next;
-    onChange(next);
+  /** Put `canonical` in the box in the current notation, and report it as the value. */
+  const adopt = (canonical: string) => {
+    setShown(show(canonical, format));
+    shownFor.current = canonical;
+    if (canonical !== value) onChange(canonical);
   };
 
   /** Re-render the box in `next`, so the user reads (and can copy) the other notation. */
@@ -101,40 +120,43 @@ export function ColourInput({
     setFormat(next);
     const canonical = parseColour(value);
     if (canonical === null) return;
-    // The stored value is untouched: only its spelling in the box changes. Reporting the
-    // notation upward would mark the field as edited for a colour that has not moved.
+    // The stored value is untouched — only its spelling in the box changes. `from` records
+    // which colour that spelling stands for, so settling later re-adopts *this* colour rather
+    // than whatever re-parsing a rounded notation would land on.
     shownFor.current = value;
-    setDraft(formatColour(canonical, next));
+    setShown(show(canonical, next));
   };
 
   /**
    * Canonicalise on the way out, so `RED` becomes `#FF0000` and the user sees what will
-   * actually be stored. Text that is not a colour is left exactly as typed — the field's
-   * validation names the problem, and rewriting or clearing it would hide the text the
-   * message is about.
+   * actually be stored. Text the control rendered itself settles back to the colour it was
+   * rendered from, never to a re-parse of it. Text that is not a colour is left exactly as
+   * typed — the field's validation names the problem, and rewriting or clearing it would hide
+   * the text the message is about.
    */
   const settle = () => {
-    const canonical = parseColour(draft);
-    if (canonical !== null) {
-      setDraft(formatColour(canonical, format));
-      shownFor.current = canonical;
-      if (canonical !== value) onChange(canonical);
-    }
+    const canonical = shown.from ?? parseColour(shown.text);
+    if (canonical !== null) adopt(canonical);
     onBlur?.();
   };
 
-  const unreadable = draft.trim() !== '' && parseColour(draft) === null;
+  const unreadable = shown.text.trim() !== '' && shown.from === null && parseColour(shown.text) === null;
   // `<input type="color">` only accepts a six-digit hex, so a half-typed or translucent value
   // is previewed at the nearest thing it can show, and anything unreadable shows black. The
   // alpha is put back on the way out of the picker below, which has no channel for it.
-  const previewed = parseColour(draft) ?? parseColour(value);
+  const previewed = shown.from ?? parseColour(shown.text) ?? parseColour(value);
   const swatch = previewed === null ? '#000000' : previewed.slice(0, 7);
 
   return (
     <span className="flex w-full items-center gap-2">
       <Input
-        value={draft}
-        onChange={(e) => commit(e.target.value)}
+        value={shown.text}
+        onChange={(e) => {
+          // Typed text is the source of truth from here on, so it carries no `from`.
+          setShown({ text: e.target.value, from: null });
+          shownFor.current = e.target.value;
+          onChange(e.target.value);
+        }}
         onBlur={settle}
         placeholder={t('field.colour.placeholder')}
         spellCheck={false}
@@ -155,13 +177,14 @@ export function ColourInput({
           if (picked === null) return;
           // Keep any alpha the value carried: the native picker has no alpha channel, so
           // letting it drop one would quietly change a value the user only meant to re-hue.
-          const current = parseColour(draft) ?? parseColour(value);
+          const current = previewed;
           const alpha = current !== null && current.length === 9 ? current.slice(7) : '';
-          commit(formatColour(`${picked.slice(0, 7)}${alpha}`, format));
+          // The picked colour is reported exactly, whatever notation the box happens to show.
+          adopt(`${picked.slice(0, 7)}${alpha}`);
         }}
         // The picker is the other half of the same edit, so it settles the same way the box
         // does. Without this a caller that commits on blur (a location's field value) would
-        // never hear about a colour that was picked and never typed over.
+        // hear nothing until the box itself was focused and left.
         onBlur={settle}
         aria-label={t('field.colour.pick')}
         className={cn(
@@ -189,7 +212,7 @@ export function ColourInput({
               onSelect={() => showAs(option)}
               trailing={
                 canonical === null ? undefined : (
-                  <span className="font-mono text-xs text-muted-foreground">
+                  <span data-testid="colour-preview" className="font-mono text-xs text-muted-foreground">
                     {formatColour(canonical, option)}
                   </span>
                 )

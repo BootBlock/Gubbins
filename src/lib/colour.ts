@@ -3,10 +3,10 @@
  * custom field type (issue #452).
  *
  * A `COLOUR` value is stored in `item_field_values.value` as a **canonical lowercase
- * `#rrggbb`** string (eight digits, `#rrggbbaa`, when the colour carries alpha). One
- * spelling in the column is what lets a value entered as `hsl(30 100% 50%)` on one device
- * render as `Chocolate` on another, and what keeps grouping/equality working without a
- * parser in every SQL comparison.
+ * `#rrggbb`** string (eight digits, `#rrggbbaa`, when the colour carries alpha). One spelling
+ * in the column is what lets a value entered as `hsl(30 100% 50%)` on one device render as
+ * `Chocolate` on another, and what lets a `field:` search predicate compare two colours as
+ * plain strings, with no colour parser in the SQL.
  *
  * Everything here is pure and dependency-free: no DOM, no `Date`, no canvas. That matters
  * because the same conversions run in the browser, in Vitest, and under the bridge's
@@ -352,34 +352,23 @@ export function rgbToHsl({ r, g, b }: Rgb): Hsl {
 /**
  * HSB/HSV (h `0`–`360`, s/b `0`–`100`) → 8-bit sRGB.
  *
- * Computed from the HSV definition directly rather than by routing through {@link hslToRgb}.
- * The HSL/HSV identity is exact in real arithmetic but not in binary floating point, and the
- * error it introduces lands on the wrong side of a rounding tie often enough to shift a
- * channel by one — `hsb(0, 10%, 70%)` came out `#b2a1a1` where the definition gives
- * `#b3a1a1`. That is the same compounding {@link rgbToHsb} avoids in the other direction.
+ * Uses the CSS/HSV `f(n)` formulation — each channel is `v` minus a fraction of `v·s` — rather
+ * than the chroma-plus-offset form, and certainly rather than routing through {@link hslToRgb}.
+ * Both of the others reach the brightest channel by *adding a residual back*, and in binary
+ * floating point the sum lands just below the value it should equal: `0.9·0.35 + (0.9 − 0.9·0.35)`
+ * is `0.8999999999999999`, so `× 255` rounds to 229 where the definition gives 230. That is one
+ * shade, on around one integer HSV triple in 1750, and it breaks the `rgb → hsb → rgb` identity —
+ * a colour read back as HSB and re-entered came out darker than it went in.
  */
 export function hsbToRgb({ h, s, b }: Hsb): Rgb {
   const hue = wrapHue(h);
   const sat = clamp(s, 0, 100) / 100;
   const value = clamp(b, 0, 100) / 100;
-  const chroma = value * sat;
-  const secondary = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
-  const base = value - chroma;
-  const sector = Math.floor(hue / 60) % 6;
-  const triples = [
-    [chroma, secondary, 0],
-    [secondary, chroma, 0],
-    [0, chroma, secondary],
-    [0, secondary, chroma],
-    [secondary, 0, chroma],
-    [chroma, 0, secondary],
-  ] as const;
-  const [red, green, blue] = triples[sector] ?? triples[0];
-  return {
-    r: Math.round((red + base) * 255),
-    g: Math.round((green + base) * 255),
-    b: Math.round((blue + base) * 255),
+  const channelAt = (n: number): number => {
+    const k = (n + hue / 60) % 6;
+    return Math.round((value - value * sat * Math.max(0, Math.min(k, 4 - k, 1))) * 255);
   };
+  return { r: channelAt(5), g: channelAt(3), b: channelAt(1) };
 }
 
 /**
