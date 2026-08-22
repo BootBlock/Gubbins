@@ -341,14 +341,14 @@ describe('LocationRepository', () => {
     it('applies the metadata to the leaf only; ancestors are bare', async () => {
       const [leaf] = await locations.createPath({
         name: 'Workshop/Drawer 3',
-        kind: 'drawer',
+        icon: 'Inbox',
         capacity: 12,
       });
-      expect(leaf!.kind).toBe('drawer');
+      expect(leaf!.icon).toBe('Inbox');
       expect(leaf!.capacity).toBe(12);
 
       const workshop = (await locations.getTree()).find((n) => n.name === 'Workshop');
-      expect(workshop?.kind).toBeNull();
+      expect(workshop?.icon).toBeNull();
       expect(workshop?.capacity).toBeNull();
     });
 
@@ -406,10 +406,10 @@ describe('LocationRepository', () => {
     it('applies the shared metadata to every fanned-out sibling', async () => {
       const created = await locations.createPath({
         name: 'Garage/Box 1, Box 2',
-        kind: 'box',
+        icon: 'Box',
         capacity: 8,
       });
-      expect(created.every((l) => l.kind === 'box' && l.capacity === 8)).toBe(true);
+      expect(created.every((l) => l.icon === 'Box' && l.capacity === 8)).toBe(true);
     });
 
     it('reuses an existing sibling and only creates the missing ones', async () => {
@@ -512,15 +512,15 @@ describe('LocationRepository', () => {
     await expect(gated.delete(doomed.id)).resolves.toBeUndefined();
   });
 
-  it('persists the richer metadata (type, capacity, default)', async () => {
+  it('persists the richer metadata (icon, capacity, default)', async () => {
     const loc = await locations.create({
       name: 'Cabinet',
-      kind: 'cabinet',
+      icon: 'Archive',
       capacity: 20,
       isDefault: true,
     });
     const read = await locations.getById(loc.id);
-    expect(read).toMatchObject({ kind: 'cabinet', capacity: 20, isDefault: true });
+    expect(read).toMatchObject({ icon: 'Archive', capacity: 20, isDefault: true });
   });
 
   it('coerces a blank/negative capacity to null (unbounded)', async () => {

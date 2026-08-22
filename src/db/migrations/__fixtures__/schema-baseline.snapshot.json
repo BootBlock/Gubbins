@@ -701,7 +701,7 @@
       "type": "table",
       "name": "locations",
       "tbl_name": "locations",
-      "sql": "CREATE TABLE locations (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          name       TEXT    NOT NULL,\n          parent_id  TEXT    REFERENCES locations(id),\n          is_system  INTEGER NOT NULL DEFAULT 0,\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), description TEXT, color TEXT, kind TEXT, capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0), is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)), archived_at INTEGER, last_counted_at INTEGER, dead_stock_mode TEXT NOT NULL DEFAULT 'inherit' CHECK (dead_stock_mode IN ('inherit', 'always', 'never')), dead_stock_days INTEGER CHECK (dead_stock_days IS NULL OR dead_stock_days > 0), width REAL CHECK (width IS NULL OR width >= 0), height REAL CHECK (height IS NULL OR height >= 0), depth REAL CHECK (depth IS NULL OR depth >= 0), usable_volume REAL CHECK (usable_volume IS NULL OR usable_volume >= 0), packing_factor REAL CHECK (packing_factor IS NULL OR (packing_factor > 0 AND packing_factor <= 1)), walk_order INTEGER CHECK (walk_order IS NULL OR walk_order >= 0),\n          CHECK (parent_id IS NULL OR parent_id <> id),\n          CHECK (is_system IN (0, 1))\n        ) STRICT"
+      "sql": "CREATE TABLE locations (\n          id         TEXT    PRIMARY KEY NOT NULL,\n          name       TEXT    NOT NULL,\n          parent_id  TEXT    REFERENCES locations(id),\n          is_system  INTEGER NOT NULL DEFAULT 0,\n          updated_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), description TEXT, color TEXT, icon TEXT, capacity INTEGER CHECK (capacity IS NULL OR capacity >= 0), is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)), archived_at INTEGER, last_counted_at INTEGER, dead_stock_mode TEXT NOT NULL DEFAULT 'inherit' CHECK (dead_stock_mode IN ('inherit', 'always', 'never')), dead_stock_days INTEGER CHECK (dead_stock_days IS NULL OR dead_stock_days > 0), width REAL CHECK (width IS NULL OR width >= 0), height REAL CHECK (height IS NULL OR height >= 0), depth REAL CHECK (depth IS NULL OR depth >= 0), usable_volume REAL CHECK (usable_volume IS NULL OR usable_volume >= 0), packing_factor REAL CHECK (packing_factor IS NULL OR (packing_factor > 0 AND packing_factor <= 1)), walk_order INTEGER CHECK (walk_order IS NULL OR walk_order >= 0),\n          CHECK (parent_id IS NULL OR parent_id <> id),\n          CHECK (is_system IN (0, 1))\n        ) STRICT"
     },
     {
       "type": "table",
@@ -4481,7 +4481,7 @@
         },
         {
           "cid": 7,
-          "name": "kind",
+          "name": "icon",
           "type": "TEXT",
           "notnull": 0,
           "dflt_value": null,

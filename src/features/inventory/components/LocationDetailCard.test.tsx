@@ -23,7 +23,7 @@ function makeLocation(overrides: Partial<LocationWithCount> = {}): LocationWithC
     isSystem: false,
     description: 'Top shelf, **fragile** items only',
     color: null,
-    kind: 'cabinet',
+    icon: 'Archive',
     capacity: 50,
     isDefault: false,
     archivedAt: null,

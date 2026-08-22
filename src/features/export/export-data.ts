@@ -30,7 +30,7 @@ import {
  *
  * v2 adds the `locations` array (issue #617, `N7`). Before it, an item's `locationId` was a bare
  * UUID pointing at nothing in the file, so the payload could not say where anything was — and a
- * location's own description, kind, capacity, dimensions and walk order left the app in no export
+ * location's own description, icon, capacity, dimensions and walk order left the app in no export
  * at all.
  */
 export const JSON_EXPORT_FORMAT_VERSION = 2;
@@ -369,7 +369,7 @@ export interface VaultBuild {
 /**
  * A location to write a **folder note** for (issue #617, `N7`).
  *
- * The vault reduced a location to a folder name and nothing else, so a place's description, kind,
+ * The vault reduced a location to a folder name and nothing else, so a place's description, icon,
  * capacity, dimensions and walk order left the app in no export at all. One note per location
  * gives them somewhere to live, at the Obsidian folder-note path (`Folder/Folder.md`) so the
  * folder itself carries them.
@@ -426,7 +426,7 @@ function extOf(path: string): string {
  * map plus the {@link VaultAsset} descriptors the orchestrator fills with bytes.
  *
  * With `options.locations` (issue #617, `N7`) each location also gets an Obsidian **folder note**
- * at `Folder/Folder.md`, carrying what the vault previously threw away: the description, kind,
+ * at `Folder/Folder.md`, carrying what the vault previously threw away: the description, icon,
  * capacity, dimensions and walk order. Those are written *first*, so the folder note keeps the
  * canonical name and an item that happens to share its location's name takes the id-suffixed
  * fallback instead — the folder's own note is the one that cannot be renamed without breaking
@@ -520,8 +520,8 @@ export function buildVaultFiles(vaultItems: readonly VaultItem[]): Record<string
  * One location's Obsidian **folder note** (issue #617, `N7`) — the page that carries what a
  * location records about itself, which the vault previously reduced to a folder name.
  *
- * The frontmatter holds the stored values verbatim (the `kind` *key*, not its display label;
- * millimetres, not the reader's `dimensionUnit`), matching how an item note writes `trackingMode`
+ * The frontmatter holds the stored values verbatim (the `icon` glyph *name*, not its humanised
+ * label; millimetres, not the reader's `dimensionUnit`), matching how an item note writes `trackingMode`
  * — this is Dataview-queryable metadata, whereas the spreadsheet export next door is read by a
  * person and uses the labels. `path` is what disambiguates two same-named locations sharing a
  * folder.
@@ -538,7 +538,7 @@ function renderLocationMarkdown(entry: VaultLocation): string {
     name: location.name,
     path: entry.path,
     parent: entry.parentName,
-    kind: location.kind,
+    icon: location.icon,
     items: location.itemCount,
     capacity: location.capacity,
     // Canonical stored units — millimetres and cubic millimetres (issue #457).

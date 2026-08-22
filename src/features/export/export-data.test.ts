@@ -47,7 +47,7 @@ function makeLocation(overrides: Partial<LocationWithCount> = {}): LocationWithC
     isSystem: false,
     description: null,
     color: null,
-    kind: null,
+    icon: null,
     capacity: null,
     isDefault: false,
     archivedAt: null,
@@ -365,7 +365,7 @@ describe('buildVault — §4.5 asset extraction (Phase 14)', () => {
 });
 
 /**
- * Issue #617 (`N7`): the vault reduced a location to a folder name, so its description, kind,
+ * Issue #617 (`N7`): the vault reduced a location to a folder name, so its description, icon,
  * capacity, dimensions and walk order were the one thing it threw away.
  */
 describe('buildVault — location folder notes (issue #617)', () => {
@@ -379,7 +379,7 @@ describe('buildVault — location folder notes (issue #617)', () => {
         {
           location: makeLocation({
             name: 'Cabinet A',
-            kind: 'cabinet',
+            icon: 'Archive',
             description: 'No solvents here, unventilated.',
             capacity: 40,
             width: 600,
@@ -395,7 +395,7 @@ describe('buildVault — location folder notes (issue #617)', () => {
     expect(note).toContain('type: "location"');
     expect(note).toContain('path: "Workshop / Cabinet A"');
     expect(note).toContain('parent: "Workshop"');
-    expect(note).toContain('kind: "cabinet"');
+    expect(note).toContain('icon: "Archive"');
     expect(note).toContain('capacity: 40');
     expect(note).toContain('width: 600');
     expect(note).toContain('walkOrder: 2');

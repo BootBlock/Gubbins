@@ -23,7 +23,7 @@ function node(
     isSystem: false,
     description: null,
     color: null,
-    kind: null,
+    icon: null,
     capacity: null,
     isDefault: false,
     archivedAt: null,

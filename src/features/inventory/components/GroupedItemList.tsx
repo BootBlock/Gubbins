@@ -18,7 +18,7 @@ import { useItemsTags } from '../tags';
 import { useLocationSectionItems } from '../queries';
 import { LIST_ROW_HEIGHT, listRowCount, resolveListRow } from '../list-window';
 import { toItemSort } from '../sorting';
-import { LocationKindIcon } from './LocationKindIcon';
+import { LocationIcon } from './LocationIcon';
 import { ItemCard } from './ItemCard';
 import { ItemRow } from './ItemRow';
 import { ItemTableHeader, ItemTableRow } from './ItemTable';
@@ -171,8 +171,8 @@ function LocationSection({
             expanded && 'rotate-90',
           )}
         />
-        <LocationKindIcon
-          kind={node.kind}
+        <LocationIcon
+          icon={node.icon}
           expanded={expanded && hasChildren}
           className={cn('size-4 shrink-0', colorClass ?? 'text-muted-foreground')}
         />

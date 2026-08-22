@@ -18,7 +18,7 @@ function makeLocation(overrides: Partial<LocationWithCount> = {}): LocationWithC
     isSystem: false,
     description: null,
     color: null,
-    kind: null,
+    icon: null,
     capacity: null,
     isDefault: false,
     archivedAt: null,
@@ -86,11 +86,11 @@ describe('toLocationExportRows', () => {
 });
 
 describe('locationsExportColumns', () => {
-  it('carries what nothing else exported — description, kind, capacity, size and walk order', () => {
+  it('carries what nothing else exported — description, icon, capacity, size and walk order', () => {
     const [row] = toLocationExportRows([
       makeLocation({
         name: 'Cabinet A',
-        kind: 'cabinet',
+        icon: 'Archive',
         description: 'No solvents here, unventilated.',
         capacity: 40,
         width: 600,
@@ -103,8 +103,8 @@ describe('locationsExportColumns', () => {
       }),
     ]);
     expect(cell(row!, 'Description')).toBe('No solvents here, unventilated.');
-    // The stored key is a semantic token; the file shows the label a person reads.
-    expect(cell(row!, 'Kind')).toBe('Cabinet');
+    // The stored value is the canonical glyph name; the file shows the humanised form.
+    expect(cell(row!, 'Icon')).toBe('Archive');
     expect(cell(row!, 'Capacity')).toBe(40);
     expect(cell(row!, 'Width (mm)')).toBe(600);
     expect(cell(row!, 'Usable volume (mm³)')).toBe(200_000_000);
@@ -113,9 +113,14 @@ describe('locationsExportColumns', () => {
     expect(cell(row!, 'Items')).toBe(7);
   });
 
-  it('leaves an unknown kind blank rather than leaking the raw stored token', () => {
-    const [row] = toLocationExportRows([makeLocation({ kind: 'spaceship' })]);
-    expect(cell(row!, 'Kind')).toBeNull();
+  it('leaves the icon column blank when the location has none', () => {
+    const [row] = toLocationExportRows([makeLocation({ icon: null })]);
+    expect(cell(row!, 'Icon')).toBeNull();
+  });
+
+  it('humanises a multi-word glyph name rather than printing it in PascalCase', () => {
+    const [row] = toLocationExportRows([makeLocation({ icon: 'ShoppingBag' })]);
+    expect(cell(row!, 'Icon')).toBe('Shopping Bag');
   });
 
   it('writes the archive and last-counted instants in ISO, blank when unset', () => {

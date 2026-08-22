@@ -3,11 +3,13 @@ import {
   Button,
   Checkbox,
   FormField,
+  GlyphPickerButton,
   InfoHint,
   Input,
   RailModal,
   SegmentedRadioGroup,
   Textarea,
+  humanizeGlyphName,
   type RailTab,
 } from '@/components/foundry';
 import {
@@ -15,6 +17,7 @@ import {
   ArchiveRestoreIcon,
   DeleteIcon,
   EditIcon,
+  FolderIcon,
   HistoryIcon,
   ImageIcon,
   PackageIcon,
@@ -35,7 +38,6 @@ import { useUpdateLocation } from '../mutations';
 import { collectDescendantIds, locationPath } from '../location-tree';
 import { buildParentOptions } from '../parent-options';
 import { isLocationColor, locationColorTextClass, type LocationColor } from '../location-color';
-import { isLocationKind, locationKindLabel, type LocationKind } from '../location-kind';
 import {
   dimensionToInput,
   resolveDimension,
@@ -47,8 +49,7 @@ import { LocationSelect } from './LocationSelect';
 import { ColorSwatchPicker } from './ColorSwatchPicker';
 import { LocationAdvancedVolumeFields } from './LocationAdvancedVolumeFields';
 import { LocationDimensionsFields } from './LocationDimensionsFields';
-import { LocationKindPicker } from './LocationKindPicker';
-import { LocationKindIcon } from './LocationKindIcon';
+import { LocationIcon } from './LocationIcon';
 import { LocationTagEditor } from './TagEditor';
 import { LocationFieldsEditor } from './LocationFieldsEditor';
 import { LocationActivityLog } from './LocationActivityLog';
@@ -113,7 +114,7 @@ export function EditLocationDialog({
   const enabledFeatures = useEnabledFeatures();
   const parentLabelId = useId();
   const colorLabelId = useId();
-  const kindLabelId = useId();
+  const iconFieldId = useId();
   const deadStockLabelId = useId();
   const nameRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(location.name);
@@ -122,7 +123,7 @@ export function EditLocationDialog({
   const [color, setColor] = useState<LocationColor | null>(
     isLocationColor(location.color) ? location.color : null,
   );
-  const [kind, setKind] = useState<LocationKind | null>(isLocationKind(location.kind) ? location.kind : null);
+  const [icon, setIcon] = useState<string | null>(location.icon);
   const [capacity, setCapacity] = useState(location.capacity != null ? String(location.capacity) : '');
   // Picking-sweep position (issue #461); blank = unplaced (sorts after every placed location).
   const [walkOrder, setWalkOrder] = useState(location.walkOrder != null ? String(location.walkOrder) : '');
@@ -199,7 +200,7 @@ export function EditLocationDialog({
     (parentId || null) !== location.parentId ||
     descValue !== (location.description ?? null) ||
     color !== (isLocationColor(location.color) ? location.color : null) ||
-    kind !== (isLocationKind(location.kind) ? location.kind : null) ||
+    icon !== location.icon ||
     capacityValue !== location.capacity ||
     walkOrderValue !== location.walkOrder ||
     isDefault !== location.isDefault ||
@@ -211,7 +212,6 @@ export function EditLocationDialog({
     usableVolumeState.dirty ||
     packingState.dirty;
 
-  const kindLabel = locationKindLabel(location.kind);
   // Volumetric fullness when the location has a measured size (issue #457), else the count gauge.
   const fullness = useLocationFullness(location);
   const archived = location.archivedAt != null;
@@ -236,7 +236,7 @@ export function EditLocationDialog({
           parentId: parentId || null,
           description: descValue,
           color,
-          kind,
+          icon,
           capacity: capacityValue,
           walkOrder: walkOrderValue,
           isDefault,
@@ -310,14 +310,24 @@ export function EditLocationDialog({
             the location being edited. */}
       <LocationFieldsEditor locationId={location.id} />
 
+      {/* Explicit <label htmlFor> (a <button> is a labelable element) rather than
+          FormField's implicit-label wrap, which is meant for a single input. */}
       <div className="relative">
-        <span id={kindLabelId} className="mb-field-gap block pr-6 text-sm font-medium">
-          {t('inventory.location.field.type')}
-        </span>
+        <label htmlFor={iconFieldId} className="mb-field-gap block pr-6 text-sm font-medium">
+          {t('inventory.location.field.icon')}
+        </label>
         <span className="absolute right-0 top-0.5">
-          <InfoHint content={t('inventory.location.hint.kind')} />
+          <InfoHint content={t('inventory.location.hint.icon')} />
         </span>
-        <LocationKindPicker labelledBy={kindLabelId} value={kind} onChange={setKind} />
+        <GlyphPickerButton
+          id={iconFieldId}
+          value={icon}
+          onChange={setIcon}
+          fallback={FolderIcon}
+          placeholder={t('inventory.location.field.iconPlaceholder')}
+          title={t('inventory.location.field.iconPickerTitle')}
+          clearable
+        />
       </div>
 
       <div className="relative">
@@ -468,14 +478,14 @@ export function EditLocationDialog({
             </dd>
           </div>
         ) : null}
-        {kindLabel ? (
+        {location.icon ? (
           <div className="col-span-2">
             <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-              {t('inventory.location.meta.type')}
+              {t('inventory.location.meta.icon')}
             </dt>
             <dd className="mt-0.5 flex items-center gap-1.5 font-medium [&_svg]:size-4">
-              <LocationKindIcon kind={location.kind} />
-              {kindLabel}
+              <LocationIcon icon={location.icon} />
+              {humanizeGlyphName(location.icon)}
             </dd>
           </div>
         ) : null}

@@ -17,6 +17,8 @@ Locations are **hierarchical** — a location can sit inside another, as deep as
 Each location can have:
 
 - **A name** — a room, shelf, drawer, box, or anywhere else things live.
+- **An icon** — any glyph from the icon library, shown beside the location in the tree and in
+  the details panel above the item list. A location without one shows a plain folder.
 - **A colour** — a swatch that tints the location and the cards of items stored in it, so the
   grid reads at a glance.
 - **A description** — free notes about the location (what it holds, how to get to it, a link).
@@ -58,8 +60,8 @@ sits in the same place on every row.
 
 ## Adding a location
 
-The **+** button above the tree opens **Add location**. Give it a name — and, if you want them, a
-colour, a type, a description, a capacity and its internal size — then select **Create**.
+The **+** button above the tree opens **Add location**. Give it a name — and, if you want them, an
+icon, a colour, a description, a capacity and its internal size — then select **Create**.
 
 - **It nests where you are.** With one of your own locations selected, the new one is created
   *inside* it. From **All items**, or from the built-in **Unassigned** and **In Transit** rows
@@ -72,6 +74,18 @@ colour, a type, a description, a capacity and its internal size — then select 
   creates all three, reusing any level that already exists — and separate siblings with `,`, so
   `Garage/Box 1, Box 2, Box 3` adds three boxes at once. The dialog previews what a name will
   create before you commit to it; where a name fans out into siblings, the first one is selected.
+
+### Choosing an icon
+
+The **Icon** field opens the icon library — the whole set, not a short preset list, so a wine rack
+can carry a wine glass and a fish tank a fish. Type in its search box to narrow the grid by name
+(`box`, `car`, `plant`), pick the one you want, and select **Use**. The **✕** beside the field
+clears the icon again, and the location goes back to a plain folder.
+
+The icon shows beside the location in the tree, in the details panel above the item list, on the
+sub-location cards and on the group headings when the inventory is grouped by location. It is
+purely a visual cue — it changes nothing about how the location behaves. The location *pickers*
+show the colour swatch rather than the icon.
 
 ## Finding a location
 
@@ -335,7 +349,7 @@ itself — when it was created, renamed, moved under a different parent, archive
 answers *"why is this shelf suddenly under a different room?"*, which nothing else in Gubbins
 could.
 
-It records the changes that reshape your storage, not every edit: colour, type, capacity,
+It records the changes that reshape your storage, not every edit: colour, icon, capacity,
 dimensions, walk order and the settings below describe the place rather than move anything, so they
 aren't logged. See [[Activity log|Activity-Log]] for the full rules, and for the separate ledger
 that covers the items *inside* a location.
@@ -398,8 +412,7 @@ The trick is that a location tracks *what is inside it*, not where it sits on a 
 portable container is simply a **location** like any other:
 
 1. Make the container a location — nest it wherever it normally lives (e.g. *Garage → Camera bag*).
-2. Give it a matching **type** so it reads at a glance: **Box**, **Bag** or **Vehicle** all carry
-   their own icon.
+2. Give it a matching **icon** so it reads at a glance — a briefcase, a shopping bag, a van.
 3. Store the items inside it, just as you would on a shelf.
 
 Because Gubbins records containment rather than a physical position, **picking the bag up and
@@ -418,7 +431,7 @@ the container's location.
 The Locations pane has its own **Export** button, beside the button that adds a location. It saves
 the whole tree as a **CSV**, **TSV**, an **Excel workbook (.xlsx)**, **JSON**, a **Markdown**
 table, a printable **HTML** page or **plain text** — one row per location, carrying its full path
-(so *"Drawer 3"* still means something outside Gubbins), its type and description, how many items
+(so *"Drawer 3"* still means something outside Gubbins), its icon and description, how many items
 it holds, its capacity, size, walk order and dead-stock setting.
 
 The file always covers **every** location, including archived ones and anything a tag chip or the

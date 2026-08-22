@@ -40,6 +40,17 @@ vi.mock('../categories', () => ({
   useRemoveLocationFieldValue: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+// The real picker renders the whole ~1,700-glyph catalogue, which is far more work than this
+// dialog's tests need — they only care that a chosen glyph reaches the save payload. The picker
+// itself is covered by `GlyphPicker.test.tsx`.
+vi.mock('@/components/foundry/glyph-picker/GlyphPicker', () => ({
+  GlyphPicker: ({ onSelect }: { onSelect: (glyph: string) => void }) => (
+    <button type="button" onClick={() => onSelect('Rocket')}>
+      Pick Rocket
+    </button>
+  ),
+}));
+
 import { EditLocationDialog } from './EditLocationDialog';
 
 /** Synthetic, COMPLETE location fixture (tests are excluded from tsc). */
@@ -51,7 +62,7 @@ function loc(overrides: Partial<LocationWithCount> = {}): LocationWithCount {
     isSystem: false,
     description: 'Small parts',
     color: 'teal',
-    kind: 'cabinet',
+    icon: 'Archive',
     capacity: null,
     isDefault: false,
     archivedAt: null,
@@ -76,7 +87,7 @@ const workshop = loc({
   parentId: null,
   description: null,
   color: null,
-  kind: 'room',
+  icon: 'DoorOpen',
   itemCount: 9,
 });
 const drawer = loc({ id: 'drawer', name: 'Drawer 3', parentId: 'cabinet', itemCount: 1 });
@@ -85,7 +96,7 @@ const unassigned = loc({
   name: 'Unassigned',
   parentId: null,
   isSystem: true,
-  kind: null,
+  icon: null,
   color: null,
   itemCount: 0,
 });
@@ -134,8 +145,10 @@ describe('EditLocationDialog — the field surface', () => {
     // The parent picker is a Foundry combobox named by its visible label.
     expect(d.getByRole('combobox', { name: 'Parent' })).toBeInTheDocument();
 
-    // Two roving radiogroups — type and colour — plus the segmented dead-stock group.
-    expect(d.getByRole('radiogroup', { name: 'Type (optional)' })).toBeInTheDocument();
+    // The icon picker's trigger, named by its own <label htmlFor>.
+    expect(d.getByLabelText('Icon (optional)')).toBeInTheDocument();
+
+    // The colour swatches' roving radiogroup, plus the segmented dead-stock group.
     expect(d.getByRole('radiogroup', { name: 'Colour (optional)' })).toBeInTheDocument();
     expect(d.getByRole('radiogroup', { name: 'Dead-stock reporting' })).toBeInTheDocument();
     expect(d.getByTestId('location-dead-stock-mode-inherit')).toBeInTheDocument();
@@ -166,9 +179,9 @@ describe('EditLocationDialog — the field surface', () => {
     expect(d.getByRole('checkbox', { name: /default location/ })).toBeChecked();
     // The parent combobox shows the stored parent's name.
     expect(d.getByRole('combobox', { name: 'Parent' })).toHaveTextContent('Workshop');
-    // The stored colour / type / dead-stock mode are the checked radios.
+    // The stored colour / dead-stock mode are the checked radios; the icon trigger names its glyph.
     expect(d.getByRole('radio', { name: 'Teal' })).toHaveAttribute('aria-checked', 'true');
-    expect(d.getByRole('radio', { name: 'Cabinet' })).toHaveAttribute('aria-checked', 'true');
+    expect(d.getByLabelText('Icon (optional)')).toHaveTextContent('Archive');
     expect(d.getByTestId('location-dead-stock-mode-always')).toHaveAttribute('aria-checked', 'true');
   });
 
@@ -183,11 +196,11 @@ describe('EditLocationDialog — the field surface', () => {
     expect(blank).toHaveAttribute('placeholder', 'Not on the picking route');
   });
 
-  it('falls back to the "none" choices for a location with no colour or type', () => {
-    renderDialog({ color: null, kind: null, parentId: null });
+  it('falls back to the "none" choices for a location with no colour or icon', () => {
+    renderDialog({ color: null, icon: null, parentId: null });
     const d = dialog();
     expect(d.getByRole('radio', { name: 'No colour' })).toHaveAttribute('aria-checked', 'true');
-    expect(d.getByRole('radio', { name: 'No type' })).toHaveAttribute('aria-checked', 'true');
+    expect(d.getByLabelText('Icon (optional)')).toHaveTextContent('Choose an icon');
     expect(d.getByRole('combobox', { name: 'Parent' })).toHaveTextContent('— Top level —');
   });
 
@@ -222,13 +235,13 @@ describe('EditLocationDialog — read-only metadata', () => {
     expect(d.getByText('Path')).toBeInTheDocument();
     expect(d.getByText('Workshop / Cabinet A')).toBeInTheDocument();
     expect(d.getByText('Last changed')).toBeInTheDocument();
-    // The stored type is echoed in the metadata block.
-    expect(d.getByText('Type')).toBeInTheDocument();
+    // The stored icon is echoed in the metadata block.
+    expect(d.getByText('Icon')).toBeInTheDocument();
   });
 
-  it('omits the Type metadata row when the location has no type', () => {
-    renderDialog({ kind: null });
-    expect(dialog().queryByText('Type')).not.toBeInTheDocument();
+  it('omits the Icon metadata row when the location has no icon', () => {
+    renderDialog({ icon: null });
+    expect(dialog().queryByText('Icon')).not.toBeInTheDocument();
   });
 
   it('shows a fullness bar and an "n / capacity" count only when a capacity is set', () => {
@@ -320,7 +333,7 @@ describe('EditLocationDialog — saving', () => {
     parentId: 'workshop',
     description: 'Small parts',
     color: 'teal',
-    kind: 'cabinet',
+    icon: 'Archive',
     capacity: null,
     isDefault: false,
     deadStockMode: 'inherit',
@@ -415,12 +428,24 @@ describe('EditLocationDialog — saving', () => {
     );
   });
 
-  it('saves clearing the type back to "No type"', () => {
+  it('saves clearing the icon back to the plain folder', () => {
     renderDialog();
-    fireEvent.click(dialog().getByRole('radio', { name: 'No type' }));
+    fireEvent.click(dialog().getByRole('button', { name: 'Remove icon' }));
     fireEvent.click(saveButton());
     expect(spies.update).toHaveBeenCalledWith(
-      { id: 'cabinet', input: { ...fullPayload, kind: null } },
+      { id: 'cabinet', input: { ...fullPayload, icon: null } },
+      expect.anything(),
+    );
+  });
+
+  it('saves a glyph chosen in the picker', async () => {
+    renderDialog();
+    // The picker is lazy-loaded, so its first paint is awaited rather than assumed.
+    fireEvent.click(dialog().getByLabelText('Icon (optional)'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Pick Rocket' }));
+    fireEvent.click(saveButton());
+    expect(spies.update).toHaveBeenCalledWith(
+      { id: 'cabinet', input: { ...fullPayload, icon: 'Rocket' } },
       expect.anything(),
     );
   });

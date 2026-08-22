@@ -8,8 +8,7 @@ import { useFeature } from '@/features/modules/useFeature';
 import { locationPath } from '../location-tree';
 import { useLocationFullness } from '../use-location-fullness';
 import { locationColorTextClass } from '../location-color';
-import { locationKindLabel } from '../location-kind';
-import { LocationKindIcon } from './LocationKindIcon';
+import { LocationIcon } from './LocationIcon';
 import { LocationFullnessBar } from './LocationFullnessBar';
 import { describeVolumetricFullness } from './volumetric-fullness-text';
 
@@ -20,7 +19,7 @@ import { describeVolumetricFullness } from './volumetric-fullness-text';
  * without leaving the workspace.
  *
  * The row never wraps: as the viewport narrows it sheds its least-useful pieces first
- * (type + sub-locations at `xl`, "updated" at `lg`, the fullness bar at `sm`, the path at
+ * (sub-locations at `xl`, "updated" at `lg`, the fullness bar at `sm`, the path at
  * `md`), always keeping the identity and item count. The whole card is opt-out — the user
  * dismisses it from here or the inventory "More" menu, and the choice persists (see
  * {@link useLayoutStore.inventoryLocationCard}).
@@ -51,7 +50,6 @@ export function LocationInfoCard({
   // A plain-text volume/coverage summary for the sr-only label + hover title (the row is too
   // narrow for a visible caption — the Edit dialog shows the full caption).
   const fullnessDetail = fullness ? describeVolumetricFullness(fullness, fmt) : null;
-  const kindLabel = locationKindLabel(location.kind);
   const colorClass = locationColorTextClass(location.color);
   // A root location's path is just its own name — no point repeating it beside the name.
   const showPath = path.length > 0 && path !== location.name;
@@ -66,7 +64,7 @@ export function LocationInfoCard({
       data-testid="location-info-card"
       className="mb-3 flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
     >
-      <LocationKindIcon kind={location.kind} className={cn('size-5 shrink-0', colorClass)} />
+      <LocationIcon icon={location.icon} className={cn('size-5 shrink-0', colorClass)} />
 
       <div className="flex min-w-0 items-baseline gap-2">
         <span className={cn('truncate font-medium', colorClass)} title={location.name}>
@@ -116,12 +114,6 @@ export function LocationInfoCard({
         {childCount > 0 ? (
           <div className="hidden xl:block">
             <Stat icon={<MoveIcon aria-hidden />} label="Sub-locations" value={fmt.quantity(childCount)} />
-          </div>
-        ) : null}
-
-        {kindLabel ? (
-          <div className="hidden xl:block">
-            <Stat label="Type" value={kindLabel} />
           </div>
         ) : null}
       </div>

@@ -439,7 +439,7 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   const locationNames = new Map(locations.map((l) => [l.id, l.name]));
   const categoryNames = new Map(categories.map((c) => [c.id, c.name]));
   // Folder notes for the locations this scope covers (issue #617, `N7`) — the vault reduced a
-  // location to a folder name, so its description, kind, capacity, dimensions and walk order
+  // location to a folder name, so its description, icon, capacity, dimensions and walk order
   // were the one thing it threw away.
   const vaultLocations = scopedLocations(scope, options.targetId, locations, items);
 
