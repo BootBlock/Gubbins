@@ -240,16 +240,31 @@ function hex2(n: number): string {
 }
 
 /**
+ * A plain decimal number, optionally signed and in scientific notation. Deliberately stricter
+ * than `Number()`, which also reads `''` as `0`, and accepts `0x10`, `Infinity` and `NaN` —
+ * none of which is a colour component, and the first of which would turn `rgb(%,%,%)` into
+ * black rather than rejecting it.
+ */
+const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
+/**
  * Parse one channel token from an `rgb()` / `hsl()` argument list. A trailing `%` is read as
- * a percentage of `scale`; anything else is read as a plain number.
+ * a percentage of `scale`; anything else is read as a plain number. Returns `null` — never a
+ * silent zero — for anything that is not a number.
  */
 function channel(token: string, scale: number): number | null {
   const text = token.trim();
-  if (text.length === 0) return null;
   const isPercent = text.endsWith('%');
-  const numeric = Number(isPercent ? text.slice(0, -1) : text);
+  const body = isPercent ? text.slice(0, -1).trim() : text;
+  if (!DECIMAL.test(body)) return null;
+  const numeric = Number(body);
   if (!Number.isFinite(numeric)) return null;
   return isPercent ? (numeric / 100) * scale : numeric;
+}
+
+/** True when a token is written as a percentage, whatever its value. */
+function isPercentToken(token: string): boolean {
+  return token.trim().endsWith('%');
 }
 
 /**
@@ -264,6 +279,10 @@ function splitArgs(body: string): string[] | null {
   const slashed = trimmed.split('/');
   if (slashed.length > 2) return null;
   const parts = (slashed[0] ?? '').trim().split(/\s+/);
+  // In the space form the alpha is *only* ever the argument after the slash. A bare fourth
+  // component (`rgb(1 2 3 4)`) is not CSS, and reading it as an alpha would silently accept a
+  // typo as a transparency the user never asked for.
+  if (parts.length !== 3) return null;
   const alpha = slashed[1];
   return alpha === undefined ? parts : [...parts, alpha];
 }
@@ -330,14 +349,37 @@ export function rgbToHsl({ r, g, b }: Rgb): Hsl {
   return { h: Math.round(wrapHue(hue)), s: Math.round(sat * 100), l: Math.round(light * 100) };
 }
 
-/** HSB/HSV (h `0`–`360`, s/b `0`–`100`) → 8-bit sRGB, via the equivalent HSL. */
+/**
+ * HSB/HSV (h `0`–`360`, s/b `0`–`100`) → 8-bit sRGB.
+ *
+ * Computed from the HSV definition directly rather than by routing through {@link hslToRgb}.
+ * The HSL/HSV identity is exact in real arithmetic but not in binary floating point, and the
+ * error it introduces lands on the wrong side of a rounding tie often enough to shift a
+ * channel by one — `hsb(0, 10%, 70%)` came out `#b2a1a1` where the definition gives
+ * `#b3a1a1`. That is the same compounding {@link rgbToHsb} avoids in the other direction.
+ */
 export function hsbToRgb({ h, s, b }: Hsb): Rgb {
+  const hue = wrapHue(h);
   const sat = clamp(s, 0, 100) / 100;
-  const brightness = clamp(b, 0, 100) / 100;
-  const light = brightness * (1 - sat / 2);
-  // At pure black or pure white the HSL saturation is undefined; 0 is the only sane reading.
-  const hslSat = light === 0 || light === 1 ? 0 : (brightness - light) / Math.min(light, 1 - light);
-  return hslToRgb({ h, s: hslSat * 100, l: light * 100 });
+  const value = clamp(b, 0, 100) / 100;
+  const chroma = value * sat;
+  const secondary = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const base = value - chroma;
+  const sector = Math.floor(hue / 60) % 6;
+  const triples = [
+    [chroma, secondary, 0],
+    [secondary, chroma, 0],
+    [0, chroma, secondary],
+    [0, secondary, chroma],
+    [secondary, 0, chroma],
+    [chroma, 0, secondary],
+  ] as const;
+  const [red, green, blue] = triples[sector] ?? triples[0];
+  return {
+    r: Math.round((red + base) * 255),
+    g: Math.round((green + base) * 255),
+    b: Math.round((blue + base) * 255),
+  };
 }
 
 /**
@@ -360,10 +402,18 @@ export function rgbToHsb({ r, g, b }: Rgb): Hsb {
   };
 }
 
-/** Canonical `#rrggbb` (or `#rrggbbaa`) for an RGB triple plus alpha `0`–`1`. */
+/**
+ * Canonical `#rrggbb` (or `#rrggbbaa`) for an RGB triple plus alpha `0`–`1`.
+ *
+ * The alpha **byte** decides whether the colour is opaque, not the fraction it came from: an
+ * alpha of `0.999` rounds to `ff`, and appending that would produce `#ff0000ff` — a second
+ * canonical spelling of a colour {@link parseColour} already reads as `#ff0000`. One spelling
+ * per colour is the whole contract of this module, so the rounding has to come first.
+ */
 function canonicalise(rgb: Rgb, alpha: number): string {
   const base = `#${hex2(rgb.r)}${hex2(rgb.g)}${hex2(rgb.b)}`;
-  return alpha >= 1 ? base : `${base}${hex2(Math.round(alpha * 255))}`;
+  const byte = Math.round(clamp(alpha, 0, 1) * 255);
+  return byte >= 255 ? base : `${base}${hex2(byte)}`;
 }
 
 /** Match a functional notation such as `hsl(30 100% 50%)`, capturing the name and body. */
@@ -425,7 +475,11 @@ function parseFunctional(name: string, body: string): string | null {
   }
 
   if (name === 'hsl' || name === 'hsla' || name === 'hsb' || name === 'hsv') {
-    const hue = channel(first.replace(/deg$/, ''), 360);
+    // A hue is an angle, never a percentage — `hsl(50% …)` is not 180°, it is a typo. The `deg`
+    // suffix is stripped *after* trimming, so `hsl(30deg , …)` reads the same as
+    // `hsl(30deg, …)` rather than failing on a space the comma form is entitled to have.
+    if (isPercentToken(first)) return null;
+    const hue = channel(first.trim().replace(/deg$/, ''), 360);
     const axis = channel(second, 100);
     const level = channel(third, 100);
     if (hue === null || axis === null || level === null) return null;
@@ -451,16 +505,23 @@ export function toRgb(canonical: string): { readonly rgb: Rgb; readonly alpha: n
   return { rgb, alpha };
 }
 
-/** Round to at most `places` decimals without leaving a trailing `.0`. */
-function trim(n: number, places: number): string {
-  return String(Number(n.toFixed(places)));
+/**
+ * Render an alpha `0`–`1` at enough precision to survive the trip back to its byte. Two
+ * decimals is not enough: the byte `01` is `0.0039`, which rounds to `0`, and re-parsing that
+ * would turn a nearly-opaque colour into a fully transparent one. Three bounds the error at
+ * `0.0005 × 255 ≈ 0.13` of a byte, so all 255 values round-trip exactly.
+ */
+function alphaText(alpha: number): string {
+  return String(Number(alpha.toFixed(3)));
 }
 
 /**
  * Render a canonical colour in one of the {@link COLOUR_FORMATS}. Alpha is carried through
- * every format that can express it (`rgba()`, `hsla()`, the 8-digit hex); `HSB` and `NAME`
- * cannot, so a translucent colour falls back to the form that can — the same rule as
- * "never show the user a value that is not the value they stored".
+ * every format that can express it (`rgba()`, `hsla()`, the 8-digit hex). `HSB` and `NAME`
+ * cannot, so for a translucent colour both fall back to the 8-digit hex rather than dropping
+ * the alpha or bolting it on in a spelling nothing reads back. **Every value this returns
+ * parses back through {@link parseColour}** — the control puts it straight into an editable
+ * box, so a rendering that did not would mark the user's own colour invalid.
  */
 export function formatColour(canonical: string, format: ColourFormat): string {
   const { rgb, alpha } = toRgb(canonical);
@@ -472,18 +533,18 @@ export function formatColour(canonical: string, format: ColourFormat): string {
     case 'RGB':
       return opaque
         ? `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`
-        : `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${trim(alpha, 2)})`;
+        : `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alphaText(alpha)})`;
     case 'HSL': {
       const { h, s, l } = rgbToHsl(rgb);
-      return opaque ? `hsl(${h}, ${s}%, ${l}%)` : `hsla(${h}, ${s}%, ${l}%, ${trim(alpha, 2)})`;
+      return opaque ? `hsl(${h}, ${s}%, ${l}%)` : `hsla(${h}, ${s}%, ${l}%, ${alphaText(alpha)})`;
     }
     case 'HSB': {
+      if (!opaque) return canonical.toUpperCase();
       const { h, s, b } = rgbToHsb(rgb);
-      const base = `hsb(${h}, ${s}%, ${b}%)`;
-      return opaque ? base : `${base} @ ${Math.round(alpha * 100)}%`;
+      return `hsb(${h}, ${s}%, ${b}%)`;
     }
     case 'NAME': {
-      const name = opaque ? NAME_BY_HEX[canonical] : undefined;
+      const name = opaque ? colourName(canonical) : null;
       return name ?? canonical.toUpperCase();
     }
   }

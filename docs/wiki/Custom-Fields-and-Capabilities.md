@@ -105,7 +105,7 @@ in the form the tool you're pasting into expects.
 
 > **💡 Tip**
 > Because every spelling is stored the same way, two spools entered as `#FF0000` and as `red`
-> match each other — searching or grouping by colour finds both.
+> match each other — a search for one finds the other.
 
 > **ℹ️ Note**
 > A colour may carry transparency (`rgba(255, 0, 0, 0.5)`, or an eight-digit hex), and Gubbins

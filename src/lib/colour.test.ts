@@ -92,9 +92,36 @@ describe('parseColour', () => {
       'currentColor',
       'oklch(0.7 0.1 30)',
       'color(display-p3 1 0 0)',
+      // A bare `%` is not zero. `Number('')` is, which is how this used to become black.
+      'rgb(%,%,%)',
+      'rgba(0,0,0,%)',
+      // `Number()` also reads these; a colour component is a plain decimal or nothing.
+      'rgb(0x10,0,0)',
+      'rgb(Infinity,0,0)',
+      'rgb(NaN,0,0)',
+      // In the space form the alpha only ever follows a slash — a bare fourth component is
+      // a typo, not a transparency.
+      'rgb(1 2 3 4)',
+      // A hue is an angle, never a percentage.
+      'hsl(50% 100% 50%)',
     ]) {
       expect(parseColour(raw), String(raw)).toBeNull();
     }
+  });
+
+  it('reads a deg-suffixed hue with the space the comma form allows', () => {
+    expect(parseColour('hsl(30deg , 100%, 50%)')).toBe(parseColour('hsl(30deg, 100%, 50%)'));
+    expect(parseColour('hsl(30deg , 100%, 50%)')).toBe('#ff8000');
+  });
+
+  it('gives a colour one canonical spelling however nearly opaque its alpha was', () => {
+    // An alpha of 0.999 rounds to the byte `ff`, and an `ff` alpha is dropped — so deciding
+    // opacity from the fraction rather than the byte produced a second spelling of red.
+    expect(parseColour('rgba(255, 0, 0, 0.999)')).toBe('#ff0000');
+    expect(parseColour('rgba(255, 0, 0, 1)')).toBe('#ff0000');
+    expect(parseColour('hsl(0 100% 50% / 99.9%)')).toBe('#ff0000');
+    // Still eight digits where the byte genuinely is not opaque.
+    expect(parseColour('rgba(255, 0, 0, 0.99)')).toBe('#ff0000fc');
   });
 });
 
@@ -127,6 +154,12 @@ describe('conversions', () => {
     expect(rgbToHsb({ r: 255, g: 255, b: 255 })).toEqual({ h: 0, s: 0, b: 100 });
   });
 
+  it('matches the HSV definition exactly, rather than routing through HSL', () => {
+    // Via HSL this came out `#b2a1a1`: `(0.07 + 0.63) * 255` evaluates to 178.49999999999997,
+    // which rounds down where the definition's 178.5 rounds up.
+    expect(hsbToRgb({ h: 0, s: 10, b: 70 })).toEqual({ r: 179, g: 161, b: 161 });
+  });
+
   it('separates the two saturation models on a mid-tone', () => {
     // #808000 (olive) is a case where HSL and HSB disagree on both axes.
     const { rgb } = toRgb('#808000');
@@ -145,13 +178,29 @@ describe('formatColour', () => {
   });
 
   it('carries alpha through the formats that can express it', () => {
-    expect(formatColour('#ff000080', 'RGB')).toBe('rgba(255, 0, 0, 0.5)');
-    expect(formatColour('#ff000080', 'HSL')).toBe('hsla(0, 100%, 50%, 0.5)');
+    // `0.502`, not `0.5` — the stored byte is `80`, which is 128/255. Rendering the rounder
+    // number would be showing the user an alpha that is not the one they have.
+    expect(formatColour('#ff000080', 'RGB')).toBe('rgba(255, 0, 0, 0.502)');
+    expect(formatColour('#ff000080', 'HSL')).toBe('hsla(0, 100%, 50%, 0.502)');
     expect(formatColour('#ff000080', 'HEX')).toBe('#FF000080');
   });
 
-  it('falls back to hex for a name that would misstate a translucent colour', () => {
+  it('falls back to hex for the formats that cannot express a translucent colour', () => {
     expect(formatColour('#ff000080', 'NAME')).toBe('#FF000080');
+    // HSB used to append an ` @ 50%` suffix nothing could read back, so choosing it in the
+    // control marked the user's own colour invalid.
+    expect(formatColour('#ff000080', 'HSB')).toBe('#FF000080');
+  });
+
+  it('renders alpha precisely enough for every byte to survive the round trip', () => {
+    // At two decimals the byte `01` rendered as `0`, turning a nearly-opaque colour
+    // transparent on the way back in.
+    expect(formatColour('#ff000001', 'RGB')).toBe('rgba(255, 0, 0, 0.004)');
+    for (let byte = 0; byte < 255; byte += 1) {
+      const hex = `#ff0000${byte.toString(16).padStart(2, '0')}`;
+      expect(parseColour(formatColour(hex, 'RGB')), hex).toBe(hex);
+      expect(parseColour(formatColour(hex, 'HSL')), hex).toBe(hex);
+    }
   });
 
   it('falls back to hex when the colour has no name', () => {
@@ -159,7 +208,7 @@ describe('formatColour', () => {
   });
 
   it('produces a value parseColour accepts back, exactly, for the lossless formats', () => {
-    for (const hex of ['#d2691e', '#000000', '#ffffff', '#123456', '#00ff7f', '#ff000080']) {
+    for (const hex of ['#d2691e', '#000000', '#ffffff', '#123456', '#00ff7f', '#ff000080', '#ff000001']) {
       for (const format of ['HEX', 'RGB', 'NAME'] as const) {
         const rendered = formatColour(hex, format);
         expect(parseColour(rendered), `${hex} as ${format}`).toBe(hex);
@@ -167,9 +216,13 @@ describe('formatColour', () => {
     }
   });
 
-  it('renders every format as something parseColour reads back as a colour', () => {
-    for (const format of COLOUR_FORMATS) {
-      expect(parseColour(formatColour('#123456', format)), format).not.toBeNull();
+  it('renders every format as something parseColour reads back, translucent colours included', () => {
+    // The control drops this string straight into an editable box, so a rendering the parser
+    // rejects would mark a colour the user already stored as invalid.
+    for (const hex of ['#123456', '#ff000080', '#00000000']) {
+      for (const format of COLOUR_FORMATS) {
+        expect(parseColour(formatColour(hex, format)), `${hex} as ${format}`).not.toBeNull();
+      }
     }
   });
 
