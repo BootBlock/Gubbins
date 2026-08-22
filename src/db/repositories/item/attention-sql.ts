@@ -1,12 +1,16 @@
 /**
  * Shared item-table "attention" SQL predicates (spec §3 dashboard feeds, §4 alerts).
  *
- * Two derived-status conditions are computable purely from the `items` row — *running
- * low* and *expiring* — and are needed in two places: the dashboard feed reads
- * ({@link withDashboardFeeds}) and the inventory list's status filter
- * ({@link buildStatusFilter}). Rather than let those two drift, the predicate SQL lives
- * here once and both sites import it. Each builder returns an `items`-scoped boolean
+ * Two derived-status conditions are owned here — *running low* and *expiring* — because each is
+ * needed in two places: the dashboard feed reads ({@link withDashboardFeeds}) and the inventory
+ * list's status filter ({@link buildStatusFilter}). Rather than let those two drift, the predicate
+ * SQL lives here once and both sites import it. Each builder returns an `items`-scoped boolean
  * fragment; the caller supplies the bound parameters in the documented order.
+ *
+ * *Running low* reads the `items` row alone. *Expiring* also reaches into `stock_batches` for the
+ * earliest dated lot still in stock (issue #684) — see {@link effectiveExpirySql} — but it stays
+ * here rather than moving to the batch repository, because the item row's own `expiry_date` is
+ * half of the answer and both halves must be compared in one expression.
  *
  * The cross-table statuses (checkout *overdue*, *maintenance due*) are owned by their own
  * repositories — see `CheckoutRepository.overdueCheckoutExistsSql` and
@@ -85,13 +89,55 @@ export function lowStockPredicateSql(): string {
 }
 
 /**
+ * The earliest expiry date carried by any of an item's **stocked** lots — a correlated scalar
+ * subquery over `stock_batches`, or NULL when the item has no dated lot with stock left.
+ *
+ * `quantity > 0` matches every other batch read (`listItemBatches`, the FEFO pickers): a lot
+ * that has been fully consumed is history, not something that can still go off on the shelf, and
+ * a depleted row is kept rather than deleted so its batch/lot identity survives. Aggregate `MIN`
+ * ignores NULL, so an undated lot neither wins nor blocks.
+ */
+export function earliestBatchExpirySql(): string {
+  return `(SELECT MIN(b.expiry_date) FROM stock_batches b
+    WHERE b.item_id = items.id AND b.quantity > 0)`;
+}
+
+/**
+ * An item's **effective** expiry instant: the earlier of its own `expiry_date` and its earliest
+ * stocked lot's ({@link earliestBatchExpirySql}), or NULL when neither exists.
+ *
+ * `stock_batches.expiry_date` is what FEFO consumption actually orders by, so a lot expiring next
+ * week is the date that matters even when the item row itself carries none — which, before issue
+ * #684, is precisely what every expiry feed missed: the predicate read the item column only, and
+ * the stock-recompute triggers propagate quantity, never dates. Lifting the lot date here fixes
+ * the whole chain at once, since the alert centre, the Upcoming agenda, the "Soon to Expire"
+ * widget, the inventory status filter and the bridge's status counts all descend from this one
+ * expression.
+ *
+ * Scalar `min(x, y)` is not usable: it returns NULL if *either* argument is NULL, and both are
+ * routinely NULL here. Aggregating over the two candidates as rows gives the wanted
+ * "earliest of whichever exist" instead, and evaluates the batch subquery once rather than
+ * once per `COALESCE` arm.
+ */
+export function effectiveExpirySql(): string {
+  return `(SELECT MIN(candidate) FROM (
+      SELECT items.expiry_date AS candidate
+      UNION ALL
+      SELECT ${earliestBatchExpirySql()}
+    ))`;
+}
+
+/**
  * "This perishable is expiring on or before the cutoff." Already-expired items are included
- * (their expiry is in the past, ≤ cutoff). Items with no expiry date never match.
+ * (their expiry is in the past, ≤ cutoff). Items with neither an expiry date of their own nor a
+ * dated stocked lot never match — their {@link effectiveExpirySql} is NULL, and `NULL <= ?` is
+ * NULL, which both the `WHERE` clause and `applicableStatuses`' `CASE WHEN … THEN 1 ELSE 0 END`
+ * read as not-matched.
  *
  * Binds, in order: `[cutoffMs]` — a UNIX-ms instant, typically `now + windowDays·MS_PER_DAY`.
  */
 export function expiringPredicateSql(): string {
-  return `(expiry_date IS NOT NULL AND expiry_date <= ?)`;
+  return `(${effectiveExpirySql()} <= ?)`;
 }
 
 /**

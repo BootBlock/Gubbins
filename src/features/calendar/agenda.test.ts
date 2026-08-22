@@ -145,8 +145,8 @@ describe('buildAgenda — lane builders', () => {
       {
         ...EMPTY,
         expiry: [
-          { id: 'x', name: 'Milk', expiryDate: exp },
-          { id: 'y', name: 'Bolt', expiryDate: null },
+          { id: 'x', name: 'Milk', effectiveExpiryDate: exp },
+          { id: 'y', name: 'Bolt', effectiveExpiryDate: null },
         ],
       },
       NOW,
@@ -301,8 +301,8 @@ describe('buildAgenda — lane builders', () => {
       {
         ...EMPTY,
         expiry: [
-          { id: 'late', name: 'Late', expiryDate: SOD + 10 * MS_PER_DAY },
-          { id: 'soon', name: 'Soon', expiryDate: SOD + 1 * MS_PER_DAY },
+          { id: 'late', name: 'Late', effectiveExpiryDate: SOD + 10 * MS_PER_DAY },
+          { id: 'soon', name: 'Soon', effectiveExpiryDate: SOD + 1 * MS_PER_DAY },
         ],
         reorder: [{ itemId: 'r', itemName: 'R', shortfall: 2 }], // dueAt = NOW (earliest)
       },
@@ -319,9 +319,9 @@ describe('bucketAgenda', () => {
       {
         ...EMPTY,
         expiry: [
-          { id: 'overdue', name: 'O', expiryDate: NOW - MS_PER_DAY },
-          { id: 'week', name: 'W', expiryDate: SOD + 3 * MS_PER_DAY },
-          { id: 'later', name: 'L', expiryDate: SOD + 90 * MS_PER_DAY },
+          { id: 'overdue', name: 'O', effectiveExpiryDate: NOW - MS_PER_DAY },
+          { id: 'week', name: 'W', effectiveExpiryDate: SOD + 3 * MS_PER_DAY },
+          { id: 'later', name: 'L', effectiveExpiryDate: SOD + 90 * MS_PER_DAY },
         ],
         reorder: [{ itemId: 'today', itemName: 'T', shortfall: 1 }], // today
       },
@@ -347,7 +347,7 @@ describe('filterByKind', () => {
   const events = buildAgenda(
     {
       ...EMPTY,
-      expiry: [{ id: 'x', name: 'X', expiryDate: SOD + MS_PER_DAY }],
+      expiry: [{ id: 'x', name: 'X', effectiveExpiryDate: SOD + MS_PER_DAY }],
       reorder: [{ itemId: 'r', itemName: 'R', shortfall: 1 }],
     },
     NOW,

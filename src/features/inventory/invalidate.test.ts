@@ -29,12 +29,14 @@ function stubClient() {
 describe('invalidateItemStock — the narrow sweep (#166)', () => {
   // The broad `invalidateItems` is pinned in `report-invalidation.test.ts`, which owns the
   // items ⇄ reports invariant (#375); only the narrow helper is tested here.
-  it('invalidates items, reports and the agenda', () => {
+  it('invalidates items, the expiring feed, reports and the agenda', () => {
     // The agenda rides along because the reorder-now lane is on-hand quantity against the reorder
-    // point — the one thing a stock-only write is guaranteed to move (issue #374).
+    // point — the one thing a stock-only write is guaranteed to move (issue #374). The expiring
+    // feed joined it for the mirror-image reason: it reads the item's *effective* expiry, which a
+    // stock write moves whenever it receives a dated lot or empties the last one (issue #684).
     const { client, keys } = stubClient();
     invalidateItemStock(client);
-    expect(keys()).toEqual([inventoryKeys.items(), reportKeys.all, agendaKeys.all]);
+    expect(keys()).toEqual([inventoryKeys.items(), inventoryKeys.expiring(), reportKeys.all, agendaKeys.all]);
   });
 
   it('leaves the item-attention prefix cached', () => {

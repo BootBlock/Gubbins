@@ -178,6 +178,9 @@ export function rowToItem(row: ItemRow): Item {
     // Money columns are stored as integer micro-units (issue #286); the app works in major units.
     unitCost: fromStoredMoney(row.unit_cost),
     expiryDate: row.expiry_date,
+    // Derived per read via `EARLIEST_BATCH_EXPIRY_SUBQUERY` — a lot expiring next week is what
+    // FEFO consumes first, so the expiry feeds judge it alongside the item's own date (#684).
+    earliestBatchExpiryDate: row.earliest_batch_expiry ?? null,
     batchNumber: row.batch_number,
     lotNumber: row.lot_number,
     condition: row.condition,

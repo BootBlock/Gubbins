@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { addCalendarDays } from '@/lib/calendar-days';
-import { expiryStatus, daysUntilExpiry } from './expiry';
+import { expiryStatus, daysUntilExpiry, effectiveExpiryDate } from './expiry';
 import { validateVariantLink, variantRejectionMessage } from './variants';
 import {
   maintenanceStatus,
@@ -346,5 +346,31 @@ describe('serialised audit (§4.4)', () => {
     expect(serialisedAuditNote(lines[1], 'Drawer A2')).toBe(
       'Serialised audit of Drawer A2: Multimeter #2 not found — marked missing.',
     );
+  });
+});
+
+describe('effectiveExpiryDate — the item date and its lot dates (issue #684)', () => {
+  const ITEM = Date.UTC(2026, 7, 20);
+  const LOT = Date.UTC(2026, 7, 5);
+
+  it('returns null when neither the item nor any lot carries a date', () => {
+    expect(effectiveExpiryDate(null, null)).toBeNull();
+    // `undefined` reaches it from a read that did not project the derived column.
+    expect(effectiveExpiryDate(undefined, undefined)).toBeNull();
+  });
+
+  it('takes the lot date when the item itself has none', () => {
+    // The whole point of the fix: a perishable received against a purchase order or a BOM is
+    // dated on its lot, not on its row, so reading the item column alone finds nothing.
+    expect(effectiveExpiryDate(null, LOT)).toBe(LOT);
+  });
+
+  it('takes the item date when no lot carries one', () => {
+    expect(effectiveExpiryDate(ITEM, null)).toBe(ITEM);
+  });
+
+  it('takes whichever falls first when both carry one', () => {
+    expect(effectiveExpiryDate(ITEM, LOT)).toBe(LOT);
+    expect(effectiveExpiryDate(LOT, ITEM)).toBe(LOT);
   });
 });

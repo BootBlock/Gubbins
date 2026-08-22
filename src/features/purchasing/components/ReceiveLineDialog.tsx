@@ -3,11 +3,12 @@ import { Button, FormField, Input, Modal } from '@/components/foundry';
 import { LocationSelect, type LocationOption } from '@/features/inventory/components/LocationSelect';
 import type { BatchIdentity } from '@/features/inventory/batches';
 import type { PurchaseOrderLine } from '@/db/repositories';
+import { fromDateInputValue } from '@/lib/date-input';
 
 /**
  * Receive a single PO line into stock (Inventory-depth Phase 62). A partial instalment is
  * allowed (defaulting to the whole outstanding remainder); an optional destination location
- * routes the received units there, and an optional batch/lot is recorded where the item is
+ * routes the received units there, and an optional batch/lot/expiry is recorded where the item is
  * batch-tracked. The clamp/accumulate arithmetic lives in the pure `planPoReceipt` seam and
  * the repository — this dialog only collects the instalment. Design tokens only, British copy.
  */
@@ -39,6 +40,7 @@ export function ReceiveLineDialog({
   const [locationId, setLocationId] = useState('');
   const [batchNumber, setBatchNumber] = useState('');
   const [lotNumber, setLotNumber] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const locationLabelId = useId();
   const quantityRef = useRef<HTMLInputElement>(null);
@@ -53,8 +55,14 @@ export function ReceiveLineDialog({
     }
     const bn = optionalText(batchNumber);
     const ln = optionalText(lotNumber);
+    // A date on its own is enough to make this a tracked lot: an expiry is what FEFO consumes by
+    // and what the expiry alerts read (issue #684), so a perishable delivery is worth separating
+    // even when it carries no batch or lot marking. Mirrors the BOM receipt's own rule.
+    const expiry = fromDateInputValue(expiryDate);
     const batch: BatchIdentity | undefined =
-      bn !== null || ln !== null ? { batchNumber: bn, lotNumber: ln, expiryDate: null } : undefined;
+      bn !== null || ln !== null || expiry !== null
+        ? { batchNumber: bn, lotNumber: ln, expiryDate: expiry }
+        : undefined;
     onSubmit({
       quantity: qty,
       locationId: locationId.length === 0 ? undefined : locationId,
@@ -109,6 +117,18 @@ export function ReceiveLineDialog({
             <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} placeholder="—" />
           </FormField>
         </div>
+
+        <FormField
+          label="Expiry date"
+          hint="Optional — for perishables. Dated lots are used oldest-first and raise expiry alerts."
+        >
+          <Input
+            type="date"
+            value={expiryDate}
+            onChange={(e) => setExpiryDate(e.target.value)}
+            data-testid="po-receive-expiry"
+          />
+        </FormField>
 
         {error !== null && (
           <p role="alert" className="text-sm text-destructive" data-testid="po-receive-error">

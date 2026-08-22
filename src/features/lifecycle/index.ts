@@ -4,7 +4,7 @@
  * cycle-counting / reconciliation workflow. Pure scheduling/variance maths live in
  * the sibling modules and are unit-tested in isolation.
  */
-export { expiryStatus, daysUntilExpiry, type ExpiryStatus } from './expiry';
+export { expiryStatus, daysUntilExpiry, effectiveExpiryDate, type ExpiryStatus } from './expiry';
 export { fieldDueStatus, clampFieldDueLeadDays, type FieldDueStatus } from './field-due';
 export { maintenanceStatus, maintenancePerformedNote, type MaintenanceScheduleState } from './maintenance';
 export {

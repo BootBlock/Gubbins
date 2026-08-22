@@ -103,19 +103,19 @@ describe('buildAlerts — low-stock lane', () => {
 
 describe('buildAlerts — expiry lane', () => {
   it('skips items with no expiry date', () => {
-    const exp: ExpirySource[] = [{ id: 'item-1', name: 'Milk', expiryDate: null }];
+    const exp: ExpirySource[] = [{ id: 'item-1', name: 'Milk', effectiveExpiryDate: null }];
     expect(buildAlerts(sources({ expiring: exp }), NOW)).toHaveLength(0);
   });
 
   it('skips items whose expiry is in the future beyond the "soon" window', () => {
     const farFuture = NOW + 60 * 86_400_000; // 60 days out
-    const exp: ExpirySource[] = [{ id: 'item-1', name: 'Honey', expiryDate: farFuture }];
+    const exp: ExpirySource[] = [{ id: 'item-1', name: 'Honey', effectiveExpiryDate: farFuture }];
     expect(buildAlerts(sources({ expiring: exp }), NOW)).toHaveLength(0);
   });
 
   it('produces a warning alert for expiring-soon items', () => {
     const soonExpiry = NOW + 5 * 86_400_000; // 5 days out → within 30-day window
-    const exp: ExpirySource[] = [{ id: 'item-1', name: 'Yoghurt', expiryDate: soonExpiry }];
+    const exp: ExpirySource[] = [{ id: 'item-1', name: 'Yoghurt', effectiveExpiryDate: soonExpiry }];
     const [alert] = buildAlerts(sources({ expiring: exp }), NOW);
     expect(alert.kind).toBe('expiry');
     expect(alert.severity).toBe('warning');
@@ -125,7 +125,7 @@ describe('buildAlerts — expiry lane', () => {
 
   it('produces a critical alert for already-expired items', () => {
     const pastExpiry = NOW - 86_400_000; // yesterday
-    const exp: ExpirySource[] = [{ id: 'item-1', name: 'Bread', expiryDate: pastExpiry }];
+    const exp: ExpirySource[] = [{ id: 'item-1', name: 'Bread', effectiveExpiryDate: pastExpiry }];
     const [alert] = buildAlerts(sources({ expiring: exp }), NOW);
     expect(alert.kind).toBe('expiry');
     expect(alert.severity).toBe('critical');
@@ -133,14 +133,18 @@ describe('buildAlerts — expiry lane', () => {
   });
 
   it('sets a deterministic id carrying the item, the day and the status band', () => {
-    const exp: ExpirySource[] = [{ id: 'perishable-1', name: 'Cheese', expiryDate: ms('2025-06-30') }];
+    const exp: ExpirySource[] = [
+      { id: 'perishable-1', name: 'Cheese', effectiveExpiryDate: ms('2025-06-30') },
+    ];
     const [alert] = buildAlerts(sources({ expiring: exp }), NOW);
     expect(alert.id).toBe('expiry:perishable-1:2025-06-30:expired');
   });
 
   it('gives the expired alert a different id from the expiring-soon one (issue #644)', () => {
     // One item, one expiry date, read either side of the day it passes.
-    const exp: ExpirySource[] = [{ id: 'perishable-1', name: 'Cheese', expiryDate: ms('2025-07-02') }];
+    const exp: ExpirySource[] = [
+      { id: 'perishable-1', name: 'Cheese', effectiveExpiryDate: ms('2025-07-02') },
+    ];
     const [soon] = buildAlerts(sources({ expiring: exp }), NOW);
     const [expired] = buildAlerts(sources({ expiring: exp }), ms('2025-07-04'));
 
@@ -155,11 +159,11 @@ describe('buildAlerts — expiry lane', () => {
 
   it('gives a re-dated item a new id, so an earlier dismissal no longer hides it', () => {
     const first = buildAlerts(
-      sources({ expiring: [{ id: 'p1', name: 'Yoghurt', expiryDate: ms('2025-07-03') }] }),
+      sources({ expiring: [{ id: 'p1', name: 'Yoghurt', effectiveExpiryDate: ms('2025-07-03') }] }),
       NOW,
     )[0];
     const rebatched = buildAlerts(
-      sources({ expiring: [{ id: 'p1', name: 'Yoghurt', expiryDate: ms('2025-07-10') }] }),
+      sources({ expiring: [{ id: 'p1', name: 'Yoghurt', effectiveExpiryDate: ms('2025-07-10') }] }),
       NOW,
     )[0];
     expect(first.id).not.toBe(rebatched.id);
@@ -301,8 +305,8 @@ describe('buildAlerts — severity ordering', () => {
     const soonMs = NOW + 5 * 86_400_000;
     const s = sources({
       expiring: [
-        { id: 'e1', name: 'Expiring soon', expiryDate: soonMs },
-        { id: 'e2', name: 'Already expired', expiryDate: expiredMs },
+        { id: 'e1', name: 'Expiring soon', effectiveExpiryDate: soonMs },
+        { id: 'e2', name: 'Already expired', effectiveExpiryDate: expiredMs },
       ],
     });
     const alerts = buildAlerts(s, NOW);
@@ -313,7 +317,7 @@ describe('buildAlerts — severity ordering', () => {
   it('sorts critical alerts before warning alerts across different lanes', () => {
     const s = sources({
       lowStock: [{ id: 'item-1', name: 'Screw' }],
-      expiring: [{ id: 'item-2', name: 'Milk', expiryDate: NOW - 1 }],
+      expiring: [{ id: 'item-2', name: 'Milk', effectiveExpiryDate: NOW - 1 }],
     });
     const alerts = buildAlerts(s, NOW);
     // expired milk (critical) should come before low-stock screw (warning)
@@ -535,7 +539,7 @@ describe('alertKindFromId', () => {
     const all = buildAlerts(
       sources({
         lowStock: [{ id: 'i1', name: 'Screw' }],
-        expiring: [{ id: 'i2', name: 'Milk', expiryDate: NOW - DAY }],
+        expiring: [{ id: 'i2', name: 'Milk', effectiveExpiryDate: NOW - DAY }],
         maintenanceDue: [{ id: 's1', name: 'Oil', itemId: 'i3', itemName: 'Mower', dueAtMs: NOW - DAY }],
         warrantyItems: [
           {
@@ -572,7 +576,7 @@ describe('groupByKind', () => {
   it('groups alerts by their kind', () => {
     const s = sources({
       lowStock: [{ id: 'a', name: 'A' }],
-      expiring: [{ id: 'b', name: 'B', expiryDate: NOW - 1 }],
+      expiring: [{ id: 'b', name: 'B', effectiveExpiryDate: NOW - 1 }],
     });
     const alerts = buildAlerts(s, NOW);
     const groups = groupByKind(alerts);

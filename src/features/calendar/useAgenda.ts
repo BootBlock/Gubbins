@@ -16,6 +16,7 @@ import {
   getMaintenanceRepository,
   getReportRepository,
 } from '@/db/repositories';
+import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
 import { maintenanceStatus } from '@/features/lifecycle/maintenance';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { buildAgenda, maintenanceDueAtMs, type AgendaEvent, type AgendaSources } from './agenda';
@@ -191,7 +192,7 @@ export function useAgenda(): {
       ? (expiryQuery.data?.rows ?? []).map((item) => ({
           id: item.id,
           name: item.name,
-          expiryDate: item.expiryDate ?? null,
+          effectiveExpiryDate: effectiveExpiryDate(item.expiryDate, item.earliestBatchExpiryDate),
         }))
       : [],
 

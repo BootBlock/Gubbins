@@ -108,9 +108,11 @@ describe('useApplicableStatuses — stock/stable split (#166)', () => {
     const [stock, stable] = allOptions().map(
       (o) => (o.queryKey?.at(-1) as { candidates: readonly string[] }).candidates,
     );
-    expect(stock).toEqual(['low-stock', 'out-of-stock']);
-    // The costly six — each carries a correlated per-row subquery.
-    expect(stable).toEqual(['on-order', 'expiring', 'warranty', 'on-loan', 'overdue', 'maintenance-due']);
+    // *Expiring* sits with the stock statuses because it is judged on the item's effective
+    // expiry, which includes its lots' — so receiving or emptying a dated lot moves it (#684).
+    expect(stock).toEqual(['low-stock', 'out-of-stock', 'expiring']);
+    // The costly five — each carries a correlated per-row subquery.
+    expect(stable).toEqual(['on-order', 'warranty', 'on-loan', 'overdue', 'maintenance-due']);
     // Between them they still cover everything a single un-split query would have probed.
     expect([...stock, ...stable].sort()).toEqual([...ITEM_STATUS_FILTERS].sort());
   });

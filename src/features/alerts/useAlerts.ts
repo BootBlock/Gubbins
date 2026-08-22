@@ -14,6 +14,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getItemRepository } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
 import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/features/lifecycle';
+// Imported from the module rather than the barrel: the pure helper has no hook to mock, and a
+// test that stubs the whole `@/features/lifecycle` surface should not have to restate it.
+import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
@@ -126,7 +129,7 @@ export function useAlerts(): {
       ? (expiringQuery.data?.rows ?? []).map((item) => ({
           id: item.id,
           name: item.name,
-          expiryDate: item.expiryDate ?? null,
+          effectiveExpiryDate: effectiveExpiryDate(item.expiryDate, item.earliestBatchExpiryDate),
         }))
       : [],
 

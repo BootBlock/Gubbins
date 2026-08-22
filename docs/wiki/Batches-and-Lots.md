@@ -27,11 +27,28 @@ does, automatically, without you having to pick a batch each time.
 > photographic supplies, calibration standards. Record the expiry when stock arrives and Gubbins
 > handles the rotation.
 
+## Recording a batch expiry
+
+You give a batch its expiry date as the stock arrives:
+
+- **Receiving a [[purchase order|Purchase-Orders]] line** — fill in the batch number, lot number
+  and expiry date on the receive dialog. Any one of the three records the units as their own batch.
+- **Receiving a [[project BOM|Projects-and-BOM]] line** — the same batch and expiry fields sit
+  beside the quantity on the line.
+
+Stock moved between locations keeps its batch identity, so a lot's date travels with it.
+
 ## Batches and expiry alerts
 
 Batch expiry dates feed the [[expiry tracking|Low-Stock-and-Gauges]] and the
 [[Alerts|Alerts]] / [[Upcoming|Upcoming-Agenda]] feeds, so a batch approaching its date surfaces
-before it lapses rather than being discovered too late.
+before it lapses rather than being discovered too late. An item is judged on whichever falls
+first — its own expiry date, or the soonest date across the batches still holding stock — so a
+perishable dated only on its lots is covered too.
+
+> **ℹ️ Note**
+> Once a batch is used up it stops raising alerts, even though its number and date stay on record.
+> Only batches with stock left can lapse on your shelf.
 
 > **ℹ️ Note**
 > Batches are optional. If you don't need delivery- or expiry-level detail, leave the capability

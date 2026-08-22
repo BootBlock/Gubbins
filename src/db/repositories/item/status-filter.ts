@@ -64,21 +64,26 @@ const STATUS_FILTER_SET = new Set<string>(ITEM_STATUS_FILTERS);
  * The statuses whose match count is a function of an item's **stock level** — i.e. the only
  * ones a stock-only write (the quantity stepper, a gauge adjust) can move.
  *
- * Both read `quantity` / `current_net_value` off the `items` row, so adding or drawing down
- * stock can flip an item in or out of them. Every *other* status is decided by a field or a
- * table a stock write never touches: `expiry_date` / `warranty_expires_at` on the row, or the
- * purchase-order, checkout and maintenance tables. The stock recompute triggers propagate only
- * `quantity` up the `stock_batches` → `item_stock` → `items` projection, so that separation
- * holds at the database level too, not just by convention.
+ * *Low stock* and *out of stock* read `quantity` / `current_net_value` off the `items` row, so
+ * adding or drawing down stock can flip an item in or out of them. *Expiring* joins them for a
+ * different reason (issue #684): it is judged on the item's **effective** expiry, which includes
+ * the earliest date across the lots that still hold stock, so receiving a dated lot or consuming
+ * the last of one moves the count even though no date changed. Every *other* status is decided by
+ * a field or a table a stock write never touches: `warranty_expires_at` on the row, or the
+ * purchase-order, checkout and maintenance tables.
  *
- * This is the SSOT for the split applicability queries (`useApplicableStatuses`): the six
+ * This is the SSOT for the split applicability queries (`useApplicableStatuses`): the five
  * stock-independent counts are cached under their own key so a stepper tap doesn't recompute
  * them, and they are the expensive ones — each carries a correlated per-row subquery. Keep this
  * list honest: a status added here that *isn't* purely stock-derived would show a stale count
  * after an unrelated write, and one wrongly left out merely costs the recompute it was meant to
  * skip. See {@link ITEM_STATUS_FILTERS} for the full set.
  */
-export const STOCK_DEPENDENT_STATUSES: readonly ItemStatusFilter[] = ['low-stock', 'out-of-stock'];
+export const STOCK_DEPENDENT_STATUSES: readonly ItemStatusFilter[] = [
+  'low-stock',
+  'out-of-stock',
+  'expiring',
+];
 
 const STOCK_DEPENDENT_SET = new Set<ItemStatusFilter>(STOCK_DEPENDENT_STATUSES);
 

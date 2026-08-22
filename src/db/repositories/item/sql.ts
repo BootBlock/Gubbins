@@ -4,7 +4,7 @@
  * capability "best match" score are defined once rather than copied per query.
  */
 import type { ItemRow } from '../types';
-import { variantParentSql } from './attention-sql';
+import { earliestBatchExpirySql, variantParentSql } from './attention-sql';
 
 /**
  * A correlated subquery yielding an item's *primary* thumbnail blob (lowest
@@ -30,6 +30,22 @@ export const THUMBNAIL_SUBQUERY = `(
 export const HAS_VARIANTS_SUBQUERY = `${variantParentSql('items.id')} AS has_variants`;
 
 /**
+ * A correlated subquery yielding the earliest expiry date across the item's **stocked** lots, or
+ * NULL when it has none (spec §4 Perishables & Batch Tracking; issue #684).
+ *
+ * Projected on every item read for the same reason `has_variants` is: the SQL side already judges
+ * "expiring" against the earlier of the item date and its lots' (`effectiveExpirySql`), so a row
+ * that reaches the alert centre or the agenda carrying only `expiry_date` would be *dropped again*
+ * by the pure classifier — both feeds skip an item whose date is null. Carrying the lot date up
+ * lets `effectiveExpiryDate` in the lifecycle seam answer the question the same way the predicate
+ * did, rather than by convention.
+ *
+ * Deliberately **not** folded into `expiry_date` itself: that column is what the edit form writes
+ * back and what the catalogue CSV exports, so it must stay the item's own date.
+ */
+export const EARLIEST_BATCH_EXPIRY_SUBQUERY = `${earliestBatchExpirySql()} AS earliest_batch_expiry`;
+
+/**
  * The projection for a read whose rows become `Item`s but whose consumers render **text
  * only** — the raw item columns plus `has_variants`, without the thumbnail BLOB (issue #529).
  *
@@ -50,11 +66,12 @@ export const HAS_VARIANTS_SUBQUERY = `${variantParentSql('items.id')} AS has_var
  * column out keeps the answer honest. A read whose consumer does render an image wants
  * {@link ITEM_READ_COLUMNS} instead.
  */
-export const ITEM_READ_COLUMNS_NO_THUMBNAIL = `items.*, ${HAS_VARIANTS_SUBQUERY}`;
+export const ITEM_READ_COLUMNS_NO_THUMBNAIL = `items.*, ${HAS_VARIANTS_SUBQUERY}, ${EARLIEST_BATCH_EXPIRY_SUBQUERY}`;
 
 /**
  * The SELECT projection every read that maps rows through `rowToItem` **and shows the item's
- * image** uses — the raw item columns plus both derived ones (`has_variants`, `thumbnail_blob`).
+ * image** uses — the raw item columns plus every derived one (`has_variants`,
+ * `earliest_batch_expiry`, `thumbnail_blob`).
  * A read whose consumers render text only wants {@link ITEM_READ_COLUMNS_NO_THUMBNAIL}.
  *
  * It is one constant rather than a per-query column list because `Item.hasVariants` is what

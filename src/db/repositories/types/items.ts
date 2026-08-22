@@ -103,6 +103,14 @@ export interface ItemRow {
    * table, so a non-item read (a snapshot, a `SELECT *` in a test) cannot supply it.
    */
   readonly has_variants?: number;
+  /**
+   * The earliest expiry date across the item's **stocked** lots (UNIX-ms), or null when it has
+   * none. Derived, not stored: projected by `EARLIEST_BATCH_EXPIRY_SUBQUERY` (part of
+   * `ITEM_READ_COLUMNS`) so the pure expiry seam can judge a lot's date exactly as
+   * `expiringPredicateSql` does (issue #684). Optional for the same reason
+   * {@link has_variants} is — the raw column does not exist on the table.
+   */
+  readonly earliest_batch_expiry?: number | null;
 }
 
 /**
@@ -167,8 +175,22 @@ export interface Item {
   readonly serialNumber: string | null;
   /** Current replacement value per unit, in the base currency; null if unpriced. */
   readonly unitCost: number | null;
-  /** Perishable expiry instant (UNIX-ms); null = non-perishable (§4). */
+  /**
+   * Perishable expiry instant (UNIX-ms) recorded against the **item itself**; null =
+   * non-perishable (§4). Individual lots carry their own dates — see
+   * {@link earliestBatchExpiryDate}, and `effectiveExpiryDate` for the combined answer every
+   * expiry feed judges an item by.
+   */
   readonly expiryDate: number | null;
+  /**
+   * The earliest expiry instant (UNIX-ms) across the item's lots that still hold stock; null when
+   * it has no dated lot left. Derived per read, never stored (issue #684).
+   *
+   * A batch date is what FEFO consumption orders by, so it is the date that matters even when the
+   * item row itself carries none. Pair it with {@link expiryDate} through `effectiveExpiryDate`
+   * rather than reading either alone.
+   */
+  readonly earliestBatchExpiryDate: number | null;
   /** Manufacturer batch number for perishables/traceability; null if untracked (§4). */
   readonly batchNumber: string | null;
   /** Manufacturer lot number for perishables/traceability; null if untracked (§4). */
