@@ -51,7 +51,12 @@ import {
 import type { SqlStatement } from '@/db/rpc/driver';
 import { enforceForeignKeys } from './fk-refs';
 import type { SyncTable, TableRow, Tombstone } from './types';
-import { planKeyParks, resolveUniqueKeyCollisions, type LocalTables } from './unique-keys';
+import {
+  deferredRetirementParkColumn,
+  planKeyParks,
+  resolveUniqueKeyCollisions,
+  type LocalTables,
+} from './unique-keys';
 
 /** Everything one wholesale apply needs to write its rows without tripping a UNIQUE index. */
 export interface UniqueKeyRepair {
@@ -111,6 +116,7 @@ export function repairUniqueKeys(
     }
     ids.add(loserId);
 
+    const deferredParkColumn = hoistOnly ? undefined : deferredRetirementParkColumn(table);
     if (table === 'users' && !hoistOnly) {
       // Issue #79, exactly as `applyPlan` does it: free the username now, move the ledger to the
       // winner once the winner exists, and only then remove the row. Deleting it up front would
@@ -144,6 +150,13 @@ export function repairUniqueKeys(
       before.push(parkNaturalKey(table, 'name', loserId));
       after.push(repointTagEdges(ITEM_TAGS_TABLE, 'item_id', winnerId, loserId));
       after.push(repointTagEdges(LOCATION_TAGS_TABLE, 'location_id', winnerId, loserId));
+      after.push(deleteRow(table, loserId));
+    } else if (deferredParkColumn !== undefined) {
+      // Issue #603: a table whose cascade reaches past its direct children — retiring a supplier
+      // up front would take its parts' price history and its order lines' `supplier_part_id`
+      // with it, neither of which the repointed rows re-emit. Free the natural key now so the
+      // winner can be written, and delete once every child has followed it onto the winner.
+      before.push(parkNaturalKey(table, deferredParkColumn, loserId));
       after.push(deleteRow(table, loserId));
     } else {
       before.push(deleteRow(table, loserId));

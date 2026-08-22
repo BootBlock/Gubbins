@@ -53,7 +53,7 @@ import type {
   Tombstone,
 } from './types';
 import { parkNaturalKey, repairUniqueKeys } from './unique-key-repair';
-import { UNIQUE_KEY_TABLES } from './unique-keys';
+import { deferredRetirementParkColumn, UNIQUE_KEY_TABLES } from './unique-keys';
 import { SYNC_FORMAT_VERSION } from './types';
 
 const PAGE = 100;
@@ -764,9 +764,19 @@ export async function applyPlan(
   // contest: a `hoistOnly` entry marks a row this merge was *already* deleting, and its DELETE is
   // simply brought forward — repointing a retired user's ledger there would re-attribute a
   // deleted account's history to whoever happens to hold the username now.
+  //
+  // Issue #603: the same deferral, for a table whose cascade reaches past its direct children.
+  // Retiring a supplier up front takes its `supplier_parts` with it — and their price history,
+  // and the `purchase_order_lines.supplier_part_id` links — none of which the repointed upserts
+  // re-emit, because they reference the parts rather than the supplier. Parking the natural key
+  // and deleting after the upserts means nothing points at the loser by the time it goes, so
+  // there is no cascade to repair. Which tables defer is a `UNIQUE_KEY_SPECS` property, read
+  // through `deferredRetirementParkColumn`, so this apply and the wholesale one cannot diverge.
   const deferredUserRetirements: { loserId: string; winnerId: string }[] = [];
+  const deferredRetirements: { table: SyncTable; loserId: string }[] = [];
 
   for (const { table, loserId, winnerId, deletedAt, hoistOnly } of plan.collisions) {
+    const deferredParkColumn = hoistOnly ? undefined : deferredRetirementParkColumn(table);
     if (table === 'users' && !hoistOnly) {
       // Park the loser on a guaranteed-unique username (its own id) so the winner's INSERT
       // can take the real one. The row is deleted a few statements later, in this same
@@ -776,6 +786,9 @@ export async function applyPlan(
         params: [loserId, loserId],
       });
       deferredUserRetirements.push({ loserId, winnerId });
+    } else if (deferredParkColumn !== undefined) {
+      statements.push(parkNaturalKey(table, deferredParkColumn, loserId));
+      deferredRetirements.push({ table, loserId });
     } else {
       statements.push(tombstoneDeleteStatement(table, loserId));
     }
@@ -836,6 +849,13 @@ export async function applyPlan(
       params: [winnerId, loserId],
     });
     statements.push(tombstoneDeleteStatement('users', loserId));
+  }
+
+  // Issue #603: the deferred retirements above. Every row that referenced one has just been
+  // upserted onto the winner, so the DELETE now removes a supplier nothing points at — and its
+  // parts, their price history and the order lines naming them all stay where they are.
+  for (const { table, loserId } of deferredRetirements) {
+    statements.push(tombstoneDeleteStatement(table, loserId));
   }
 
   // Phase 11: append-only ledger union-by-id. INSERT OR IGNORE so an id we already hold

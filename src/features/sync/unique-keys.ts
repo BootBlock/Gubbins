@@ -89,6 +89,27 @@ interface UniqueKeySpec {
    */
   readonly parkColumn?: string;
   /**
+   * Whether retiring a loser of this table must wait until **after** the upserts have run,
+   * with the row parked on {@link parkColumn} in the meantime.
+   *
+   * The default is to delete the loser first and let the repointed upserts re-insert whatever
+   * the cascade took with it. That is exact only while the retired row's children are
+   * themselves leaves. `suppliers` is the first spec where they are not: deleting one cascades
+   * through `supplier_parts` and on into `supplier_part_price_history`, and nulls
+   * `purchase_order_lines.supplier_part_id` — none of which this module re-emits, because they
+   * reference the *child*, not the row being retired. The parts come back and their cost
+   * history does not.
+   *
+   * Deferring the DELETE removes the cascade instead of repairing it: the repointed upserts
+   * move every child onto the winner first, so by the time the loser goes nothing points at it
+   * and nothing is carried away. The park is what makes that safe — the loser is off its
+   * natural key from the first statement, so the winner's INSERT still lands.
+   *
+   * Requires {@link parkColumn}. `users` reaches the same shape through its own bespoke branch
+   * in `applyPlan`, which additionally moves the ledger before the delete.
+   */
+  readonly retireAfterUpserts?: true;
+  /**
    * Whether a `RAISE(ABORT)` delete trigger protects this row, and this resolution must
    * therefore never retire it (issue #708).
    *
@@ -209,6 +230,34 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
       { table: 'asset_bookings', column: 'contact_id' },
     ],
   },
+  // `suppliers` is resolve-or-create like `contacts`, and reached without the user meaning to
+  // create anything: naming a supplier on a supplier part or a purchase order mints one
+  // (`SupplierRepository.resolveRef`). Two devices that each record a part from "RS Components"
+  // therefore invent two ids for one `name_key` in the course of ordinary use, and without an
+  // entry here the peer's INSERT hits `idx_suppliers_name_key` and takes the whole merge with it
+  // (issue #603).
+  //
+  // The key is `name_key`, not `name`: the writer already folds the typed name through
+  // `supplierNameKey()` — case-folded, diacritics stripped, punctuation and spacing removed — and
+  // the index is over that stored column with the default BINARY collation. So the fold the merge
+  // must agree with has already happened at the write, and `nocase` stays empty; folding again
+  // here would compare on something the index does not, which is the drift the `field_defs`
+  // comment above warns about.
+  {
+    table: 'suppliers',
+    columns: ['name_key'],
+    nocase: [],
+    parkColumn: 'name_key',
+    references: [
+      { table: 'supplier_parts', column: 'supplier_id' },
+      { table: 'purchase_orders', column: 'supplier_id' },
+    ],
+    // Deleting the loser up front would cascade past `supplier_parts` into its price history —
+    // see `retireAfterUpserts`. Parking `name_key` on the row's own id is safe for the same
+    // reason it is elsewhere: a UUID carries hyphens, which `supplierNameKey()` strips, so no
+    // real key can ever equal one.
+    retireAfterUpserts: true,
+  },
   // --- composite-key children: nothing points at these, so a loser is simply retired ---
   { table: 'category_fields', columns: ['category_id', 'def_id'], nocase: [], references: [] },
   { table: 'location_field_values', columns: ['location_id', 'def_id'], nocase: [], references: [] },
@@ -235,6 +284,52 @@ const UNIQUE_KEY_SPECS: readonly UniqueKeySpec[] = [
 export const FOLDED_UNIQUE_COLUMNS: readonly string[] = UNIQUE_KEY_SPECS.flatMap((spec) =>
   spec.nocase.map((column) => `${spec.table}.${column}`),
 );
+
+/**
+ * Every UNIQUE index this module resolves, as the shape a drift test can compare against the
+ * built schema (issue #603).
+ *
+ * `FK_REFS` has had such a guard since #152; this registry had none, so `suppliers` sat
+ * unresolved from the day it was added (#384) until a merge bricked on it. The map is a
+ * hand-written list of tables, and nothing about adding a table to {@link SYNC_TABLES} — or a
+ * UNIQUE index to one already there — makes the compiler ask whether it belongs here. Exported
+ * so `unique-key-coverage.test.ts` can read `PRAGMA index_list` and answer that question
+ * instead: every non-partial, non-primary-key UNIQUE index on a synced table is either listed
+ * here or exempted there with its reason.
+ *
+ * The `nocase` half is checked too: a spec that folds a column the index declares BINARY (or
+ * fails to fold one it declares NOCASE) compares on a key the database does not, which is how a
+ * resolution that looks correct still leaves the constraint it was written to avoid.
+ *
+ * {@link UniqueKeySpec.retireAfterUpserts} rides along because it is the one field the interface
+ * cannot make safe on its own: it is meaningless without a `parkColumn`, and a spec that set one
+ * without the other would silently take the undeferred path rather than fail to compile.
+ */
+export const UNIQUE_KEY_COVERAGE: readonly {
+  readonly table: SyncTable;
+  readonly columns: readonly string[];
+  readonly nocase: readonly string[];
+  readonly parkColumn?: string;
+  readonly retireAfterUpserts: boolean;
+}[] = UNIQUE_KEY_SPECS.map(({ table, columns, nocase, parkColumn, retireAfterUpserts }) => ({
+  table,
+  columns,
+  nocase,
+  parkColumn,
+  retireAfterUpserts: retireAfterUpserts === true,
+}));
+
+/**
+ * The column to park a retired row of `table` on, for the tables whose retirement must wait
+ * until after the upserts — or `undefined` for every other table, which is deleted up front.
+ *
+ * See {@link UniqueKeySpec.retireAfterUpserts}. Exported rather than re-derived at each apply so
+ * `applyPlan` and `repairUniqueKeys` cannot disagree about which tables defer.
+ */
+export function deferredRetirementParkColumn(table: SyncTable): string | undefined {
+  const spec = UNIQUE_KEY_SPECS.find((s) => s.table === table);
+  return spec?.retireAfterUpserts === true ? spec.parkColumn : undefined;
+}
 
 /**
  * Every table {@link resolveUniqueKeyCollisions} reads out of the "local" snapshot it is given:
