@@ -80,6 +80,18 @@ describe('useHealthyWidgetIds — nothing to report (issue #111)', () => {
     ]);
   });
 
+  it('keeps a tracker on the board while it still has rows to report', () => {
+    // The other half of the rule: a resolved-but-non-empty query must NOT be reported, or the
+    // board would hide a card that is showing something.
+    rows.lowStock = resolved({ rows: [{ id: 'i1' }] });
+    rows.expiring = resolved({ rows: [{ id: 'i2' }] });
+    rows.maintenance = resolved({ rows: [{ id: 'i3' }] });
+    const healthy = probe();
+    expect(healthy.has('low-stock')).toBe(false);
+    expect(healthy.has('expiring')).toBe(false);
+    expect(healthy.has('maintenance')).toBe(false);
+  });
+
   it('keeps Overdue on the board while a loan is actually late, but clears on merely-on-loan', () => {
     rows.checkouts = resolved({ rows: [{ isOverdue: true }] });
     expect(probe().has('overdue')).toBe(false);
