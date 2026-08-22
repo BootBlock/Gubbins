@@ -371,8 +371,8 @@ describe('§7.5 natural-key collisions apply cleanly (issue #187)', () => {
  * `DELETE FROM roles`, which `trg_roles_protect_builtin_delete` answers with `RAISE(ABORT)` —
  * taking down the whole atomic apply, not the one statement.
  *
- * These are the tests the issue asks for: against the real schema with the trigger live, because
- * a plan-level assertion cannot see a `RAISE(ABORT)` at all.
+ * These run against the real schema with the trigger live, because a plan-level assertion cannot
+ * see a `RAISE(ABORT)` at all.
  */
 describe('§7.5 a protected row never loses its natural key (issue #708)', () => {
   let deviceA: MemoryDriver;
@@ -477,8 +477,30 @@ describe('§7.5 a protected row never loses its natural key (issue #708)', () =>
     expect(await deviceB.query(q, ['Curator'])).toEqual([{ id: STOCKER_ROLE_ID }]);
   });
 
-  it('applies cleanly when two built-in roles are renamed onto one name from opposite devices', async () => {
-    // Neither row can be retired, so the contest is refused rather than settled: both survive.
+  it('protects a built-in role this device does not recognise by id', async () => {
+    // The trigger fires on `is_builtin = 1`, not on membership of the four seeded ids, so a
+    // built-in row from a differently-shaped peer is just as undeletable and must be guarded by
+    // its flag. Deleting it would abort the apply exactly as deleting a familiar one does.
+    await flattenRoleStamps(deviceA);
+    await flattenRoleStamps(deviceB);
+    await deviceA.execute(
+      'INSERT INTO roles (id, name, permissions, is_builtin, updated_at) VALUES (?, ?, ?, 1, ?);',
+      ['role-foreign', 'Curator', '[]', 50],
+    );
+    await deviceB.execute(
+      'INSERT INTO roles (id, name, permissions, is_builtin, updated_at) VALUES (?, ?, ?, 0, ?);',
+      ['role-custom', 'Curator', '[]', 100],
+    );
+
+    await expect(mergeInto(deviceA, deviceB)).resolves.toBeUndefined();
+
+    const named = await deviceA.query<{ id: string }>('SELECT id FROM roles WHERE name = ?;', ['Curator']);
+    expect(named).toEqual([{ id: 'role-foreign' }]);
+  });
+
+  it('refuses the contest when the peer renames a second built-in onto a built-in name', async () => {
+    // Neither row can be retired, so the contest is refused rather than settled: both survive,
+    // and the peer's rename is the one that does not land.
     await flattenRoleStamps(deviceA);
     await flattenRoleStamps(deviceB);
     await deviceA.execute('UPDATE roles SET name = ?, updated_at = ? WHERE id = ?;', [
