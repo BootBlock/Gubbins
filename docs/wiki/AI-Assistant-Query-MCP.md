@@ -22,7 +22,7 @@ data you'd see — and, by default, **cannot change anything**.
 > MCP is revised from time to time, and a client says which revision it wants when it connects. The
 > bridge agrees only to a revision it actually implements; if your client asks for a newer one, the
 > bridge replies with the newest it supports and the client decides whether to carry on. So a
-> mismatch shows up as a clear message when you connect, rather than as tools that half-work later.
+> mismatch is settled when you connect, rather than showing up later as tools that half-work.
 
 > **ℹ️ Note — the assistant is told when the data may be out of date**
 > If the bridge can no longer re-read your data it keeps answering from the last copy it had (so the

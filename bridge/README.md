@@ -1175,12 +1175,16 @@ sync has written `gubbins-sync.json`.
 
 ### Protocol revisions
 
-The server implements MCP **`2024-11-05`**, **`2025-03-26`** and **`2025-06-18`**, and negotiates
-in the ordinary way: it agrees to the revision your client asks for when it is one of those, and
-otherwise replies with the newest it implements (`2025-06-18`) for the client to accept or
-disconnect on. It does not echo an unrecognised revision back, so a mismatch surfaces at the
-handshake rather than as a tool that half-works later. The one thing it does not implement is
-JSON-RPC batching, which the two older revisions permit and `2025-06-18` removed.
+The server implements MCP **`2024-11-05`** and **`2025-06-18`**, and negotiates in the ordinary
+way: it agrees to the revision your client asks for when it is one of those, and otherwise replies
+with the newest it implements (`2025-06-18`) for the client to accept or disconnect on. It does not
+echo an unrecognised revision back, so a mismatch surfaces at the handshake rather than as a tool
+that half-works later.
+
+`2025-03-26` is not on that list: it obliges a server to accept JSON-RPC batches, and this one
+answers a batch with an `Invalid request` error rather than implementing it. (`2024-11-05` predates
+batching and `2025-06-18` removed it, so neither is affected.) A client asking for `2025-03-26` is
+therefore answered with `2025-06-18`; the tool surface it gets is the same either way.
 
 ### Tools
 

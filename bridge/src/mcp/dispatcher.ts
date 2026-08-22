@@ -23,18 +23,21 @@ import { ALL_TOOLS, ToolInputError, type McpTool } from './tools.ts';
 /**
  * The MCP protocol revisions this dispatcher genuinely implements, oldest first.
  *
- * The surface is small — `initialize`, `ping`, `tools/list`, `tools/call` — and each of these
- * revisions keeps it compatible, so all three are honoured rather than one being echoed back at
- * whatever the client asked for. The one thing we do *not* implement is the JSON-RPC batching the
- * two older revisions permit (`stdio.ts` reads one message per line) — a client is free to use it
- * against a 2024-11-05 server, though a tools-only surface gives it little reason to, and
- * 2025-06-18 removed batching outright.
+ * The surface is small — `initialize`, `ping`, `tools/list`, `tools/call` — and both of these
+ * revisions keep it compatible, so each is honoured rather than one being echoed back at whatever
+ * the client asked for.
+ *
+ * `2025-03-26` is deliberately absent even though its tool surface would suit us: it requires a
+ * server to *receive* JSON-RPC batches, and this one does not implement batching (a batch is
+ * refused, see `dispatch`). Listing it would be the same false claim this list exists to stop.
+ * `2024-11-05` predates batching and `2025-06-18` removed it again, so neither is affected. A
+ * client on `2025-03-26` is answered with `2025-06-18` and decides for itself.
  *
  * A revision that is not on this list is answered with {@link DEFAULT_PROTOCOL_VERSION} instead,
  * which is the disagreement the handshake exists to express: the client then either continues on
  * that revision or disconnects.
  */
-export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = ['2024-11-05', '2025-03-26', '2025-06-18'];
+export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = ['2024-11-05', '2025-06-18'];
 
 /**
  * The newest revision we implement. Advertised whenever we cannot honour what the client asked
@@ -112,6 +115,13 @@ export function createMcpDispatcher(options: McpDispatcherOptions): McpDispatch 
   const logError = options.logError ?? ((message: string) => console.error(message));
 
   return async function dispatch(message: unknown): Promise<JsonRpcResponse | null> {
+    // A JSON-RPC batch, which we do not implement (hence 2025-03-26's absence from
+    // SUPPORTED_PROTOCOL_VERSIONS). An array reaches the guard below as a malformed request with
+    // no usable id, which would answer it with silence — leaving the client waiting on a reply
+    // that is never coming. Refuse it explicitly instead, the id being null as JSON-RPC requires.
+    if (Array.isArray(message)) {
+      return error(null, INVALID_REQUEST, 'Batched requests are not supported; send one per message');
+    }
     if (!isObject(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
       // Not a well-formed request. If it carries an id we can report it; otherwise stay silent.
       const id = isObject(message) ? coerceId(message.id) : null;

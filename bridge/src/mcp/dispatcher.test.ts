@@ -327,6 +327,16 @@ describe('protocol guards', () => {
   it('stays silent on a malformed message with no id', async () => {
     expect(await dispatch({ foo: 'bar' })).toBeNull();
   });
+
+  it('refuses a JSON-RPC batch instead of answering it with silence (issue #568)', async () => {
+    // Batching is why 2025-03-26 is not on the supported list. An array has no usable id, so the
+    // malformed-request path would return nothing at all and leave the client waiting forever.
+    const res = await call([{ jsonrpc: '2.0', id: 1, method: 'ping' }]);
+    expect(res.id).toBeNull();
+    expect(res.error?.code).toBe(-32600);
+    expect(res.error?.message).toContain('Batched');
+    expect(SUPPORTED_PROTOCOL_VERSIONS).not.toContain('2025-03-26');
+  });
 });
 
 describe('the tool list is the only gate', () => {

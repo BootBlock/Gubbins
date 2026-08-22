@@ -147,7 +147,10 @@ async function smokeMcp() {
     fail(`initialize did not agree to the supported revision: ${JSON.stringify(init?.protocolVersion)}`);
   }
   const unsupported = responses.get(4)?.result;
-  if (unsupported?.protocolVersion === '2099-01-01' || typeof unsupported?.protocolVersion !== 'string') {
+  if (
+    unsupported?.protocolVersion === '2099-01-01' ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(unsupported?.protocolVersion ?? '')
+  ) {
     fail(`initialize echoed an unsupported protocol version: ${JSON.stringify(unsupported)}`);
   }
   const tools = responses.get(2)?.result?.tools;
