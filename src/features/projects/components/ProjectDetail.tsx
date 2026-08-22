@@ -248,9 +248,7 @@ export function ProjectDetail({
           <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold [&_svg]:size-4">
             <ShoppingCartIcon />
             Shopping list
-            <span className="text-xs font-normal text-muted-foreground">
-              (required − reserved, not yet ordered)
-            </span>
+            <span className="text-xs font-normal text-muted-foreground">(still to buy, not yet ordered)</span>
           </h3>
           {list.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -272,7 +270,30 @@ export function ProjectDetail({
                     <tr key={entry.itemId ?? `x${i}`} className="border-t border-border/60">
                       <td className="px-3 py-2">{entry.label}</td>
                       <td className="px-3 py-2 font-mono text-xs">{entry.mpn ?? '—'}</td>
-                      <td className="px-3 py-2 tabular-nums">{entry.shortfallQty}</td>
+                      <td className="px-3 py-2 tabular-nums">
+                        <div className="flex items-center gap-1.5">
+                          <span>{entry.shortfallQty}</span>
+                          {/* This part is reserved for the project, yet still has to be bought:
+                              another open project's claim won the stock, or the stock has gone
+                              since (issue #653). Without the badge the row reads as a line nobody
+                              ever reserved. */}
+                          {entry.unbackedQty > 0 ? (
+                            <Tooltip
+                              content={t(
+                                entry.unbackedQty === 1
+                                  ? 'projects.shoppingList.unbacked.one'
+                                  : 'projects.shoppingList.unbacked.other',
+                                { vars: { count: entry.unbackedQty } },
+                              )}
+                              triggerTabIndex={-1}
+                            >
+                              <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-normal text-destructive">
+                                {t('projects.shoppingList.unbacked.badge')}
+                              </span>
+                            </Tooltip>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="px-3 py-2 tabular-nums">
                         {entry.estimatedCost == null ? (
                           '—'

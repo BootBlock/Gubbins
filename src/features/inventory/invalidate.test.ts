@@ -15,6 +15,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { QueryClient } from '@tanstack/react-query';
 import { agendaKeys } from '@/features/calendar/keys';
+import { projectKeys } from '@/features/projects/keys';
 import { reportKeys } from '@/features/reports/keys';
 import { invalidateItemStock } from './invalidate';
 import { inventoryKeys } from './queries';
@@ -29,14 +30,23 @@ function stubClient() {
 describe('invalidateItemStock — the narrow sweep (#166)', () => {
   // The broad `invalidateItems` is pinned in `report-invalidation.test.ts`, which owns the
   // items ⇄ reports invariant (#375); only the narrow helper is tested here.
-  it('invalidates items, the expiring feed, reports and the agenda', () => {
+  it('invalidates items, the expiring feed, reports, the agenda and the projects', () => {
     // The agenda rides along because the reorder-now lane is on-hand quantity against the reorder
     // point — the one thing a stock-only write is guaranteed to move (issue #374). The expiring
     // feed joined it for the mirror-image reason: it reads the item's *effective* expiry, which a
     // stock write moves whenever it receives a dated lot or empties the last one (issue #684).
+    // The projects prefix rides along because a project's shopping list reads stock: a
+    // reservation reduces what a line has to buy only to the extent stock backs it, so selling
+    // or lending units can turn another project's satisfied line into a shortfall (issue #653).
     const { client, keys } = stubClient();
     invalidateItemStock(client);
-    expect(keys()).toEqual([inventoryKeys.items(), inventoryKeys.expiring(), reportKeys.all, agendaKeys.all]);
+    expect(keys()).toEqual([
+      inventoryKeys.items(),
+      inventoryKeys.expiring(),
+      reportKeys.all,
+      agendaKeys.all,
+      projectKeys.all,
+    ]);
   });
 
   it('leaves the item-attention prefix cached', () => {

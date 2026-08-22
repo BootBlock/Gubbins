@@ -2,9 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ProjectBomLine } from '@/db/repositories';
+import type { ItemAvailability } from '@/features/projects/reservations';
 
 /**
- * Behaviour tests for the {@link BomLineTable} hard-dependency flag (issue #70). A BOM line whose
+ * Behaviour tests for the {@link BomLineTable}'s two advisory flags and its in-flight guard.
+ *
+ * Stock availability (issue #653): how much of a matched part nothing has claimed, and the flag
+ * on a reservation no stock actually backs. The allocation maths is the pure
+ * `features/projects/reservations` seam (covered by its own tests); here we pin what the table
+ * renders for a given answer.
+ *
+ * Hard dependencies (issue #70). A BOM line whose
  * item `REQUIRES` something no *other* line covers is marked, so a bill of materials that would
  * build into an unusable assembly says so before it is picked. The set arithmetic lives in the
  * pure `item-requirements` seam (covered by its own tests); this pins the *table's* contract —
@@ -30,6 +38,8 @@ const h = vi.hoisted(() => ({
   procurementPending: false,
   receiveMutate: vi.fn(),
   removeMutate: vi.fn(),
+  /** Stock availability per matched item (issue #653); undefined = the read has not landed. */
+  availabilityByItem: undefined as Map<string, ItemAvailability> | undefined,
 }));
 
 vi.mock('../projects', () => ({
@@ -40,6 +50,7 @@ vi.mock('../projects', () => ({
 }));
 vi.mock('@/features/inventory/queries', () => ({
   useItemsRelations: () => ({ data: h.relationsByItem }),
+  useItemsAvailability: () => ({ data: h.availabilityByItem }),
 }));
 
 import { BomLineTable } from './BomLineTable';
@@ -85,8 +96,34 @@ function apRequiresInjector() {
   ]);
 }
 
+/**
+ * Availability for the access point, as the batched read would return it (issue #653). The
+ * per-line backing is what decides whether the table flags the reservation.
+ */
+function availability(overrides: Partial<ItemAvailability> = {}, backing = new Map()) {
+  h.availabilityByItem = new Map<string, ItemAvailability>([
+    [
+      'ap',
+      {
+        itemId: 'ap',
+        onHandQty: 10,
+        isUnlimited: false,
+        actualQty: 0,
+        tentativeQty: 0,
+        reservedQty: 0,
+        availableQty: 10,
+        overCommittedQty: 0,
+        backingByLine: backing,
+        claims: [],
+        ...overrides,
+      },
+    ],
+  ]);
+}
+
 beforeEach(() => {
   h.relationsByItem = new Map();
+  h.availabilityByItem = undefined;
   h.receive = { isPending: false, variables: undefined };
   h.remove = { isPending: false, variables: undefined };
   h.reservationPending = false;
@@ -95,6 +132,57 @@ beforeEach(() => {
   h.removeMutate.mockClear();
 });
 afterEach(cleanup);
+
+describe('BomLineTable — stock availability (issue #653)', () => {
+  it('shows how much of a matched part nothing has claimed', () => {
+    availability({ onHandQty: 10, reservedQty: 4, availableQty: 6 });
+    render(<BomLineTable projectId="proj-1" lines={[makeLine()]} />);
+
+    expect(screen.getByTestId('bom-available-line-1')).toHaveTextContent('6 available');
+  });
+
+  it('shows no availability until the batched read lands', () => {
+    render(<BomLineTable projectId="proj-1" lines={[makeLine()]} />);
+
+    expect(screen.queryByTestId('bom-available-line-1')).toBeNull();
+  });
+
+  it('shows no availability for an unlimited-supply part, which can never run short', () => {
+    availability({ isUnlimited: true });
+    render(<BomLineTable projectId="proj-1" lines={[makeLine()]} />);
+
+    expect(screen.queryByTestId('bom-available-line-1')).toBeNull();
+  });
+
+  it('flags a reservation another project’s claim beat to the stock', () => {
+    availability(
+      { onHandQty: 4, reservedQty: 10, availableQty: 0, overCommittedQty: 6 },
+      new Map([['line-1', { lineId: 'line-1', backedQty: 2, unbackedQty: 4 }]]),
+    );
+    render(<BomLineTable projectId="proj-1" lines={[makeLine({ reservedQty: 6, requiredQty: 6 })]} />);
+
+    expect(screen.getByTestId('bom-unbacked-reservation-line-1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Reservation not backed by stock')).toBeInTheDocument();
+  });
+
+  it('does not flag a reservation real stock backs in full', () => {
+    availability(
+      { onHandQty: 10, reservedQty: 6, availableQty: 4 },
+      new Map([['line-1', { lineId: 'line-1', backedQty: 6, unbackedQty: 0 }]]),
+    );
+    render(<BomLineTable projectId="proj-1" lines={[makeLine({ reservedQty: 6, requiredQty: 6 })]} />);
+
+    expect(screen.queryByTestId('bom-unbacked-reservation-line-1')).toBeNull();
+  });
+
+  it('shows nothing for an unmatched line, which has no item to be available of', () => {
+    availability();
+    render(<BomLineTable projectId="proj-1" lines={[makeLine({ itemId: null })]} />);
+
+    expect(screen.queryByTestId('bom-available-line-1')).toBeNull();
+    expect(screen.queryByTestId('bom-unbacked-reservation-line-1')).toBeNull();
+  });
+});
 
 describe('BomLineTable — hard-dependency flag (issue #70)', () => {
   it('flags a line whose prerequisite is missing from the BOM, naming the gap', () => {

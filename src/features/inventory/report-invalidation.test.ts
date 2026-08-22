@@ -18,6 +18,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { inventoryKeys } from './queries';
 import { invalidateItems } from './invalidate';
 import { agendaKeys } from '@/features/calendar/keys';
+import { projectKeys } from '@/features/projects/keys';
 import { reportKeys } from '@/features/reports/keys';
 
 // Resolved from this file's own location, not the cwd: a cwd-relative guard run from another
@@ -45,6 +46,9 @@ describe('invalidateItems', () => {
     // covers that lane's agenda twin.
     // The "Soon to Expire" feed is a sibling too, and had to be named once it started reading a
     // lot's expiry date as well as the item's own (issue #684).
+    // The `projects` prefix joined for the same reason as the reports one: a project's shopping
+    // list now reads stock, because a reservation only reduces what a line has to buy to the
+    // extent stock backs it (issue #653).
     expect(invalidated).toEqual([
       [...inventoryKeys.items()],
       [...inventoryKeys.itemAttention()],
@@ -52,6 +56,7 @@ describe('invalidateItems', () => {
       [...reportKeys.all],
       [...agendaKeys.all],
       [...inventoryKeys.fieldDueDates()],
+      [...projectKeys.all],
     ]);
   });
 });

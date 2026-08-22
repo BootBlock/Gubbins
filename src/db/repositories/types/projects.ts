@@ -300,8 +300,19 @@ export interface ShoppingListEntry {
   readonly label: string;
   readonly mpn: string | null;
   readonly manufacturer: string | null;
-  /** Quantity still to acquire (required − reserved), summed across merged lines. */
+  /**
+   * Quantity still to acquire, summed across merged lines: what the lines require, less the
+   * part of their reservation real stock actually backs (issue #653). A reservation another
+   * project's claim beat to the stock buys nothing, so it does not reduce this.
+   */
   readonly shortfallQty: number;
+  /**
+   * Of {@link shortfallQty}, how many units this project *claims* to have reserved but has no
+   * stock behind — it lost them to a competing claim on the same item, or the stock has since
+   * gone. Zero on an ordinary unreserved shortfall, and the signal that this entry is here
+   * despite the reservation rather than because none was made.
+   */
+  readonly unbackedQty: number;
   /** Unit cost used for the estimate (live replacement value when matched). */
   readonly unitCost: number | null;
   /** shortfallQty × unitCost, or null when the unit cost is unknown. */
