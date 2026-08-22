@@ -37,6 +37,17 @@ import { foldName } from '@/lib/name-fold';
 import { applyOffset } from './clock';
 import type { CollisionResolution, SyncSnapshot, SyncTable, TableRow, Tombstone } from './types';
 
+/**
+ * The one part of a snapshot this resolution reads: the per-table rows already on this device.
+ *
+ * Narrower than {@link SyncSnapshot} on purpose (issue #538). The delta merge passes its full
+ * local snapshot, but the §2 merge restore has no snapshot to pass — it reads only the tables
+ * {@link UNIQUE_KEY_TABLES} names — and the TTL clone passes the *remote* it has just written
+ * over the wiped tables. All three are the same question ("what rows already hold these natural
+ * keys?"), so the parameter asks for that and nothing more.
+ */
+export type LocalTables = Pick<SyncSnapshot, 'tables'>;
+
 /** An inbound FK whose column points at a table resolved here, to repoint on a re-key. */
 interface UniqueKeyReference {
   readonly table: SyncTable;
@@ -157,6 +168,20 @@ export const FOLDED_UNIQUE_COLUMNS: readonly string[] = UNIQUE_KEY_SPECS.flatMap
   spec.nocase.map((column) => `${spec.table}.${column}`),
 );
 
+/**
+ * Every table {@link resolveUniqueKeyCollisions} reads out of the "local" snapshot it is given:
+ * the contested tables themselves, plus the tables whose rows must follow a re-keyed id.
+ *
+ * The delta merge hands it a full local snapshot and never needs this. The §2 merge restore does
+ * (issue #538): it holds no snapshot of its own, so it reads exactly these tables and nothing
+ * else — a backup restore has no reason to pay for the image thumbnails or the ledger. Derived
+ * from the specs rather than written out, so a table added above cannot be silently left unread,
+ * which would make its collisions invisible instead of resolved.
+ */
+export const UNIQUE_KEY_TABLES: readonly SyncTable[] = [
+  ...new Set(UNIQUE_KEY_SPECS.flatMap((spec) => [spec.table, ...spec.references.map((r) => r.table)])),
+];
+
 /** A row competing for one natural key: either a surviving local row or a pending upsert. */
 interface Candidate {
   readonly id: string;
@@ -247,7 +272,7 @@ function retire(
  * M:N edge sections.
  */
 export function resolveUniqueKeyCollisions(
-  local: SyncSnapshot,
+  local: LocalTables,
   localUpserts: TableRow[],
   localDeletes: readonly Tombstone[],
   offset: number,
@@ -269,7 +294,7 @@ export function resolveUniqueKeyCollisions(
 /** Resolve one table's collisions, returning its `loser id → winner id` map. */
 function resolveTable(
   spec: UniqueKeySpec,
-  local: SyncSnapshot,
+  local: LocalTables,
   localUpserts: TableRow[],
   localDeletes: readonly Tombstone[],
   offset: number,
@@ -401,7 +426,7 @@ function resolveTable(
  */
 function repointReferences(
   spec: UniqueKeySpec,
-  local: SyncSnapshot,
+  local: LocalTables,
   localUpserts: TableRow[],
   rekey: ReadonlyMap<string, string>,
 ): void {
