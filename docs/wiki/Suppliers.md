@@ -93,6 +93,12 @@ The kept supplier's own details — name, website, currency and note — are the
 > Merging can't be undone, and the two suppliers can't be separated again afterwards. Read the
 > summary before confirming.
 
+> **ℹ️ Note**
+> You won't usually need this for a duplicate that arrived over [[Cloud Sync|Cloud-Sync]]. Two
+> devices that each created *RS Components* while offline are folded into one supplier by the sync
+> itself, with every part, price record and purchase order following the survivor. **Merge
+> suppliers** is for the duplicates you already have.
+
 ## Deleting a supplier
 
 Any supplier can be deleted. Before it happens, the confirmation spells out both consequences:
