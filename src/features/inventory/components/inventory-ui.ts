@@ -102,6 +102,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   ON_OFF: 'On / Off',
   DATE: 'Date',
   SELECT: 'Choice',
+  COLOUR: 'Colour',
   FILE: 'File link',
   IMAGE: 'Image',
 };

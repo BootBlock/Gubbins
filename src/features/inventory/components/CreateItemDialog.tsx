@@ -1,4 +1,5 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { TEXT_LIMITS, withinTextLimit } from '@/lib/text-limits';
 import { Controller, useForm, type Control, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -103,28 +104,35 @@ import { useErrorMessage } from '@/features/errors';
  */
 const schema = z
   .object({
-    name: z.string().trim().min(1, 'Please enter a name.'),
-    description: z.string().optional(),
-    notes: z.string().optional(),
+    name: z
+      .string()
+      .trim()
+      .min(1, 'Please enter a name.')
+      .refine(withinTextLimit(TEXT_LIMITS.line), 'That name is too long.'),
+    description: z
+      .string()
+      .refine(withinTextLimit(TEXT_LIMITS.note), 'That description is too long.')
+      .optional(),
+    notes: z.string().refine(withinTextLimit(TEXT_LIMITS.note), 'Those notes are too long.').optional(),
     locationId: z.string().min(1, 'Please choose a location.'),
     categoryId: z.string().optional(),
     trackingMode: z.enum(TRACKING_MODES),
-    mpn: z.string().optional(),
-    manufacturer: z.string().optional(),
-    barcode: z.string().optional(),
-    serialNumber: z.string().optional(),
+    mpn: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
+    manufacturer: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
+    barcode: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
+    serialNumber: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
     unitCost: z.string().optional(),
     acquiredAt: z.string().optional(),
     expiryDate: z.string().optional(),
-    batchNumber: z.string().optional(),
-    lotNumber: z.string().optional(),
+    batchNumber: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
+    lotNumber: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
     condition: z.string().optional(),
     // Warranty *window* in whole months (backlog T2). Soft-prefilled from a category default;
     // turned into an absolute `warrantyExpiresAt` (acquired-on, else today, + N months) at submit.
     warrantyMonths: z.string().optional(),
     quantity: z.string().optional(),
     count: z.string().optional(),
-    unitOfMeasure: z.string().optional(),
+    unitOfMeasure: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
     grossCapacity: z.string().optional(),
     tareWeight: z.string().optional(),
     currentNetValue: z.string().optional(),

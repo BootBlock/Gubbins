@@ -117,3 +117,4 @@ Archiving takes one click and asks nothing first, so the message that confirms i
 - **[[Units of measure|Units-of-Measure]]** — the weight and dimension units an item is shown in.
 - **[[Bulk edit & clone|Bulk-Edit-and-Clone]]** — change or duplicate many items at once.
 - **[[Inventory views|Inventory-Views]]** — card, list and table layouts.
+- **[[How long a text field can be|Text-Field-Limits]]** — the ceiling on a name, a description or a note.

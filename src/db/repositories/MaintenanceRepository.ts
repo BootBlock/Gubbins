@@ -12,6 +12,8 @@
  * `updated_at`), so a hard delete records a tombstone in the same transaction (§7.2).
  */
 import { DbError } from '../errors';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from './text-limits';
 import type { SqlStatement, SqlValue } from '../rpc/driver';
 import { historyStatement } from './item/history';
 import { BaseRepository } from './base';
@@ -203,6 +205,7 @@ export class MaintenanceRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A maintenance schedule must have a name.');
     }
+    assertTextLimit(name, TEXT_LIMITS.line, 'A maintenance schedule name');
     let intervalDays: number | null = null;
     let intervalUsage: number | null = null;
     let usageUnit: string | null = null;

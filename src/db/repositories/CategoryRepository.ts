@@ -10,6 +10,8 @@
  * the category's field count, not the 100k+ item set, so they need no pagination.
  */
 import { validateFieldValue } from '@/features/inventory/custom-fields';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from './text-limits';
 import { KEY_FIELD_PROMINENCE, serialiseFieldDefProminence } from '@/features/inventory/field-def-prominence';
 import { normaliseFieldTabLabel } from '@/features/inventory/field-prominence';
 import {
@@ -284,6 +286,7 @@ export class CategoryRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A category must have a name.');
     }
+    assertTextLimit(name, TEXT_LIMITS.line, 'A category name');
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO categories
@@ -324,6 +327,7 @@ export class CategoryRepository extends BaseRepository {
       if (name.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A category must have a name.');
       }
+      assertTextLimit(name, TEXT_LIMITS.line, 'A category name');
       sets.push('name = ?');
       params.push(name);
     }
@@ -1548,6 +1552,7 @@ export class CategoryRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A custom field must have a name.');
     }
+    assertTextLimit(name, TEXT_LIMITS.line, 'A custom field name');
     if (input.fieldType === 'SELECT') {
       const options = (input.options ?? []).map((o) => o.trim()).filter((o) => o.length > 0);
       if (options.length === 0) {

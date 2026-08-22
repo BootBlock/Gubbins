@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { exceedsTextLimit } from '@/lib/text-limits';
 import {
   Banner,
   Button,
@@ -561,16 +562,25 @@ function CategoryFieldProminencePanel({
         >
           <Input
             value={labelText}
-            // HTML `maxLength` counts UTF-16 code units where the seam caps by code point, so the
-            // browser stops an emoji-heavy label slightly sooner than storage would. Deliberate:
-            // for all but a label of a dozen-plus emoji the two agree, and a cap the user can feel
-            // while typing beats one that silently truncates what they typed on save.
+            // Reported rather than refused, like every other text field (issue #346), and counted
+            // in the same code points `normaliseFieldTabLabel` caps by.
             maxLength={MAX_FIELD_TAB_LABEL_LENGTH}
             placeholder={t('item.tab.customFields')}
             data-testid="category-field-tab-label"
             onChange={(e) => {
-              setLabelText(e.target.value);
-              updateCategory.mutate({ id: category.id, input: { fieldTabLabel: e.target.value } });
+              const next = e.target.value;
+              setLabelText(next);
+              // This box saves on every keystroke, and `normaliseFieldTabLabel` shortens an
+              // over-long label to fit. Saving one anyway would mean the label the user is
+              // looking at and the label that was stored had quietly parted company, so an
+              // over-long draft is held back until it fits — the field is already saying so.
+              //
+              // Measured on the *trimmed* draft, because that is what the seam measures: a label
+              // at exactly the cap plus a trailing space is stored verbatim, and refusing to save
+              // it would strand a legitimate entry on a technicality of where the space fell.
+              if (!exceedsTextLimit(next.trim(), MAX_FIELD_TAB_LABEL_LENGTH)) {
+                updateCategory.mutate({ id: category.id, input: { fieldTabLabel: next } });
+              }
             }}
           />
         </FormField>
@@ -1410,8 +1420,8 @@ function resolveBound(raw: string): number | null | undefined {
  * Unlike a bound, this one is *clamped* rather than passed on to be refused. A count of decimal
  * places is a bounded whole number, exactly as a notice period is, so `2.5` settling to `3` and
  * `9` settling to the cap is a predictable read of what was typed rather than a rejection the user
- * has to act on. The control's `maxLength` of 1 narrows what can reach the clamp by typing to a
- * single digit above the cap — `7`, `8` or `9`; anything further out has to be pasted.
+ * has to act on. The control's `maxLength` of 1 is reported rather than enforced (issue #346), so
+ * anything at all can reach this — a two-digit entry settles to the cap the same way a `9` does.
  */
 function resolvePrecision(raw: string): number | null | undefined {
   if (raw.trim() === '') return null;
@@ -1514,6 +1524,15 @@ function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
 
   const commitUnit = () => {
     const next = unit.trim() === '' ? null : unit.trim();
+    // An over-long unit is refused by the `field_defs` CHECK, which would surface as the generic
+    // database wording. Said here instead, and the draft is left standing rather than shortened
+    // (issue #346) — this box sits in a flex row with no field around it, so the shared error slot
+    // below is the only place it can be explained.
+    if (next !== null && exceedsTextLimit(next, FIELD_UNIT_MAX_LENGTH)) {
+      setError(t('inventory.fields.number.unitTooLong', { vars: { limit: FIELD_UNIT_MAX_LENGTH } }));
+      return;
+    }
+    setError(null);
     setUnit(next ?? '');
     if (next !== field.unit) save({ unit: next });
   };
@@ -1594,8 +1613,9 @@ function FieldNumberOptionsControl({ field }: { field: CategoryField }) {
       {t('inventory.fields.number.precisionLabel')}
       {/* A text box with a numeric keypad, for the same reason as the bounds above and one more:
           the count is a whole number, so `inputMode="numeric"` matches the due-date notice period
-          rather than the decimal bounds. `maxLength` is 1 because the cap is a single digit, so a
-          typed value can only ever overshoot it by one digit — see {@link resolvePrecision}. */}
+          rather than the decimal bounds. `maxLength` is 1 because the cap is a single digit; a
+          longer entry is reported and then settled by {@link resolvePrecision} on blur, which
+          clamps into the allowed range the way both bounds beside it do. */}
       <Input
         inputMode="numeric"
         maxLength={1}
@@ -1726,7 +1746,10 @@ function AddFieldForm({ categoryId }: { categoryId: string }) {
 - **Yes / No** – a two-button toggle.
 - **On / Off** – a checkbox — identical to Yes/No, just worded (and shown) differently.
 - **Date** – a calendar date.
-- **Choice** – one of a fixed list you define below.`}
+- **Choice** – one of a fixed list you define below.
+- **Colour** – a colour, entered as a hex code, rgb()/hsl()/hsb(), or a colour name; stored as hex and readable back in any of those.
+- **File link** – a path or address pointing at a file kept outside Gubbins.
+- **Image** – a small picture stored in Gubbins itself.`}
           hintSize="md"
           value={fieldType}
           onChange={(value) => {

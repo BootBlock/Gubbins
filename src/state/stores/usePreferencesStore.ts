@@ -514,13 +514,14 @@ interface PreferencesStore {
   /** Show the first-run "getting started" panel while the inventory is still empty. */
   readonly dashboardGettingStarted: boolean;
   /**
-   * Hide dashboard alert cards that currently have nothing to report (issue #111) — a
-   * Low-stock card with everything in stock, Overdue with no late loans, and so on. Only the
-   * exception/attention cards (low stock, soon to expire, overdue, maintenance due, budget
-   * alerts) are affected; the informational cards (totals, recent activity, system status) are
-   * always shown. **Off by default** so the full board stays discoverable. The board only probes
-   * the alert widgets' "all clear" state while this is on. Ignored while the board is being
-   * customised, so every card can be arranged.
+   * Hide dashboard cards that currently have nothing to report (issue #111) — a Low-stock card
+   * with everything in stock, Overdue with no late loans, In transit with nothing on its way, and
+   * so on. The exception/attention cards (low stock, soon to expire, overdue, maintenance due,
+   * budget alerts) and the two feed cards (in transit, project statuses) are affected; the cards
+   * that always describe something (totals, recent activity, system status) are always shown.
+   * **Off by default** so the full board stays discoverable. The board only probes the widgets'
+   * empty state while this is on. Ignored while the board is being customised, so every card can
+   * be arranged.
    */
   readonly hideHealthyDashboardCards: boolean;
   /**

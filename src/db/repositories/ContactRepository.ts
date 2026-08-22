@@ -9,6 +9,8 @@
  * (which free space) are not.
  */
 import { DbError } from '../errors';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from './text-limits';
 import { BaseRepository } from './base';
 import { planCheckInAllForTarget } from './checkout-plan';
 import { rowToContact } from './mappers';
@@ -97,6 +99,7 @@ export class ContactRepository extends BaseRepository {
     if (name.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A contact must have a name.');
     }
+    assertTextLimit(name, TEXT_LIMITS.line, 'A contact name');
     // The index only refuses a duplicate it can fold (issue #679), so the folded half of the
     // refusal is raised here — otherwise the Contacts screen mints `CAFÉ LTD` beside `Café Ltd`.
     if (await this.findByName(name)) throw duplicateNameError('contacts.name');
@@ -147,6 +150,7 @@ export class ContactRepository extends BaseRepository {
       if (name.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'A contact must have a name.');
       }
+      assertTextLimit(name, TEXT_LIMITS.line, 'A contact name');
       const holder = await this.findByName(name);
       if (holder && holder.id !== id) throw duplicateNameError('contacts.name');
       sets.push('name = ?');

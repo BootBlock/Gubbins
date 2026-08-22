@@ -24,10 +24,13 @@ import {
 import {
   cellAt,
   mapColumns,
+  problemExcerpt,
   readCountCell,
+  textCellProblem,
   type ColumnSynonyms,
   type ImportRowProblem,
 } from '@/features/import/columns';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 
 // Re-export the shared codec from here so existing importers keep their import site
 // (the RFC-4180 reader moved to features/import/tabular; these are thin pass-throughs).
@@ -162,6 +165,25 @@ export function parseBom(text: string, options: ParseBomOptions = {}): BomParseR
     const manufacturer = cellAt(row, columns.manufacturer);
     const description = cellAt(row, columns.description);
     if (!designator && !mpn && !manufacturer && !description) continue; // blank row
+
+    // The columns these cells land in are length-bounded (issue #346), and an import writes past
+    // the control and the repository that normally report an over-long entry. Left to the column
+    // CHECK, one runaway cell would abort the write part-way through a file whose earlier lines
+    // had already been added; reported here it costs its own row, like an unusable quantity.
+    const overLong =
+      textCellProblem(designator, TEXT_LIMITS.line) ??
+      textCellProblem(mpn, TEXT_LIMITS.line) ??
+      textCellProblem(manufacturer, TEXT_LIMITS.line) ??
+      textCellProblem(description, TEXT_LIMITS.note);
+    if (overLong) {
+      problems.push({
+        sourceRow: index + 1,
+        // Excerpted, because the label may itself be the over-long cell.
+        label: problemExcerpt(designator ?? mpn ?? description ?? manufacturer ?? ''),
+        ...overLong,
+      });
+      continue;
+    }
 
     // `zeroAllowed`: a BOM line requiring none of a part is a normal way to mark it "not needed
     // this build", and the column stores it, so it is imported as written rather than reported.

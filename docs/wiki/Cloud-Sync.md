@@ -49,6 +49,18 @@ consumable gauge's level merges the same way.
 > part — the count simply settles at **0** rather than going negative. It never silently discards a
 > movement to avoid that.
 
+> **⚠️ Heads-up**
+> Adding movements up needs Gubbins to remember each one, so the shared file would grow forever if
+> nothing ever tidied it. Where a batch's own record adds up to the amount on the shelf, movements
+> older than about six months are folded into a single running total for that batch — the amount is
+> unchanged, there is just less history behind it. A batch whose record does not add up — usually
+> one restored from a backup saved *without* its history — is left alone rather than have a wrong
+> total written into it, so it keeps every movement.
+>
+> This assumes your devices sync at least that often. A device left offline for longer than six
+> months rebuilds itself from the shared copy when it comes back, rather than merging into it, so
+> make sure a device you rely on gets online now and then.
+
 ### When two devices count the same shelf
 
 A [[cycle count|Cycle-Counts-and-Audit-Day]] is the one stock change that is *not* added up, because

@@ -89,8 +89,9 @@ const NO_HEALTHY: ReadonlySet<string> = new Set();
 
 /**
  * The widget board. Thin wrapper over {@link DashboardBoard}: when "hide healthy cards"
- * (issue #111) is on it mounts a probe that reports which alert cards are currently all-clear,
- * and hands that set down; otherwise the board renders the full layout with nothing to probe.
+ * (issue #111) is on it mounts a probe that reports which cards currently have nothing to
+ * report, and hands that set down; otherwise the board renders the full layout with nothing to
+ * probe.
  */
 export function DashboardGrid() {
   const hideHealthy = usePreferencesStore((s) => s.hideHealthyDashboardCards);
@@ -102,8 +103,8 @@ export function DashboardGrid() {
 }
 
 /**
- * Runs the alert-widget "all clear" probe (only mounted while "hide healthy cards" is on, so
- * the default board never pays for it) and hands the set of clear widget ids to the board.
+ * Runs the "nothing to report" probe (only mounted while "hide healthy cards" is on, so the
+ * default board never pays for it) and hands the set of quiet widget ids to the board.
  */
 function HideHealthyGate({ children }: { children: (healthy: ReadonlySet<string>) => ReactNode }) {
   const healthy = useHealthyWidgetIds();

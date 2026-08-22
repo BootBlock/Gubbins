@@ -216,6 +216,22 @@ describe('export-data builders', () => {
     expect(sanitiseSegment('a/b:c*?')).toBe('a-b-c--');
     expect(sanitiseSegment('  ..hidden ')).toBe('hidden');
   });
+
+  it('cuts a long segment between whole characters, never inside one (issue #346)', () => {
+    // A spanner (U+1F527) straddling the eightieth character: a UTF-16 `slice` keeps its
+    // leading half alone, and a lone surrogate is not a name any filesystem can carry.
+    const name = `${'a'.repeat(79)}🔧 and more`;
+    const segment = sanitiseSegment(name);
+
+    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    expect(loneSurrogate.test(name.slice(0, 80))).toBe(true);
+    expect(loneSurrogate.test(segment)).toBe(false);
+    expect(segment).toBe(`${'a'.repeat(79)}🔧`);
+  });
+
+  it('still cuts a long ASCII segment at eighty characters', () => {
+    expect(sanitiseSegment('a'.repeat(200))).toBe('a'.repeat(80));
+  });
 });
 
 describe('buildCatalogCsv — custom-field columns (Phase 72)', () => {

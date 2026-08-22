@@ -50,6 +50,7 @@ const FIELD_TYPE_MESSAGE: Record<FieldType, MessageKey> = {
   ON_OFF: 'lookup.fieldType.onOff',
   DATE: 'lookup.fieldType.date',
   SELECT: 'lookup.fieldType.select',
+  COLOUR: 'lookup.fieldType.colour',
   FILE: 'lookup.fieldType.file',
   IMAGE: 'lookup.fieldType.image',
 };

@@ -1,4 +1,5 @@
 import { Controller, useForm } from 'react-hook-form';
+import { TEXT_LIMITS, withinTextLimit } from '@/lib/text-limits';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { AutocompleteField, Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
@@ -13,10 +14,10 @@ import { useAddBomLine } from '../projects';
  */
 const schema = z.object({
   itemId: z.string().optional(),
-  designator: z.string().optional(),
-  description: z.string().optional(),
-  mpn: z.string().optional(),
-  manufacturer: z.string().optional(),
+  designator: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
+  description: z.string().refine(withinTextLimit(TEXT_LIMITS.note), 'That entry is too long.').optional(),
+  mpn: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
+  manufacturer: z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.').optional(),
   requiredQty: z.string().optional(),
 });
 

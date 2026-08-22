@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { fieldAria } from './field-aria';
 import { InfoHint } from './info-hint';
 import { LiveRegion } from './live-region';
+import { TextLimitReport, useTextLimitSlot } from './text-limit';
 import { type TooltipSize } from './tooltip';
 
 export interface FormFieldProps {
@@ -70,7 +71,20 @@ export function FormField({
   children,
 }: FormFieldProps) {
   const fieldId = useId();
-  const { controlProps, errorId, warningId, hasError, hasWarning } = fieldAria(fieldId, error, warning);
+  // How full the control inside is, when it is one that measures itself (see `text-limit.ts`).
+  // A field holding several such controls would have them share this one slot; every field in
+  // the app holds one, which is what the label and the error already assume.
+  //
+  // An over-long entry is a validation failure like any other, so it goes through the existing
+  // error slot rather than growing a third message tier: the control is marked invalid and the
+  // sentence is announced. A message the call site wrote outranks it — that one knows what the
+  // field is for.
+  const { report, tooLong, remaining } = useTextLimitSlot();
+  const { controlProps, errorId, warningId, hasError, hasWarning } = fieldAria(
+    fieldId,
+    error ?? tooLong,
+    warning,
+  );
   // The advisory slot is opt-in: passing a string (empty included) mounts the live region,
   // omitting the prop leaves the field exactly as it was. The region must pre-exist for its
   // later content to announce at all — see {@link LiveRegion}'s note — so a field that can
@@ -99,7 +113,7 @@ export function FormField({
         >
           {label}
         </span>
-        {control}
+        <TextLimitReport.Provider value={report}>{control}</TextLimitReport.Provider>
       </label>
       {hint ? (
         <span className={cn('absolute right-0', compact ? 'top-0' : 'top-0.5')}>
@@ -108,7 +122,16 @@ export function FormField({
       ) : null}
       {hasError ? (
         <span id={errorId} role="alert" className="mt-1 block text-xs text-destructive">
-          {error}
+          {error ?? tooLong}
+        </span>
+      ) : null}
+      {remaining ? (
+        // Aria-hidden on purpose. The count changes on every keystroke, so describing the
+        // control by it would talk over the typing it is meant to be a background reassurance
+        // about; the moment that actually needs announcing — the entry going over — arrives as
+        // the `role="alert"` message above.
+        <span aria-hidden className="mt-1 block text-right text-xs tabular-nums text-muted-foreground">
+          {remaining}
         </span>
       ) : null}
       {warnable ? (

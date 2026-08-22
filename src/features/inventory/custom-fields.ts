@@ -12,7 +12,9 @@
  * `Date.now()` / `new Date()` calls — so the seam is deterministic under test.
  */
 import { assertExhaustive } from '@/lib/exhaustive';
+import { TEXT_LIMITS, exceedsTextLimit, textLength } from '@/lib/text-limits';
 import { isImageDataUrl } from '@/lib/image-data-url';
+import { parseColour } from '@/lib/colour';
 import type { CategoryField, FieldType } from '@/db/repositories';
 import { orderByFieldProminence } from './field-def-prominence';
 import { fitsFieldPrecision } from './field-number-format';
@@ -115,6 +117,10 @@ function isBlank(raw: string | null | undefined): boolean {
  *   *display* pads it — which is what lets a precision changed later reformat every existing
  *   value, instead of leaving a mixture of old and new spellings in the column.
  * - **RATING** ⇒ a whole number from 1 to 5.
+ * - **COLOUR** ⇒ any accepted colour notation (hex, `rgb()`, `hsl()`, `hsb()`/`hsv()`, or a
+ *   CSS colour name), canonicalised to a lowercase `#rrggbb` / `#rrggbbaa`. Rejects anything
+ *   `parseColour` cannot read. Canonicalising *at save* rather than at display is what makes
+ *   two spellings of the same colour compare equal in the column.
  * - **BOOLEAN** / **ON_OFF** ⇒ normalised to `'true'` / `'false'` (case-insensitive
  *   in, plus the checkbox's own `'true'`/`'false'` output); anything else is
  *   rejected. The two types are identical here — `ON_OFF` is purely an alternate
@@ -142,10 +148,14 @@ export function validateFieldValue(
 
   switch (def.fieldType) {
     case 'TEXT':
+      return tooLong(def, text, TEXT_LIMITS.line) ?? { ok: true, value: text };
+
     case 'LONG_TEXT':
-      return { ok: true, value: text };
+      return tooLong(def, text, TEXT_LIMITS.note) ?? { ok: true, value: text };
 
     case 'URL': {
+      const over = tooLong(def, text, TEXT_LIMITS.url);
+      if (over) return over;
       try {
         const parsed = new URL(text);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -207,11 +217,26 @@ export function validateFieldValue(
       return { ok: true, value: text };
     }
 
+    case 'COLOUR': {
+      // Any spelling the user has to hand — hex, `rgb()`, `hsl()`, HSB/HSV or a CSS colour
+      // name — is canonicalised to one lowercase `#rrggbb` (or `#rrggbbaa`) here, so the
+      // stored column has a single spelling per colour whatever route the value came in by.
+      const canonical = parseColour(text);
+      if (canonical === null) {
+        return {
+          ok: false,
+          error: `${def.name} must be a colour — a hex code, rgb()/hsl()/hsb(), or a colour name.`,
+        };
+      }
+      return { ok: true, value: canonical };
+    }
+
     case 'FILE':
       // A link to a file that lives outside the app — a local path, a UNC share, or a
       // `file://` / `http(s)` URI. We can't verify a local path from a browser, so any
-      // non-blank string is accepted and stored verbatim (only the pointer travels).
-      return { ok: true, value: text };
+      // non-blank string is accepted and stored verbatim (only the pointer travels). Its
+      // *length* is still worth checking: a pointer that long is a paste that went wrong.
+      return tooLong(def, text, TEXT_LIMITS.url) ?? { ok: true, value: text };
 
     case 'IMAGE': {
       // The control encodes a picked image to a bounded WebP `data:` URL before it ever
@@ -234,6 +259,23 @@ export function validateFieldValue(
       return { ok: false, error: `${def.name} has an unsupported field type.` };
     }
   }
+}
+
+/**
+ * The refusal for a value longer than its field type allows (issue #346), or `null` when it
+ * fits.
+ *
+ * Every custom-field value shares one `item_field_values.value` column, whose own CHECK has to
+ * be roomy enough for an `IMAGE`'s inline base64 — about seven hundred thousand characters. So
+ * the column cannot tell a runaway paste in a one-line `TEXT` field from a legitimate picture,
+ * and this is the only place that distinction is drawn.
+ */
+function tooLong(def: ValidatableField, text: string, limit: number): FieldValidation | null {
+  if (!exceedsTextLimit(text, limit)) return null;
+  return {
+    ok: false,
+    error: `${def.name} can be at most ${limit} characters, and this one is ${textLength(text)}.`,
+  };
 }
 
 /**

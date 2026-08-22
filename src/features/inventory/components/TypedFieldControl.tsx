@@ -1,5 +1,14 @@
 import { useRef, useState } from 'react';
-import { Checkbox, Input, Select, Spinner, Textarea, useRovingRadioGroup } from '@/components/foundry';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import {
+  Checkbox,
+  ColourInput,
+  Input,
+  Select,
+  Spinner,
+  Textarea,
+  useRovingRadioGroup,
+} from '@/components/foundry';
 import { CloseIcon, UploadIcon } from '@/components/icons';
 import { encodeFieldImage } from '@/features/images/compression';
 import { useErrorMessage } from '@/features/errors';
@@ -155,10 +164,24 @@ export function TypedFieldControl({
           aria-describedby={controlProps['aria-describedby']}
         />
       );
+    case 'COLOUR':
+      return (
+        <ColourInput
+          value={value}
+          onChange={onChange}
+          onBlur={onBlur}
+          aria-label={ariaLabel}
+          aria-labelledby={labelId}
+          {...controlProps}
+        />
+      );
     case 'FILE':
       return (
         <Input
           type="text"
+          // The same allowance as a URL, not the one-line default: this holds a link, and
+          // `validateFieldValue` judges it as one. See {@link TEXT_LIMITS}.
+          maxLength={TEXT_LIMITS.url}
           // Gubbins stores the link, not the file — a path, UNC share, or file:// URI.
           placeholder={String.raw`\\server\share\movie.mkv  ·  file://…`}
           value={value}

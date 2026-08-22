@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CategoryField, FieldType } from '@/db/repositories';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import { validateFieldValue, fieldsForCategory } from './custom-fields';
 
 /** Build a minimal CategoryField definition for tests. */
@@ -384,6 +385,42 @@ describe('validateFieldValue — SELECT', () => {
   });
 });
 
+describe('validateFieldValue — COLOUR', () => {
+  it('canonicalises every accepted notation to one lowercase hex', () => {
+    const d = def({ fieldType: 'COLOUR', name: 'Filament colour' });
+    for (const raw of [
+      '#F00',
+      '#ff0000',
+      '#FF0000FF',
+      'rgb(255, 0, 0)',
+      'rgb(255 0 0)',
+      'hsl(0, 100%, 50%)',
+      'hsb(0, 100%, 100%)',
+      'red',
+      '  Red  ',
+    ]) {
+      expect(validateFieldValue(d, raw), raw).toEqual({ ok: true, value: '#ff0000' });
+    }
+  });
+
+  it('keeps a partial alpha', () => {
+    const d = def({ fieldType: 'COLOUR' });
+    expect(validateFieldValue(d, 'rgba(255, 0, 0, 0.5)')).toEqual({ ok: true, value: '#ff000080' });
+  });
+
+  it('rejects a value that is not a colour, naming the field', () => {
+    const d = def({ fieldType: 'COLOUR', name: 'Filament colour' });
+    const result = validateFieldValue(d, 'burnt sienna-ish');
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error).toContain('Filament colour');
+  });
+
+  it('clears on blank, and reports required when it must be set', () => {
+    expect(validateFieldValue(def({ fieldType: 'COLOUR' }), '   ')).toEqual({ ok: true, value: null });
+    expect(validateFieldValue(def({ fieldType: 'COLOUR', isRequired: true }), '').ok).toBe(false);
+  });
+});
+
 describe('validateFieldValue — FILE', () => {
   it('accepts any non-blank pointer string verbatim', () => {
     const d = def({ fieldType: 'FILE' });
@@ -445,5 +482,41 @@ describe('fieldsForCategory', () => {
     const order = fields.map((f) => f.id);
     fieldsForCategory(fields, 'c1');
     expect(fields.map((f) => f.id)).toEqual(order);
+  });
+});
+
+describe('validateFieldValue — length limits (issue #346)', () => {
+  it('holds a TEXT value to the one-line tier', () => {
+    const d = def({ fieldType: 'TEXT', name: 'Package' });
+    expect(validateFieldValue(d, 'a'.repeat(TEXT_LIMITS.line))).toEqual({
+      ok: true,
+      value: 'a'.repeat(TEXT_LIMITS.line),
+    });
+    expect(validateFieldValue(d, 'a'.repeat(TEXT_LIMITS.line + 4))).toEqual({
+      ok: false,
+      error: 'Package can be at most 500 characters, and this one is 504.',
+    });
+  });
+
+  it('gives a LONG_TEXT value the roomier prose tier', () => {
+    const d = def({ fieldType: 'LONG_TEXT', name: 'Datasheet notes' });
+    expect(validateFieldValue(d, 'a'.repeat(TEXT_LIMITS.line + 1)).ok).toBe(true);
+    expect(validateFieldValue(d, 'a'.repeat(TEXT_LIMITS.note + 1)).ok).toBe(false);
+  });
+
+  it('gives a URL value the web-address tier, and still checks the scheme', () => {
+    const d = def({ fieldType: 'URL', name: 'Datasheet' });
+    const long = `https://example.com/${'a'.repeat(TEXT_LIMITS.url)}`;
+    expect(validateFieldValue(d, long)).toEqual({
+      ok: false,
+      error: `Datasheet can be at most 2048 characters, and this one is ${long.length}.`,
+    });
+    expect(validateFieldValue(d, 'ftp://example.com/x').ok).toBe(false);
+  });
+
+  it('counts an emoji once, so a field of 500 spanners still fits one line', () => {
+    const d = def({ fieldType: 'TEXT', name: 'Package' });
+    expect(validateFieldValue(d, '🔧'.repeat(TEXT_LIMITS.line)).ok).toBe(true);
+    expect(validateFieldValue(d, '🔧'.repeat(TEXT_LIMITS.line + 1)).ok).toBe(false);
   });
 });
