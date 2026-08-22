@@ -8,6 +8,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { BackupDialog } from './BackupDialog';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
+import { ADMIN_USER_ID } from '@/db/repositories/constants';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -417,5 +420,54 @@ describe('BackupDialog — a restore that could not save every image (issue #639
     });
 
     expect(onRestored).toHaveBeenCalledWith({ message: 'Merged in backup — 10 items.', tone: 'info' });
+  });
+});
+
+describe('BackupDialog — what a role is offered (issue #519)', () => {
+  afterEach(() => {
+    useSessionStore.getState().setResolved(UNRESTRICTED_AUTHORITY, ADMIN_USER_ID);
+  });
+
+  function signInWith(grants: readonly string[]): void {
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(grants) }, 'user-1');
+  }
+
+  it('offers both tabs in single-user mode, where every session is unrestricted', () => {
+    renderDialog('create');
+    expect(screen.getByRole('tab', { name: /create backup/i })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /restore/i })).toBeTruthy();
+  });
+
+  it('hides the Create tab from a role without `backup:read`', () => {
+    signInWith(['backup:write']);
+    render(<BackupDialog open onClose={() => {}} />);
+    expect(screen.queryByRole('tab', { name: /create backup/i })).toBeNull();
+    expect(screen.getByRole('tab', { name: /restore/i })).toBeTruthy();
+  });
+
+  it('withholds Replace from a restore-only role, whose restore point would be refused', async () => {
+    // Replace secures a restore point first, and that is a full export — `backup:read`. Offering
+    // it here would walk the user through a save dialog and only then refuse.
+    signInWith(['backup:write']);
+    render(<BackupDialog open onClose={() => {}} />);
+    await chooseBackupFile(PARSED_BACKUP);
+    expect(screen.getByLabelText(/merge into current data/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/replace everything/i)).toBeNull();
+  });
+
+  it('offers Replace once the role holds both keys', async () => {
+    signInWith(['backup:read', 'backup:write']);
+    render(<BackupDialog open onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: /restore/i }));
+    await chooseBackupFile(PARSED_BACKUP);
+    expect(screen.getByLabelText(/replace everything/i)).toBeTruthy();
+  });
+
+  it('says so plainly when the role allows neither', () => {
+    signInWith(['items:read']);
+    render(<BackupDialog open onClose={() => {}} />);
+    expect(screen.queryByRole('tab', { name: /create backup/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /restore/i })).toBeNull();
+    expect(screen.getByText(/does not allow creating or restoring backups/i)).toBeTruthy();
   });
 });

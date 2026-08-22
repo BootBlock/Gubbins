@@ -18,6 +18,12 @@ an MCP client, and the assistant can then look things up on your behalf, in natu
 Because it uses the same query engine as the rest of the bridge, the assistant sees exactly the
 data you'd see — and, by default, **cannot change anything**.
 
+> **ℹ️ Note — protocol versions**
+> MCP is revised from time to time, and a client says which revision it wants when it connects. The
+> bridge agrees only to a revision it actually implements; if your client asks for a newer one, the
+> bridge replies with the newest it supports and the client decides whether to carry on. So a
+> mismatch is settled when you connect, rather than showing up later as tools that half-work.
+
 > **ℹ️ Note — the assistant is told when the data may be out of date**
 > If the bridge can no longer re-read your data it keeps answering from the last copy it had (so the
 > assistant isn't left with nothing), but those figures are then stale. When that happens, its

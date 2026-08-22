@@ -27,6 +27,9 @@ import { getItemRepository } from '@/db/repositories';
 import { estimateStorage } from '@/features/storage/storage-api';
 import { useConfirmSaved } from '@/components/useConfirmSaved';
 import { prepareSave } from '@/lib/save-file';
+import { useT } from '@/features/i18n';
+import { can } from '@/features/users/permissions';
+import { useSessionStore } from '@/state/stores/useSessionStore';
 import { BACKUP_FILE_KIND, backupFilename, createBackup, type BackupResult } from './build-backup';
 import {
   readBackup,
@@ -140,7 +143,14 @@ function BackupTabs({
   onClose: () => void;
   onRestored?: (notice: RestoreNotice) => void;
 }) {
-  const [tab, setTab] = useState<Tab>('create');
+  // Issue #519: `createBackup` and `restoreBackup` now refuse a session that lacks the key, so a
+  // tab the role cannot use would only be a panel that throws on its own action button.
+  const t = useT();
+  const authority = useSessionStore((state) => state.authority);
+  const mayCreate = can(authority, 'backup:read');
+  const mayRestore = can(authority, 'backup:write');
+
+  const [tab, setTab] = useState<Tab>(() => (mayCreate ? 'create' : 'restore'));
   // Switching tab unmounts the panel behind it, so while a backup or a restore is running the
   // rail is a third way to lose the outcome — exactly what closing the dialog would do. It is
   // held with the same answer the frame gives Escape, the backdrop and the ✕ (issue #654).
@@ -153,15 +163,25 @@ function BackupTabs({
         aria-label="Backup or restore"
         className="flex gap-1 rounded-lg bg-secondary/40 p-1"
       >
-        <TabButton active={tab === 'create'} onClick={() => setTab('create')} disabled={busy}>
-          <DownloadIcon /> Create backup
-        </TabButton>
-        <TabButton active={tab === 'restore'} onClick={() => setTab('restore')} disabled={busy}>
-          <UploadIcon /> Restore
-        </TabButton>
+        {mayCreate ? (
+          <TabButton active={tab === 'create'} onClick={() => setTab('create')} disabled={busy}>
+            <DownloadIcon /> Create backup
+          </TabButton>
+        ) : null}
+        {mayRestore ? (
+          <TabButton active={tab === 'restore'} onClick={() => setTab('restore')} disabled={busy}>
+            <UploadIcon /> Restore
+          </TabButton>
+        ) : null}
       </div>
 
-      {tab === 'create' ? <CreatePanel /> : <RestorePanel onClose={onClose} onRestored={onRestored} />}
+      {tab === 'create' && mayCreate ? <CreatePanel /> : null}
+      {tab === 'restore' && mayRestore ? (
+        <RestorePanel onClose={onClose} onRestored={onRestored} mayReplace={mayCreate} />
+      ) : null}
+      {!mayCreate && !mayRestore ? (
+        <p className="text-sm text-muted-foreground">{t('backup.denied.noAccess')}</p>
+      ) : null}
     </div>
   );
 }
@@ -315,9 +335,17 @@ function CreatePanel() {
 function RestorePanel({
   onClose,
   onRestored,
+  mayReplace,
 }: {
   onClose: () => void;
   onRestored?: (notice: RestoreNotice) => void;
+  /**
+   * Whether Replace may be offered (issue #519). A Replace secures a restore point first, and
+   * that restore point is a full export of the current database — so it needs `backup:read` on
+   * top of the `backup:write` that opened this tab. Offering it without one would walk the user
+   * through a save dialog and only then refuse, which is worse than not offering it.
+   */
+  readonly mayReplace: boolean;
 }) {
   const fmt = useFormatters();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -531,15 +559,17 @@ function RestorePanel({
               hint="Add and update records from the backup; keep anything you've added since. Non-destructive."
               disabled={busy}
             />
-            <ModeOption
-              name={modeName}
-              value="replace"
-              checked={mode === 'replace'}
-              onChange={() => resetMode('replace')}
-              label="Replace everything"
-              hint="Erase current data and restore the backup exactly. We save a restore point first, but it cannot otherwise be undone."
-              disabled={busy}
-            />
+            {mayReplace ? (
+              <ModeOption
+                name={modeName}
+                value="replace"
+                checked={mode === 'replace'}
+                onChange={() => resetMode('replace')}
+                label="Replace everything"
+                hint="Erase current data and restore the backup exactly. We save a restore point first, but it cannot otherwise be undone."
+                disabled={busy}
+              />
+            ) : null}
           </fieldset>
 
           {/* Only the groups this backup actually carries are offered, so a tick-box can never

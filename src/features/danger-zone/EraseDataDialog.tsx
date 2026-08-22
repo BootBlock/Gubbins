@@ -40,21 +40,27 @@ import {
   SettingsIcon,
   WarningIcon,
 } from '@/components/icons';
+import { useT } from '@/features/i18n';
 import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import { resolveTabKey } from '@/components/foundry';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { hardResetLocalData } from '@/app/error/safe-mode-actions';
 import {
+  ERASE_EVERYTHING_PERMISSIONS,
   ERASE_SECTIONS,
   ERASE_TARGETS,
+  assertMayEraseEverything,
   browserErasePorts,
   countTargets,
   eraseTargetById,
   eraseTargets,
+  mayEraseTarget,
   type EraseSection,
   type EraseTargetId,
 } from '@/features/danger-zone';
+import { canAll } from '@/features/users/permissions';
+import { useSessionStore } from '@/state/stores/useSessionStore';
 // Not part of the pure engine barrel: this one reaches into the live Zustand stores.
 import { resetErasedLocalState } from '@/features/danger-zone/local-store-resets';
 
@@ -114,23 +120,50 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
   // Stable ports object — created once per dialog mount so the count query key is stable.
   const [ports] = useState(() => browserErasePorts());
 
-  const [activeTab, setActiveTab] = useState<TabId>(ERASE_SECTIONS[0]!.id);
+  // What this session may erase (issue #519). The executor refuses anything else outright, so
+  // offering it here would only be a checkbox that throws — the categories a role cannot erase
+  // are left out entirely, as the Activity-log clear button is.
+  const authority = useSessionStore((state) => state.authority);
+  const permittedTargets = useMemo(
+    () => ERASE_TARGETS.filter((target) => mayEraseTarget(authority, target.id)),
+    [authority],
+  );
+  const permittedSections = useMemo(
+    () => ERASE_SECTIONS.filter((section) => permittedTargets.some((t) => t.section === section.id)),
+    [permittedTargets],
+  );
+  const mayEraseEverything = canAll(authority, ERASE_EVERYTHING_PERMISSIONS);
+
+  const [requestedTab, setActiveTab] = useState<TabId>(() => permittedSections[0]?.id ?? EVERYTHING_TAB);
   const [selected, setSelected] = useState<ReadonlySet<EraseTargetId>>(new Set());
   const [tombstone, setTombstone] = useState(false);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const [erasing, setErasing] = useState(false);
   const [resettingAll, setResettingAll] = useState(false);
 
+  const t = useT();
   const { show } = useToast();
   const queryClient = useQueryClient();
 
   // Roving-tabindex refs so arrow-key navigation moves DOM focus to the new tab.
   const tabRefs = useRef(new Map<TabId, HTMLButtonElement | null>());
 
-  const tabIds = useMemo<TabId[]>(() => [...ERASE_SECTIONS.map((s) => s.id), EVERYTHING_TAB], []);
+  const tabIds = useMemo<TabId[]>(
+    () => [
+      ...permittedSections.map((section) => section.id),
+      ...(mayEraseEverything ? [EVERYTHING_TAB as TabId] : []),
+    ],
+    [permittedSections, mayEraseEverything],
+  );
+
+  // The rail is derived from a live authority, so a role change while the dialog is open (a sync
+  // applying new grants, a sign-out) can retire the tab that is showing. Fall back rather than
+  // hold a selection nothing renders — otherwise the rail has no selected button, arrow-key
+  // navigation has nothing to move from, and the panel beside it goes blank.
+  const activeTab = tabIds.includes(requestedTab) ? requestedTab : (tabIds[0] ?? EVERYTHING_TAB);
 
   // Fetch affected-row counts for every target once on open (stable query key per mount).
-  const allIds = useMemo(() => ERASE_TARGETS.map((t) => t.id), []);
+  const allIds = useMemo(() => permittedTargets.map((t) => t.id), [permittedTargets]);
   const countsQuery = useQuery({
     queryKey: eraseKeys.counts(allIds),
     queryFn: () => countTargets(allIds, ports),
@@ -242,6 +275,22 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
 
   async function handleEraseEverything() {
     setConfirming(null);
+
+    // The tab is hidden without the permissions, but hiding a button is a courtesy — this is the
+    // check, and it is separate from the reset's own failure below so a refusal is not reported
+    // as a reset that half-happened. `hardResetLocalData` stays open for the rescue screen, which
+    // runs without a resolvable session by design, so the guard belongs at this call site.
+    try {
+      assertMayEraseEverything(authority);
+    } catch {
+      show({
+        tone: 'danger',
+        heading: t('settings.eraseData.denied.heading'),
+        message: t('settings.eraseData.denied.everything'),
+      });
+      return;
+    }
+
     setResettingAll(true);
     try {
       // hardResetLocalData reloads the page itself — no toast needed.
@@ -258,7 +307,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
 
   const busy = erasing || resettingAll;
   const activeSection = activeTab === EVERYTHING_TAB ? null : activeTab;
-  const activeTargets = activeSection ? ERASE_TARGETS.filter((t) => t.section === activeSection) : [];
+  const activeTargets = activeSection ? permittedTargets.filter((t) => t.section === activeSection) : [];
 
   return (
     <Modal
@@ -299,7 +348,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
             // category stack would otherwise spill straight out past the footer. It scrolls.
             className="flex w-52 min-h-0 shrink-0 flex-col gap-1 overflow-y-auto handset:w-14"
           >
-            {ERASE_SECTIONS.map((section) => (
+            {permittedSections.map((section) => (
               <TabButton
                 key={section.id}
                 tabId={section.id}
@@ -313,18 +362,22 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
                 refMap={tabRefs}
               />
             ))}
-            <div className="my-1 border-t border-border" aria-hidden />
-            <TabButton
-              tabId={EVERYTHING_TAB}
-              label="Erase everything"
-              icon={<CriticalIcon />}
-              tooltip={EVERYTHING_TOOLTIP}
-              selected={activeTab === EVERYTHING_TAB}
-              danger
-              onSelect={() => selectTab(EVERYTHING_TAB)}
-              onKeyDown={onTabKeyDown}
-              refMap={tabRefs}
-            />
+            {mayEraseEverything ? (
+              <>
+                <div className="my-1 border-t border-border" aria-hidden />
+                <TabButton
+                  tabId={EVERYTHING_TAB}
+                  label="Erase everything"
+                  icon={<CriticalIcon />}
+                  tooltip={EVERYTHING_TOOLTIP}
+                  selected={activeTab === EVERYTHING_TAB}
+                  danger
+                  onSelect={() => selectTab(EVERYTHING_TAB)}
+                  onKeyDown={onTabKeyDown}
+                  refMap={tabRefs}
+                />
+              </>
+            ) : null}
           </div>
 
           <div
@@ -394,7 +447,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
                   );
                 })}
               </ul>
-            ) : (
+            ) : mayEraseEverything ? (
               <EverythingPanel
                 confirming={confirming === 'everything'}
                 pending={resettingAll}
@@ -403,7 +456,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
                 onConfirm={() => void handleEraseEverything()}
                 onCancel={() => setConfirming(null)}
               />
-            )}
+            ) : null}
           </div>
         </div>
 

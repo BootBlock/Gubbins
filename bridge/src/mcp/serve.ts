@@ -73,6 +73,9 @@ export async function startMcpServer(env: Env = process.env): Promise<RunningMcp
     // The MCP analogue of `/health`'s honesty (issue #394): a failed re-hydrate keeps the last good
     // snapshot live, so this lets a stale tool result be caveated rather than presented as current.
     getSnapshotHealth: () => summarizeSnapshotHealth(watcher.getReloadHealth(), staleAfterFailures),
+    // An unexpected tool failure tells the model only "the tool failed to run" (issue #568), so
+    // the reason goes here — stderr, the same channel every other diagnostic uses.
+    logError: log,
     tools,
   });
   log(`Gubbins MCP server ready on stdio (${writesEnabled ? 'reads + limited writes' : 'read-only'}).`);

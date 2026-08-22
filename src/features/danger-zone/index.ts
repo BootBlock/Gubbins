@@ -5,18 +5,22 @@
  * the Danger-Zone screen imports the engine, never the other way round.
  */
 export {
+  ERASE_EVERYTHING_PERMISSIONS,
   ERASE_SECTIONS,
   ERASE_TARGETS,
   eraseTargetById,
+  eraseTargetPermissions,
   type EraseSection,
   type EraseTarget,
   type EraseTargetId,
 } from './erase-targets';
 
 export {
+  assertMayEraseEverything,
   browserErasePorts,
   countTargets,
   eraseTargets,
+  mayEraseTarget,
   type ErasePorts,
   type EraseSummary,
 } from './erase-actions';

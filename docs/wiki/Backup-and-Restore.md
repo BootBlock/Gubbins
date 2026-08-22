@@ -7,6 +7,14 @@ browser wiping its storage.
 **Where to find it:** the **Sync** screen → **Backup & restore** (in the menu, when the module is
 enabled).
 
+> **ℹ️ Note**
+> With the [[Users module|Users-and-Accounts]] switched on, creating a backup needs the
+> **Backups → View** [[permission|Roles-and-Permissions]] and restoring one needs **Backups →
+> Change**. **Replace** needs both, because it saves a restore point of your current data first.
+> A role with neither isn't shown the **Backup & restore** section at all. The rescue backup the
+> crash screen offers is the exception — those screens exist to hand your data back when nothing
+> else works, so they don't check a role.
+
 ## What's in a backup
 
 A backup is one portable **`.zip`** that bundles:

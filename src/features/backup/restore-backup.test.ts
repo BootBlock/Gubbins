@@ -50,6 +50,9 @@ vi.mock('./backup-settings', () => ({ applySettings }));
 
 const { StaleJournalError } = await import('@/app/error/safe-mode-actions');
 const { consumeRestoreNotice, rememberRestoreNotice, restoreBackup } = await import('./restore-backup');
+const { useSessionStore } = await import('@/state/stores/useSessionStore');
+const { ADMIN_USER_ID } = await import('@/db/repositories/constants');
+const { UNRESTRICTED_AUTHORITY } = await import('@/features/users/permissions');
 
 /** Bytes that begin with the SQLite 3 magic header — enough for the paths exercised here. */
 const SQLITE_BYTES = new TextEncoder().encode('SQLite format 3\0payload');
@@ -177,5 +180,33 @@ describe('the post-reload notice', () => {
 
     expect(consumeRestoreNotice()).toBeNull();
     expect(sessionStorage.getItem('gubbins:backup-restored')).toBeNull();
+  });
+});
+
+describe('restoreBackup is inside the permission boundary (issue #519)', () => {
+  afterEach(() => {
+    useSessionStore.getState().setResolved(UNRESTRICTED_AUTHORITY, ADMIN_USER_ID);
+  });
+
+  it('refuses a session without `backup:write`, before a single row is written', async () => {
+    // A Viewer: reads everything, holds no backup key at all.
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(['items:read']) }, 'user-1');
+
+    await expect(restoreBackup(parsedBackup(1), 'merge')).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    });
+    // The upsert that would have re-created every record the backup carries never ran.
+    expect(restoreSnapshot).not.toHaveBeenCalled();
+    expect(overwriteDatabaseFile).not.toHaveBeenCalled();
+    expect(applySettings).not.toHaveBeenCalled();
+  });
+
+  it('allows a role that holds `backup:write`', async () => {
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(['backup:write']) }, 'user-1');
+
+    await expect(restoreBackup(parsedBackup(0), 'merge')).resolves.toMatchObject({
+      imagesMissed: 0,
+    });
+    expect(restoreSnapshot).toHaveBeenCalledOnce();
   });
 });

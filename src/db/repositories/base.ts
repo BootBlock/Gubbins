@@ -8,10 +8,10 @@
  * (defaulting to "never suspended") so the store is not a test dependency.
  */
 import { moneyDecimals } from '@/lib/money';
-import { DbError } from '../errors';
 import { writeSuspendedError } from '@/features/storage/write-gate';
 import type { IDatabaseDriver } from '../rpc/driver';
 import { can, UNRESTRICTED_AUTHORITY, type Authority } from '@/features/users/permissions';
+import { permissionDeniedError } from '@/features/users/assert-permission';
 import type { PermissionKey } from '@/features/users/permission-registry';
 import { ADMIN_USER_ID, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './constants';
 import type { Page, PageParams } from './types';
@@ -141,11 +141,13 @@ export abstract class BaseRepository {
    *
    * It is *not* a substitute for encryption. The database is local and readable by anyone
    * holding the device (plan §1.1), so this gates the application, not the file.
+   *
+   * The refusal comes from `permissionDeniedError` rather than being built here, because the
+   * bulk paths that compose their own SQL raise the same one (issue #519) and two copies of the
+   * wording would eventually stop matching.
    */
   protected assertPermission(key: PermissionKey): void {
-    if (!can(this.resolveAuthority(), key)) {
-      throw new DbError('PERMISSION_DENIED', `You do not have permission to do this (${key}).`);
-    }
+    if (!can(this.resolveAuthority(), key)) throw permissionDeniedError(key);
   }
 
   /**

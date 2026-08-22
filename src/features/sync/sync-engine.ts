@@ -167,6 +167,15 @@ export interface RunSyncOptions {
  * A push that fails *after* the merge committed throws a
  * {@link import('./sync-errors').SyncPushFailedError} rather than the bare transport error, so
  * the caller can still adopt the local half — see that class and {@link pushMerged} (issue #638).
+ *
+ * **Not gated on `sync:read` / `sync:write`, deliberately** (issue #519). A sync pass is device
+ * replication, not an action against the vault: it is how a device *receives* what other devices
+ * did — including the role and permission changes themselves — so a session that could not sync
+ * would drift away from the very rules meant to bound it, and would go on drifting silently. The
+ * `sync:*` keys are enforced where a sync actually crosses a trust boundary: the Bridge holds
+ * `POST /api/v1/snapshot` to `sync:write` (see `bridge/src/identity.ts`), and the destructive
+ * local paths that used to reach the driver unchecked — the Danger-Zone erase and the backup
+ * restore — now assert their own keys.
  */
 export async function runSync(
   driver: IDatabaseDriver,
