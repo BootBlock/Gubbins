@@ -374,6 +374,8 @@
   "inventory.savedSearches.recalled": "Gespeicherte Suche in das Suchfeld geladen.",
   "inventory.savedSearches.recalledBuilder": "Gespeicherte Suche in die visuelle Suche geladen.",
   "inventory.savedSearches.failed": "Diese gespeicherte Suche konnte nicht geladen werden: {reason}",
+  "inventory.list.label": "Bestandsartikel",
+  "inventory.list.sectionLabel": "Artikel an diesem Ort",
   "inventory.list.error": "Deine Objekte konnten nicht geladen werden.",
   "inventory.list.retry": "Erneut versuchen",
   "inventory.item.crashed": "Dieser Artikel konnte nicht angezeigt werden.",

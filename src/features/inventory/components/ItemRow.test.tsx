@@ -204,6 +204,22 @@ describe('ItemRow — content branches', () => {
     const checkbox = screen.getByRole('checkbox', { name: 'Select NE555 timer' }) as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
   });
+
+  // Issue #208: the row is one item of a virtualised list, so it must say where it sits in the
+  // whole result set — the DOM only ever holds a screenful of rows.
+  it('is a list item carrying its absolute position and set size', () => {
+    renderRow(makeItem(), { ariaPosInSet: 12, ariaSetSize: 340 });
+    const root = screen.getByRole('listitem');
+    expect(root).toHaveAttribute('aria-posinset', '12');
+    expect(root).toHaveAttribute('aria-setsize', '340');
+  });
+
+  it('omits the position attributes entirely when it is rendered outside a counted list', () => {
+    renderRow(makeItem());
+    const root = screen.getByRole('listitem');
+    expect(root).not.toHaveAttribute('aria-posinset');
+    expect(root).not.toHaveAttribute('aria-setsize');
+  });
 });
 
 describe('ItemRow — click-to-act (cardClickAction)', () => {

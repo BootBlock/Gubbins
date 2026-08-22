@@ -28,11 +28,21 @@ vi.mock('../queries', () => ({
     },
 }));
 
+/** The card/row stubs echo the list-position props back (issue #208) so the numbering is assertable. */
+type StubItemProps = { item: { id: string }; ariaPosInSet?: number; ariaSetSize?: number };
 vi.mock('./ItemCard', () => ({
-  ItemCard: ({ item }: { item: { id: string } }) => <div data-testid="stub-card">{item.id}</div>,
+  ItemCard: ({ item, ariaPosInSet, ariaSetSize }: StubItemProps) => (
+    <div data-testid="stub-card" role="listitem" aria-posinset={ariaPosInSet} aria-setsize={ariaSetSize}>
+      {item.id}
+    </div>
+  ),
 }));
 vi.mock('./ItemRow', () => ({
-  ItemRow: ({ item }: { item: { id: string } }) => <div data-testid="stub-row">{item.id}</div>,
+  ItemRow: ({ item, ariaPosInSet, ariaSetSize }: StubItemProps) => (
+    <div data-testid="stub-row" role="listitem" aria-posinset={ariaPosInSet} aria-setsize={ariaSetSize}>
+      {item.id}
+    </div>
+  ),
 }));
 vi.mock('./ItemTable', () => ({
   ItemTableHeader: () => <div data-testid="stub-table-header" />,
@@ -243,6 +253,44 @@ describe('GroupedItemList', () => {
     const rows = screen.getAllByTestId('stub-table-row');
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.length).toBeLessThan(50);
+  });
+
+  // Issue #208: a grouped section is a list too, and its cards must say where they sit in it.
+  it('declares each plain section a labelled list and numbers its cards', () => {
+    // Fully loaded (no further page), so the section's own item count is the honest set size.
+    sectionResult.set('parent', page(['parent-a', 'parent-b']));
+    render(<GroupedItemList tree={TREE} {...PROPS} />);
+    const list = screen.getAllByRole('list', { name: 'Items in this location' })[0] as HTMLElement;
+    expect(
+      within(list)
+        .getAllByRole('listitem')
+        .map((el) => [el.getAttribute('aria-posinset'), el.getAttribute('aria-setsize')]),
+    ).toEqual([
+      ['1', '2'],
+      ['2', '2'],
+    ]);
+  });
+
+  it('reports an unknown set size for a section that still has a page to load', () => {
+    // The shared fixture leaves "Workshop" with a further page pending.
+    render(<GroupedItemList tree={TREE} {...PROPS} />);
+    const list = screen.getAllByRole('list', { name: 'Items in this location' })[0] as HTMLElement;
+    for (const el of within(list).getAllByRole('listitem')) {
+      expect(el).toHaveAttribute('aria-setsize', '-1');
+    }
+  });
+
+  it('declares a virtualised section a list, numbering its cards against the whole section', () => {
+    withViewport();
+    // 200 items with a further page pending: only a screenful is mounted, so each mounted card
+    // has to carry its own absolute position and an unknown set size.
+    sectionResult.set('parent', bigPage(200));
+    render(<GroupedItemList tree={TREE} {...PROPS} />);
+    const list = screen.getAllByRole('list', { name: 'Items in this location' })[0] as HTMLElement;
+    const mounted = within(list).getAllByRole('listitem');
+    expect(mounted[0]).toHaveAttribute('aria-posinset', '1');
+    expect(mounted[1]).toHaveAttribute('aria-posinset', '2');
+    expect(mounted[0]).toHaveAttribute('aria-setsize', '-1');
   });
 
   it('keeps a trimmed-off front page addressable rather than renumbering the section', () => {

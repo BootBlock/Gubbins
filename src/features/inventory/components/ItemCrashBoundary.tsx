@@ -28,19 +28,39 @@ function CrashMessage({ className }: { className?: string }) {
   );
 }
 
+/**
+ * The list-position props every stand-in carries through (issue #208), so a crashed card/row
+ * still counts as one `role="listitem"` at its absolute position rather than punching a hole
+ * in the list semantics.
+ */
+interface CrashedListItemProps {
+  ariaPosInSet?: number;
+  ariaSetSize?: number;
+}
+
 /** Visual-Heavy stand-in — a plain card so the grid cell keeps its place. */
-export function ItemCardCrashed() {
+export function ItemCardCrashed({ ariaPosInSet, ariaSetSize }: CrashedListItemProps) {
   return (
-    <Surface className="flex select-none flex-col gap-4 p-5">
+    <Surface
+      role="listitem"
+      aria-posinset={ariaPosInSet}
+      aria-setsize={ariaSetSize}
+      className="flex select-none flex-col gap-4 p-5"
+    >
       <CrashMessage />
     </Surface>
   );
 }
 
 /** Data-Heavy stand-in — matches {@link ItemRow}'s bordered strip. */
-export function ItemRowCrashed() {
+export function ItemRowCrashed({ ariaPosInSet, ariaSetSize }: CrashedListItemProps) {
   return (
-    <div className="flex select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5">
+    <div
+      role="listitem"
+      aria-posinset={ariaPosInSet}
+      aria-setsize={ariaSetSize}
+      className="flex select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5"
+    >
       <CrashMessage />
     </div>
   );

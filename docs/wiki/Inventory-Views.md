@@ -32,6 +32,18 @@ where you can compare rows at a glance.
 > Pick the density that matches the task: **Card** to browse, **Data** to skim, **Table** to
 > compare. It's a per-device preference, so your phone and desktop can differ.
 
+### With a screen reader
+
+Every density announces itself as a structure you can navigate: the Card and Data views as a
+**list**, the Table view as a **table**. Because only the items near the viewport are actually
+drawn, each one also announces where it sits in the whole result — "item 12 of 340" — so a long
+inventory reads as its true length rather than as the handful currently on screen.
+
+> **ℹ️ Note**
+> Where Gubbins doesn't yet know the total — while the count is still being worked out, or inside
+> a grouped location that has more items still to load — the position is still announced, but the
+> total is reported as unknown rather than guessed at.
+
 ## Grouping
 
 **Group by** clusters the list into sections — by location, category, or other axes — so a long

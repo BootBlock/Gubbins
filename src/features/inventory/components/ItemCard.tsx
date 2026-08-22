@@ -48,6 +48,8 @@ const ItemCardBody = memo(function ItemCard({
   customFields = EMPTY_CUSTOM_FIELDS,
   customValues,
   tags,
+  ariaPosInSet,
+  ariaSetSize,
 }: {
   item: Item;
   locations: readonly LocationWithCount[];
@@ -74,6 +76,14 @@ const ItemCardBody = memo(function ItemCard({
   customValues?: ReadonlyMap<string, CardFieldStoredValue>;
   /** This item's tag names (issue #84), if the Tags card field is shown and they've loaded. */
   tags?: readonly string[];
+  /**
+   * This card's 1-based position in the whole result set, and how big that set is (issue #208).
+   * The list is virtualised, so only ~20 cards exist in the DOM at once — without these a screen
+   * reader would report "3 of 20" and browse-mode would appear to end at the overscan boundary.
+   * `ariaSetSize` is `-1` when the total isn't known yet (ARIA's "unknown size").
+   */
+  ariaPosInSet?: number;
+  ariaSetSize?: number;
 }) {
   const t = useT();
   const { ref, isHighlighted } = useHighlightTarget<HTMLDivElement>(item.id);
@@ -106,6 +116,11 @@ const ItemCardBody = memo(function ItemCard({
   return (
     <Surface
       ref={ref}
+      // The card is one item of the list its container declares (`role="list"`), with its
+      // absolute position/size so virtualisation stays invisible to assistive tech.
+      role="listitem"
+      aria-posinset={ariaPosInSet}
+      aria-setsize={ariaSetSize}
       interactive
       {...dragProps}
       {...tiltProps}
