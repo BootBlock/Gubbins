@@ -13,6 +13,7 @@ import { HEALTHY_RELOAD, summarizeSnapshotHealth } from '../snapshot-health.ts';
 import {
   createMcpDispatcher,
   DEFAULT_PROTOCOL_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
   type JsonRpcResponse,
   type McpDispatch,
 } from './dispatcher.ts';
@@ -42,7 +43,13 @@ async function call(message: unknown): Promise<JsonRpcResponse> {
 }
 
 describe('initialize', () => {
-  it('echoes the requested protocol version and advertises the tools capability', async () => {
+  /** Run `initialize` with the given params and return the negotiated protocol version. */
+  async function negotiate(params: unknown): Promise<string> {
+    const res = await call({ jsonrpc: '2.0', id: 1, method: 'initialize', params });
+    return (res.result as { protocolVersion: string }).protocolVersion;
+  }
+
+  it('agrees to a supported protocol version and advertises the tools capability', async () => {
     const res = await call({
       jsonrpc: '2.0',
       id: 1,
@@ -60,9 +67,30 @@ describe('initialize', () => {
     expect(result.serverInfo.name).toBe('gubbins-bridge-mcp');
   });
 
+  it('agrees to every revision it claims to support', async () => {
+    for (const version of SUPPORTED_PROTOCOL_VERSIONS) {
+      expect(await negotiate({ protocolVersion: version, capabilities: {} })).toBe(version);
+    }
+  });
+
+  it('names its newest revision rather than echoing an unsupported one (issue #568)', async () => {
+    // The disagreement the handshake exists to express: a client asking for a revision we do not
+    // implement must be told what we *do* speak, not handed its own string back.
+    expect(await negotiate({ protocolVersion: '2099-01-01', capabilities: {} })).toBe(
+      DEFAULT_PROTOCOL_VERSION,
+    );
+    expect(SUPPORTED_PROTOCOL_VERSIONS).toContain(DEFAULT_PROTOCOL_VERSION);
+  });
+
+  it('does not echo a malformed protocol version back', async () => {
+    expect(await negotiate({ protocolVersion: '2024-11-o5', capabilities: {} })).toBe(
+      DEFAULT_PROTOCOL_VERSION,
+    );
+    expect(await negotiate({ protocolVersion: 20241105, capabilities: {} })).toBe(DEFAULT_PROTOCOL_VERSION);
+  });
+
   it('falls back to the default protocol version when none is requested', async () => {
-    const res = await call({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
-    expect((res.result as { protocolVersion: string }).protocolVersion).toBe(DEFAULT_PROTOCOL_VERSION);
+    expect(await negotiate({})).toBe(DEFAULT_PROTOCOL_VERSION);
   });
 });
 
@@ -197,6 +225,51 @@ describe('tools/call', () => {
     expect(result.structuredContent.found).toBe(false);
   });
 
+  it('logs the real reason for an unexpected tool failure without leaking it (issue #568)', async () => {
+    const broken: McpTool = {
+      name: 'gubbins_pretend_broken',
+      description: 'A stand-in tool that throws.',
+      inputSchema: { type: 'object', additionalProperties: false },
+      run: async () => {
+        throw new Error('no such column: widget_id');
+      },
+    };
+    const logged: string[] = [];
+    const withLog = createMcpDispatcher({
+      getState: () => state,
+      tools: [broken],
+      logError: (message) => logged.push(message),
+    });
+    const res = await withLog({
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: { name: broken.name, arguments: {} },
+    });
+    const result = (res as JsonRpcResponse).result as { isError: boolean; content: { text: string }[] };
+    // The model still sees only the generic message — the SQL stays out of the protocol channel.
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toBe('The tool failed to run.');
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain('gubbins_pretend_broken');
+    expect(logged[0]).toContain('no such column: widget_id');
+  });
+
+  it('does not log a bad-argument failure, which the model already sees', async () => {
+    const logged: string[] = [];
+    const withLog = createMcpDispatcher({
+      getState: () => state,
+      logError: (message) => logged.push(message),
+    });
+    await withLog({
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: { name: 'gubbins_search', arguments: {} },
+    });
+    expect(logged).toEqual([]);
+  });
+
   it('returns an isError tool result for invalid arguments', async () => {
     const res = await call({
       jsonrpc: '2.0',
@@ -253,6 +326,16 @@ describe('protocol guards', () => {
 
   it('stays silent on a malformed message with no id', async () => {
     expect(await dispatch({ foo: 'bar' })).toBeNull();
+  });
+
+  it('refuses a JSON-RPC batch instead of answering it with silence (issue #568)', async () => {
+    // Batching is why 2025-03-26 is not on the supported list. An array has no usable id, so the
+    // malformed-request path would return nothing at all and leave the client waiting forever.
+    const res = await call([{ jsonrpc: '2.0', id: 1, method: 'ping' }]);
+    expect(res.id).toBeNull();
+    expect(res.error?.code).toBe(-32600);
+    expect(res.error?.message).toContain('Batched');
+    expect(SUPPORTED_PROTOCOL_VERSIONS).not.toContain('2025-03-26');
   });
 });
 

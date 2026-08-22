@@ -16,11 +16,34 @@
  * read-only and nothing here can mutate anything.
  */
 import type { BridgeServerState } from '../server.ts';
+import { errorDetail } from '../errors.ts';
 import { stalenessCaveat, type SnapshotHealthReport } from '../snapshot-health.ts';
 import { ALL_TOOLS, ToolInputError, type McpTool } from './tools.ts';
 
-/** The MCP protocol revision we advertise when a client doesn't request a specific one. */
-export const DEFAULT_PROTOCOL_VERSION = '2024-11-05';
+/**
+ * The MCP protocol revisions this dispatcher genuinely implements, oldest first.
+ *
+ * The surface is small — `initialize`, `ping`, `tools/list`, `tools/call` — and both of these
+ * revisions keep it compatible, so each is honoured rather than one being echoed back at whatever
+ * the client asked for.
+ *
+ * `2025-03-26` is deliberately absent even though its tool surface would suit us: it requires a
+ * server to *receive* JSON-RPC batches, and this one does not implement batching (a batch is
+ * refused, see `dispatch`). Listing it would be the same false claim this list exists to stop.
+ * `2024-11-05` predates batching and `2025-06-18` removed it again, so neither is affected. A
+ * client on `2025-03-26` is answered with `2025-06-18` and decides for itself.
+ *
+ * A revision that is not on this list is answered with {@link DEFAULT_PROTOCOL_VERSION} instead,
+ * which is the disagreement the handshake exists to express: the client then either continues on
+ * that revision or disconnects.
+ */
+export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = ['2024-11-05', '2025-06-18'];
+
+/**
+ * The newest revision we implement. Advertised whenever we cannot honour what the client asked
+ * for — an unsupported revision, a malformed value, or no version at all.
+ */
+export const DEFAULT_PROTOCOL_VERSION = '2025-06-18';
 
 /** Identifying info returned to the client during `initialize`. */
 export interface ServerInfo {
@@ -67,6 +90,15 @@ export interface McpDispatcherOptions {
    * the MCP analogue of `/health`'s `ok: false`. Omit and tool results are never annotated.
    */
   readonly getSnapshotHealth?: () => SnapshotHealthReport;
+  /**
+   * Diagnostic sink for an *unexpected* tool failure (issue #568). The calling model is told only
+   * that the tool failed — the message must not leak SQL, paths or stacks — which leaves the
+   * operator with nothing to diagnose either. This writes the real reason somewhere they can read
+   * it. Defaults to `console.error`, i.e. **stderr**: stdout carries the JSON-RPC protocol and
+   * must never be written to. Bad *arguments* are not logged here; they are an expected outcome
+   * the model already sees.
+   */
+  readonly logError?: (message: string) => void;
 }
 
 /** A function that handles one parsed message, resolving to a response or null (notification). */
@@ -80,8 +112,16 @@ export type McpDispatch = (message: unknown) => Promise<JsonRpcResponse | null>;
 export function createMcpDispatcher(options: McpDispatcherOptions): McpDispatch {
   const tools = options.tools ?? ALL_TOOLS;
   const serverInfo = options.serverInfo ?? DEFAULT_SERVER_INFO;
+  const logError = options.logError ?? ((message: string) => console.error(message));
 
   return async function dispatch(message: unknown): Promise<JsonRpcResponse | null> {
+    // A JSON-RPC batch, which we do not implement (hence 2025-03-26's absence from
+    // SUPPORTED_PROTOCOL_VERSIONS). An array reaches the guard below as a malformed request with
+    // no usable id, which would answer it with silence — leaving the client waiting on a reply
+    // that is never coming. Refuse it explicitly instead, the id being null as JSON-RPC requires.
+    if (Array.isArray(message)) {
+      return error(null, INVALID_REQUEST, 'Batched requests are not supported; send one per message');
+    }
     if (!isObject(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
       // Not a well-formed request. If it carries an id we can report it; otherwise stay silent.
       const id = isObject(message) ? coerceId(message.id) : null;
@@ -104,7 +144,10 @@ export function createMcpDispatcher(options: McpDispatcherOptions): McpDispatch 
         case 'tools/call':
           return isNotification
             ? null
-            : result(id, await callTool(params, tools, options.getState, options.getSnapshotHealth));
+            : result(
+                id,
+                await callTool(params, tools, options.getState, logError, options.getSnapshotHealth),
+              );
         default:
           // Notifications (e.g. notifications/initialized) need no reply and no error.
           if (isNotification) return null;
@@ -122,10 +165,14 @@ export function createMcpDispatcher(options: McpDispatcherOptions): McpDispatch 
 // --- method handlers --------------------------------------------------------------
 
 function initializeResult(params: unknown, serverInfo: ServerInfo): unknown {
-  // Echo the client's requested protocol version when it sends one (our small, stable surface
-  // is version-agnostic), else advertise our default.
+  // Agree to the client's requested revision only when we actually implement it; otherwise name
+  // the newest one we do, per the MCP lifecycle, and let the client decide whether to continue.
+  // Echoing an unknown string back would tell the client we speak a revision we do not.
   const requested = isObject(params) ? params.protocolVersion : undefined;
-  const protocolVersion = typeof requested === 'string' ? requested : DEFAULT_PROTOCOL_VERSION;
+  const protocolVersion =
+    typeof requested === 'string' && SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+      ? requested
+      : DEFAULT_PROTOCOL_VERSION;
   return {
     protocolVersion,
     capabilities: { tools: {} },
@@ -141,6 +188,7 @@ async function callTool(
   params: unknown,
   tools: readonly McpTool[],
   getState: () => BridgeServerState | null,
+  logError: (message: string) => void,
   getSnapshotHealth?: () => SnapshotHealthReport,
 ): Promise<unknown> {
   const name = isObject(params) ? params.name : undefined;
@@ -183,6 +231,9 @@ async function callTool(
     // Bad arguments are an expected, model-correctable outcome → an isError tool result, so
     // the model sees the message; anything else collapses to a generic, leak-free message.
     if (err instanceof ToolInputError) return toolError(err.message);
+    // Anything else is a bug or a broken environment. Keep the model's message generic and
+    // leak-free, but record the real reason on stderr so the operator has something to act on.
+    logError(`MCP tool ${name} failed: ${errorDetail(err)}`);
     return toolError('The tool failed to run.');
   }
 }
