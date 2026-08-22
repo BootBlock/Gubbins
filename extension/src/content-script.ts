@@ -16,7 +16,8 @@
  * only worth anything because this script runs on the Gubbins app and nowhere else: the
  * manifest injects it on the `GUBBINS_APP_URL_PATTERNS` match patterns, and {@link isGubbinsAppUrl}
  * re-checks the page here before a single listener is installed (issue #493). An unrelated
- * page is therefore never injected into, and cannot post a message this script would read.
+ * page is therefore never injected into, and cannot post a message this script would read. A
+ * message from another *window* on the app's own origin is dropped too — the app talks to itself.
  */
 import {
   makeMessage,
@@ -198,6 +199,11 @@ async function handleDataFetch(msg: DataFetchRequestMessage): Promise<void> {
  */
 function install(): void {
   window.addEventListener('message', (event: MessageEvent) => {
+    // The PWA posts to *itself*, so anything from another window is not the app asking, however
+    // its origin reads. A GitHub Pages account serves all of its projects from one origin, so a
+    // sibling project there could otherwise open the app and drive it by `postMessage` — the
+    // last remnant of issue #493 that narrowing the injection patterns does not reach.
+    if (event.source !== window) return;
     const msg = parseExtensionMessage(event.data, { origin: event.origin, trustedOrigins });
     // §9.1: only act on a validated *_REQUEST from the PWA; everything else is dropped/ignored.
     if (msg?.type === 'SCRAPE_REQUEST') void handleScrape(msg);

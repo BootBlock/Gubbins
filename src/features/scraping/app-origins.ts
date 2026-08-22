@@ -17,7 +17,7 @@
  *
  * Pure and dependency-free, so it is unit-tested here and bundled into the extension.
  */
-import { DEFAULT_BASE_PATH } from '../../base-path';
+import { DEFAULT_BASE_PATH, resolveBasePath } from '../../base-path';
 
 /** One place the app is served from: a fixed scheme and host, a base path, and any port. */
 export interface AppOrigin {
@@ -26,11 +26,16 @@ export interface AppOrigin {
   /** The exact host. Never a wildcard: `*.github.io` is every stranger's site too. */
   readonly host: string;
   /**
-   * The base path the app is served under, with a leading and a trailing slash — the same value
-   * Vite is built with ({@link DEFAULT_BASE_PATH}, or a `GUBBINS_BASE_PATH` override). It is
-   * carried per origin rather than globally because a self-hosted deployment usually serves the
-   * app at the domain root (`'/'`) while the hosted one sits under `/Gubbins/`, and because the
-   * path is the only narrowing a match pattern has on `localhost`, where it cannot pin a port.
+   * The base path the app is served under — the same value Vite is built with
+   * ({@link DEFAULT_BASE_PATH}, or a `GUBBINS_BASE_PATH` override). It is carried per origin
+   * rather than globally because a self-hosted deployment usually serves the app at the domain
+   * root (`'/'`) while the hosted one sits under `/Gubbins/`, and because the path is the only
+   * narrowing a match pattern has on `localhost`, where it cannot pin a port.
+   *
+   * Normalised through {@link resolveBasePath} before it is used, so an entry written `/gubbins`
+   * means the directory and not the prefix. Without that, `/gubbins` would admit
+   * `/gubbins-evil/` — the very path-prefix hole this module exists to close, reopened by a
+   * missing slash in a hand-written entry.
    */
   readonly path: string;
 }
@@ -62,9 +67,26 @@ export const GUBBINS_APP_ORIGINS: readonly AppOrigin[] = [
  * while `http://localhost:5173/Gubbins/` still is. Used verbatim for the manifest's
  * `content_scripts.matches` and for the worker's `chrome.tabs.query` delivery filter.
  */
-export const GUBBINS_APP_URL_PATTERNS: readonly string[] = GUBBINS_APP_ORIGINS.map(
-  ({ scheme, host, path }) => `${scheme}://${host}${path}*`,
-);
+export const GUBBINS_APP_URL_PATTERNS: readonly string[] = GUBBINS_APP_ORIGINS.map((origin) => {
+  const { scheme, host, path } = normaliseOrigin(origin);
+  return `${scheme}://${host}${path}*`;
+});
+
+/**
+ * An entry in the form both halves compare against: a lower-case host and a directory path.
+ *
+ * Chrome lower-cases a match pattern's host, and `URL` lower-cases a parsed one, so an entry
+ * written `Gubbins.Example.com` would inject and then fail the predicate — an extension that is
+ * loaded, injected and silently inert. Normalising once here keeps the pattern and the predicate
+ * reading the same thing, whatever case or trailing slash the entry was written with.
+ */
+function normaliseOrigin(origin: AppOrigin): AppOrigin {
+  return {
+    scheme: origin.scheme,
+    host: origin.host.trim().toLowerCase(),
+    path: resolveBasePath(origin.path),
+  };
+}
 
 /**
  * Is this URL a page of the Gubbins PWA — the same set the manifest injects into?
@@ -103,7 +125,9 @@ export function matchesAppOrigin(raw: string | undefined | null, origins: readon
   if (url.username !== '' || url.password !== '') return false;
   const scheme = url.protocol.replace(/:$/, '');
   const host = url.hostname.toLowerCase();
-  return origins.some(
-    (origin) => origin.scheme === scheme && origin.host === host && url.pathname.startsWith(origin.path),
-  );
+  return origins
+    .map(normaliseOrigin)
+    .some(
+      (origin) => origin.scheme === scheme && origin.host === host && url.pathname.startsWith(origin.path),
+    );
 }

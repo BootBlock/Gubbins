@@ -59,7 +59,9 @@ path you built with — `/` for the `Dockerfile`'s default, `/gubbins/` for
 ```
 
 Mirror the entry's pattern (`https://gubbins.example.com/*`) into `content_scripts[0].matches` in
-`extension/manifest.json` — `app-origins.test.ts` pins the two together — then
+`extension/manifest.json`, and add the same entry to the shipped-origins expectation in
+`src/features/scraping/app-origins.test.ts` — that pin is what stops the list widening by
+accident, so your own deployment has to be added to it deliberately. Then
 `npm run build:extension` and reload the unpacked extension. Keep the entry as narrow as your
 deployment allows: a `path` of `/` admits every page on that host, which is the right trade only
 when the host serves nothing but Gubbins.
