@@ -241,9 +241,18 @@ describe('resetPreferenceFields (issue #521)', () => {
     expect('fieldFromAnOlderBuild' in state()).toBe(false);
   });
 
-  it('refuses to overwrite an action, so a stray name cannot break the store', () => {
-    resetPreferenceFields(['setBridgeToken']);
+  it('does not touch the store at all when no named field is a resettable one', () => {
+    // Not merely "the action survives" — assigning an action its own value would leave that
+    // assertion green. What must not happen is a write: it would re-persist the whole blob, and
+    // the Danger Zone relies on a field reset provoking exactly one, controllable write.
+    const writes: unknown[] = [];
+    const unsubscribe = usePreferencesStore.subscribe((next) => writes.push(next));
+    try {
+      resetPreferenceFields(['setBridgeToken', 'fieldFromAnOlderBuild']);
+    } finally {
+      unsubscribe();
+    }
 
-    expect(typeof state().setBridgeToken).toBe('function');
+    expect(writes).toEqual([]);
   });
 });

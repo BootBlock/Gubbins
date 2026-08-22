@@ -39,6 +39,8 @@ import { usePwaUpdateSnoozeStore } from '@/components/foundry/usePwaUpdateSnooze
 import { useLocationExpansionStore } from '@/features/inventory/useLocationExpansionStore';
 import { useAuditSessionStore } from '@/features/lifecycle/useAuditSessionStore';
 import { useCountDraftStore } from '@/features/lifecycle/useCountDraftStore';
+import { resetPreferenceFields } from '@/state/stores/usePreferencesStore';
+import { eraseTargetById, type EraseTargetId } from './erase-targets';
 import { EMOJI_PICKER_SIZE_KEY, LAST_ORPHAN_SWEEP_KEY, TEXTAREA_SIZES_KEY } from '@/lib/storage-keys';
 
 /** The slice of a Zustand store API this module needs — narrow enough to fake in a test. */
@@ -135,4 +137,33 @@ export function resetLocalStores(
       // remaining keys — the erase itself has already committed.
     }
   }
+}
+
+/**
+ * Reset every live store behind a completed erase, in the one order that leaves storage clean.
+ *
+ * A target erases either whole keys ({@link EraseTarget.localKeys}) or individual fields of the
+ * preferences blob ({@link EraseTarget.prefFields}, issue #521), and a single erase can select
+ * both — "App preferences" and "Bridge access token" sit in the same Danger-Zone section.
+ *
+ * **The field resets must run first.** {@link resetLocalStores} finishes each key by removing it
+ * again, precisely so the write its store reset provoked does not resurrect the key. A field reset
+ * is another `setState` on `usePreferencesStore`, so running it *after* that removal writes
+ * `gubbins:preferences` straight back — the erase reports success and the affected-count badge
+ * still reads 1, which is the exact symptom issue #381's ordering exists to prevent. Run it first
+ * and the key removal drops that write too.
+ */
+export function resetErasedLocalState(
+  erased: readonly EraseTargetId[],
+  storage: Storage = localStorage,
+  resets: StoreResets = LOCAL_STORE_RESETS,
+  resetFields: (fields: readonly string[]) => void = resetPreferenceFields,
+): void {
+  const targets = erased.map((id) => eraseTargetById(id)).filter((t) => t !== undefined);
+  resetFields(targets.flatMap((target) => target.prefFields ?? []));
+  resetLocalStores(
+    targets.flatMap((target) => target.localKeys ?? []),
+    storage,
+    resets,
+  );
 }

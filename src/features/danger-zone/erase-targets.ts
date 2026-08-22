@@ -646,7 +646,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     section: 'local',
     label: 'Bridge access token',
     tooltip:
-      'Forgets the API token this device uses to reach the bridge, so pushing a snapshot and reading a Home Assistant scale stop working until a token is entered again. The bridge address is kept, the token itself keeps working elsewhere until you revoke it in Users, and nothing in your inventory is deleted.',
+      'Forgets the API token this device uses to reach the bridge, so everything that needs it — pushing a snapshot, reading a Home Assistant scale, the webhook delivery log — stops working until a token is entered again. The bridge address is kept, the token itself keeps working elsewhere until you revoke it in Users, and nothing in your inventory is deleted.',
     // A field of the preferences blob rather than a key of its own, so it clears without taking
     // every other preference with it — which erasing "App preferences" would.
     scope: 'local',

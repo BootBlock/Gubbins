@@ -56,8 +56,7 @@ import {
   type EraseTargetId,
 } from '@/features/danger-zone';
 // Not part of the pure engine barrel: this one reaches into the live Zustand stores.
-import { resetLocalStores } from '@/features/danger-zone/local-store-resets';
-import { resetPreferenceFields } from '@/state/stores/usePreferencesStore';
+import { resetErasedLocalState } from '@/features/danger-zone/local-store-resets';
 
 /** The synthetic tab id for the factory-reset panel (not an `EraseSection`). */
 const EVERYTHING_TAB = 'everything';
@@ -213,11 +212,10 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
       const summary = await eraseTargets(effectiveSelected, { tombstone }, ports);
       // Removing a key doesn't tell the running store its state is gone: without this the erase
       // wouldn't show until the next app start, and the store's next write would put the whole
-      // erased blob back (issue #381).
-      resetLocalStores(summary.erased.flatMap((id) => eraseTargetById(id)?.localKeys ?? []));
-      // Same reason, one level down: a target that clears *fields* of the preferences blob has
-      // to reset the live store's copy too, or the store's next write restores them (issue #521).
-      resetPreferenceFields(summary.erased.flatMap((id) => eraseTargetById(id)?.prefFields ?? []));
+      // erased blob back (issue #381). The same holds for a target that clears only *fields* of
+      // the preferences blob (issue #521), and the two resets are order-sensitive — which is why
+      // they are one call rather than two here.
+      resetErasedLocalState(summary.erased);
       await queryClient.invalidateQueries();
       void useStorageStore.getState().refresh();
       setSelected(new Set());

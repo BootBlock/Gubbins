@@ -76,9 +76,10 @@ are attributed to a name you chose.
 
 ## The token Gubbins itself holds
 
-The Sync screen keeps one token so this device can push its snapshot to the bridge and read a
-[[Home Assistant scale|Counting-by-Weight]]. It is stored on that device only, and never travels in
-a [[backup|Backup-and-Restore]] or through [[settings sharing|Sharing-Settings-Between-Devices]].
+The Sync screen keeps one token so this device can reach the bridge itself — to push its snapshot,
+to read a [[Home Assistant scale|Counting-by-Weight]], and to show the [[webhook|Webhooks]] delivery
+log and send a test event. It is stored on that device only, and never travels in a
+[[backup|Backup-and-Restore]] or through [[settings sharing|Sharing-Settings-Between-Devices]].
 
 Two ways to remove it:
 
