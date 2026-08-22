@@ -13,10 +13,10 @@
  * alone answers what it **cost** (manual cost, else the preferred supplier cost, delegated to the
  * Phase-60 `supplier-cost` helper) and is what the consumption reports read. A valuation query
  * either projects the inputs with {@link valuedItemColumns} and folds them in JS, or restates the
- * rule in SQL as {@link effectiveUnitValueSql} to sum a whole inventory in the database
- * ({@link ReportRepository.partsCatalogue} is the one that spells its own projection out, because
- * a printed catalogue deliberately reads fewer of the columns). Reads are unpaginated *aggregates*
- * (a fixed, tiny result set), not row dumps.
+ * rule in SQL as {@link effectiveUnitValueSql} to sum a whole inventory in the database. Every
+ * valuation read takes one of those two; none spells a projection of its own out, because the one
+ * that did dropped `current_value` from it and priced a revalued asset at nothing (issue #706).
+ * Reads are unpaginated *aggregates* (a fixed, tiny result set), not row dumps.
  */
 import { BaseRepository } from './base';
 import { parsePriceBreaks } from './mappers';

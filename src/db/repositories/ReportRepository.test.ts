@@ -1946,9 +1946,9 @@ describe('ReportRepository', () => {
       });
 
       const report = await reports.dataHygiene(180);
+      // Exactly one of the three is unpriced: neither the revaluation nor the deliberate zero is.
       expect(sampleIds(report, 'missing-price')).toEqual([unpriced.id]);
-      expect(sampleIds(report, 'missing-price')).not.toContain(revalued.id);
-      expect(sampleIds(report, 'missing-price')).not.toContain(worthless.id);
+      expect(revalued.id).not.toBe(worthless.id); // the fixtures really are three distinct items
     });
 
     it('excludes inactive items and abstract variant parents', async () => {
