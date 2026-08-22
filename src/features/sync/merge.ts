@@ -45,6 +45,8 @@ import { decodeRowForTable } from './blob-codec';
 import { defaultLocationWinner } from './location-default-flag';
 import { forceLwwTies } from './lww-tie-override';
 import { historyClearMarks, reconcile } from './reconcile';
+import { stockDeltaCompactionCutoff } from './retention';
+import { sweepStockDeltas } from './stock-delta-compaction';
 import { supplierPartFlagClears } from './supplier-part-flags';
 import { buildSchemaDictionary } from './schema-dictionary';
 import {
@@ -132,14 +134,14 @@ export async function runSnapshotMerge(
   const { mode, offset, effectiveNow } = request;
 
   if (mode === 'publish') {
-    return emptyResult(await readMerged(driver, effectiveNow, offset));
+    return emptyResult(await sweepAndReadMerged(driver, effectiveNow, offset));
   }
 
   const dictionary = await buildSchemaDictionary(driver, DICTIONARY_TABLES);
 
   if (mode === 'clone') {
     await cloneWithSalvage(driver, localFrameRemote(request), dictionary, request);
-    return emptyResult(await readMerged(driver, effectiveNow, offset));
+    return emptyResult(await sweepAndReadMerged(driver, effectiveNow, offset));
   }
 
   // The local snapshot and the plan are deliberately confined to `reconcileAndApply`: both are
@@ -147,7 +149,7 @@ export async function runSnapshotMerge(
   // same. Letting them fall out of scope first roughly halves the peak, which is the whole
   // point at the inventory sizes this exists for (issue #173).
   const counts = await reconcileAndApply(driver, dictionary, request);
-  return { merged: await readMerged(driver, effectiveNow, offset), ...counts };
+  return { merged: await sweepAndReadMerged(driver, effectiveNow, offset), ...counts };
 }
 
 /** Everything the merge counters are derived from — the plan, minus the plan itself. */
@@ -237,12 +239,31 @@ export function mergeSnapshot(
     : runSnapshotMerge(driver, request);
 }
 
-/** Re-read the merged local state and normalise it to server time for the push. */
-async function readMerged(
+/**
+ * Bound the `stock_deltas` ledger, then re-read the merged local state and normalise it to server
+ * time for the push.
+ *
+ * The sweep lives here, rather than beside the tombstone prune in `./sync-engine`, for two
+ * reasons. It must run **after** the apply — a placement whose batch row the merge is about to
+ * restore, or whose deltas the merge is about to union in, must be judged on the settled state,
+ * not the state the pass started from. And it must run **before** the snapshot is read back, or
+ * the pass would push the ledger it had just trimmed and every peer would hand the rows straight
+ * back. The tombstone prune is the mirror image and is deliberately the other way round: a
+ * tombstone has to reach the peers before it may go.
+ *
+ * All three §7.3 paths funnel through here — first publish, TTL clone and the delta pass alike —
+ * so this is the one place the sweep has to be wired.
+ *
+ * The cutoff is computed in this device's **own** clock frame (`effectiveNow` is server time, and
+ * `offset` is server − local), because `stock_deltas.created_at` is raw local wall clock that the
+ * sync frame conversion deliberately never touches.
+ */
+async function sweepAndReadMerged(
   driver: IDatabaseDriver,
   effectiveNow: number,
   offset: number,
 ): Promise<SyncSnapshot> {
+  await sweepStockDeltas(driver, stockDeltaCompactionCutoff(effectiveNow - offset));
   return shiftSnapshotTimestamps(await buildLocalSnapshot(driver, effectiveNow), offset);
 }
 

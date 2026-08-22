@@ -1,8 +1,10 @@
 # Discrete-stock convergence — a Delta-CRDT for the per-location/per-batch ledger (design + plan)
 
-> **Status:** 🟢 ACTIVE — S0 (per-placement delta ledger + capture) and S1 (the convergence
-> CRDT that fixes #188) shipped; S3 (wiki) done alongside them. S2 (the durable base checkpoint
-> that removes the pruning fragility) is the remaining, independent hardening step. Origin: issue #188.
+> **Status:** ✅ COMPLETE — S0 (per-placement delta ledger + capture), S1 (the convergence CRDT
+> that fixes #188) and S3 (wiki) shipped together. S2's goal — a ledger that can be pruned without
+> losing a placement's base — shipped for issue #544, but **not** as the Fork C1 design below: it
+> is an in-ledger checkpoint row instead of a `base_quantity` column. See §4 S2 for what was built
+> and why the fork was set aside. Origin: issue #188.
 
 Every discrete stock movement (adjustment, checkout, check-in, sale, write-off, PO receipt,
 project pick, kit build, transfer, cycle-count reconcile) currently converges across devices by
@@ -222,7 +224,7 @@ Each phase is independently reviewable and leaves the tree green. Stable IDs so 
 kicked off with "implement S2".
 
 > **Progress:** **S0 ✅ shipped**, **S1 ✅ shipped** (these two fix #188), **S3 ✅ shipped**
-> alongside them. **S2 is the remaining step** — the only reason this doc stays `🟢 ACTIVE`.
+> alongside them, **S2 ✅ shipped** (issue #544, by a different design — see the phase entry).
 > S0 landed the capture via triggers rather than builder-threading (see the Fork D refinement
 > box); S1 landed the contested-placement full-replay (`reconcileStockQuantity`) and the
 > `NON_LWW_COLUMNS` suppression exactly as Fork E predicted (the `item_stock` conflict-detection
@@ -243,10 +245,46 @@ kicked off with "implement S2".
   item_id = ? AND location_id = ? AND batch_key = ?` after the LWW upserts (letting triggers roll
   up). Add Fork E's `NON_LWW_COLUMNS` entries. Pruning per Fork C2. This is the phase that
   actually fixes #188.
-- **S2 — Durable base checkpoint (Fork C1).** `base_quantity`/`base_epoch`, fold-on-prune, and the
-  replay change to `base + Σ(deltas after base_epoch)`. Removes the long-lived-batch pruning
-  fragility. Schedulable independently once S1 is stable.
-  - **Compose this with the count assertions added for #633.** A `stock_deltas` row may now carry an
+  - **The Fork C2 pruning half of this phase did not land.** Recorded here because the banner
+    claimed the phase whole for a year: what shipped was the snapshot section, `reconcileStock`
+    and the apply loop, with no prune of any kind. Issue #544 found the gap. It also found that
+    C2 as specified would have reclaimed very little even had it shipped — `stock_batches` sets an
+    emptied lot to 0 rather than deleting the row, so "prune deltas for batch keys whose row is
+    gone" only ever reaches a placement whose *location* was deleted.
+- **S2 — Durable base checkpoint. ✅ Shipped (issue #544), as an in-ledger checkpoint rather than
+  Fork C1.** The goal was met — a placement's old movements are now discarded without losing its
+  base — but the mechanism below was set aside in favour of a smaller one that needs no schema
+  change at all. `src/features/sync/stock-delta-compaction.ts` replaces a placement's deltas older
+  than a 180-day horizon with a **single `stock_deltas` row asserting what that era replays to**,
+  stamped one millisecond below the horizon and given a `uuidv5` id derived from
+  `(placement, cutoff)`. It runs beside an orphan prune once per sync pass, after the merge apply
+  and before the merged snapshot is read back for the push.
+  - **Why not Fork C1.** `base_quantity`/`base_epoch` would sit on `stock_batches`, a Last-Write-Wins
+    table, while the ledger they summarise reconciles by union-by-id. Fork C1 assumes "both devices
+    prune at the same content-addressed watermark, so they compute the same base", but nothing in
+    the design makes that true: two devices sweeping at different epochs merge one device's
+    `(base, epoch)` pair against a ledger that does not match it, and the completeness guard then
+    has no way to tell that apart from a baseline-less placement. Putting the checkpoint *in* the
+    ledger avoids the question entirely — it merges by the same union-by-id rule as every other
+    delta, and a differently-timed peer checkpoint is simply an older assertion the replay skips.
+  - **Why it is exact rather than approximate.** `replayStockQuantity` already restarts from the
+    newest assertion and applies only what follows (#633), so one row asserting the era's replayed
+    total is replay-equivalent to the era it replaces. The `quantity_delta` the checkpoint carries
+    is the era's net movement, which the replay never reads on an assertion row but which keeps
+    `SUM(quantity_delta)` over a placement's whole ledger unchanged.
+  - **Why 180 days.** `STOCK_DELTA_RETENTION_MS` is deliberately equal to the §7.2 tombstone TTL and
+    must never be shorter. An assertion supersedes everything before it, so a peer's unsynced
+    movement inside a summarised era is discarded when it unions in — and at 180 days the only peer
+    that can hold one is a peer past the tombstone TTL, which takes the Pre-Wipe Salvage clone path
+    rather than delta-merging. The exposure is exactly the one §7.2 already covers.
+  - **What is still not solved.** A device that never syncs never sweeps: the sweep is wired into
+    the merge because that is the only point where the settled post-apply state is known and the
+    trimmed ledger can still reach the push. Growth on a sync-less device is bounded only by the
+    `item_history` triage the user runs by hand.
+  - The original Fork C1 sketch, kept as the record of what was considered: *`base_quantity` /
+    `base_epoch`, fold-on-prune, and the replay change to `base + Σ(deltas after base_epoch)`.
+    Removes the long-lived-batch pruning fragility. Schedulable independently once S1 is stable.*
+    **Compose this with the count assertions added for #633.** A `stock_deltas` row may now carry an
     `asserted_quantity` — a physically counted figure that *replaces* the running total rather than
     adding to it (`replayStockQuantity`). So fold-on-prune cannot be a plain `base += Σ pruned
     deltas`: an era containing an assertion folds to *that assertion plus the deltas after it*, and

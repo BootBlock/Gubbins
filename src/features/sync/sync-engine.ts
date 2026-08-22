@@ -27,6 +27,7 @@ import { STORAGE_THRESHOLDS, isWriteSuspended } from '@/features/storage/tiers';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { labFlag } from '@/state/stores/useLabStore';
 import { measureClockOffset } from './clock';
+import { TOMBSTONE_TTL_MS } from './retention';
 import { mergeSnapshot } from './merge';
 import type { CloudProvider } from './provider';
 import {
@@ -40,9 +41,12 @@ import type { SyncConflict, SyncSnapshot } from './types';
 /**
  * §7.2 Tombstone TTL: 180 days in milliseconds.
  *
+ * Defined in `./retention` beside the stock-ledger horizon that must never be shorter than it
+ * (issue #544), and re-exported here where every caller already looks for it.
+ *
  * @internal Exported for unit tests only.
  */
-export const TOMBSTONE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+export { TOMBSTONE_TTL_MS };
 
 export interface SyncResult {
   /**

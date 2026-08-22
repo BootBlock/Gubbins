@@ -49,6 +49,14 @@ consumable gauge's level merges the same way.
 > part — the count simply settles at **0** rather than going negative. It never silently discards a
 > movement to avoid that.
 
+> **⚠️ Heads-up**
+> Adding movements up needs Gubbins to remember each one, so the shared file would grow forever if
+> nothing ever tidied it. Movements older than about six months are folded into a single running
+> total per shelf, which keeps the file from growing without limit and changes no quantity. The one
+> thing it assumes is that your devices sync at least that often: a device left offline for longer
+> than six months rebuilds itself from the shared copy when it comes back, rather than merging into
+> it, so make sure a device you rely on gets online now and then.
+
 ### When two devices count the same shelf
 
 A [[cycle count|Cycle-Counts-and-Audit-Day]] is the one stock change that is *not* added up, because
