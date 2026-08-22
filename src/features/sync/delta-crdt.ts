@@ -150,6 +150,11 @@ export function replayStockQuantity(deltas: readonly StockQuantityDelta[]): numb
   return total;
 }
 
+/** Order a row's `assertedQuantity` totally, with a movement's `null` below every figure. */
+function assertionRank(delta: StockQuantityDelta): number {
+  return delta.assertedQuantity ?? Number.NEGATIVE_INFINITY;
+}
+
 /**
  * The discrete-stock analogue of {@link reconcileGauge} (issue #188). A `(item, location, batch)`
  * placement's converged quantity is the id-union of both sides' `stock_deltas` replayed by
@@ -161,11 +166,6 @@ export function replayStockQuantity(deltas: readonly StockQuantityDelta[]): numb
  * total negative converges to 0 on every replay rather than leaving a latent negative. Recomputing
  * from the deltas each sync makes this self-correcting, exactly as the gauge re-clamps its value.
  */
-/** Order a row's `assertedQuantity` totally, with a movement's `null` below every figure. */
-function assertionRank(delta: StockQuantityDelta): number {
-  return delta.assertedQuantity ?? Number.NEGATIVE_INFINITY;
-}
-
 export function reconcileStockQuantity(
   localDeltas: readonly StockQuantityDelta[],
   remoteDeltas: readonly StockQuantityDelta[],

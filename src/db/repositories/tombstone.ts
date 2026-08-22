@@ -168,8 +168,10 @@ export const STOCK_DELTAS_TABLE = 'stock_deltas';
  *    (see the migration note at its `CREATE TABLE`). A peer's count is meaningless; a restore
  *    re-derives it from whatever rows land in `items`.
  *  - `stock_delta_capture` — the local capture switch the {@link STOCK_DELTAS_TABLE} triggers
- *    consult (issue #188). Pure device-local session state (one boolean row); a peer's value
- *    would be meaningless and syncing it could wrongly suppress or double a capture.
+ *    consult (issue #188). Pure device-local session state (a single row, holding whether capture
+ *    is on, whether it is recording asserted counts, and the key of any one-shot operation whose
+ *    writes it is deriving ids for); a peer's value would be meaningless and syncing it could
+ *    wrongly suppress or double a capture.
  *
  * This list is the explicit half of the classification the drift test enforces
  * (`sync-table-classification.test.ts`): every real table in the built schema must appear in
