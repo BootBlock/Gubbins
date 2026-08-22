@@ -26,7 +26,8 @@
  * records that are no longer anywhere else.
  */
 import { getDatabaseDriver } from '@/db/client';
-import { assertPermissions, currentAuthority } from '@/features/users/assert-permission';
+import { assertPermissions } from '@/features/users/assert-permission';
+import { currentAuthority } from '@/features/users/current-authority';
 import {
   buildCloneStatements,
   buildSchemaDictionary,
@@ -126,6 +127,10 @@ export async function restoreBackup(
   // overwrites the vault outright — and it composes its own statements, so the repository guard
   // never sees it. `backup:write` is the key the role editor already offers for this, and until
   // now unticking it withheld nothing.
+  //
+  // Worth being plain about what that key is worth: `users` and `roles` are synced tables, so a
+  // hand-edited backup can rewrite them. `backup:write` therefore reaches as far as `users:manage`
+  // in practice, and should be granted on that understanding.
   assertPermissions(currentAuthority(), ['backup:write']);
 
   // Issue #382: the picker has to narrow the *shared* copy of the settings as well as the

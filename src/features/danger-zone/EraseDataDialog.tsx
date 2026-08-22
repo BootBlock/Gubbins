@@ -134,7 +134,7 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
   );
   const mayEraseEverything = canAll(authority, ERASE_EVERYTHING_PERMISSIONS);
 
-  const [activeTab, setActiveTab] = useState<TabId>(() => permittedSections[0]?.id ?? EVERYTHING_TAB);
+  const [requestedTab, setActiveTab] = useState<TabId>(() => permittedSections[0]?.id ?? EVERYTHING_TAB);
   const [selected, setSelected] = useState<ReadonlySet<EraseTargetId>>(new Set());
   const [tombstone, setTombstone] = useState(false);
   const [confirming, setConfirming] = useState<Confirming>(null);
@@ -155,6 +155,12 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
     ],
     [permittedSections, mayEraseEverything],
   );
+
+  // The rail is derived from a live authority, so a role change while the dialog is open (a sync
+  // applying new grants, a sign-out) can retire the tab that is showing. Fall back rather than
+  // hold a selection nothing renders — otherwise the rail has no selected button, arrow-key
+  // navigation has nothing to move from, and the panel beside it goes blank.
+  const activeTab = tabIds.includes(requestedTab) ? requestedTab : (tabIds[0] ?? EVERYTHING_TAB);
 
   // Fetch affected-row counts for every target once on open (stable query key per mount).
   const allIds = useMemo(() => permittedTargets.map((t) => t.id), [permittedTargets]);

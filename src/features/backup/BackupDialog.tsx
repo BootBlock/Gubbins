@@ -174,7 +174,14 @@ function BackupTabs({
       </div>
 
       {tab === 'create' && mayCreate ? <CreatePanel /> : null}
-      {tab === 'restore' && mayRestore ? <RestorePanel onClose={onClose} onRestored={onRestored} /> : null}
+      {tab === 'restore' && mayRestore ? (
+        <RestorePanel onClose={onClose} onRestored={onRestored} mayReplace={mayCreate} />
+      ) : null}
+      {!mayCreate && !mayRestore ? (
+        <p className="text-sm text-muted-foreground">
+          Your role does not allow creating or restoring backups.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -328,9 +335,17 @@ function CreatePanel() {
 function RestorePanel({
   onClose,
   onRestored,
+  mayReplace,
 }: {
   onClose: () => void;
   onRestored?: (notice: RestoreNotice) => void;
+  /**
+   * Whether Replace may be offered (issue #519). A Replace secures a restore point first, and
+   * that restore point is a full export of the current database — so it needs `backup:read` on
+   * top of the `backup:write` that opened this tab. Offering it without one would walk the user
+   * through a save dialog and only then refuse, which is worse than not offering it.
+   */
+  readonly mayReplace: boolean;
 }) {
   const fmt = useFormatters();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -544,15 +559,17 @@ function RestorePanel({
               hint="Add and update records from the backup; keep anything you've added since. Non-destructive."
               disabled={busy}
             />
-            <ModeOption
-              name={modeName}
-              value="replace"
-              checked={mode === 'replace'}
-              onChange={() => resetMode('replace')}
-              label="Replace everything"
-              hint="Erase current data and restore the backup exactly. We save a restore point first, but it cannot otherwise be undone."
-              disabled={busy}
-            />
+            {mayReplace ? (
+              <ModeOption
+                name={modeName}
+                value="replace"
+                checked={mode === 'replace'}
+                onChange={() => resetMode('replace')}
+                label="Replace everything"
+                hint="Erase current data and restore the backup exactly. We save a restore point first, but it cannot otherwise be undone."
+                disabled={busy}
+              />
+            ) : null}
           </fieldset>
 
           {/* Only the groups this backup actually carries are offered, so a tick-box can never

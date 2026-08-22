@@ -28,13 +28,15 @@ import type { IDatabaseDriver, SqlStatement } from '@/db/rpc/driver';
 import { getDatabaseDriver } from '@/db/client';
 import { removeImagesDirectory } from '@/features/images/opfs-images';
 import { PREFERENCES_KEY } from '@/features/backup/settings-groups';
-import { assertPermissions, currentAuthority } from '@/features/users/assert-permission';
+import { assertPermissions } from '@/features/users/assert-permission';
+import { currentAuthority } from '@/features/users/current-authority';
 import { can, type Authority } from '@/features/users/permissions';
 import { parsePersistedBlob, serialisePersistedBlob } from '@/lib/persisted-state';
 import {
   ERASE_EVERYTHING_PERMISSIONS,
   ERASE_TARGETS,
   eraseTargetById,
+  eraseTargetPermissions,
   type EraseTargetId,
 } from './erase-targets';
 
@@ -81,8 +83,10 @@ export interface ErasePorts {
    * What the current session may do (issue #519). Read per call rather than captured, so an
    * authority that changes between opening the dialog and confirming is the one that applies.
    *
-   * Required, not optional: a default would make the guard fail *open*, which is the defect
-   * this port exists to close.
+   * Required, not optional: an optional port would default to *something*, and the only honest
+   * default — unrestricted — would leave the guard doing nothing at all in production. Note this
+   * bounds the port, not the value: the session store's own default is unrestricted until
+   * `refreshAuthority` resolves, exactly as the repository guards see it.
    */
   readonly authority: () => Authority;
 }
@@ -99,9 +103,8 @@ export interface EraseSummary {
  * an unexplained row in the list.
  */
 export function mayEraseTarget(authority: Authority, id: EraseTargetId): boolean {
-  const target = eraseTargetById(id);
-  if (!target) return false;
-  return target.permissions.every((key) => can(authority, key));
+  if (!eraseTargetById(id)) return false;
+  return eraseTargetPermissions(id).every((key) => can(authority, key));
 }
 
 /**
@@ -116,8 +119,7 @@ export function mayEraseTarget(authority: Authority, id: EraseTargetId): boolean
  */
 export function assertMayErase(authority: Authority, ids: readonly EraseTargetId[]): void {
   for (const id of ids) {
-    const target = eraseTargetById(id);
-    if (target) assertPermissions(authority, target.permissions);
+    if (eraseTargetById(id)) assertPermissions(authority, eraseTargetPermissions(id));
   }
 }
 
@@ -125,10 +127,12 @@ export function assertMayErase(authority: Authority, ids: readonly EraseTargetId
  * Refuse the factory reset unless `authority` holds every permission the catalog names
  * (issue #519).
  *
- * `hardResetLocalData` itself stays ungated on purpose. It is also the rescue screen's last
- * resort, reached when the database will not open and no authority can be resolved at all —
- * gating it there would turn an unbootable device into a bricked one. So the check sits at the
- * one call site that *does* have a session: the Danger Zone.
+ * `hardResetLocalData` itself stays ungated on purpose: it is also the rescue screen's last
+ * resort, and on the boot-failure route there is no readable database to resolve an authority
+ * from, so gating it there would turn an unbootable device into a bricked one. The check
+ * therefore sits at the one call site that is always inside a working app — the Danger Zone.
+ * That leaves the rescue screen as a way round it for anyone who can reach Safe Mode, which is
+ * the documented shape of this boundary rather than a gap in it (`db/repositories/base.ts`).
  */
 export function assertMayEraseEverything(authority: Authority): void {
   assertPermissions(authority, ERASE_EVERYTHING_PERMISSIONS);

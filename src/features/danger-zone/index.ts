@@ -9,13 +9,13 @@ export {
   ERASE_SECTIONS,
   ERASE_TARGETS,
   eraseTargetById,
+  eraseTargetPermissions,
   type EraseSection,
   type EraseTarget,
   type EraseTargetId,
 } from './erase-targets';
 
 export {
-  assertMayErase,
   assertMayEraseEverything,
   browserErasePorts,
   countTargets,

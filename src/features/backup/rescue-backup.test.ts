@@ -189,12 +189,12 @@ describe('createBackup is inside the permission boundary (issue #519)', () => {
     expect(downloadBlob).not.toHaveBeenCalled();
   });
 
-  it('still hands the crash screen its rescue backup, which runs with no session at all', async () => {
+  it('still hands the crash screen its rescue backup, whatever the signed-in role allows', async () => {
     mockGetDriver.mockReturnValue(fakeDriver({ items }));
     signInWithoutBackupRead();
 
-    // The rescue path is the exemption: refusing it would only cost an already-broken device
-    // the one artefact that can bring its data back.
+    // The rescue path is the exemption, and it does not consult the session at all: refusing it
+    // would only cost an already-broken device the one artefact that can bring its data back.
     await expect(createRescueBackup()).resolves.toBeDefined();
     expect(downloadBlob).toHaveBeenCalledOnce();
   });

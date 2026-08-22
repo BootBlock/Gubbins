@@ -31,7 +31,10 @@
  * #519). The check belongs beside the definition of what a target destroys, not in the dialog:
  * these statements go straight to the driver, so the repository guard that refuses a Viewer one
  * item never sees them, and without a key here the most destructive screen in the app would be
- * the one the permission model does not cover.
+ * the one the permission model does not cover. What a target *requires* is derived rather than
+ * written down — {@link eraseTargetPermissions} folds in every target it `includes`, because a
+ * cascade destroys those rows just as surely as ticking them would, and each of those targets
+ * already says what its own rows are worth.
  */
 import type { SqlStatement } from '@/db/rpc/driver';
 import { eraseGroupKeys, type LocalEraseGroupId } from '@/lib/storage-keys';
@@ -85,20 +88,20 @@ export interface EraseTarget {
   readonly section: EraseSection;
   readonly label: string;
   /**
-   * Every permission the session must hold before this target may be erased (issue #519).
-   * The executor refuses the whole run unless every one of them is held for each selected target,
-   * so a Viewer who is refused `items:delete` on one item is refused the catalogue too.
+   * The permissions this target needs **in its own right** (issue #519). What is actually
+   * required is this list plus the same list for every target in {@link EraseTarget.includes} —
+   * see {@link eraseTargetPermissions}, which is what the executor and the UI both ask.
    *
    * **Which key a target names.** The Danger Zone destroys wholesale, so a target names the
    * *delete-strength* key of the subject it is presented as erasing — `items:delete`, not
    * `items:write`, because the roles that stop at `write` (Stocker) are defined as the ones
-   * that cannot delete. Where a subject has no `delete` action (`checkouts`, `stock`) its
-   * `write` key is the strongest thing there is, so that is what the target names. Cascades
-   * follow the convention the repositories already use — deleting an item takes its checkouts
-   * with it under `items:delete` alone — rather than inventing a stricter composite. The two
-   * exceptions name more than one key because they delete rows belonging to a subject they are
-   * not named for, and which no per-record delete of that subject would cascade: `categories`
-   * and `field-dictionary` both clear stored custom-field values outright.
+   * that cannot delete. Where a subject has no `delete` action its `write` key is the strongest
+   * thing there is, so that is what the target names: `checkouts:write` for the checkout ledger.
+   * That is a limit of the registry rather than a judgement about the data — the subject has no
+   * delete key to ask for — and it does mean a role holding `checkouts:write` can clear the whole
+   * ledger. The two targets naming more than one key delete rows belonging to a subject they are
+   * not named for: `categories` and `field-dictionary` both clear stored custom-field values
+   * outright.
    *
    * Local-scope targets are gated on `settings:write`, except where a more specific capability
    * owns the value (`sync:write` for the sync links and the cloud sign-in, `bridge:write` for
@@ -754,12 +757,55 @@ export function eraseTargetById(id: EraseTargetId): EraseTarget | undefined {
 }
 
 /**
- * What the factory reset ("Erase everything") demands: every permission the catalog names,
- * because it destroys everything the catalog covers and then some (issue #519).
+ * Everything `id` actually destroys, as permission keys: its own {@link EraseTarget.permissions}
+ * plus those of every target it {@link EraseTarget.includes}, transitively (issue #519).
  *
- * Derived rather than enumerated so a target added later cannot leave the strongest action in
- * the app asking for less than the individual one beside it.
+ * Selecting "All items" cascades the activity history, checkouts, maintenance schedules and
+ * supplier parts away with the items. Each of those is a target in its own right with its own
+ * key — `audit:delete` for the ledger, and the registry is explicit that clearing an audit trail
+ * does not ride on an item permission — so asking only for `items:delete` would let one key
+ * destroy what a sibling entry gates separately. Deriving the answer from `includes` keeps the
+ * two consistent without a second hand-written list to fall out of step.
+ */
+export function eraseTargetPermissions(id: EraseTargetId): readonly PermissionKey[] {
+  const keys = new Set<PermissionKey>();
+  const seen = new Set<EraseTargetId>();
+  const visit = (targetId: EraseTargetId): void => {
+    if (seen.has(targetId)) return;
+    seen.add(targetId);
+    const target = eraseTargetById(targetId);
+    if (!target) return;
+    for (const key of target.permissions) keys.add(key);
+    for (const included of target.includes ?? []) visit(included);
+  };
+  visit(id);
+  return [...keys];
+}
+
+/**
+ * The subjects the factory reset destroys that no *target* covers, so no union over the catalog
+ * would ever find them (issue #519).
+ *
+ * "Erase everything" is `hardResetLocalData`: it deletes the whole database file, not a set of
+ * tables. That takes `users` and `roles` with it, and the next boot comes up unrestricted — so a
+ * role documented as unable to manage users could otherwise reset away the accounts that bound
+ * it and return as an administrator. `stock`, `bookings` and `wishlist` are here for the plainer
+ * reason that the reset destroys their rows and no catalog entry asks for them.
+ */
+const RESET_ONLY_PERMISSIONS: readonly PermissionKey[] = [
+  'users:manage',
+  'stock:write',
+  'bookings:delete',
+  'wishlist:delete',
+];
+
+/**
+ * What the factory reset ("Erase everything") demands: every permission the catalog names, plus
+ * the subjects only the reset reaches (issue #519).
+ *
+ * Derived from the catalog rather than enumerated, so a target added later cannot leave the
+ * strongest action in the app asking for less than the individual one beside it.
  */
 export const ERASE_EVERYTHING_PERMISSIONS: readonly PermissionKey[] = [
-  ...new Set(ERASE_TARGETS.flatMap((target) => target.permissions)),
+  ...new Set([...ERASE_TARGETS.flatMap((target) => target.permissions), ...RESET_ONLY_PERMISSIONS]),
 ];

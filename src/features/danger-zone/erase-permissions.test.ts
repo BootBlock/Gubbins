@@ -8,11 +8,16 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { PERMISSION_KEYS, type PermissionKey } from '@/features/users/permission-registry';
-import { VIEWER_ROLE_ID, BUILTIN_ROLES, STOCKER_ROLE_ID } from '@/features/users/builtin-roles';
+import {
+  VIEWER_ROLE_ID,
+  BUILTIN_ROLES,
+  MANAGER_ROLE_ID,
+  STOCKER_ROLE_ID,
+} from '@/features/users/builtin-roles';
 import { resolveAuthority, UNRESTRICTED_AUTHORITY, type Authority } from '@/features/users/permissions';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { DbError } from '@/db/errors';
-import { ERASE_EVERYTHING_PERMISSIONS, ERASE_TARGETS } from './erase-targets';
+import { ERASE_EVERYTHING_PERMISSIONS, ERASE_TARGETS, eraseTargetPermissions } from './erase-targets';
 import {
   assertMayErase,
   assertMayEraseEverything,
@@ -78,7 +83,31 @@ describe('the erase catalog declares what it needs', () => {
 
   it('asks the factory reset for everything the individual targets ask for', () => {
     const union = new Set<PermissionKey>(ERASE_TARGETS.flatMap((target) => target.permissions));
-    expect(new Set(ERASE_EVERYTHING_PERMISSIONS)).toEqual(union);
+    for (const key of union) expect(ERASE_EVERYTHING_PERMISSIONS).toContain(key);
+  });
+
+  it('asks the factory reset for the subjects no target covers', () => {
+    // The reset deletes the database file, accounts and roles included — so a role documented as
+    // unable to manage users must not be able to reset them away and come back unrestricted.
+    expect(ERASE_EVERYTHING_PERMISSIONS).toContain('users:manage');
+    expect(ERASE_EVERYTHING_PERMISSIONS).toContain('stock:write');
+    expect(ERASE_EVERYTHING_PERMISSIONS).toContain('bookings:delete');
+    expect(ERASE_EVERYTHING_PERMISSIONS).toContain('wishlist:delete');
+  });
+
+  it('folds an included target’s permissions into the one that cascades it away', () => {
+    // "All items" takes the activity history and the checkouts with it, and each of those is a
+    // target with a key of its own — so ticking the parent must ask for them.
+    const keys = eraseTargetPermissions('items');
+    expect(keys).toContain('items:delete');
+    expect(keys).toContain('audit:delete'); // item-history
+    expect(keys).toContain('checkouts:write'); // checkouts
+    expect(keys).toContain('maintenance:delete'); // maintenance
+    expect(keys).toContain('suppliers:delete'); // supplier-parts
+  });
+
+  it('leaves a target that includes nothing asking only for its own key', () => {
+    expect([...eraseTargetPermissions('tags')]).toEqual(['tags:delete']);
   });
 });
 
@@ -109,13 +138,24 @@ describe('eraseTargets refuses what the repositories refuse', () => {
     expect(() => assertMayErase(stocker, ['items'])).toThrow(DbError);
   });
 
+  it('refuses "All items" to a role that may delete items but not clear the activity trail', () => {
+    // The whole point of deriving from `includes`: the delete cascades `item_history` away, and
+    // the standalone Activity-history entry gates exactly that on `audit:delete`.
+    const authority: Authority = {
+      mode: 'granted',
+      grants: new Set(['items:delete', 'checkouts:write', 'maintenance:delete', 'suppliers:delete']),
+    };
+    expect(mayEraseTarget(authority, 'items')).toBe(false);
+    expect(() => assertMayErase(authority, ['items'])).toThrow(DbError);
+  });
+
   it('removes nothing at all when one target of several is refused', async () => {
-    // `items:delete` alone: enough for the first target, not for the local one beside it.
-    const authority: Authority = { mode: 'granted', grants: new Set(['items:delete']) };
+    // Enough for the first target, not for the local one beside it.
+    const authority: Authority = { mode: 'granted', grants: new Set(['tags:delete']) };
     const { ports, transaction, local } = spyPorts(authority);
 
     await expect(
-      eraseTargets(['items', 'dashboard-layout'], { tombstone: false }, ports),
+      eraseTargets(['tags', 'dashboard-layout'], { tombstone: false }, ports),
     ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
 
     expect(transaction).not.toHaveBeenCalled();
@@ -130,10 +170,10 @@ describe('eraseTargets refuses what the repositories refuse', () => {
   });
 
   it('ignores an id it has never heard of rather than refusing the ids beside it', () => {
-    const authority: Authority = { mode: 'granted', grants: new Set(['items:delete']) };
+    const authority: Authority = { mode: 'granted', grants: new Set(['tags:delete']) };
     // A target synced from a newer peer: nothing here can describe or erase it.
     const unknown = 'quantum-widgets' as never;
-    expect(() => assertMayErase(authority, ['items', unknown])).not.toThrow();
+    expect(() => assertMayErase(authority, ['tags', unknown])).not.toThrow();
     expect(mayEraseTarget(authority, unknown)).toBe(false);
   });
 });
@@ -142,6 +182,13 @@ describe('the factory reset asks for more than any single target', () => {
   it('refuses a role that may erase some categories but not all of them', () => {
     const authority: Authority = { mode: 'granted', grants: new Set(['items:delete']) };
     expect(() => assertMayEraseEverything(authority)).toThrow(DbError);
+  });
+
+  it('refuses a Manager, who holds every category key but may not manage users', () => {
+    // Manager is defined as "everything except account administration". The reset deletes the
+    // accounts table, so letting it through would hand back an unrestricted device.
+    const manager = builtinAuthority(MANAGER_ROLE_ID);
+    expect(() => assertMayEraseEverything(manager)).toThrow(DbError);
   });
 
   it('permits an unrestricted session', () => {

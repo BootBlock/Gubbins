@@ -57,16 +57,27 @@ everything at once are held to the same role:
 - The [[danger zone|Danger-Zone-Erasing-Data]] entries are held to the **Delete** permission for
   the area each one erases — *All items* to **Items → Delete**, *Tags* to **Tags → Delete**, and so
   on. Areas with no Delete action use **Change** instead, because that is the strongest permission
-  they have. The **App & this device** entries are held to **Settings → Change**, except the two
-  with an area of their own: sync links and cloud sign-in need **Sync → Change**, and the bridge
-  token needs **Bridge → Change**.
-- **Erase everything** — the factory reset — needs *all* of those at once, because it removes
-  everything they cover.
+  they have. The **App & this device** entries are held to **Settings → Change**, except those with
+  an area of their own: sync links and cloud sign-in need **Sync → Change**, and the bridge token
+  needs **Bridge → Change**.
+- An entry that takes other records with it needs *their* permission too. *All items* removes each
+  item's activity history, checkouts, maintenance schedules and supplier parts, so it needs
+  **Activity history → Delete**, **Loans → Change**, **Maintenance → Delete** and **Suppliers →
+  Delete** as well as **Items → Delete** — the same permissions the entries for those records ask
+  for on their own.
+- **Erase everything** — the factory reset — needs *all* of those at once, plus **Users and
+  roles → Manage**, because it deletes the whole database, accounts and roles included.
 - Creating a [[backup|Backup-and-Restore]] needs **Backups → View**: a backup file contains the
-  whole database. Restoring one needs **Backups → Change**, in either Merge or Replace mode.
+  whole database. Restoring one needs **Backups → Change**. **Replace** needs both, because it
+  saves a restore point of your current data first, and that restore point is itself a backup.
 
 Entries and buttons someone's role doesn't allow aren't shown to them at all, so nothing is offered
 that would only be refused.
+
+> **⚠️ Heads-up**
+> **Backups → Change** is a powerful permission. A restore rewrites every synced record from the
+> file, and accounts and roles are synced records — so someone who can restore can, with a
+> hand-edited backup, change what any account is allowed to do. Grant it on that understanding.
 
 > **ℹ️ Note**
 > Someone who is refused **Items → Delete** on a single item is refused *All items* in the danger
