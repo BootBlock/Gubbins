@@ -15,6 +15,7 @@
  * Kept free of React and the DOM for instant unit-test execution.
  */
 import { z } from 'zod';
+import { TEXT_LIMITS, withinTextLimit } from '@/lib/text-limits';
 import { parseCsv } from '@/features/import/tabular';
 import { parseAmountCell, leadingIntegerCount } from '@/features/import/columns';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
@@ -352,12 +353,42 @@ const trackingModeSchema = z.enum(TRACKING_MODES).optional();
 const conditionSchema = z.enum(CONDITIONS).optional().nullable();
 
 const catalogRowSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required.').optional(),
-  description: z.string().trim().optional().nullable(),
-  notes: z.string().trim().optional().nullable(),
-  sku: z.string().trim().optional().nullable(),
-  barcode: z.string().trim().optional().nullable(),
-  serialNumber: z.string().trim().optional().nullable(),
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Name is required.')
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional(),
+  description: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.note), 'That entry is too long.')
+    .optional()
+    .nullable(),
+  notes: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.note), 'That entry is too long.')
+    .optional()
+    .nullable(),
+  sku: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional()
+    .nullable(),
+  barcode: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional()
+    .nullable(),
+  serialNumber: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional()
+    .nullable(),
   quantity: z
     .number()
     .int('Quantity must be a whole number.')
@@ -370,7 +401,12 @@ const catalogRowSchema = z.object({
   // tracking mode carries none of it; the per-mode rules (a gauge row needs a unit and a
   // capacity above zero; a non-gauge row must carry neither) are enforced in the plan builder,
   // where the row's resolved tracking mode is known.
-  unitOfMeasure: z.string().trim().optional().nullable(),
+  unitOfMeasure: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional()
+    .nullable(),
   grossCapacity: z.number().min(0, 'Gross capacity cannot be negative.').optional().nullable(),
   tareWeight: z.number().min(0, 'Tare weight cannot be negative.').optional().nullable(),
   currentNetValue: z.number().min(0, 'Net remaining cannot be negative.').optional().nullable(),
@@ -379,8 +415,18 @@ const catalogRowSchema = z.object({
     .min(0, 'Cost per unit of measure cannot be negative.')
     .optional()
     .nullable(),
-  mpn: z.string().trim().optional().nullable(),
-  manufacturer: z.string().trim().optional().nullable(),
+  mpn: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional()
+    .nullable(),
+  manufacturer: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional()
+    .nullable(),
   unitCost: z.number().min(0, 'Unit cost cannot be negative.').optional().nullable(),
   // Intrinsic weight in canonical grams (issue #25).
   weight: z.number().min(0, 'Weight cannot be negative.').optional().nullable(),
@@ -388,8 +434,18 @@ const catalogRowSchema = z.object({
   width: z.number().min(0, 'Width cannot be negative.').optional().nullable(),
   height: z.number().min(0, 'Height cannot be negative.').optional().nullable(),
   depth: z.number().min(0, 'Depth cannot be negative.').optional().nullable(),
-  batchNumber: z.string().trim().optional().nullable(),
-  lotNumber: z.string().trim().optional().nullable(),
+  batchNumber: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional()
+    .nullable(),
+  lotNumber: z
+    .string()
+    .trim()
+    .refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')
+    .optional()
+    .nullable(),
   // Already parsed from a `YYYY-MM-DD` cell to a midnight-UTC instant by {@link coerceRow};
   // an unreadable cell never reaches here (it is reported as an unreadable-cell row error).
   expiryDate: z.number().int().optional().nullable(),
@@ -412,7 +468,7 @@ const catalogRowSchema = z.object({
   // the file maps no tag column, so an existing item keeps whatever tags it has; an empty array
   // = a mapped-but-blank cell, which replaces the set with nothing (the same "blank clears it"
   // rule every other free-text column follows).
-  tags: z.array(z.string()).optional(),
+  tags: z.array(z.string().refine(withinTextLimit(TEXT_LIMITS.line), 'That entry is too long.')).optional(),
 });
 
 type CatalogRowData = z.infer<typeof catalogRowSchema>;

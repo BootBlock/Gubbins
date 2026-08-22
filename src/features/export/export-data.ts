@@ -14,6 +14,7 @@ import type {
   LocationWithCount,
 } from '@/db/repositories';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
+import { truncateByCodePoints } from '@/lib/text-limits';
 import { toDateInputValue } from '@/lib/date-input';
 import { isoTimestamp } from './export-every-page';
 import {
@@ -687,16 +688,27 @@ function escapeCell(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
+/** How long one file/folder name segment may be, in characters. */
+const MAX_SEGMENT_LENGTH = 80;
+
 /**
  * Make a string safe as a single file/folder name segment.
+ *
+ * The length cut goes through {@link truncateByCodePoints} rather than `slice`, because a name
+ * here keeps its non-ASCII characters (unlike the download-name suffix in `run-export.ts`,
+ * which replaces everything outside `[A-Za-z0-9_-]` before it cuts). A UTF-16 `slice` at
+ * character eighty lands between the two halves of a surrogate pair whenever an emoji or an
+ * astral-plane CJK character straddles the boundary, and the segment then carries a **lone
+ * surrogate**: not a character any filesystem can name, and U+FFFD once it round-trips through
+ * JSON. Cutting on code points puts the boundary between whole characters instead (issue #346).
  *
  * @internal Exported for unit tests only.
  */
 export function sanitiseSegment(value: string): string {
-  return value
+  const cleaned = value
     .replace(/[\\/:*?"<>|]/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/^\.+/, '')
-    .slice(0, 80);
+    .replace(/^\.+/, '');
+  return truncateByCodePoints(cleaned, MAX_SEGMENT_LENGTH);
 }

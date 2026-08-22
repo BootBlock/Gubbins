@@ -27,6 +27,8 @@ import type {
   PageParams,
   UpdateItemInput,
 } from '../types';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from '../text-limits';
 import { clearHistoryStatements, historyStatement } from './history';
 import {
   buildSeekPredicate,
@@ -433,6 +435,7 @@ export class ItemCoreRepository extends BaseRepository {
       if (name.length === 0) {
         throw new DbError('SQLITE_CONSTRAINT', 'An item must have a name.');
       }
+      assertTextLimit(name, TEXT_LIMITS.line, 'An item name');
       if (name !== existing.name) {
         sets.push('name = ?');
         params.push(name);
@@ -470,10 +473,14 @@ export class ItemCoreRepository extends BaseRepository {
       );
     }
     if (input.description !== undefined) {
+      if (input.description !== null) {
+        assertTextLimit(input.description, TEXT_LIMITS.note, 'An item description');
+      }
       sets.push('description = ?');
       params.push(input.description);
     }
     if (input.notes !== undefined) {
+      if (input.notes !== null) assertTextLimit(input.notes, TEXT_LIMITS.note, 'Item notes');
       sets.push('notes = ?');
       params.push(input.notes);
     }
@@ -483,25 +490,25 @@ export class ItemCoreRepository extends BaseRepository {
       track('categoryId', 'category', existing.categoryId, input.categoryId);
     }
     if (input.mpn !== undefined) {
-      const mpn = normaliseText(input.mpn);
+      const mpn = normaliseText(input.mpn, TEXT_LIMITS.line, 'An MPN');
       sets.push('mpn = ?');
       params.push(mpn);
       track('mpn', 'MPN', existing.mpn, mpn);
     }
     if (input.manufacturer !== undefined) {
-      const manufacturer = normaliseText(input.manufacturer);
+      const manufacturer = normaliseText(input.manufacturer, TEXT_LIMITS.line, 'A manufacturer');
       sets.push('manufacturer = ?');
       params.push(manufacturer);
       track('manufacturer', 'manufacturer', existing.manufacturer, manufacturer);
     }
     if (input.barcode !== undefined) {
-      const barcode = normaliseText(input.barcode);
+      const barcode = normaliseText(input.barcode, TEXT_LIMITS.line, 'A barcode');
       sets.push('barcode = ?');
       params.push(barcode);
       track('barcode', 'barcode', existing.barcode, barcode);
     }
     if (input.serialNumber !== undefined) {
-      const serialNumber = normaliseText(input.serialNumber);
+      const serialNumber = normaliseText(input.serialNumber, TEXT_LIMITS.line, 'A serial number');
       sets.push('serial_number = ?');
       params.push(serialNumber);
       track('serialNumber', 'serial number', existing.serialNumber, serialNumber);
@@ -539,13 +546,13 @@ export class ItemCoreRepository extends BaseRepository {
       track('expiryDate', 'expiry date', existing.expiryDate, expiryDate);
     }
     if (input.batchNumber !== undefined) {
-      const batchNumber = normaliseText(input.batchNumber);
+      const batchNumber = normaliseText(input.batchNumber, TEXT_LIMITS.line, 'A batch number');
       sets.push('batch_number = ?');
       params.push(batchNumber);
       track('batchNumber', 'batch number', existing.batchNumber, batchNumber);
     }
     if (input.lotNumber !== undefined) {
-      const lotNumber = normaliseText(input.lotNumber);
+      const lotNumber = normaliseText(input.lotNumber, TEXT_LIMITS.line, 'A lot number');
       sets.push('lot_number = ?');
       params.push(lotNumber);
       track('lotNumber', 'lot number', existing.lotNumber, lotNumber);

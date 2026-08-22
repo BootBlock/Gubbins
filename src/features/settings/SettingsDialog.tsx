@@ -50,6 +50,7 @@ import { hasOcr } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
 import { useT, hasInterfaceTranslation } from '@/features/i18n';
+import { exceedsTextLimit } from '@/lib/text-limits';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
 import { SettingsSearchGroup, SettingsSearchResults } from './SettingsSearchResults';
@@ -1747,20 +1748,37 @@ function HueSlider({ hue, onChange }: { readonly hue: number; readonly onChange:
  * wordmark. Stored verbatim (no keystroke trimming, so a trailing space can be typed); the preview
  * and the render sites trim at the point of use. Length-capped so it can't crowd the header.
  */
+/**
+ * How long a tagline may be. A ceiling of fit rather than of storage: the tagline sits beside the
+ * app name in the chrome, and one much longer than this stops being a tagline and starts pushing
+ * the name off the row.
+ */
+const BRAND_TAGLINE_MAX_LENGTH = 48;
+
 function BrandTaglineControl() {
+  const t = useT();
   const stored = usePreferencesStore((s) => s.brandTagline);
   const setBrandTagline = usePreferencesStore((s) => s.setBrandTagline);
   const trimmed = stored.trim();
+  // The control marks itself invalid past the limit and keeps what was typed (issue #346). It
+  // sits in a settings row rather than a FormField, so there is no error slot around it — hence
+  // the message here, which is what turns a bare red outline into something actionable.
+  const tooLong = exceedsTextLimit(stored, BRAND_TAGLINE_MAX_LENGTH);
   return (
     <div className="flex w-72 max-w-full flex-col gap-1.5">
       <Input
         aria-label="Brand tagline"
         data-testid="setting-brand-tagline"
-        maxLength={48}
+        maxLength={BRAND_TAGLINE_MAX_LENGTH}
         placeholder="e.g. Acme Widgets"
         value={stored}
         onChange={(e) => setBrandTagline(e.target.value)}
       />
+      {tooLong ? (
+        <p role="alert" className="text-xs text-destructive" data-testid="brand-tagline-too-long">
+          {t('settings.brandTagline.tooLong', { vars: { limit: BRAND_TAGLINE_MAX_LENGTH } })}
+        </p>
+      ) : null}
       <p className="text-xs text-muted-foreground" data-testid="brand-tagline-preview">
         Shows as <span className="font-medium text-foreground">Gubbins{trimmed ? ` · ${trimmed}` : ''}</span>
       </p>

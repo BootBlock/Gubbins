@@ -4,13 +4,29 @@
  * repository contract rejects bad input the same way regardless of the entry point.
  */
 import { toStoredMoney } from '@/lib/money';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import { DbError } from '../../errors';
+import { assertTextLimit } from '../text-limits';
 
-/** Trim a free-text field, collapsing blank/whitespace-only input to NULL. */
-export function normaliseText(value: string | null | undefined): string | null {
+/**
+ * Trim a free-text field, collapsing blank/whitespace-only input to NULL, and refuse one that
+ * is over its length ceiling.
+ *
+ * The ceiling defaults to {@link TEXT_LIMITS.line}, which is what almost every column reached
+ * through here is: one line of typed text. Pass a tier explicitly for a column that is not —
+ * {@link TEXT_LIMITS.note} for prose, {@link TEXT_LIMITS.url} for a link — and pass `subject` so
+ * the refusal names the field rather than the shape.
+ */
+export function normaliseText(
+  value: string | null | undefined,
+  limit: number = TEXT_LIMITS.line,
+  subject = 'That entry',
+): string | null {
   if (value == null) return null;
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  if (trimmed.length === 0) return null;
+  assertTextLimit(trimmed, limit, subject);
+  return trimmed;
 }
 
 /**

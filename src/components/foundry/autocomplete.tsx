@@ -1,10 +1,12 @@
 import { forwardRef, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
 import { fieldAria } from './field-aria';
 import { filterSuggestions } from './autocomplete-filter';
 import { InfoHint } from './info-hint';
+import { TextLimitReport, useTextLimit, useTextLimitSlot } from './text-limit';
 import { useAnchoredPopover } from './use-anchored-popover';
 
 export interface AutocompleteProps {
@@ -101,6 +103,12 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
   const [open, setOpen] = useState(false);
   // -1 = "no option highlighted": the typed text stands, and Enter falls through to submit.
   const [activeIndex, setActiveIndex] = useState(-1);
+
+  // How full the box is (issue #346). `maxLength` below is a *native* cap and only ever set
+  // for a fixed-format code (a three-letter currency), so where one is declared the box cannot
+  // reach this and the report stays inert; a free-text type-ahead takes the ordinary one-line
+  // tier and reports the way every other text field does.
+  const { over } = useTextLimit<HTMLInputElement>(maxLength ?? TEXT_LIMITS.line, value);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -224,7 +232,8 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
-        aria-invalid={ariaInvalid}
+        // Never downgrades an invalidity the field around it injected.
+        aria-invalid={ariaInvalid === true || over || undefined}
         autoComplete={autoComplete}
         inputMode={inputMode}
         maxLength={maxLength}
@@ -365,29 +374,34 @@ export function AutocompleteField({
 }: AutocompleteFieldProps) {
   const reactId = useId();
   const baseId = id ?? reactId;
-  const { controlProps, errorId, hasError } = fieldAria(baseId, error);
+  // Same arrangement as FormField's: the combobox reports how full it is, and this draws the
+  // countdown and the over-long sentence from it. See `text-limit.ts`.
+  const { report, tooLong, remaining } = useTextLimitSlot();
+  const { controlProps, errorId, hasError } = fieldAria(baseId, error ?? tooLong);
   return (
     <div className={cn('relative', className)}>
       <label htmlFor={baseId} className={cn('mb-field-gap block text-sm font-medium', hint && 'pr-6')}>
         {label}
       </label>
-      <Autocomplete
-        ref={inputRef}
-        id={baseId}
-        value={value}
-        onChange={onChange}
-        suggestions={suggestions}
-        placeholder={placeholder}
-        disabled={disabled}
-        maxOptions={maxOptions}
-        prefiltered={prefiltered}
-        inputMode={inputMode}
-        maxLength={maxLength}
-        onCommit={onCommit}
-        aria-invalid={controlProps['aria-invalid']}
-        aria-describedby={controlProps['aria-describedby']}
-        data-testid={testId}
-      />
+      <TextLimitReport.Provider value={report}>
+        <Autocomplete
+          ref={inputRef}
+          id={baseId}
+          value={value}
+          onChange={onChange}
+          suggestions={suggestions}
+          placeholder={placeholder}
+          disabled={disabled}
+          maxOptions={maxOptions}
+          prefiltered={prefiltered}
+          inputMode={inputMode}
+          maxLength={maxLength}
+          onCommit={onCommit}
+          aria-invalid={controlProps['aria-invalid']}
+          aria-describedby={controlProps['aria-describedby']}
+          data-testid={testId}
+        />
+      </TextLimitReport.Provider>
       {hint ? (
         <span className="absolute right-0 top-0.5">
           <InfoHint content={hint} />
@@ -395,7 +409,14 @@ export function AutocompleteField({
       ) : null}
       {hasError ? (
         <span id={errorId} role="alert" className="mt-1 block text-xs text-destructive">
-          {error}
+          {error ?? tooLong}
+        </span>
+      ) : null}
+      {remaining ? (
+        // Aria-hidden for the same reason as FormField's: a count that changes with every
+        // keystroke would talk over the typing rather than help it.
+        <span aria-hidden className="mt-1 block text-right text-xs tabular-nums text-muted-foreground">
+          {remaining}
         </span>
       ) : null}
     </div>

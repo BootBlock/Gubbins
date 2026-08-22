@@ -17,6 +17,8 @@
  *   dropped by tidying up a list — it just stops naming a supplier.
  */
 import { normaliseSupplierName, supplierNameKey } from '../../lib/supplier-name';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from './text-limits';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { escapeLike } from './like';
@@ -110,6 +112,7 @@ export class SupplierRepository extends BaseRepository {
     if (key.length === 0) {
       throw new DbError('SQLITE_CONSTRAINT', 'A supplier must have a name.');
     }
+    assertTextLimit(name, TEXT_LIMITS.line, 'A supplier name');
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO suppliers (id, name, name_key, url, currency, note)

@@ -26,6 +26,7 @@ import {
   WEBHOOK_TEMPLATE_MODE_CUSTOM as CUSTOM_MODE,
   WEBHOOK_TEMPLATE_MODE_ENVELOPE as ENVELOPE_MODE,
 } from '../template-mode';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 
 const PRESET_LABEL_KEYS = {
   discord: 'webhooks.template.preset.discord',
@@ -91,6 +92,9 @@ export function WebhookTemplateEditor({ value, onChange, method }: WebhookTempla
             <span className="text-xs text-muted-foreground">{t('webhooks.template.body')}</span>
             <Textarea
               sizeKey="webhook.template"
+              // A body template is a stored payload rather than prose, so it takes the payload tier — the
+              // default note tier would report an ordinary entry as too long.
+              maxLength={TEXT_LIMITS.payload}
               rows={6}
               value={value ?? ''}
               placeholder={t('webhooks.template.placeholder')}

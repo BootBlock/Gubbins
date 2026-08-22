@@ -1,7 +1,8 @@
-import { type InputHTMLAttributes, forwardRef } from 'react';
+import { type ChangeEvent, type FocusEvent, type InputHTMLAttributes, forwardRef, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { fieldClasses } from './field-classes';
 import { NumberInput } from './number-input';
+import { defaultTextLimit, useTextLimit } from './text-limit';
 
 /**
  * Foundry form controls (spec §2.4.1). Hand-built minimal primitives feature code
@@ -21,17 +22,90 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type = 'text', calc, ...props }, ref) => {
+  ({ className, type = 'text', calc, maxLength, ...props }, ref) => {
     // Every `type="number"` box is really a calculator-enabled control (see {@link NumberInput}):
     // it needs a text field to hold operator characters, so the delegation happens here rather
     // than at each of the app's ~50 numeric call sites.
     if (type === 'number' && calc !== false) {
       return <NumberInput ref={ref} className={className} {...props} />;
     }
-    return <input ref={ref} type={type} className={cn(fieldClasses, className)} {...props} />;
+    return <TextInput ref={ref} type={type} className={className} limit={maxLength} {...props} />;
   },
 );
 Input.displayName = 'Input';
+
+/**
+ * The single-line text box behind {@link Input}, with its length limit applied (issue #346).
+ *
+ * `maxLength` arrives here as `limit` and is **not** put on the element. A native `maxLength`
+ * refuses the keystroke past the cap and silently keeps the first N characters of a longer
+ * paste, which is a rewrite of what the user handed the field, and the tail is gone with
+ * nothing on screen saying so. The field instead reports itself invalid and lets the count
+ * stand, exactly as {@link NumberInput} reports an out-of-range figure rather than settling it
+ * — see `numeric-bounds.ts` for what rewriting a value under its call site cost the last time
+ * it was tried.
+ *
+ * Every text type gets a limit whether the call site asks for one or not, from
+ * {@link defaultTextLimit}: a field is far more likely to have been written before anyone
+ * thought about a ceiling than to genuinely want none. Pass `maxLength` to tighten it (a
+ * three-letter currency code), or to widen it where the content is a payload rather than prose
+ * (a block of pasted CSV).
+ */
+interface TextInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'maxLength'> {
+  readonly limit?: number;
+}
+
+const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInput(
+  { className, type = 'text', limit, onChange, onFocus, ...props },
+  forwardedRef,
+) {
+  const resolvedLimit = limit ?? defaultTextLimit(type);
+  const { over, noteText, syncFrom } = useTextLimit<HTMLInputElement>(resolvedLimit, props.value);
+
+  // Seeds the length at mount as well as composing the caller's ref: an uncontrolled field
+  // (React Hook Form's `register()`) has its stored value written straight into the node, so
+  // there is no render in which a prop would have carried it.
+  const setRef = useCallback(
+    (node: HTMLInputElement | null) => {
+      syncFrom(node);
+      if (typeof forwardedRef === 'function') forwardedRef(node);
+      else if (forwardedRef) forwardedRef.current = node;
+    },
+    [forwardedRef, syncFrom],
+  );
+
+  const handleChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      noteText(event.currentTarget.value);
+      onChange?.(event);
+    },
+    [noteText, onChange],
+  );
+
+  const handleFocus = useCallback(
+    (event: FocusEvent<HTMLInputElement>) => {
+      // Covers a value written from outside while the box was unfocused — a form reset, a
+      // dialog re-opened onto a different record — which reaches the node without a change event.
+      syncFrom(event.currentTarget);
+      onFocus?.(event);
+    },
+    [onFocus, syncFrom],
+  );
+
+  return (
+    <input
+      {...props}
+      ref={setRef}
+      type={type}
+      // Never downgrades an invalidity a parent {@link FormField} injected: the field is invalid
+      // if either its length or the call site's own validation says so.
+      aria-invalid={props['aria-invalid'] === true || props['aria-invalid'] === 'true' || over || undefined}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      className={cn(fieldClasses, className)}
+    />
+  );
+});
 
 /**
  * A styled checkbox — the Foundry replacement for raw `<input type="checkbox">` at call

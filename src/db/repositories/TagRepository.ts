@@ -13,6 +13,8 @@
  * dictionary itself.
  */
 import { foldName } from '@/lib/name-fold';
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from './text-limits';
 import type { SqlStatement } from '../rpc/driver';
 import { BaseRepository } from './base';
 import { escapeLike } from './like';
@@ -226,6 +228,7 @@ export class TagRepository extends BaseRepository {
     this.assertPermission('tags:write');
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new Error('A tag name cannot be empty.');
+    assertTextLimit(trimmed, TEXT_LIMITS.line, 'A tag name');
     const [existing] = await this.matchTagsByName([trimmed]);
     if (existing) return existing;
     this.assertWritable();
@@ -248,6 +251,7 @@ export class TagRepository extends BaseRepository {
     this.assertPermission('tags:write');
     const trimmed = name.trim();
     if (trimmed.length === 0) throw new Error('A tag name cannot be empty.');
+    assertTextLimit(trimmed, TEXT_LIMITS.line, 'A tag name');
     const clash = (await this.matchTagsByName([trimmed])).find((t) => t.id !== id);
     if (clash) throw new TagNameInUseError(clash.id, trimmed);
     await this.driver.execute('UPDATE tags SET name = ? WHERE id = ?;', [trimmed, id]);

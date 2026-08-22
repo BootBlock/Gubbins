@@ -5,6 +5,8 @@
  * Neither function touches the database — they only shape statements — so the create,
  * serialised-clone and variant paths can all share them without the class.
  */
+import { TEXT_LIMITS } from '@/lib/text-limits';
+import { assertTextLimit } from '../text-limits';
 import { DbError } from '../../errors';
 import type { SqlStatement } from '../../rpc/driver';
 import { UNASSIGNED_LOCATION_ID } from '../constants';
@@ -77,6 +79,13 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
   if (name.length === 0) {
     throw new DbError('SQLITE_CONSTRAINT', 'An item must have a name.');
   }
+  assertTextLimit(name, TEXT_LIMITS.line, 'An item name');
+  // Left untrimmed, unlike every other field here: prose keeps the shape the user gave it, and
+  // only its length is this function's business.
+  if (input.description != null) {
+    assertTextLimit(input.description, TEXT_LIMITS.note, 'An item description');
+  }
+  if (input.notes != null) assertTextLimit(input.notes, TEXT_LIMITS.note, 'Item notes');
 
   const trackingMode = input.trackingMode ?? 'DISCRETE';
   const locationId = input.locationId ?? UNASSIGNED_LOCATION_ID;
@@ -145,14 +154,14 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     notes: input.notes ?? null,
     locationId,
     categoryId: input.categoryId ?? null,
-    mpn: normaliseText(input.mpn),
-    manufacturer: normaliseText(input.manufacturer),
-    barcode: normaliseText(input.barcode),
-    serialNumber: normaliseText(input.serialNumber),
+    mpn: normaliseText(input.mpn, TEXT_LIMITS.line, 'An MPN'),
+    manufacturer: normaliseText(input.manufacturer, TEXT_LIMITS.line, 'A manufacturer'),
+    barcode: normaliseText(input.barcode, TEXT_LIMITS.line, 'A barcode'),
+    serialNumber: normaliseText(input.serialNumber, TEXT_LIMITS.line, 'A serial number'),
     unitCost: normaliseUnitCost(input.unitCost),
     expiryDate: normaliseExpiry(input.expiryDate),
-    batchNumber: normaliseText(input.batchNumber),
-    lotNumber: normaliseText(input.lotNumber),
+    batchNumber: normaliseText(input.batchNumber, TEXT_LIMITS.line, 'A batch number'),
+    lotNumber: normaliseText(input.lotNumber, TEXT_LIMITS.line, 'A lot number'),
     condition: input.condition ?? null,
     isUnlimited: isUnlimited ? 1 : 0,
     isFavourite: input.isFavourite === true ? 1 : 0,
