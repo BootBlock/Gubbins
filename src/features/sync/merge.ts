@@ -58,6 +58,7 @@ import {
   stockDeltaInsertStatement,
   tombstoneDeleteStatement,
   withCaptureDisabled,
+  withDeferredForeignKeys,
 } from './snapshot';
 import type { SchemaDictionary, SyncConflict, SyncSnapshot, SyncTable, TableRow, Tombstone } from './types';
 import { repairUniqueKeys } from './unique-key-repair';
@@ -460,7 +461,9 @@ async function cloneWithSalvage(
   // in the (re-unioned) ledger, so the whole batch runs capture-disabled — otherwise the salvage
   // upserts would re-capture and double-count. `buildCloneStatements` is a plain builder now, so
   // the guard wraps everything here at the transaction boundary.
-  await driver.transaction(withCaptureDisabled(statements));
+  // Issue #602: the batch also defers the foreign-key check to COMMIT — the cloned rows arrive in
+  // each table's id order, which cannot put a self-referencing parent ahead of its child.
+  await driver.transaction(withDeferredForeignKeys(withCaptureDisabled(statements)));
 }
 
 // --- statement builders ----------------------------------------------------------

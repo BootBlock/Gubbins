@@ -78,9 +78,17 @@ interface SnapshotFkRef extends FkRef {
  *   table: paging reads `locations` in id order, so a parent written behind the cursor is missed
  *   while a child written ahead of it is not. Clearing the link flattens the branch to the root
  *   rather than losing the location and everything stored in it.
+ * - `items.parent_id` — the variant link, and the exact twin of the location one above: nullable,
+ *   self-referencing, and exposed to the same mid-read miss. It was absent here while its sibling
+ *   was present (issue #602), so a variant whose base item was written behind the cursor aborted
+ *   the restore. Clearing the link leaves the variant as a standalone item rather than dropping
+ *   real inventory.
  */
 const EXTRA_REFS: Partial<Record<SyncTable, readonly SnapshotFkRef[]>> = {
-  items: [{ col: 'location_id', parent: 'locations', nullable: false, fallback: UNASSIGNED_LOCATION_ID }],
+  items: [
+    { col: 'location_id', parent: 'locations', nullable: false, fallback: UNASSIGNED_LOCATION_ID },
+    { col: 'parent_id', parent: 'items', nullable: true },
+  ],
   locations: [{ col: 'parent_id', parent: 'locations', nullable: true }],
   // The location activity record's actor (issue #691) — NOT NULL `ON DELETE SET DEFAULT`, so its
   // repair is the schema's own: re-attribute to System. `FK_REFS` cannot express that, and the
