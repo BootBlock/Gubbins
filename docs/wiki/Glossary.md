@@ -18,6 +18,8 @@ explanation.
 | **Tag** | A freeform label shared across items and locations; a thing can have many. See [[Tags, attachments & related\|Tags-Attachments-and-Related-Items]]. |
 | **Condition** | A structured grade: Mint / Good / Needs Repair / Out for Calibration. See [[Condition grading\|Condition-Grading]]. |
 | **Reorder point** | The stock level at which to buy more. See [[Reorder & shopping list\|Reorder-and-Shopping-List]]. |
+| **Reservation** | Stock claimed by a project for its build. See [[Projects & BOM\|Projects-and-BOM]]. |
+| **Available** | On-hand stock, less everything open projects have reserved. See [[Projects & BOM\|Projects-and-BOM]]. |
 | **Loan** | An item temporarily *out* with a contact. See [[Loans\|Loans-Check-Out-and-In]]. |
 | **Booking** | A future reservation of an item for a contact. See [[Bookings]]. |
 | **Contact** | A person or organisation you lend to or borrow from. See [[Contacts]]. |

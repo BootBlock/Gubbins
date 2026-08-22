@@ -529,9 +529,10 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
 
   // --- shopping list (spec §4 automated Shopping List) ---------------------------
 
-  it('lists shortfalls (required − reserved) for un-procured lines', async () => {
+  it('lists shortfalls (required − backed reservation) for un-procured lines', async () => {
     const p = await projects.create({ name: 'P' });
-    const item = await items.create({ name: 'R', unitCost: 0.1 });
+    // 30 on hand, so the whole 30-unit reservation is backed by real stock.
+    const item = await items.create({ name: 'R', unitCost: 0.1, quantity: 30 });
     const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 100 });
     await projects.setReservation(line.id, 'ACTUAL', 30);
 
@@ -544,7 +545,7 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
 
   it('omits fully-reserved and already-ordered lines from the shopping list', async () => {
     const p = await projects.create({ name: 'P' });
-    const fully = await items.create({ name: 'A' });
+    const fully = await items.create({ name: 'A', quantity: 5 });
     const ordered = await items.create({ name: 'B' });
     const lineFull = await projects.addLine(p.id, { itemId: fully.id, requiredQty: 5 });
     const lineOrdered = await projects.addLine(p.id, { itemId: ordered.id, requiredQty: 5 });
@@ -564,6 +565,124 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     const list = await projects.getShoppingList(p.id);
     expect(list).toHaveLength(1);
     expect(list[0].shortfallQty).toBe(7);
+  });
+
+  // --- reservations are claims on real stock (issue #653) -----------------------
+
+  it('does not let a reservation with no stock behind it clear the shopping list', async () => {
+    const p = await projects.create({ name: 'P' });
+    const item = await items.create({ name: 'R', quantity: 0 });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 4 });
+    await projects.setReservation(line.id, 'ACTUAL', 4);
+
+    // Reserving 4 of an item there are none of buys nothing, so all 4 still have to be bought.
+    const list = await projects.getShoppingList(p.id);
+    expect(list).toHaveLength(1);
+    expect(list[0].shortfallQty).toBe(4);
+    expect(list[0].unbackedQty).toBe(4);
+  });
+
+  it('makes an over-committed item show up short on exactly one project', async () => {
+    // The reported failure: 10 on hand, one project reserves 6 and another 9. 15 units are
+    // committed against 10, and both shopping lists used to say there was nothing to buy.
+    const item = await items.create({ name: 'Widget', quantity: 10 });
+    const first = await projects.create({ name: 'First' });
+    const second = await projects.create({ name: 'Second' });
+    const firstLine = await projects.addLine(first.id, { itemId: item.id, requiredQty: 6 });
+    const secondLine = await projects.addLine(second.id, { itemId: item.id, requiredQty: 9 });
+    await projects.setReservation(firstLine.id, 'ACTUAL', 6);
+    await projects.setReservation(secondLine.id, 'ACTUAL', 9);
+
+    // Which project wins the stock is decided by the two claims' order, and both lines are
+    // created inside the same millisecond here, so the assertion is on what must hold either
+    // way: the 5 units that do not exist are on somebody's list, and the project that won its
+    // claim in full has nothing to buy.
+    const firstList = await projects.getShoppingList(first.id);
+    const secondList = await projects.getShoppingList(second.id);
+    const entries = [...firstList, ...secondList];
+    expect(entries).toHaveLength(1);
+    expect(entries[0].shortfallQty).toBe(5);
+    expect(entries[0].unbackedQty).toBe(5);
+  });
+
+  it('serves a firm reservation before a tentative one made earlier', async () => {
+    const item = await items.create({ name: 'Widget', quantity: 4 });
+    const soft = await projects.create({ name: 'Soft' });
+    const firm = await projects.create({ name: 'Firm' });
+    const softLine = await projects.addLine(soft.id, { itemId: item.id, requiredQty: 4 });
+    const firmLine = await projects.addLine(firm.id, { itemId: item.id, requiredQty: 4 });
+    await projects.setReservation(softLine.id, 'TENTATIVE', 4);
+    await projects.setReservation(firmLine.id, 'ACTUAL', 4);
+
+    expect(await projects.getShoppingList(firm.id)).toHaveLength(0);
+    const softList = await projects.getShoppingList(soft.id);
+    expect(softList).toHaveLength(1);
+    expect(softList[0].shortfallQty).toBe(4);
+  });
+
+  it('releases a reservation once its project is no longer open', async () => {
+    const item = await items.create({ name: 'Widget', quantity: 5 });
+    const done = await projects.create({ name: 'Done' });
+    const live = await projects.create({ name: 'Live' });
+    const doneLine = await projects.addLine(done.id, { itemId: item.id, requiredQty: 5 });
+    const liveLine = await projects.addLine(live.id, { itemId: item.id, requiredQty: 5 });
+    await projects.setReservation(doneLine.id, 'ACTUAL', 5);
+    await projects.setReservation(liveLine.id, 'ACTUAL', 5);
+    expect((await items.getItemAvailability(item.id))?.overCommittedQty).toBe(5);
+
+    // An archived project has been put aside; its lines stop holding stock, so the live
+    // project's claim is backed in full and it has nothing left to buy.
+    await projects.update(done.id, { status: 'ARCHIVED' });
+    expect((await items.getItemAvailability(item.id))?.overCommittedQty).toBe(0);
+    expect(await projects.getShoppingList(live.id)).toHaveLength(0);
+  });
+
+  it('takes a closed project’s own reservation at face value on its own list', async () => {
+    const item = await items.create({ name: 'Widget', quantity: 10 });
+    const p = await projects.create({ name: 'Done' });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 10 });
+    await projects.setReservation(line.id, 'ACTUAL', 10);
+    expect(await projects.getShoppingList(p.id)).toHaveLength(0);
+
+    // Completing the project takes its claim out of the allocation — it has drawn its parts.
+    // Its own list must not then read that absence as "your reservation lost out" and tell it
+    // to re-buy a build that is already done.
+    await projects.update(p.id, { status: 'COMPLETED' });
+    expect(await projects.getShoppingList(p.id)).toHaveLength(0);
+  });
+
+  it('reports an item as over-committed, naming every project holding it', async () => {
+    const item = await items.create({ name: 'Widget', quantity: 10 });
+    const first = await projects.create({ name: 'First' });
+    const second = await projects.create({ name: 'Second' });
+    const firstLine = await projects.addLine(first.id, { itemId: item.id, requiredQty: 6 });
+    const secondLine = await projects.addLine(second.id, { itemId: item.id, requiredQty: 9 });
+    await projects.setReservation(firstLine.id, 'ACTUAL', 6);
+    await projects.setReservation(secondLine.id, 'ACTUAL', 9);
+
+    const availability = await items.getItemAvailability(item.id);
+    expect(availability?.onHandQty).toBe(10);
+    expect(availability?.reservedQty).toBe(15);
+    expect(availability?.availableQty).toBe(0);
+    expect(availability?.overCommittedQty).toBe(5);
+    expect([...(availability?.claims ?? [])].map((c) => c.projectName).sort()).toEqual(['First', 'Second']);
+    // All 10 real units are held by somebody; the 5 that do not exist are held by nobody.
+    const backed = [firstLine.id, secondLine.id].map(
+      (id) => availability?.backingByLine.get(id)?.backedQty ?? 0,
+    );
+    expect(backed[0] + backed[1]).toBe(10);
+  });
+
+  it('reports an unreserved item as fully available', async () => {
+    const item = await items.create({ name: 'Widget', quantity: 3 });
+    const availability = await items.getItemAvailability(item.id);
+    expect(availability?.availableQty).toBe(3);
+    expect(availability?.reservedQty).toBe(0);
+    expect(availability?.claims).toEqual([]);
+  });
+
+  it('has no availability to report for an id that matches no item', async () => {
+    expect(await items.getItemAvailability('nope')).toBeUndefined();
   });
 
   // --- assembly outcomes (spec §4 Composite Items & Assemblies) ------------------

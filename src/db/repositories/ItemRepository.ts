@@ -27,6 +27,7 @@ import { withRevaluations } from './item/revaluations';
 import { withRelations } from './item/relations';
 import { withTestRecords } from './item/test-records';
 import { withSectionPresence } from './item/section-presence';
+import { withAvailability } from './item/availability';
 
 export type { ItemListFilters, ItemSeek } from './item/core';
 export type { ItemSort, ItemSortField } from './item/sql';
@@ -60,7 +61,9 @@ export class ItemRepository extends withStock(
             withKits(
               withDashboardFeeds(
                 withCycleCount(
-                  withRevaluations(withRelations(withTestRecords(withSectionPresence(ItemCoreRepository)))),
+                  withRevaluations(
+                    withRelations(withTestRecords(withSectionPresence(withAvailability(ItemCoreRepository)))),
+                  ),
                 ),
               ),
             ),

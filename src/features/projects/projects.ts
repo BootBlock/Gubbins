@@ -32,7 +32,6 @@ import {
   type PickLine,
   type ProjectBomLine,
   type ProjectFilter,
-  type ProjectListParams,
   type ReservationStatus,
   type UpdateBomLineInput,
   type UpdateBudgetCategoryInput,
@@ -44,38 +43,11 @@ import { isUnknownWriteOutcome, useReportWriteFailure } from '@/features/errors'
 import { inventoryKeys } from '@/features/inventory/queries';
 import { readAllPages, type AllPages } from '@/lib/read-all-pages';
 import type { ParsedBomLine } from './bom-import';
+import { projectKeys, type ProjectBrowse } from './keys';
 import { invalidateItems } from '@/features/inventory/invalidate';
 
-/**
- * How the Projects master list is narrowed and ordered (issue #137) — the filter plus the sort,
- * with the page supplied separately. Named rather than inlined because it is both a query-key
- * fragment and the screen's own state shape.
- */
-export type ProjectBrowse = Omit<ProjectListParams, 'limit' | 'offset'>;
-
-export const projectKeys = {
-  all: ['projects'] as const,
-  list: () => [...projectKeys.all, 'list'] as const,
-  /**
-   * One page of the project list, for one filter and ordering. Nested **under**
-   * {@link projectKeys.list} so every existing `invalidateQueries({ queryKey: projectKeys.list() })`
-   * still refreshes every page, filter and count without each write having to learn about
-   * pagination — or about the master list's search box.
-   */
-  page: (offset: number, limit: number, browse: ProjectBrowse = {}) =>
-    [...projectKeys.list(), { offset, limit, ...browse }] as const,
-  count: (filter: ProjectFilter = {}) => [...projectKeys.list(), 'count', filter] as const,
-  budgetAlerts: () => [...projectKeys.all, 'budget-alerts'] as const,
-  detail: (id: string) => [...projectKeys.all, 'detail', id] as const,
-  lines: (id: string) => [...projectKeys.detail(id), 'lines'] as const,
-  costing: (id: string) => [...projectKeys.detail(id), 'costing'] as const,
-  shoppingList: (id: string) => [...projectKeys.detail(id), 'shopping-list'] as const,
-  pickList: (id: string) => [...projectKeys.detail(id), 'pick-list'] as const,
-  assemblyParts: (id: string) => [...projectKeys.detail(id), 'assembly-parts'] as const,
-  budget: (id: string) => [...projectKeys.detail(id), 'budget'] as const,
-  expenses: (id: string) => [...projectKeys.detail(id), 'expenses'] as const,
-  budgetCategories: (id: string) => [...projectKeys.detail(id), 'budget-categories'] as const,
-} as const;
+export type { ProjectBrowse } from './keys';
+export { projectKeys } from './keys';
 
 // --- reads ---------------------------------------------------------------------
 
@@ -275,7 +247,12 @@ export function useUpdateProject() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateProjectInput }) =>
       getProjectRepository().update(id, input),
-    onSettled: (_data, _err, vars) => invalidateProject(client, vars.id),
+    onSettled: (_data, _err, vars) => {
+      // Closing or reopening a project releases or reinstates every reservation it holds, so
+      // this moves other projects' shopping lists and the items' availability (issue #653).
+      invalidateItems(client);
+      return invalidateProject(client, vars.id);
+    },
   });
 }
 
@@ -425,7 +402,13 @@ export function useUpdateBomLine(projectId: string) {
   return useMutation({
     mutationFn: ({ lineId, input }: { lineId: string; input: UpdateBomLineInput }) =>
       getProjectRepository().updateLine(lineId, input),
-    onSettled: () => invalidateProject(client, projectId),
+    onSettled: () => {
+      // Re-matching a line moves its reservation from one item to another, and lowering the
+      // requirement changes what that claim is worth — both move an item's availability
+      // (issue #653), so the sweep cannot stop at this project.
+      invalidateItems(client);
+      return invalidateProject(client, projectId);
+    },
   });
 }
 
@@ -439,7 +422,12 @@ export function useRemoveBomLine(projectId: string) {
     mutationFn: (lineId: string) => getProjectRepository().removeLine(lineId),
     // Surface a rejected BOM-line removal rather than letting it fail silently (#389).
     onError: reportFailure,
-    onSettled: () => invalidateProject(client, projectId),
+    onSettled: () => {
+      // Removing a line releases whatever it reserved, freeing that stock for every other
+      // project and for the item's own availability figures (issue #653).
+      invalidateItems(client);
+      return invalidateProject(client, projectId);
+    },
   });
 }
 

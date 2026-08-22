@@ -8,7 +8,8 @@ import {
   type ProjectBomLine,
   type ReservationStatus,
 } from '@/db/repositories';
-import { useItemsRelations } from '@/features/inventory/queries';
+import { useItemsAvailability, useItemsRelations } from '@/features/inventory/queries';
+import { useT } from '@/features/i18n';
 import { missingRequirementsByLine } from '@/features/inventory/item-requirements';
 import { useRemoveBomLine, useSetProcurement, useSetReservation, useReceiveLine } from '../projects';
 import { outstandingQty } from '../receipts';
@@ -115,6 +116,11 @@ function ReceiveControl({
  * "In Transit" state is the liminal procurement space of §4; an In-Transit line can
  * be received into stock whole or in partial instalments (Phase 24).
  *
+ * A matched line also shows how much of its part is **available** — on hand, less what every
+ * open project has reserved — and flags a reservation that no stock actually backs (issue #653).
+ * Two projects can each claim the same units, and stock can be sold or lent after the claim was
+ * made, so "reserved" on its own never meant the parts were waiting.
+ *
  * Every action locks while its mutation is in flight (issue #303). Receiving is the
  * consequential one — a second click before the first receipt settles would book the
  * arriving quantity into stock twice — but the guard is applied uniformly rather than
@@ -123,6 +129,7 @@ function ReceiveControl({
  * *shown* on the row it was fired from (matched on the mutation's `variables`).
  */
 export function BomLineTable({ projectId, lines }: { projectId: string; lines: readonly ProjectBomLine[] }) {
+  const t = useT();
   const setReservation = useSetReservation(projectId);
   const setProcurement = useSetProcurement(projectId);
   const receiveLine = useReceiveLine(projectId);
@@ -136,6 +143,11 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
     [lines],
   );
   const { data: relationsByItem } = useItemsRelations(lineItemIds);
+  // How much of each matched part is actually free, and how much of this project's reservation
+  // real stock backs (issue #653). One batched read for every matched line — the same shape as
+  // the dependency check above — because a reservation is a claim on stock two projects can make
+  // at once, and a claim nobody honoured is what puts a "reserved" line back on the shopping list.
+  const { data: availabilityByItem } = useItemsAvailability(lineItemIds);
   const missingByItem = useMemo(
     () => missingRequirementsByLine(lineItemIds, relationsByItem ?? new Map()),
     [lineItemIds, relationsByItem],
@@ -174,6 +186,10 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
         <tbody>
           {lines.map((line) => {
             const missing = line.itemId ? (missingByItem.get(line.itemId) ?? []) : [];
+            // Undefined until the batched read lands, and for an unmatched line — which has no
+            // item, so nothing to be available *of*.
+            const availability = line.itemId ? availabilityByItem?.get(line.itemId) : undefined;
+            const unbackedQty = availability?.backingByLine.get(line.id)?.unbackedQty ?? 0;
             const missingNames = missing
               .map((m) => requiredNameByRelationId.get(m.relationId))
               .filter((n): n is string => n !== undefined);
@@ -211,7 +227,43 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                   </div>
                 </td>
                 <td className="px-3 py-2 tabular-nums">
-                  {line.reservedQty > 0 ? `${line.reservedQty}/${line.requiredQty}` : line.requiredQty}
+                  <div className="flex items-center gap-1.5">
+                    <span>
+                      {line.reservedQty > 0 ? `${line.reservedQty}/${line.requiredQty}` : line.requiredQty}
+                    </span>
+                    {unbackedQty > 0 ? (
+                      <Tooltip
+                        content={t('projects.bom.reservation.unbacked', {
+                          vars: { count: unbackedQty, reserved: line.reservedQty },
+                        })}
+                        triggerTabIndex={-1}
+                      >
+                        <span
+                          className="inline-flex text-destructive [&_svg]:size-4"
+                          data-testid={`bom-unbacked-reservation-${line.id}`}
+                        >
+                          {/* Meaningful, not decorative: the shortfall is announced rather than
+                              being a colour-only signal (WCAG 1.4.1). */}
+                          <WarningIcon role="img" aria-label={t('projects.bom.reservation.unbacked.label')} />
+                        </span>
+                      </Tooltip>
+                    ) : null}
+                  </div>
+                  {availability !== undefined && !availability.isUnlimited ? (
+                    <Tooltip
+                      content={t('projects.bom.stock.availableTooltip', {
+                        vars: { onHand: availability.onHandQty, reserved: availability.reservedQty },
+                      })}
+                      triggerTabIndex={-1}
+                    >
+                      <span
+                        className="text-xs text-muted-foreground"
+                        data-testid={`bom-available-${line.id}`}
+                      >
+                        {t('projects.bom.stock.available', { vars: { count: availability.availableQty } })}
+                      </span>
+                    </Tooltip>
+                  ) : null}
                   {line.receivedQty > 0 ? (
                     <div className="text-xs text-success" data-testid={`received-progress-${line.id}`}>
                       {line.receivedQty}/{line.requiredQty} received

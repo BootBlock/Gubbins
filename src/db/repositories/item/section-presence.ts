@@ -15,6 +15,7 @@
  * what the caller holds — the expiry and batch columns on the item row, the lot rows the stock
  * breakdown has loaded — so spending a subquery on those would be waste.
  */
+import { OPEN_PROJECT_STATUSES } from '../reservations';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -27,6 +28,7 @@ interface SectionPresenceRow {
   readonly has_capabilities: number;
   readonly has_custom_fields: number;
   readonly has_placements: number;
+  readonly has_reservations: number;
 }
 
 /**
@@ -54,6 +56,11 @@ export interface ItemSectionPresence {
   readonly customFields: boolean;
   /** Any location-region placement. */
   readonly placements: boolean;
+  /**
+   * Any live project reservation against this item — a BOM line on a still-open project
+   * holding at least one unit (issue #653). What the item's Reservations section shows.
+   */
+  readonly reservations: boolean;
 }
 
 /** Nothing anywhere — the answer for an item whose category hides nothing. */
@@ -65,6 +72,7 @@ export const NO_SECTION_PRESENCE: ItemSectionPresence = {
   capabilities: false,
   customFields: false,
   placements: false,
+  reservations: false,
 };
 
 export function withSectionPresence<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
@@ -72,7 +80,7 @@ export function withSectionPresence<TBase extends Constructor<ItemCoreRepository
     /**
      * Which table-backed sections hold data for `itemId`.
      *
-     * One row, seven `EXISTS` subqueries, every one of them against an indexed `item_id`.
+     * One row, eight `EXISTS` subqueries, every one of them against an indexed `item_id`.
      * `EXISTS` stops at the first hit rather than counting, so this stays flat as an item
      * accumulates history.
      *
@@ -89,7 +97,15 @@ export function withSectionPresence<TBase extends Constructor<ItemCoreRepository
            EXISTS(SELECT 1 FROM item_attachments      WHERE item_id = ?1)              AS has_attachments,
            EXISTS(SELECT 1 FROM capabilities          WHERE item_id = ?1)              AS has_capabilities,
            EXISTS(SELECT 1 FROM item_field_values     WHERE item_id = ?1)              AS has_custom_fields,
-           EXISTS(SELECT 1 FROM item_regions          WHERE item_id = ?1)              AS has_placements;`,
+           EXISTS(SELECT 1 FROM item_regions          WHERE item_id = ?1)              AS has_placements,
+           EXISTS(
+             SELECT 1 FROM project_bom_lines l
+             JOIN projects p ON p.id = l.project_id
+             WHERE l.item_id = ?1
+               AND l.reservation_status <> 'NONE'
+               AND l.reserved_qty > 0
+               AND p.status IN (${OPEN_PROJECT_STATUSES.map((s) => `'${s}'`).join(', ')})
+           )                                                                            AS has_reservations;`,
         [itemId],
       );
       const row = rows[0];
@@ -102,6 +118,7 @@ export function withSectionPresence<TBase extends Constructor<ItemCoreRepository
         capabilities: row.has_capabilities === 1,
         customFields: row.has_custom_fields === 1,
         placements: row.has_placements === 1,
+        reservations: row.has_reservations === 1,
       };
     }
   };
