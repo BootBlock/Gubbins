@@ -9,9 +9,10 @@
  *
  * The report is a read-only projection over data already stored. Valuation reuses the same
  * shared {@link stockValue} seam as the "Inventory value" headline — a manual `current_value`
- * wins, else the "effective unit cost" precedence (manual cost, else preferred supplier cost,
- * else unpriced → 0), and a gauge is valued from its contents and its cost per unit of measure
- * (issue #683) — so the two figures value the same stock identically (issue #397).
+ * wins, else the "effective unit cost" precedence (manual cost, else preferred supplier cost),
+ * else the depreciated purchase price (issue #688), else unpriced → 0; and a gauge is valued from
+ * its contents and its cost per unit of measure (issue #683) — so the two figures value the same
+ * stock identically (issue #397).
  */
 import { MS_PER_DAY } from '@/db/repositories/constants';
 import { utcDayToLocalDay } from '@/lib/calendar-days';
@@ -167,9 +168,11 @@ function makeBuckets(bounds: readonly number[]): {
  * with it, else creation), and its age is
  * `Math.max(0, Math.floor((now − reference) / MS_PER_DAY))` so a future reference clamps to
  * age 0. Only items with `quantity > 0` are counted (nothing on hand = nothing to age);
- * each contributes `Math.max(0, quantity) * effectiveUnitValue(currentValuePerUnit, effectiveUnitCost(item))`
- * to its bucket's value — a manual current value wins over the cost, exactly as the "Inventory
- * value" headline values the same stock, so the two figures never disagree (issue #397).
+ * each contributes `Math.max(0, quantity) * valuedUnitValue(item)` to its bucket's value — a manual
+ * current value wins over the cost, exactly as the "Inventory value" headline values the same
+ * stock, so the two figures never disagree (issue #397). Deliberately the *valuation* seam and not
+ * the bare `effectiveUnitCost` the consumption reports read: aging asks what the stock sitting
+ * there is worth, so a depreciating asset counts at its book value (issue #688).
  *
  * Buckets derive from `bounds` (inclusive upper bounds, default `[30, 90, 180]` → ranges
  * `0–30`, `31–90`, `91–180`, `180+`); N bounds yield N+1 buckets. An item lands in the first

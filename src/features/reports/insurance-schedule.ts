@@ -13,7 +13,9 @@
  * so a document handed to an insurer and the totals on screen can never disagree: a manual
  * {@link ScheduleItemInput.currentValuePerUnit} wins over the replacement cost (G9, so an
  * appreciating asset is scheduled at today's worth), else the manual cost, else the preferred
- * supplier cost, else 0. A CONSUMABLE_GAUGE asset is valued from its contents and its cost per
+ * supplier cost, else the depreciated purchase price (issue #688, so an old tool priced only by
+ * what it cost years ago is scheduled at its book value rather than left at nothing), else 0.
+ * A CONSUMABLE_GAUGE asset is valued from its contents and its cost per
  * unit of measure instead (issue #683) — it holds a measure rather than units, so the counted
  * product would schedule a full cylinder at zero however carefully it was priced.
  *

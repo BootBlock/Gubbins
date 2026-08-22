@@ -14,9 +14,10 @@
  * Location grouping, hierarchy ordering and the trailing "Unassigned" bucket are shared with
  * the insurance schedule via {@link flattenLocationHierarchy}, so the two documents order
  * rooms identically. Per-unit cost flows through the same {@link valuedUnitValue} seam as every
- * other valuation (a manual cost wins, else the preferred supplier cost — or, for a gauge, its
- * cost per unit of measure, since it holds a measure rather than countable units); an item with
- * none of those is *unpriced* — its cost and line value read as "—" rather than a misleading £0.
+ * other valuation (a manual cost wins, else the preferred supplier cost, else the depreciated
+ * purchase price — or, for a gauge, its cost per unit of measure, since it holds a measure rather
+ * than countable units); an item with none of those is *unpriced* — its cost and line value read
+ * as "—" rather than a misleading £0.
  */
 import { valuedAmount, valuedUnitValue, type ValuedStock } from './reports';
 import {
@@ -401,7 +402,11 @@ export interface CatalogueLine {
   readonly mpn: string | null;
   readonly manufacturer: string | null;
   readonly supplier: string | null;
-  /** Effective unit cost (manual → preferred supplier), or null when the item is unpriced. */
+  /**
+   * The per-unit value `valuedUnitValue` resolved — a manual current value, else a manual unit
+   * cost, else the preferred supplier price, else the depreciated purchase price (issue #688); for
+   * a gauge, its cost per unit of measure. Null when {@link isPriced} finds no source at all.
+   */
   readonly unitCost: number | null;
   /** `quantity × unitCost`, or null when the item is unpriced. */
   readonly lineValue: number | null;

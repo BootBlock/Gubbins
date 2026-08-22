@@ -1157,11 +1157,14 @@ behaviour that does not exist.
    now live in one shared module (`db/repositories/supplier-cost-sql.ts`) that both the reports and
    the sale path import, so a foreign price is declined on a sale exactly as it is in valuation.
 6. **Straight-line depreciation is orphaned, and the documentation says otherwise** ([#688](https://github.com/BootBlock/Gubbins/issues/688)). ✅ **Fixed** — the
-   depreciated purchase price is now the **last** fallback in the cost precedence, below a manual
-   unit cost and the preferred supplier price, so an asset priced only by what it cost and how long
-   it lasts is valued at its book value rather than at nothing. The rule is stated in both halves of
-   the valuation seam — the pure `effectiveUnitCost` and the SQL that lets a whole-inventory total be
-   summed by the database — and a randomised test pins the SQL formula against `currentValue()`. The
+   depreciated purchase price is now the **last** step of the *valuation* precedence, below a manual
+   current value, a manual unit cost and the preferred supplier price, so an asset priced only by
+   what it cost and how long it lasts is valued at its book value rather than at nothing. The rule is
+   stated in both halves of the valuation seam — the pure `valuedUnitValue` and the SQL that lets a
+   whole-inventory total be summed by the database — and a randomised test pins the SQL formula
+   against `currentValue()`. It stops at valuation: turnover's cost of goods, ABC's consumption value
+   and dead stock's tied-up capital keep reading the bare cost seam, because a write-down refunds
+   none of what stock cost, and a test pins that they still differ. The
    four wiki pages, the item editor's hint and the bridge schema now describe the real precedence,
    and the wiki's phantom "salvage floor" is gone. As found: `currentValue()`
    ([asset-lifecycle.ts:120](../../src/features/inventory/asset-lifecycle.ts#L120)) has one

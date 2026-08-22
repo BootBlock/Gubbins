@@ -350,7 +350,8 @@ you can see a location's worth and contents at a glance without opening the full
 
 - **Total value** — the combined value of all the stock physically held here, in your base
   currency. It uses the same valuation as [[Valuation & spend|Valuation-and-Spend]] (an item's
-  manual current value, else its cost, else its preferred supplier's price — or, for a
+  manual current value, else its cost, else its preferred supplier's price, else its purchase price
+  less [[depreciation|Warranty-and-Depreciation]] — or, for a
   [[consumable gauge|Low-Stock-and-Gauges]], what it holds × its *cost per unit of measure*), so a
   location's figure here always matches its row on that report's *value by location* breakdown.
 - **Items** — how many distinct items have stock here. A consumable holding material counts, even

@@ -887,6 +887,46 @@ describe('ReportRepository', () => {
       expect((await reports.inventoryValue(now)).totalValue).toBe(900);
     });
 
+    // The fallback is deliberately a *valuation* rule and stops there. Dead stock reports the
+    // capital tied up in stock that is not moving — what it cost to acquire, which writing the
+    // asset down over its life refunds none of; turnover's cost of goods and ABC's annual
+    // consumption value are the same kind of figure. Letting a residual book value into any of
+    // the three would be the same category error as letting one price a purchase-order line.
+    it('is not used by the cost figures — dead stock, turnover and ABC (issue #688)', async () => {
+      const { acquiredAt, now } = acquiredAndNow(12);
+      const asset = { unitCost: null, purchasePrice: 1200, depreciationMonths: 24, acquiredAt } as const;
+      // Two assets, because the three reports need opposite ledgers: dead stock wants one that has
+      // NOT moved inside the window, turnover and ABC one that has. A single item cannot be both,
+      // and a moved one is simply not a dead-stock candidate — which would leave that assertion
+      // passing on an empty report however the cost seam behaved.
+      const idle = await items.create({ name: 'Idle bandsaw', quantity: 4, ...asset });
+      const used = await items.create({ name: 'Used bandsaw', quantity: 4, ...asset });
+      await driver.execute(
+        "UPDATE items SET created_at = ?, dead_stock_mode = 'always' WHERE id IN (?, ?);",
+        [now - 120 * MS_PER_DAY, idle.id, used.id],
+      );
+      // One unit consumed inside the window, so turnover and ABC have something to value — and so
+      // `used` is still live, leaving `idle` as the only dead-stock line.
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at) VALUES (?, ?, 'QUANTITY_CHANGE', -1, ?);`,
+        [crypto.randomUUID(), used.id, now - 10 * MS_PER_DAY],
+      );
+
+      // The idle asset IS reported — the report is not empty — and the capital it ties up reads
+      // £0, not the 4 × £600 the valuation reports show for exactly the same stock.
+      const dead = await reports.deadStock(30, now);
+      expect(dead.lines.map((l) => l.name)).toEqual(['Idle bandsaw']);
+      expect(dead.totalValue).toBe(0);
+
+      expect((await reports.turnover(30, now)).totalCogs).toBe(0);
+      // Both items are ranked; neither carries any consumption value to rank them by.
+      expect((await reports.abcAnalysis(30, now)).lines.map((l) => l.annualValue)).toEqual([0, 0]);
+
+      // The same two items, through the valuation seam, are worth their book value — the two
+      // answers differ on purpose, and this pins that they do.
+      expect((await reports.inventoryValue(now)).totalValue).toBe(4800);
+    });
+
     it('schedules the asset at its book value in the insurance schedule, summary and page alike', async () => {
       const { acquiredAt, now } = acquiredAndNow(12);
       const study = await locations.create({ name: 'Study' });

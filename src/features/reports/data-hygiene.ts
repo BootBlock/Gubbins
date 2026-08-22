@@ -36,7 +36,12 @@ export interface HygieneItemFlags {
   readonly hasCategory: boolean;
   /** False when the item still sits in the Unassigned holding pen. */
   readonly hasLocation: boolean;
-  /** False when the item is unpriced (no unit cost and no preferred supplier cost). */
+  /**
+   * False when nothing prices the item: no unit cost, no preferred supplier cost and no purchase
+   * price for a counted item (issue #688), or no cost per unit of measure for a gauge (#683). It
+   * must name every source valuation can price from — flagging an item the reports value would
+   * send the user to fix something that is not broken.
+   */
   readonly hasPrice: boolean;
   readonly hasPhoto: boolean;
   /** True once the item has at least one cycle-count reconciliation in its ledger. */

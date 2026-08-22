@@ -305,6 +305,10 @@ function depreciatedPurchasePriceSql(alias: string, now: number): string {
  * cannot occur — `supplier_parts.unit_cost` carries a `CHECK (… >= 0)` — and testing for it here
  * would mean evaluating the correlated lookup twice, once to test and once to use.
  *
+ * Note this is the **valuation** rule, twin of `valuedUnitValue`, not of the bare `effectiveUnitCost`
+ * cost seam — which stops at the supplier price, because the figures reading it are costs (issue
+ * #688). No query that feeds a cost figure inlines this expression.
+ *
  * It exists so the valuation aggregates can be summed **by the database** (issue #170) instead of
  * shipping one row per item to the worker and folding them in JS: a `GROUP BY` over a 100k-item
  * inventory returns the ~50 rows the screen actually shows. The rule is stated twice as a result —
@@ -331,9 +335,11 @@ function effectiveUnitValueSql(alias: string, baseCurrency: string | null, now: 
  * `current_value`, its {@link preferredSupplierCostSql} preferred-supplier fallback, and its
  * {@link depreciatedPurchasePriceSql} depreciated purchase price, aliased `unit_cost` /
  * `current_value` / `preferred_supplier_cost` / `depreciated_purchase_price`. A consumer feeds
- * exactly these four (after `fromStoredMoney`) to `effectiveUnitValue(currentValue,
- * effectiveUnitCost({ unitCost, preferredSupplierCost, depreciatedPurchasePrice }))` — the JS twin
- * of {@link effectiveUnitValueSql}.
+ * exactly these four (after `fromStoredMoney`) to `valuedUnitValue` — the JS twin of
+ * {@link effectiveUnitValueSql}. Both are *valuation* seams; a query feeding the bare
+ * `effectiveUnitCost` cost seam (ABC, turnover, dead stock) uses none of this and spells out the
+ * two columns that seam reads, deliberately without the depreciated one, because a cost figure may
+ * not quote a residual book value (issue #688).
  *
  * The depreciated price is resolved **here, in SQL**, rather than by handing the three raw asset
  * columns up for the pure seam to fold: that keeps one statement of the formula serving both the
@@ -1300,7 +1306,6 @@ export class ReportRepository extends BaseRepository {
       cost_per_unit_of_measure: number | null;
       unit_cost: number | null;
       preferred_supplier_cost: number | null;
-      depreciated_purchase_price: number | null;
       created_at: number;
       last_known_movement_at: number | null;
       location_id: string;
@@ -1315,7 +1320,6 @@ export class ReportRepository extends BaseRepository {
               i.cost_per_unit_of_measure AS cost_per_unit_of_measure,
               i.unit_cost AS unit_cost,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
-              ${depreciatedPurchasePriceSql('i', now)} AS depreciated_purchase_price,
               i.created_at AS created_at,
               i.location_id AS location_id,
               i.dead_stock_mode AS dead_stock_mode,
@@ -1352,7 +1356,6 @@ export class ReportRepository extends BaseRepository {
         // Stored in micro-units (issue #286); major units for the pure valuation seam.
         unitCost: fromStoredMoney(r.unit_cost),
         preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
-        depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
         lastKnownMovementAt: r.last_known_movement_at,
         createdAt: r.created_at,
         thresholdDays: policy.thresholdDays,
@@ -1487,14 +1490,12 @@ export class ReportRepository extends BaseRepository {
       name: string;
       unit_cost: number | null;
       preferred_supplier_cost: number | null;
-      depreciated_purchase_price: number | null;
       consumed: number;
     }>(
       // `-SUM(quantity_delta)` over the negative (stock-out) deltas is the positive consumed
       // magnitude; COALESCE keeps an item that never moved at 0 rather than NULL.
       `SELECT i.id AS id, i.name AS name, i.unit_cost AS unit_cost,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
-              ${depreciatedPurchasePriceSql('i', now)} AS depreciated_purchase_price,
               COALESCE((SELECT -SUM(h.quantity_delta) FROM item_history h
                          WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
                            AND h.quantity_delta < 0), 0) AS consumed
@@ -1508,7 +1509,6 @@ export class ReportRepository extends BaseRepository {
       // Stored in micro-units (issue #286); major units for the pure classifier.
       unitCost: fromStoredMoney(r.unit_cost),
       preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
-      depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
       consumedUnits: r.consumed,
     }));
     return classifyAbc(inputs);
@@ -1531,13 +1531,11 @@ export class ReportRepository extends BaseRepository {
       quantity: number;
       unit_cost: number | null;
       preferred_supplier_cost: number | null;
-      depreciated_purchase_price: number | null;
       consumed: number;
       net_delta: number;
     }>(
       `SELECT i.id AS id, i.name AS name, i.quantity AS quantity, i.unit_cost AS unit_cost,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
-              ${depreciatedPurchasePriceSql('i', now)} AS depreciated_purchase_price,
               COALESCE((SELECT -SUM(h.quantity_delta) FROM item_history h
                          WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
                            AND h.quantity_delta < 0), 0) AS consumed,
@@ -1555,7 +1553,6 @@ export class ReportRepository extends BaseRepository {
       // Stored in micro-units (issue #286); major units for the pure turnover seam.
       unitCost: fromStoredMoney(r.unit_cost),
       preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
-      depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
       consumedUnits: r.consumed,
       netQtyDelta: r.net_delta,
     }));
