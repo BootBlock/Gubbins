@@ -85,4 +85,28 @@ describe('applying a location tombstone re-homes stock without doubling it (issu
     expect(await stockSum(b.driver, item.id)).toBe(7);
     expect((await b.items.getById(item.id))!.quantity).toBe(7);
   });
+
+  /**
+   * A characterisation test, not a statement of the desired figure. The peer's re-homed
+   * placement wins Last-Write-Wins outright, so a quantity this device added to the same lot
+   * while the peer was offline is discarded. The truthful answer is 8; recovering it needs the
+   * re-home to be reconcilable through the stock-delta ledger, which the duplicate-delta-id
+   * problem (issue #696) still blocks. Pinned here so the trade-off cannot change unnoticed.
+   */
+  it('lets the peer’s re-homed figure win a lot this device also changed offline', async () => {
+    const shelf = await a.locations.create({ name: 'Shelf' });
+    const item = await a.items.create({ name: 'Widget', quantity: 5, locationId: shelf.id });
+
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    await b.items.adjustQuantity(item.id, 3); // B: Shelf 8
+    await a.locations.delete(shelf.id); // A: Unassigned 5
+
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+
+    expect(await stockSum(b.driver, item.id)).toBe(5);
+    expect((await b.items.getById(item.id))!.quantity).toBe(5);
+  });
 });

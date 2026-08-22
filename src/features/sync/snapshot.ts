@@ -845,14 +845,26 @@ export async function applyPlan(
   // Issue #709: this runs *before* the LWW upserts, not beside the DELETEs it serves. The peer
   // that removed the location performed this same re-home locally before it pushed, so its
   // snapshot already carries the destination placement at the full re-homed quantity. Run after
-  // the upserts, the accumulate-on-conflict clause added this device's own shelf row on top of
-  // that figure and counted the same units twice — a doubled headline count that then won the
-  // next exchange and travelled back. Ordered first, the accumulation reconstructs what the peer
-  // already knows and the peer's row simply settles it by Last-Write-Wins, exactly as any other
-  // contested row is settled. A batch the snapshot does not account for — stock this device put
-  // at the location while the peer was offline — has no incoming row to overwrite it, so it is
-  // still re-homed rather than lost. The local `LocationRepository.delete` path needs no such
-  // ordering: nothing has written the destination row ahead of it there.
+  // the upserts, the accumulate-on-conflict clause added this device's own row on top of that
+  // figure and counted the same units twice — a doubled headline count that then won the next
+  // exchange and travelled back. Ordered first, the accumulation reconstructs the state the
+  // peer's snapshot describes, and the peer's own placement row settles it by Last-Write-Wins,
+  // exactly as any other contested row is settled.
+  //
+  // What that ordering means for a destination the incoming snapshot *does* carry: the peer's
+  // figure wins outright, so a quantity this device added to the same lot while the peer was
+  // offline is discarded rather than doubled. Both numbers are wrong; the Last-Write-Wins one is
+  // at least the discipline every other contested placement follows here. Recovering the units
+  // needs the destination's re-home to be reconcilable through the §7.3 stock-delta ledger, which
+  // it is not yet — two devices removing the same location capture their re-homes under
+  // independent random delta ids, so the union counts them twice (issue #696's derived ids exist
+  // for that class of one-shot operation). A lot the snapshot carries no destination row for is
+  // untouched by the upserts, so it is still re-homed rather than lost.
+  //
+  // The local `LocationRepository.delete` path needs no such ordering. Its own check-in returns
+  // can write the same Unassigned row ahead of the re-home, but those are units genuinely coming
+  // back from a loan — distinct stock, which the re-home is right to add to. No peer's account of
+  // the same units precedes it, so its accumulate-on-conflict is correct as it stands.
   for (const del of plan.localDeletes) {
     if (del.tableName !== 'locations') continue;
     statements.push({
