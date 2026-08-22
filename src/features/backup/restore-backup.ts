@@ -31,6 +31,7 @@ import {
   buildSchemaDictionary,
   restoreSnapshot,
   withCaptureDisabled,
+  withDeferredForeignKeys,
   SYNC_TABLES,
 } from '@/features/sync/snapshot';
 import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories';
@@ -235,7 +236,11 @@ async function restoreReplace(parsed: ParsedBackup): Promise<ReplaceResult> {
   ]);
   // Issue #188: the clone re-inserts stock rows whose deltas travel in the unioned ledger, so the
   // whole batch runs capture-disabled (buildCloneStatements is now a plain, unguarded builder).
-  await driver.transaction(withCaptureDisabled(buildCloneStatements(parsed.snapshot, dictionary)));
+  // Issue #602: it also runs with the foreign-key check deferred to COMMIT, because a snapshot's
+  // rows arrive in id order and a sub-location or a variant can precede the row it points at.
+  await driver.transaction(
+    withDeferredForeignKeys(withCaptureDisabled(buildCloneStatements(parsed.snapshot, dictionary))),
+  );
   const imagesMissed = await rehydrateImages(parsed);
   return { reloadRequired: false, imagesMissed };
 }

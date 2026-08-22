@@ -77,15 +77,26 @@ quantity taken **once**. A project the BOM asked 4 screws for leaves 496 of a bo
 ### When two devices create the same thing
 
 Some things are identified by their **name** rather than by which device made them — tags,
-contacts, custom fields, item aliases, roles and user accounts. If you add a tag called *Bolts* on
-your phone while your laptop is offline, and the laptop adds its own *Bolts* too, syncing does
-**not** leave you with two identical tags: Gubbins recognises them as the same thing and merges
-them into one.
+contacts, suppliers, custom fields, item aliases, roles and user accounts. If you add a tag called
+*Bolts* on your phone while your laptop is offline, and the laptop adds its own *Bolts* too,
+syncing does **not** leave you with two identical tags: Gubbins recognises them as the same thing
+and merges them into one.
 
 Nothing is lost in the merge. The surviving tag carries **both** devices' items, a merged contact
 keeps the checkout history from either side, and a merged custom field keeps the values recorded on
 both. The same applies to a value entered twice for one field, or a specification added to the same
 item on two devices — the more recent entry is kept, by the same last-write-wins rule as above.
+
+> **ℹ️ Note**
+> [[Suppliers]] merge this way too, and they are the easiest ones to create twice
+> without noticing: typing a supplier's name on a [[supplier part|Supplier-Parts-and-Price-History]] or a
+> [[purchase order|Purchase-Orders]] creates that supplier if it does not exist yet. Do that on two
+> offline devices and each mints its own *RS Components*. Syncing folds them into one, and every
+> part, price record and purchase order from either side follows the survivor.
+>
+> Supplier names are matched more loosely than the rest: spacing and punctuation are ignored as
+> well as capitalisation, so *RS Components*, *rs components* and *RS-Components* are all one
+> supplier. That is the same rule the app applies when you type a name on a single device.
 
 > **ℹ️ Note**
 > Matching ignores capitalisation **in any language**, so *Bolts* and *bolts* are treated as one

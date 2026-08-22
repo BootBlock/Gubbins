@@ -25,6 +25,7 @@ vi.mock('@/features/sync/snapshot', () => ({
   buildSchemaDictionary: vi.fn(async () => ({})),
   buildCloneStatements: vi.fn(() => []),
   withCaptureDisabled: (statements: unknown) => statements,
+  withDeferredForeignKeys: (statements: unknown) => statements,
   SYNC_TABLES: [],
 }));
 vi.mock('@/db/repositories', () => ({

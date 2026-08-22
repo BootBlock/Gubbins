@@ -53,7 +53,7 @@ import type {
   Tombstone,
 } from './types';
 import { parkNaturalKey, repairUniqueKeys } from './unique-key-repair';
-import { UNIQUE_KEY_TABLES } from './unique-keys';
+import { deferredRetirementParkColumn, UNIQUE_KEY_TABLES } from './unique-keys';
 import { SYNC_FORMAT_VERSION } from './types';
 
 const PAGE = 100;
@@ -686,6 +686,38 @@ export function withCaptureDisabled(statements: readonly SqlStatement[]): SqlSta
 }
 
 /**
+ * Bracket a batch so SQLite checks its foreign keys once, at COMMIT, rather than after every
+ * statement (issue #602).
+ *
+ * A snapshot section is emitted in `id` order, and `SYNC_TABLES` can only order one table
+ * against another — it cannot express a table that is its own parent. `locations.parent_id` and
+ * `items.parent_id` are both self-references, so whenever a child's random UUID happens to sort
+ * before its parent's, the child row is written first and the immediate constraint aborts the
+ * whole merge or restore with a raw `FOREIGN KEY constraint failed`. The delete half has the
+ * mirror fault: deletes run child→parent by table index, which again says nothing about two rows
+ * of the same table, so a peer that removed a sub-location and its parent in one pass can present
+ * the parent's tombstone first.
+ *
+ * Deferring moves the check to the end of the transaction, where the batch is complete and both
+ * orders are consistent. It weakens nothing: a genuinely dangling reference still fails, and the
+ * transaction still rolls back wholesale — the check simply reads the state the batch was written
+ * to produce rather than a half-applied one. The same pragma guards the danger-zone erase
+ * (`features/danger-zone/erase-actions.ts`) for the same reason.
+ *
+ * Every reference in the batch moves to that one check, which is why the explicit null-outs and
+ * re-homes the location-delete path performs are as necessary as they ever were. A checkout or a
+ * maintenance schedule still pointing at a removed location no longer fails on the DELETE; it
+ * fails at COMMIT instead. Clearing the pointer is what makes the batch consistent, and nothing
+ * here replaces it.
+ *
+ * SQLite resets the pragma to OFF at the end of every transaction, so there is nothing to undo.
+ */
+export function withDeferredForeignKeys(statements: readonly SqlStatement[]): SqlStatement[] {
+  if (statements.length === 0) return [...statements];
+  return [{ sql: 'PRAGMA defer_foreign_keys = ON;' }, ...statements];
+}
+
+/**
  * A RE_PARENTED Activity-Ledger entry for a §7.5.2 sync re-parent.
  *
  * Attributed to the System user explicitly (issue #79, plan §2.4): no person asked for this
@@ -702,6 +734,13 @@ function reparentHistoryStatement(itemId: string): SqlStatement {
  * parent→child (FK-safe), then deletes child→parent (each delete also records the
  * winning tombstone locally), then the §7.3 gauge corrections, then the §7.5.2
  * re-parent conflict logs.
+ *
+ * The stock re-home a removed location needs is the exception to that order: it runs *before*
+ * the upserts, so the peer's own re-homed placement settles it by Last-Write-Wins instead of
+ * being added to (issue #709).
+ *
+ * That table-by-table order cannot cover a self-referencing table, so the whole batch also runs
+ * under {@link withDeferredForeignKeys} (issue #602).
  *
  * The storage Hard Stop for a merge is applied by `mergeSnapshot` (issue #200), not here: this
  * function runs inside the database worker (issue #173), which has no quota telemetry to consult.
@@ -729,9 +768,19 @@ export async function applyPlan(
   // contest: a `hoistOnly` entry marks a row this merge was *already* deleting, and its DELETE is
   // simply brought forward — repointing a retired user's ledger there would re-attribute a
   // deleted account's history to whoever happens to hold the username now.
+  //
+  // Issue #603: the same deferral, for a table whose cascade reaches past its direct children.
+  // Retiring a supplier up front takes its `supplier_parts` with it — and their price history,
+  // and the `purchase_order_lines.supplier_part_id` links — none of which the repointed upserts
+  // re-emit, because they reference the parts rather than the supplier. Parking the natural key
+  // and deleting after the upserts means nothing points at the loser by the time it goes, so
+  // there is no cascade to repair. Which tables defer is a `UNIQUE_KEY_SPECS` property, read
+  // through `deferredRetirementParkColumn`, so this apply and the wholesale one cannot diverge.
   const deferredUserRetirements: { loserId: string; winnerId: string }[] = [];
+  const deferredRetirements: { table: SyncTable; loserId: string }[] = [];
 
   for (const { table, loserId, winnerId, deletedAt, hoistOnly } of plan.collisions) {
+    const deferredParkColumn = hoistOnly ? undefined : deferredRetirementParkColumn(table);
     if (table === 'users' && !hoistOnly) {
       // Park the loser on a guaranteed-unique username (its own id) so the winner's INSERT
       // can take the real one. The row is deleted a few statements later, in this same
@@ -741,6 +790,9 @@ export async function applyPlan(
         params: [loserId, loserId],
       });
       deferredUserRetirements.push({ loserId, winnerId });
+    } else if (deferredParkColumn !== undefined) {
+      statements.push(parkNaturalKey(table, deferredParkColumn, loserId));
+      deferredRetirements.push({ table, loserId });
     } else {
       statements.push(tombstoneDeleteStatement(table, loserId));
     }
@@ -783,7 +835,52 @@ export async function applyPlan(
     });
   }
 
-  // UPSERTs, parents before children.
+  // Per-batch stock ledger (Phase 28 — `stock_batches` is the SSOT below `item_stock`): re-home
+  // every batch still standing at a location this merge is about to remove into the item's
+  // Unassigned placement, preserving each lot's identity, so the location's RESTRICT foreign key
+  // cannot block its tombstone DELETE below. The recompute triggers re-derive `item_stock` and
+  // then `items.quantity` at Unassigned. Mirrors the §7.5.2 item re-parent and the local
+  // `LocationRepository.delete`.
+  //
+  // Issue #709: this runs *before* the LWW upserts, not beside the DELETEs it serves. The peer
+  // that removed the location performed this same re-home locally before it pushed, so its
+  // snapshot already carries the destination placement at the full re-homed quantity. Run after
+  // the upserts, the accumulate-on-conflict clause added this device's own row on top of that
+  // figure and counted the same units twice — a doubled headline count that then won the next
+  // exchange and travelled back. Ordered first, the accumulation reconstructs the state the
+  // peer's snapshot describes, and the peer's own placement row settles it by Last-Write-Wins,
+  // exactly as any other contested row is settled.
+  //
+  // What that ordering means for a destination the incoming snapshot *does* carry: the peer's
+  // figure wins outright, so a quantity this device added to the same lot while the peer was
+  // offline is discarded rather than doubled. Both numbers are wrong; the Last-Write-Wins one is
+  // at least the discipline every other contested placement follows here. Recovering the units
+  // needs the destination's re-home to be reconcilable through the §7.3 stock-delta ledger, which
+  // it is not yet — two devices removing the same location capture their re-homes under
+  // independent random delta ids, so the union counts them twice (issue #696's derived ids exist
+  // for that class of one-shot operation). A lot the snapshot carries no destination row for is
+  // untouched by the upserts, so it is still re-homed rather than lost.
+  //
+  // The local `LocationRepository.delete` path needs no such ordering. Its own check-in returns
+  // can write the same Unassigned row ahead of the re-home, but those are units genuinely coming
+  // back from a loan — distinct stock, which the re-home is right to add to. No peer's account of
+  // the same units precedes it, so its accumulate-on-conflict is correct as it stands.
+  for (const del of plan.localDeletes) {
+    if (del.tableName !== 'locations') continue;
+    statements.push({
+      sql: `INSERT INTO stock_batches
+              (id, item_id, location_id, batch_key, batch_number, lot_number, expiry_date, quantity)
+            SELECT item_id || '|' || ? || '|' || batch_key, item_id, ?, batch_key,
+                   batch_number, lot_number, expiry_date, quantity
+            FROM stock_batches WHERE location_id = ? AND quantity > 0
+            ON CONFLICT(id) DO UPDATE SET quantity = stock_batches.quantity + excluded.quantity;`,
+      params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_ID, del.id],
+    });
+  }
+
+  // UPSERTs, parents before children. `SYNC_TABLES` orders one table against another and says
+  // nothing about two rows of the same table, so a self-referencing row (issue #602) relies on
+  // the deferred-FK bracket at the transaction boundary instead.
   const upserts = [...plan.localUpserts].sort((a, b) => tableIndex(a.table) - tableIndex(b.table));
   for (const { table, row } of upserts) {
     statements.push(upsertStatement(table, row, requireColumns(dictionary, table)));
@@ -799,6 +896,13 @@ export async function applyPlan(
       params: [winnerId, loserId],
     });
     statements.push(tombstoneDeleteStatement('users', loserId));
+  }
+
+  // Issue #603: the deferred retirements above. Every row that referenced one has just been
+  // upserted onto the winner, so the DELETE now removes a supplier nothing points at — and its
+  // parts, their price history and the order lines naming them all stay where they are.
+  for (const { table, loserId } of deferredRetirements) {
+    statements.push(tombstoneDeleteStatement(table, loserId));
   }
 
   // Phase 11: append-only ledger union-by-id. INSERT OR IGNORE so an id we already hold
@@ -890,25 +994,16 @@ export async function applyPlan(
   }
 
   // DELETEs, children before parents; each also tombstoned locally so the merged
-  // state (and the pushed snapshot) carries the deletion.
+  // state (and the pushed snapshot) carries the deletion. As with the upserts, two rows of the
+  // *same* table are unordered by this sort — a sub-location removed alongside its parent is
+  // covered by the deferred-FK bracket (issue #602), not by the table index.
   const deletes = [...plan.localDeletes].sort((a, b) => tableIndex(b.tableName) - tableIndex(a.tableName));
   for (const del of deletes) {
     if (del.tableName === 'locations') {
-      // Per-batch stock ledger (Phase 28 — `stock_batches` is the SSOT below `item_stock`):
-      // re-home every batch at a removed location into the item's Unassigned placement,
-      // preserving each lot's identity, before the location's RESTRICT foreign key can block
-      // its tombstone DELETE. The recompute triggers re-derive item_stock then items.quantity
-      // at Unassigned; the deleted location's batch and (now-empty) placement rows are then
-      // dropped. Mirrors the §7.5.2 item re-parent and the local LocationRepository.delete.
-      statements.push({
-        sql: `INSERT INTO stock_batches
-                (id, item_id, location_id, batch_key, batch_number, lot_number, expiry_date, quantity)
-              SELECT item_id || '|' || ? || '|' || batch_key, item_id, ?, batch_key,
-                     batch_number, lot_number, expiry_date, quantity
-              FROM stock_batches WHERE location_id = ? AND quantity > 0
-              ON CONFLICT(id) DO UPDATE SET quantity = stock_batches.quantity + excluded.quantity;`,
-        params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_ID, del.id],
-      });
+      // The re-home into Unassigned already ran, ahead of the upserts (issue #709 — see the
+      // block above the UPSERT loop). What is left here is dropping the deleted location's
+      // now-settled batch and placement rows, whose RESTRICT foreign keys would otherwise
+      // block the tombstone DELETE.
       statements.push({ sql: 'DELETE FROM stock_batches WHERE location_id = ?;', params: [del.id] });
       statements.push({ sql: 'DELETE FROM item_stock WHERE location_id = ?;', params: [del.id] });
       // Clear the lend-from pointer on any local checkout drawn from the removed location
@@ -991,7 +1086,9 @@ export async function applyPlan(
 
   // Issue #188: the whole merge is a sync apply, so its `stock_batches` writes must not re-capture
   // deltas (they already travel in the unioned ledger). Disable capture around the batch.
-  if (statements.length > 0) await driver.transaction(withCaptureDisabled(statements));
+  if (statements.length > 0) {
+    await driver.transaction(withDeferredForeignKeys(withCaptureDisabled(statements)));
+  }
 }
 
 /**
@@ -1005,9 +1102,14 @@ export async function applyPlan(
  * that space reclaimed — matching the delta-sync guard in {@link reconcile}. Defaults to
  * 0 (no filtering).
  *
- * Returns a **plain** statement list — capture-guarding is the caller's job (issue #188). The
- * clone re-inserts `stock_batches` rows whose deltas already travel in the ledger this list also
- * re-unions, so the caller must run the whole batch under {@link withCaptureDisabled}. The TTL
+ * Returns a **plain** statement list — capture-guarding and the deferred-FK bracket are the
+ * caller's job (issues #188, #602). The cloned rows are emitted in each table's snapshot order,
+ * which cannot put a self-referencing parent ahead of its child, so the caller must also wrap the
+ * batch in {@link withDeferredForeignKeys}.
+ *
+ * On capture: the clone re-inserts `stock_batches` rows whose deltas already travel in the ledger
+ * this list also re-unions, so the caller must run the whole batch under
+ * {@link withCaptureDisabled}. The TTL
  * clone-with-salvage path (`cloneWithSalvage`) appends its own salvage statements first, so
  * wrapping here would leave that salvage capture-enabled — the guard therefore lives at the
  * transaction boundary, not inside this builder.
@@ -1290,7 +1392,9 @@ export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSna
 
   // Issue #188: a restore re-inserts `stock_batches` rows whose deltas travel in the ledger
   // section above, so capture stays disabled around the batch to avoid double-counting.
-  await driver.transaction(withCaptureDisabled(statements));
+  // Issue #602: the backup's rows are carried in id order, so a sub-location or a variant can
+  // precede the row it points at — the foreign-key check is deferred to COMMIT for that.
+  await driver.transaction(withDeferredForeignKeys(withCaptureDisabled(statements)));
 }
 
 export { buildSchemaDictionary, SYNC_TABLES, UNASSIGNED_LOCATION_ID };

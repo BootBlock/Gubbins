@@ -168,8 +168,15 @@ precedent, and C1 improves on it.
 > invariant `quantity == Σ(deltas)` hold **by construction for every write path**, present and
 > future, including the two hard cases the table below flags (`MOVED` transfers and the
 > absolute-set paths `consolidateStockStatements` / per-batch `RECONCILED` / seeds) — a trigger
-> sees only the net effect, so it needs no per-path arithmetic and no path can be missed. The one
-> thing a trigger cannot distinguish is a *sync/backup apply* (whose `stock_batches` writes carry
+> sees only the net effect, so it needs no per-path arithmetic and no path can be missed.
+>
+> **Correction (issue #604):** the two arms did not in fact cover every write path — a row
+> *deleted* outright captured nothing, so a location delete left the units it re-homed standing as
+> an unoffset positive at the removed placement. A third arm, `trg_stock_batches_capture_del`,
+> records `−OLD.quantity` and makes the invariant true as stated. It is guarded to skip the
+> `ON DELETE CASCADE` from `items`, whose deltas cascade away with the item.
+>
+> The one thing a trigger cannot distinguish is a *sync/backup apply* (whose `stock_batches` writes carry
 > deltas that already travel in the unioned ledger) from a genuine local movement; a local-only
 > `stock_delta_capture` switch, flipped off around `applyPlan` / `buildCloneStatements` /
 > `restoreSnapshot`, closes that gap so an apply never double-counts. The per-path inventory below
@@ -307,11 +314,12 @@ kicked off with "implement S2".
   deterministic-id baseline delta per placement when it is excluded, to converge these too.
 - **A location deleted concurrently with a decrement in it can lose that decrement.** The
   location-delete re-home moves a placement's stock to Unassigned as a `+currentQuantity` capture on
-  the deleting device and a hard `DELETE` of the source rows (no compensating `−` delta — a DELETE
-  fires no capture trigger), so a concurrent decrement made on another device at that source
-  placement is stranded on the now-dead placement and the re-homed figure reflects only the
-  deleting device's view. This is inherent to a per-placement delta CRDT (a cross-placement *move*
-  racing a same-source *edit*) and matches the design's re-home model; it needs the narrow
+  the deleting device and a `−OLD.quantity` capture on the source rows it then drops (issue #604
+  added that second half; before it there was no compensating delta at all). The pair records the
+  move as the deleting device saw it, so a concurrent decrement made on another device at that
+  source placement is still stranded on the now-dead placement and the re-homed figure reflects
+  only the deleting device's view. This is inherent to a per-placement delta CRDT (a cross-placement
+  *move* racing a same-source *edit*) and matches the design's re-home model; it needs the narrow
   "delete a location while another device is drawing stock down inside it" sequence.
 - **Out of scope:** gauge items (already have their CRDT), SERIALISED presence (audited by
   is_active, not a counter), and reservations/procurement rows that touch only `project_bom_lines`

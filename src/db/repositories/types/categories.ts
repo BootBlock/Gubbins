@@ -1,7 +1,7 @@
 /**
  * Category + custom-field row/DTO types (spec §4 "Categories & Schema Evolution").
  */
-import type { Condition, FieldType, MaintenanceBasis, TrackingMode } from '../constants';
+import type { Condition, FieldType, FieldValueMode, MaintenanceBasis, TrackingMode } from '../constants';
 
 // --- Categories (Phase 2 minimal stub; schemas/custom fields are Phase 3) --------
 
@@ -504,8 +504,12 @@ export interface UpdateCategoryFieldInput {
  * - `literal` — the item stores its own value.
  * - `inherit` — the item defers to the nearest ancestor location offering an
  *   inheritable value for this definition, re-resolved on every read.
+ *
+ * Declared beside its `FIELD_VALUE_MODES` vocabulary in `../constants`, which
+ * `item_field_values.mode`'s CHECK is built from, and re-exported here so it still reads from
+ * the module that owns the row it sits on.
  */
-export type FieldValueMode = 'literal' | 'inherit';
+export type { FieldValueMode };
 
 /** Where a resolved value actually came from. Drives what the editor shows. */
 export type FieldValueSource = 'stored' | 'inherited' | 'default';

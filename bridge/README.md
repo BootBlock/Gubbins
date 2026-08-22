@@ -192,11 +192,17 @@ How the raw `.sqlite` path works (and why it is safe):
   directory and opens *that*, so it never locks or mutates your export, and any SQLite
   `-journal`/`-wal` sidecars stay in temp. The copy is deleted when the source is re-hydrated or
   the bridge stops.
-- **Migrations run, idempotently.** A raw export may be at any past schema version, so the bridge
-  runs the app's migration engine on the copy to bring it up to the current schema (materialising
-  FTS5 / triggers / derived tables if the export predates them) — exactly as the PWA does when it
-  opens the database. An export from a **newer** build than the bridge understands is refused with
-  a clear message (mirroring the JSON path's version guard).
+- **Migrations run, idempotently.** The bridge runs the app's migration engine on the copy to bring
+  an older export up to the current schema (materialising FTS5 / triggers / derived tables if the
+  export predates them) — exactly as the PWA does when it opens the database.
+- **An export the bridge cannot read is refused, not served.** Two cases: one from a **newer** build
+  than the bridge understands (mirroring the JSON path's version guard), and one built from a
+  **different revision of the pre-release baseline**. While Gubbins is pre-release, every schema
+  change is folded into the baseline rather than added as a new schema version, so the version
+  number alone cannot tell two revisions apart — the bridge compares the baseline fingerprint the
+  database itself records, exactly as the app does when it opens yours. Either way it stops with a
+  message telling you to re-export from the matching version of Gubbins, or update the bridge,
+  rather than starting up and then failing request by request.
 - **The watcher re-hydrates a `.sqlite` source by re-copying** when the file changes, with the
   same atomic swap (build the new driver to completion, swap, then discard the old copy).
 - **Writes are refused for a raw `.sqlite` source.** The opt-in [limited writes](#limited-writes-opt-in)
@@ -2468,7 +2474,7 @@ bridge/
   src/
     node-driver.ts      # node:sqlite IDatabaseDriver (:memory: or a file copy; sibling of the test memory-driver)
     hydrate.ts          # source → migrated, loaded driver (dispatches JSON vs raw .sqlite)
-    sqlite-source.ts    # raw .sqlite front-end: detect source + copy/open/migrate; write-gating
+    sqlite-source.ts    # raw .sqlite front-end: detect source + copy/open/migrate/baseline-check; write-gating
     query.ts            # read-only query core: searchItems / whereIs (transport-agnostic)
     spoken.ts           # pure spoken-answer shaper (the voice UX)
     version.ts          # the bridge's reported build — read from the repo-root package.json, never hand-maintained

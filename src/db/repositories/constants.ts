@@ -627,6 +627,42 @@ export const WEBHOOK_METHODS = ['POST', 'GET', 'PUT', 'PATCH'] as const;
 export type WebhookMethod = (typeof WEBHOOK_METHODS)[number];
 
 /**
+ * The five persisted purchase-order statuses (issue #605), in lifecycle order.
+ *
+ * Only `DRAFT` and `CANCELLED` are user-set authoritative states; the middle three are a
+ * derived snapshot of received-vs-ordered recomputed by `po-status.ts` and written back so a
+ * peer reading the row sees the same state without re-deriving it.
+ *
+ * Lives here, rather than as a bare union beside `PurchaseOrderRow`, because
+ * `purchase_orders.status` carries a hard DB CHECK: with nothing to interpolate, the DDL
+ * restated the list by hand, so widening the union type-checked cleanly and then aborted the
+ * first write that persisted the new value.
+ */
+export const PURCHASE_ORDER_STATUSES = ['DRAFT', 'ORDERED', 'PARTIAL', 'RECEIVED', 'CANCELLED'] as const;
+export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
+
+/**
+ * How a recorded supplier-part price point came to be (issue #605) — a manual edit or a
+ * supplier scrape. A hard DB CHECK on `supplier_part_price_history.source`, derived from here
+ * for the reason given on {@link PURCHASE_ORDER_STATUSES}.
+ */
+export const PRICE_HISTORY_SOURCES = ['MANUAL', 'SCRAPE'] as const;
+export type PriceHistorySource = (typeof PRICE_HISTORY_SOURCES)[number];
+
+/**
+ * How an item's custom-field value is held (issue #605): `literal` — the value stored on the
+ * row — or `inherit`, which defers to the location ancestry's offer and therefore stores no
+ * value of its own.
+ *
+ * A hard DB CHECK on `item_field_values.mode`, derived from here for the reason given on
+ * {@link PURCHASE_ORDER_STATUSES}. Note the column carries a *second*, coupled CHECK —
+ * `mode <> 'inherit' OR value IS NULL` — so a third mode is not a one-line addition: it needs
+ * a decision about whether it, too, must leave `value` NULL.
+ */
+export const FIELD_VALUE_MODES = ['literal', 'inherit'] as const;
+export type FieldValueMode = (typeof FIELD_VALUE_MODES)[number];
+
+/**
  * Fixed, well-known identifier for the seeded **System** user (issue #79, plan §2.2).
  *
  * Like {@link UNASSIGNED_LOCATION_ID} it is a deliberately *constant* UUIDv4 — never

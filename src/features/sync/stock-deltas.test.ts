@@ -14,6 +14,7 @@ import {
   buildCloneStatements,
   buildSchemaDictionary,
   withCaptureDisabled,
+  UNASSIGNED_LOCATION_ID,
 } from './snapshot';
 import { reconcile } from './reconcile';
 import { reconcileStockQuantity, replayStockQuantity } from './delta-crdt';
@@ -737,6 +738,186 @@ describe('one-shot finalise — the #696 scenario end-to-end', () => {
         expect(Number(held?.q)).toBe(8);
         expect((await new ItemRepository(driver).getById(rivets.id))!.quantity).toBe(10);
       }
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  });
+});
+
+/**
+ * The capture triggers' DELETE arm (issue #604).
+ *
+ * Deleting a location empties every batch row sitting at it, after re-homing the same units into
+ * each item's Unassigned placement. The re-home is an INSERT/UPSERT and captures a movement; the
+ * `DELETE FROM stock_batches` that follows captured nothing until #604, so the units kept a
+ * positive movement at a placement that no longer existed with nothing to offset it — a phantom
+ * republished to every peer and never pruned.
+ *
+ * The invariant asserted here is the whole-ledger one the schema comment claims, and it is
+ * deliberately stronger than the S0 helper above: it sums the deltas at **every placement the
+ * ledger names**, live or removed, and compares each against the quantity that placement's row
+ * holds — zero where the row is gone. A phantom fails it; a paired movement does not.
+ */
+describe('stock_deltas — a removed placement records its own emptying (issue #604)', () => {
+  /**
+   * Assert `Σ(deltas) == quantity` for every placement `itemId`'s ledger names, counting a
+   * placement with no surviving `stock_batches` row as holding zero.
+   */
+  async function assertLedgerBalances(driver: MemoryDriver, itemId: string): Promise<void> {
+    const rows = await driver.query<{ loc: string; batch: string; q: number; s: number }>(
+      `SELECT d.location_id AS loc, d.batch_key AS batch,
+              COALESCE((SELECT sb.quantity FROM stock_batches sb
+                        WHERE sb.item_id = d.item_id AND sb.location_id = d.location_id
+                          AND sb.batch_key = d.batch_key), 0) AS q,
+              SUM(d.quantity_delta) AS s
+       FROM stock_deltas d WHERE d.item_id = ?
+       GROUP BY d.location_id, d.batch_key;`,
+      [itemId],
+    );
+    expect(rows.length, 'the ledger should name at least one placement').toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(Number(row.s), `Σ deltas must equal quantity at ${row.loc}/${row.batch || '—'}`).toBe(
+        Number(row.q),
+      );
+    }
+  }
+
+  it('offsets the units a deleted location was holding, so the ledger still balances', async () => {
+    const driver = createMemoryDriver();
+    try {
+      await runMigrations(driver, migrations);
+      const items = new ItemRepository(driver);
+      const locations = new LocationRepository(driver);
+
+      const shelf = await locations.create({ name: 'Shelf' });
+      const item = await items.create({ name: 'Widget', quantity: 5, locationId: shelf.id });
+
+      await locations.delete(shelf.id);
+
+      // The units moved home rather than vanishing, and the headline count is unchanged.
+      expect((await items.getById(item.id))!.quantity).toBe(5);
+
+      // Both ends of that move are in the ledger: −5 off the shelf, +5 at Unassigned.
+      const ledger = await driver.query<{ loc: string; s: number }>(
+        `SELECT location_id AS loc, SUM(quantity_delta) AS s FROM stock_deltas
+         WHERE item_id = ? GROUP BY location_id;`,
+        [item.id],
+      );
+      const byLocation = new Map(ledger.map((r) => [String(r.loc), Number(r.s)]));
+      expect(byLocation.get(shelf.id), 'the deleted shelf nets to zero, not +5').toBe(0);
+      expect(byLocation.get(UNASSIGNED_LOCATION_ID)).toBe(5);
+
+      await assertLedgerBalances(driver, item.id);
+    } finally {
+      await driver.close();
+    }
+  });
+
+  it('records nothing for a placement that was already empty', async () => {
+    const driver = createMemoryDriver();
+    try {
+      await runMigrations(driver, migrations);
+      const items = new ItemRepository(driver);
+      const locations = new LocationRepository(driver);
+
+      const shelf = await locations.create({ name: 'Shelf' });
+      const item = await items.create({ name: 'Widget', quantity: 4, locationId: shelf.id });
+      // Draw the shelf down to nothing — the row stays, at zero, until the location goes.
+      await items.adjustQuantity(item.id, -4);
+      const before = await driver.queryOne<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM stock_deltas WHERE item_id = ?;',
+        [item.id],
+      );
+
+      await locations.delete(shelf.id);
+
+      // Deleting a zero row is not a movement, so the DELETE arm's `OLD.quantity <> 0` guard
+      // keeps it out of the ledger — the mirror of the INSERT arm's zero-seed skip.
+      const after = await driver.queryOne<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM stock_deltas WHERE item_id = ?;',
+        [item.id],
+      );
+      expect(Number(after?.n)).toBe(Number(before?.n));
+      await assertLedgerBalances(driver, item.id);
+    } finally {
+      await driver.close();
+    }
+  });
+
+  it('records nothing when the placement goes because its item was purged', async () => {
+    const driver = createMemoryDriver();
+    try {
+      await runMigrations(driver, migrations);
+      const items = new ItemRepository(driver);
+      const locations = new LocationRepository(driver);
+
+      const shelf = await locations.create({ name: 'Shelf' });
+      const item = await items.create({ name: 'Widget', quantity: 5, locationId: shelf.id });
+
+      // The purge cascades `stock_batches` *and* `stock_deltas` away together. The cascade does
+      // fire the DELETE arm, so without its `EXISTS` guard the trigger would try to write a
+      // farewell movement for an item that no longer exists — and the ledger's own foreign key
+      // would abort the purge outright.
+      await expect(items.hardDelete(item.id)).resolves.toBeUndefined();
+
+      const left = await driver.queryOne<{ n: number }>(
+        'SELECT COUNT(*) AS n FROM stock_deltas WHERE item_id = ?;',
+        [item.id],
+      );
+      expect(Number(left?.n)).toBe(0);
+    } finally {
+      await driver.close();
+    }
+  });
+
+  it('carries both halves of the move to a peer, which records none of its own', async () => {
+    const dictOf = (driver: MemoryDriver) =>
+      buildSchemaDictionary(driver, [...SYNC_TABLES, ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE]);
+    const a = createMemoryDriver();
+    const b = createMemoryDriver();
+    try {
+      // A and B start from the same state: one item, 5 units on a shelf.
+      await runMigrations(a, migrations);
+      const itemsA = new ItemRepository(a);
+      const shelf = await new LocationRepository(a).create({ name: 'Shelf' });
+      const item = await itemsA.create({ name: 'Widget', quantity: 5, locationId: shelf.id });
+
+      await runMigrations(b, migrations);
+      await b.transaction(
+        withCaptureDisabled(buildCloneStatements(await buildLocalSnapshot(a), await dictOf(b))),
+      );
+
+      // A deletes the shelf; B learns of it through the tombstone.
+      await new LocationRepository(a).delete(shelf.id);
+      expect((await itemsA.getById(item.id))!.quantity).toBe(5);
+      await assertLedgerBalances(a, item.id);
+
+      const snapA = await buildLocalSnapshot(a);
+      const snapB = await buildLocalSnapshot(b);
+      const dictB = await dictOf(b);
+      await applyPlan(b, reconcile(snapB, snapA, { offset: 0, dictionary: dictB }), dictB);
+
+      // The deleting half reaches B as an ordinary unioned ledger row, by its own id — that is the
+      // whole point of capturing it rather than leaving the move half-recorded.
+      const offsetting = await a.queryOne<{ id: string }>(
+        `SELECT id FROM stock_deltas WHERE item_id = ? AND location_id = ? AND quantity_delta = -5;`,
+        [item.id, shelf.id],
+      );
+      expect(offsetting?.id, "A records the shelf's emptying").toBeDefined();
+      const onB = await b.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM stock_deltas WHERE id = ?;', [
+        offsetting!.id,
+      ]);
+      expect(Number(onB?.n), 'and B holds that same row').toBe(1);
+
+      // B's own re-home and delete run under `withCaptureDisabled`, so the DELETE arm must stay
+      // silent there exactly as the INSERT and UPDATE arms do: B's ledger is A's row for row,
+      // rather than A's plus a second copy of the same move.
+      const idsOf = async (driver: MemoryDriver) =>
+        (await driver.query<{ id: string }>('SELECT id FROM stock_deltas ORDER BY id;')).map((r) =>
+          String(r.id),
+        );
+      expect(await idsOf(b)).toEqual(await idsOf(a));
     } finally {
       await a.close();
       await b.close();

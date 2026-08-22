@@ -6,8 +6,16 @@
  * A real synced LWW row (carries `updated_at`); insert-only in practice.
  */
 
-/** How a recorded price point came to be — a manual edit or a supplier scrape. */
-export type PriceHistorySource = 'MANUAL' | 'SCRAPE';
+import type { PriceHistorySource } from '../constants';
+
+/**
+ * How a recorded price point came to be — a manual edit or a supplier scrape.
+ *
+ * Declared beside its `PRICE_HISTORY_SOURCES` vocabulary in `../constants`, which
+ * `supplier_part_price_history.source`'s CHECK is built from, and re-exported here so it still
+ * reads from the module that owns the row it sits on.
+ */
+export type { PriceHistorySource };
 
 export interface SupplierPartPriceHistoryRow {
   readonly id: string;
