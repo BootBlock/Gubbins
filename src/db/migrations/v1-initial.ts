@@ -181,17 +181,20 @@ const webhookMethodList = WEBHOOK_METHODS.map((m) => `'${m}'`).join(', ');
  * and needs no new column to carry this. The `LIKE` pattern is a bare key plus `|%` and the key is
  * always a UUID (see `withOperationKey`), so it holds no wildcard of its own; `batch_key`, which
  * can hold anything a user typed, is matched by equality and never reaches the pattern.
+ *
+ * `row` is the trigger alias the placement is read from — `NEW` for the INSERT and UPDATE arms,
+ * `OLD` for the DELETE arm, which has no `NEW` row to name the placement it is emptying.
  */
-const stockDeltaIdExpression = (() => {
+const stockDeltaIdExpression = (row: 'NEW' | 'OLD') => {
   const key = `(SELECT operation_key FROM stock_delta_capture WHERE id = 1)`;
   const ordinal = `(SELECT COUNT(*) FROM stock_deltas d
-                     WHERE d.item_id = NEW.item_id AND d.location_id = NEW.location_id
-                       AND d.batch_key = NEW.batch_key AND d.id LIKE ${key} || '|%')`;
+                     WHERE d.item_id = ${row}.item_id AND d.location_id = ${row}.location_id
+                       AND d.batch_key = ${row}.batch_key AND d.id LIKE ${key} || '|%')`;
   return `CASE WHEN ${key} IS NULL THEN lower(hex(randomblob(16)))
-               ELSE ${key} || '|' || NEW.item_id || '|' || NEW.location_id || '|' ||
-                    NEW.batch_key || '|' || ${ordinal}
+               ELSE ${key} || '|' || ${row}.item_id || '|' || ${row}.location_id || '|' ||
+                    ${row}.batch_key || '|' || ${ordinal}
           END`;
-})();
+};
 
 /**
  * The baseline's DDL, separated from the migration object so its fingerprint can be computed
@@ -715,8 +718,10 @@ const baselineStatements: SqlStatement[] = [
           -- The DEFAULT exists for the FK action, not for callers: ON DELETE SET DEFAULT
           -- re-points a deleted user's entries at System, which preserves both NOT NULL and
           -- the ledger itself. Deleting a user must never delete or falsify their history,
-          -- and it must not require an UPDATE the immutability trigger would refuse — SQLite
-          -- applies FK actions internally without firing triggers (recursive_triggers is off).
+          -- and it must not require an UPDATE the immutability trigger would refuse. A foreign-key
+          -- action does fire ordinary triggers (the recursive_triggers pragma governs a trigger's
+          -- own writes, not this), so what keeps it clear is the trigger's column scope: it guards
+          -- the substantive columns and exempts actor_user_id precisely so this re-point is allowed.
           actor_user_id   TEXT    NOT NULL DEFAULT '${SYSTEM_USER_ID}'
                                   REFERENCES users(id) ON DELETE SET DEFAULT,
           created_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
@@ -1671,7 +1676,7 @@ const baselineStatements: SqlStatement[] = [
         WHEN NEW.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
-          VALUES (${stockDeltaIdExpression}, NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity,
+          VALUES (${stockDeltaIdExpression('NEW')}, NEW.item_id, NEW.location_id, NEW.batch_key, NEW.quantity,
                   CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
                        THEN NEW.quantity END);
         END;
@@ -1681,10 +1686,12 @@ const baselineStatements: SqlStatement[] = [
     // Capture the actually-applied, CHECK-clamped change on every quantity move. `NEW - OLD` is
     // reality (the `CHECK (quantity >= 0)` has already vetoed any write that would go negative), so
     // every row records a true change whether or not it also asserts a quantity. A ledger written
-    // only by this device therefore still sums to its own `stock_batches.quantity`. That stops
-    // being the reconstruction rule once a **merge** brings in another device's assertion, since an
-    // assertion replaces the sum before it rather than adding to it — from then on the replay, not
-    // the sum, is what reconstructs the row (issue #633; see `replayStockQuantity`).
+    // only by this device therefore still sums to its own `stock_batches.quantity` — the three arms
+    // together cover every write path, the DELETE arm below closing the one they used to miss
+    // (issue #604). That stops being the reconstruction rule once a **merge** brings in another
+    // device's assertion, since an assertion replaces the sum before it rather than adding to it —
+    // from then on the replay, not the sum, is what reconstructs the row (issue #633; see
+    // `replayStockQuantity`).
     sql: `
         CREATE TRIGGER trg_stock_batches_capture_upd
         AFTER UPDATE OF quantity ON stock_batches
@@ -1692,10 +1699,49 @@ const baselineStatements: SqlStatement[] = [
         WHEN NEW.quantity <> OLD.quantity AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
         BEGIN
           INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
-          VALUES (${stockDeltaIdExpression}, NEW.item_id, NEW.location_id, NEW.batch_key,
+          VALUES (${stockDeltaIdExpression('NEW')}, NEW.item_id, NEW.location_id, NEW.batch_key,
                   NEW.quantity - OLD.quantity,
                   CASE WHEN (SELECT asserting FROM stock_delta_capture WHERE id = 1) = 1
                        THEN NEW.quantity END);
+        END;
+      `,
+  },
+  {
+    // Capture the units a *removed* placement was holding (issue #604). Without this arm the
+    // ledger keeps the movements that put stock into a batch row and none of the one that took
+    // it away, so `stock_batches.quantity == Σ(stock_deltas)` — claimed by the UPDATE arm above,
+    // and relied on by `reconcileStock`'s completeness guard — was not true of a deleted placement.
+    // Both paths that delete a non-zero row (`LocationRepository.delete` and the sync tombstone
+    // apply) re-home the same units into the item's Unassigned placement first, and that re-home
+    // is an INSERT/UPSERT which *does* capture. So the missing half left the two ends of one move
+    // unpaired: a positive at the removed location that nothing ever offsets, replicated to every
+    // peer and never pruned. `-OLD.quantity` closes it, and the pair now reads as the move it is.
+    //
+    // `asserted_quantity` is always NULL here, unlike the two arms above. Emptying a placement is
+    // a relative movement whatever the switch says — it is the CHECK-clamped change the row
+    // actually underwent — and no path deletes a batch row under a physical count anyway (a count
+    // upserts the lot's quantity, zero included; see `setBatchStatement`).
+    //
+    // The `EXISTS` guard excludes the one delete that must NOT be captured: the `ON DELETE CASCADE`
+    // from `items`. SQLite fires an ordinary trigger for a foreign-key action even with
+    // `recursive_triggers` off, and by the time the child rows go the parent is already gone — so
+    // without the guard, purging an item would try to write a farewell movement whose `item_id` no
+    // longer exists and abort the whole delete on the ledger's own foreign key. It is also the
+    // right rule on its own terms: a placement that disappears because its *item* did needs no
+    // offsetting row, since `stock_deltas.item_id` cascades the ledger away with it. Only a
+    // placement removed while its item survives leaves a balance to settle. The wholesale wipes
+    // (restore, TTL clone) need no guard here — they run under `withCaptureDisabled`, for the same
+    // reason the re-inserts beside them do.
+    sql: `
+        CREATE TRIGGER trg_stock_batches_capture_del
+        AFTER DELETE ON stock_batches
+        FOR EACH ROW
+        WHEN OLD.quantity <> 0 AND (SELECT enabled FROM stock_delta_capture WHERE id = 1) = 1
+             AND EXISTS (SELECT 1 FROM items WHERE id = OLD.item_id)
+        BEGIN
+          INSERT INTO stock_deltas (id, item_id, location_id, batch_key, quantity_delta, asserted_quantity)
+          VALUES (${stockDeltaIdExpression('OLD')}, OLD.item_id, OLD.location_id, OLD.batch_key,
+                  -OLD.quantity, NULL);
         END;
       `,
   },
