@@ -42,6 +42,12 @@ docker compose up -d
 
 Then open **<http://localhost:8080/>**.
 
+> **⚠️ Heads-up**
+> The optional [[companion extension|Companion-Extension-Setup]] does not recognise a
+> self-hosted copy, so its **Scrape** controls stay hidden here. It is pinned to the addresses
+> Gubbins is published at, and adding yours means rebuilding it from the repository with that
+> address listed. Everything else works exactly as on the hosted app.
+
 To stop it again:
 
 ```bash

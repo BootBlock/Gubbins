@@ -29,6 +29,24 @@ those controls stay hidden — nothing to configure and nothing running in the b
 > This is the one feature that reaches out to the web, and only when *you* trigger it on a page.
 > The rest of Gubbins stays fully [[offline and local|How-Your-Data-Is-Stored]].
 
+## Where it works
+
+The extension talks to Gubbins itself and nowhere else — the hosted app at
+`https://bootblock.github.io/Gubbins/`, or a development copy on your own machine at
+`http://localhost:5173/Gubbins/`. It is not present on any other page you browse: it reads
+nothing there and cannot be asked to do anything. The one exception is the Amazon listing page
+you point it at yourself, which it reads only for as long as it takes to answer the toolbar
+button or the **Add to Gubbins** menu item you clicked — see
+[[Scraping supplier data|Scraping-Supplier-Data]].
+
+> **ℹ️ Note**
+> If you [[host Gubbins yourself|Self-Hosting-with-Docker]] — including the Docker image on
+> `http://localhost:8080/` — the extension does not recognise your copy, and its **Scrape**
+> controls stay hidden. Adding your address means rebuilding the extension from the repository
+> with that address listed, not editing the extension folder in place; `extension/README.md`
+> gives the two-line recipe. The list is deliberately narrow rather than a wildcard, because a
+> wildcard broad enough to cover your address would also cover every unrelated site sharing it.
+
 ## Related pages
 
 - **[[Scraping supplier data|Scraping-Supplier-Data]]** — using it to fill item details.
