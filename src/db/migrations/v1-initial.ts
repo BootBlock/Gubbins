@@ -14,11 +14,14 @@ import {
   FIELD_PRECISION_MIN,
   FIELD_TYPES,
   FIELD_UNIT_MAX_LENGTH,
+  FIELD_VALUE_MODES,
   IN_TRANSIT_LOCATION_ID,
   IN_TRANSIT_LOCATION_NAME,
   MAINTENANCE_BASES,
+  PRICE_HISTORY_SOURCES,
   PROCUREMENT_STATUSES,
   PROJECT_STATUSES,
+  PURCHASE_ORDER_STATUSES,
   REGION_SHAPES,
   RESERVATION_STATUSES,
   SYSTEM_USER_DESCRIPTION,
@@ -150,6 +153,9 @@ const basisList = MAINTENANCE_BASES.map((b) => `'${b}'`).join(', ');
 const regionShapeList = REGION_SHAPES.map((s) => `'${s}'`).join(', ');
 const userKindList = USER_KINDS.map((k) => `'${k}'`).join(', ');
 const webhookMethodList = WEBHOOK_METHODS.map((m) => `'${m}'`).join(', ');
+const purchaseOrderStatusList = PURCHASE_ORDER_STATUSES.map((s) => `'${s}'`).join(', ');
+const priceHistorySourceList = PRICE_HISTORY_SOURCES.map((s) => `'${s}'`).join(', ');
+const fieldValueModeList = FIELD_VALUE_MODES.map((m) => `'${m}'`).join(', ');
 
 /**
  * The `id` a `stock_deltas` capture trigger mints for the row it is about to write (issue #696).
@@ -984,7 +990,7 @@ const baselineStatements: SqlStatement[] = [
           mode       TEXT    NOT NULL DEFAULT 'literal',
           updated_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           UNIQUE (item_id, def_id),
-          CHECK (mode IN ('literal', 'inherit')),
+          CHECK (mode IN (${fieldValueModeList})),
           CHECK (mode <> 'inherit' OR value IS NULL)
         ) STRICT;
       `,
@@ -1866,7 +1872,7 @@ const baselineStatements: SqlStatement[] = [
           created_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           ordered_at    INTEGER,
           updated_at    INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
-          CHECK (status IN ('DRAFT', 'ORDERED', 'PARTIAL', 'RECEIVED', 'CANCELLED'))
+          CHECK (status IN (${purchaseOrderStatusList}))
         ) STRICT;
       `,
   },
@@ -1964,11 +1970,11 @@ const baselineStatements: SqlStatement[] = [
           supplier_part_id TEXT    NOT NULL REFERENCES supplier_parts(id) ON DELETE CASCADE,
           unit_cost        INTEGER NOT NULL,                  -- recorded cost at recorded_at (micro-units, issue #286)
           currency         TEXT,                              -- null ⇒ base currency
-          source           TEXT    NOT NULL DEFAULT 'MANUAL', -- 'MANUAL' | 'SCRAPE'
+          source           TEXT    NOT NULL DEFAULT 'MANUAL', -- PRICE_HISTORY_SOURCES (see the CHECK)
           recorded_at      INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at       INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (unit_cost >= 0),
-          CHECK (source IN ('MANUAL', 'SCRAPE'))
+          CHECK (source IN (${priceHistorySourceList}))
         ) STRICT;
       `,
   },
@@ -2073,14 +2079,24 @@ const baselineStatements: SqlStatement[] = [
   // --- Folded former v5: related-items cross-links (feature-gap G6) --------------
   // A synced many-to-many relation between items, distinct from variants (items.parent_id)
   // and kits. Deterministic `from|to|kind` primary key so two devices minting the same
-  // logical relation converge by LWW; `kind` is app-enforced free TEXT (no DB CHECK).
+  // logical relation converge by LWW.
+  //
+  // `kind` carries NO CHECK, deliberately and for the same reason as the `webhooks` JSON
+  // columns below: a constraint that rejects a row on hydration would let one value from a
+  // newer peer — a kind that release simply added — abort a whole sync apply, instead of
+  // costing that one relation. The vocabulary is `RELATION_KINDS`
+  // (`features/inventory/item-relations.ts`); the mapper keeps an unknown kind verbatim so it
+  // round-trips, and the display seam (`describeItemRelations`) filters what this build does
+  // not understand. Deliberately not restated here: the list moved once already while this
+  // comment still claimed the old one. `enum-checks.test.ts` asserts the column stays
+  // unconstrained, so adding a CHECK is a decision, not a slip.
   {
     sql: `
         CREATE TABLE item_relations (
           id           TEXT    PRIMARY KEY NOT NULL,   -- canonical "from|to|kind" (deterministic)
           from_item_id TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
           to_item_id   TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          kind         TEXT    NOT NULL,               -- WORKS_WITH | ACCESSORY_FOR | SPARE_FOR (app-enforced)
+          kind         TEXT    NOT NULL,               -- RELATION_KINDS; no CHECK (see note above)
           note         TEXT,                           -- optional free-text context for the link
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
@@ -2099,7 +2115,9 @@ const baselineStatements: SqlStatement[] = [
   },
   // --- Folded former v6: manual "to-buy" / wishlist (feature-gap G8) -------------
   // A standalone dictionary table (no FK, like contacts/projects) of wanted-but-not-owned
-  // things; `priority` is app-enforced free TEXT (HIGH | MEDIUM | LOW | NONE), default NONE.
+  // things. `priority` carries no CHECK for the sync-forward reason given on
+  // `item_relations.kind` above; its vocabulary is `WISHLIST_PRIORITIES`
+  // (`features/purchasing/wishlist.ts`), softened on read by `normaliseWishlistPriority`.
   {
     sql: `
         CREATE TABLE wishlist (
@@ -2108,7 +2126,7 @@ const baselineStatements: SqlStatement[] = [
           note         TEXT,                           -- optional free-text context
           url          TEXT,                           -- optional http(s) link (app-sanitised)
           target_price INTEGER CHECK (target_price IS NULL OR target_price >= 0), -- money: micro-units (issue #286)
-          priority     TEXT    NOT NULL DEFAULT 'NONE', -- HIGH | MEDIUM | LOW | NONE (app-enforced)
+          priority     TEXT    NOT NULL DEFAULT 'NONE', -- WISHLIST_PRIORITIES; no CHECK (see note)
           created_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at   INTEGER NOT NULL DEFAULT (${SQL_NOW_MS})
         ) STRICT;
@@ -2119,16 +2137,19 @@ const baselineStatements: SqlStatement[] = [
   },
   // --- Folded former v7: per-instance test / calibration / service records (G7) --
   // An append-only LWW child of items (structured pass/fail + reading log per serialised
-  // unit). `kind` (TEST | CALIBRATION | SERVICE) and `result` (PASS | FAIL | LIMIT | NA)
-  // are app-enforced free TEXT; `reading` is deliberately unconstrained (may be negative).
+  // unit). `kind` and `result` carry no CHECK for the sync-forward reason given on
+  // `item_relations.kind` above; their vocabularies are `TEST_RECORD_KINDS` and
+  // `TEST_RESULTS` (`features/inventory/test-records.ts`), softened on read by
+  // `normaliseTestRecordKind` / `normaliseTestResult`. `reading` is deliberately
+  // unconstrained (may be negative).
   {
     sql: `
         CREATE TABLE test_records (
           id           TEXT    PRIMARY KEY NOT NULL,
           item_id      TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-          kind         TEXT    NOT NULL DEFAULT 'TEST',   -- TEST | CALIBRATION | SERVICE (app-enforced)
+          kind         TEXT    NOT NULL DEFAULT 'TEST',   -- TEST_RECORD_KINDS; no CHECK (see note)
           name         TEXT    NOT NULL,                  -- the check / test name
-          result       TEXT    NOT NULL DEFAULT 'PASS',   -- PASS | FAIL | LIMIT | NA (app-enforced)
+          result       TEXT    NOT NULL DEFAULT 'PASS',   -- TEST_RESULTS; no CHECK (see note)
           reading      REAL,                              -- optional measured value (may be negative)
           unit         TEXT,                              -- optional unit for the reading (e.g. "MΩ")
           note         TEXT,
@@ -2161,13 +2182,17 @@ const baselineStatements: SqlStatement[] = [
   // numbers into every database and sync them between devices as if the user had measured
   // them. This table is only ever what *this user* saved — which is also why it is a plain
   // independent LWW leaf with no FK, like `wishlist`.
+  //
+  // `kind` carries no CHECK for the sync-forward reason given on `item_relations.kind`
+  // above; its vocabulary is `TARE_PRESET_KINDS` (`features/inventory/tare-presets.ts`),
+  // softened on read by `normaliseTarePresetKind`.
   {
     sql: `
         CREATE TABLE tare_presets (
           id         TEXT    PRIMARY KEY NOT NULL,
           name       TEXT    NOT NULL,                  -- what the user calls it ("Flour jar")
           brand      TEXT,                              -- optional maker, for spools bought by brand
-          kind       TEXT    NOT NULL DEFAULT 'OTHER',  -- SPOOL | JAR | BIN | TRAY | OTHER (app-enforced)
+          kind       TEXT    NOT NULL DEFAULT 'OTHER',  -- TARE_PRESET_KINDS; no CHECK (see note)
           tare_grams REAL    NOT NULL CHECK (tare_grams >= 0),
           note       TEXT,
           created_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),

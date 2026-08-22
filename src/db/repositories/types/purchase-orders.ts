@@ -8,10 +8,17 @@
  * states.
  */
 
+import type { PurchaseOrderStatus } from '../constants';
 import type { SupplierRef } from './suppliers';
 
-/** The five persisted PO statuses. Only DRAFT / CANCELLED are user-set; the rest are derived. */
-export type PurchaseOrderStatus = 'DRAFT' | 'ORDERED' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
+/**
+ * The five persisted PO statuses. Only DRAFT / CANCELLED are user-set; the rest are derived.
+ *
+ * Declared beside its `PURCHASE_ORDER_STATUSES` vocabulary in `../constants`, which
+ * `purchase_orders.status`'s CHECK is built from, and re-exported here so it still reads from
+ * the module that owns the row it sits on.
+ */
+export type { PurchaseOrderStatus };
 
 export interface PurchaseOrderRow {
   readonly id: string;
