@@ -215,8 +215,9 @@ export function RefreshPricesButton({ item, parts }: { item: Item; parts: readon
       return;
     }
 
-    // Gated on the capability rather than on mere readiness (issue #664): an extension that
-    // cannot answer a scrape drops the request in silence, which is no more use than none.
+    // Gated on the capability rather than on readiness (issue #664), like every other bridge
+    // affordance. Scraping is the original capability, so no extension lacks it — the question is
+    // the same one today, and phrasing it this way keeps the gate uniform.
     if (!bridge.supports('scrape')) {
       show({
         tone: 'warning',

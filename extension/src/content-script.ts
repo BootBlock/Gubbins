@@ -22,7 +22,6 @@
 import {
   makeMessage,
   parseExtensionMessage,
-  peerProtocolVersion,
   peerSupports,
   PROTOCOL_VERSION,
   type DataFetchRequestMessage,
@@ -39,7 +38,14 @@ import { OPEN_FOOD_FACTS_HOST } from '../../src/features/scraping/product-lookup
 import { isGubbinsAppUrl } from '../../src/features/scraping/app-origins';
 import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
 
-const VERSION = '1.7.0';
+/**
+ * This build's version, read from the manifest rather than restated here.
+ *
+ * It is what the app displays for the user to quote in a report, and — for a build older than
+ * this one — what its wire generation is recovered from. A second copy of the number would
+ * eventually disagree with the manifest, and nothing would catch it.
+ */
+const VERSION = chrome.runtime.getManifest().version;
 const trustedOrigins = [window.location.origin];
 
 /**
@@ -54,33 +60,20 @@ let appProtocol: number | null = null;
 /**
  * May we hand the app a `capability`'s payload?
  *
- * Only *positive* knowledge that the app is too old holds a payload back. An app that has said
- * nothing is given the benefit of the doubt, because refusing it would break the active-tab
- * import for every app build that predates negotiation — a real loss traded for a hypothetical
- * one. What this does remove is the case the app told us about.
+ * Only *positive* knowledge that the app is too old holds a payload back: an app that has not
+ * stated a generation is waved through, because refusing it would break the active-tab import for
+ * every app build that predates negotiation.
+ *
+ * **No app build in existence is refused by this.** `APP_READY` arrived with generation 5, so an
+ * app able to answer at all announces at least 5, which is past every capability in the table;
+ * and an app too old to answer says nothing and is waved through. This is the guard for the
+ * *next* capability the extension pushes unsolicited — the first one introduced above the
+ * generation a user's stale app tab is serving. It is here because the alternative is the
+ * failure this issue is about: the payload posted into an app that discards it in silence, and
+ * cleared from the queue as though it had arrived.
  */
 function appSupports(capability: ProtocolCapability): boolean {
   return appProtocol === null || peerSupports(appProtocol, capability);
-}
-
-/**
- * Tell the background worker this Gubbins tab can receive queued active-tab scrapes.
- *
- * Sent twice on purpose. The first goes out with the rest of the handshake, so an app that never
- * answers a hello still collects its queue exactly as before. The second goes out when the app
- * *does* answer, because only then is {@link appProtocol} known — a flush before that would
- * decide what the app can read from no information at all, and the queue is cleared of whatever
- * it hands over.
- */
-function announceTabReady(): void {
-  void chrome.runtime.sendMessage({ kind: 'PWA_READY' }).catch(() => undefined);
-}
-
-/** Record the generation the app announced, flushing the worker's queue the first time. */
-function learnApp(protocol: number): void {
-  const first = appProtocol === null;
-  appProtocol = protocol;
-  if (first) announceTabReady();
 }
 
 type FetchReply = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
@@ -94,6 +87,7 @@ type ActiveTabOutcome = { ok: true; payload: ScrapeResultPayload } | { ok: false
 
 declare const chrome: {
   runtime: {
+    getManifest: () => { version: string };
     sendMessage: <R>(message: unknown) => Promise<R>;
     onMessage: {
       addListener: (
@@ -257,7 +251,11 @@ function install(): void {
     // The app's answer to our hello (issue #664): remember the generation it speaks, so a payload
     // it would silently drop is held back rather than posted into the void. Nothing is posted back
     // — answering an `APP_READY` with an `EXTENSION_READY` would bounce the two forever.
-    else if (msg?.type === 'APP_READY') learnApp(peerProtocolVersion(msg.payload));
+    // Only a stated generation is recorded. An app version number, unlike the extension's, says
+    // nothing about the message set it knows, so a hello without one leaves us none the wiser.
+    else if (msg?.type === 'APP_READY' && msg.payload?.protocol !== undefined) {
+      appProtocol = msg.payload.protocol;
+    }
   });
 
   /**
@@ -296,8 +294,12 @@ function install(): void {
   setTimeout(announce, 1500);
 
   // Tell the background worker this Gubbins tab is ready, so it can flush any active-tab
-  // scrapes captured while no PWA tab was open (Path A2 "queue for the next open").
-  announceTabReady();
+  // scrapes captured while no PWA tab was open (Path A2 "queue for the next open"). This
+  // deliberately does not wait for the app's `APP_READY`: an app that never sends one would then
+  // never collect its queue at all. The consequence is that a queued payload is flushed before
+  // the app has stated its generation, so only a payload delivered later — the live "Add to
+  // Gubbins" gesture — can be held back.
+  void chrome.runtime.sendMessage({ kind: 'PWA_READY' }).catch(() => undefined);
 }
 
 if (isGubbinsAppUrl(window.location.href)) install();

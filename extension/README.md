@@ -30,14 +30,17 @@ request that would be dropped in silence is never sent.
 A build from before 1.7.0 announces no generation. Its version string is mapped back to one by
 `LEGACY_BUILD_PROTOCOL`, which records what each of those builds actually shipped (1.2.0 → 2,
 1.3.0 → 3, 1.4.0 → 4), so an old install is credited with exactly the capabilities it has. The
-app's build number carries no such meaning, so an app that announces nothing is given the benefit
-of the doubt instead: the content script holds an unsolicited active-tab payload back only when
-the app has *told* it that it would not understand it, and the worker then keeps that payload
-queued rather than clearing it.
+app's build number carries no such meaning, so an app that states no generation is given the
+benefit of the doubt instead: the content script holds an unsolicited payload back only when the
+app has *told* it that it would not understand it, and the worker then keeps that payload queued
+rather than clearing it. No app build in existence is refused by that check — `APP_READY` arrived
+with generation 5, past every capability in the table — so it is the guard for the *next*
+unsolicited capability, not a live path today.
 
 **When you add a message kind:** add its capability to `PROTOCOL_CAPABILITY_VERSIONS`, bump
 `PROTOCOL_VERSION` to that generation, and bump `manifest.json`'s `version` so a user can see
-which build they have (the app shows it under Settings → Product lookup).
+which build they have (the app shows it under Settings → Product lookup — the content script
+reads it from the manifest, so there is only the one number to change).
 
 ### Where the content script runs (issue #493)
 

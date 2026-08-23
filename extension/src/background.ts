@@ -334,10 +334,10 @@ async function readQueue(): Promise<QueuedScrape[]> {
 
 async function writeQueue(queue: readonly QueuedScrape[]): Promise<void> {
   try {
-    // Bounded: a payload can now be kept rather than cleared when the app would not understand
-    // it, and an app that never updates would otherwise grow this without limit for the whole
-    // browser session. The oldest go first — a scrape the user triggered minutes ago is the one
-    // they have given up on.
+    // Bounded: a payload may be kept rather than cleared when the app would not understand it,
+    // and every scrape taken while no PWA tab is open is appended here regardless, so without a
+    // limit this grows for the whole browser session. The oldest go first — a scrape the user
+    // triggered an hour ago is the one they have given up on.
     const capped = queue.length > MAX_QUEUED_SCRAPES ? queue.slice(-MAX_QUEUED_SCRAPES) : queue;
     await chrome.storage.session.set({ [QUEUE_KEY]: capped });
   } catch {
@@ -399,8 +399,11 @@ async function deliverToPwa(outcome: ActiveTabOutcome): Promise<void> {
  *
  * A tab that refuses a payload (an app that would not understand it — see {@link sendToTab}) must
  * not have it cleared out from under it: the PWA updates itself, so the *next* `PWA_READY` from
- * that same tab is what finally delivers it (issue #664). The content script sends a second
- * `PWA_READY` once the app has announced its generation, so this runs with the answer in hand.
+ * that same tab is what finally delivers it (issue #664).
+ *
+ * A tab announces itself before the app has stated its generation, so a flush is answered on the
+ * benefit of the doubt and this runs as it always did. The retention matters for the other caller
+ * of {@link sendToTab} — a live delivery into a tab that turns it down.
  */
 async function flushQueueTo(tabId: number): Promise<void> {
   const queue = await readQueue();

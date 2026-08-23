@@ -12,6 +12,9 @@
  * `:memory:`-style fixtures (§8.2) and safely bundled into the extension.
  */
 import { z } from 'zod';
+// A relative path, not the `@/` alias: this module is bundled into the extension too, whose
+// build runs Vite with no alias config (see the sibling parsers, which import `lib/` the same way).
+import { compareVersions } from '../../lib/version-compare';
 
 /** Mandatory message signature (§9.2). A message without it is not ours. */
 export const EXTENSION_SOURCE = 'HARDWARE_TRACKER_EXT' as const;
@@ -111,37 +114,19 @@ export type ProtocolCapability = keyof typeof PROTOCOL_CAPABILITY_VERSIONS;
  *
  * Those builds announce a `version` but no `protocol`, so the generation has to be recovered from
  * the version string — and it can be, exactly: the message set grew in step with the extension's
- * own version, so the mapping is a record of what shipped rather than a guess. Assuming the
- * newest instead would credit a 1.2.0 install with three capabilities it has never had, which is
- * the silent-drop failure this whole mechanism exists to remove, aimed at the users most likely
- * to hit it — a `Load unpacked` build is exactly the kind that sits un-rebuilt for a year.
+ * own version, so the mapping is a record of what shipped rather than a guess. Crediting them all
+ * with the newest set instead would hand a 1.2.0 install three capabilities it has never had,
+ * which is the silent-drop failure this whole mechanism exists to remove, aimed at the users most
+ * likely to hit it — a `Load unpacked` build is exactly the kind that sits un-rebuilt for a year.
  *
  * Nothing needs adding here again: every build from 1.7.0 on states its generation outright.
  */
-const LEGACY_BUILD_PROTOCOL: readonly (readonly [
-  version: readonly [number, number, number],
-  protocol: number,
-])[] = [
-  [[1, 4, 0], 4], // DATA_FETCH_* — category data lookup (issue #616)
-  [[1, 3, 0], 3], // ACTIVE_TAB_* — Amazon active-tab enrichment (Path A2)
-  [[1, 2, 0], 2], // PRODUCT_LOOKUP_* — keyless barcode lookup
-  [[1, 0, 0], 1], // the original SCRAPE_* trio
+const LEGACY_BUILD_PROTOCOL: readonly (readonly [from: string, protocol: number])[] = [
+  ['1.4.0', 4], // DATA_FETCH_* — category data lookup (issue #616)
+  ['1.3.0', 3], // ACTIVE_TAB_* — Amazon active-tab enrichment (Path A2)
+  ['1.2.0', 2], // PRODUCT_LOOKUP_* — keyless barcode lookup
+  ['1.0.0', 1], // the original SCRAPE_* trio
 ];
-
-/** Parse a `major.minor.patch` build string, or null if it is not one. */
-function parseBuildVersion(version: string | undefined): [number, number, number] | null {
-  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version ?? '');
-  if (match === null) return null;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-/** Is `a` at least `b`, comparing major, then minor, then patch? */
-function atLeast(a: readonly [number, number, number], b: readonly [number, number, number]): boolean {
-  for (let i = 0; i < 3; i += 1) {
-    if (a[i]! !== b[i]!) return a[i]! > b[i]!;
-  }
-  return true;
-}
 
 /**
  * The generation a hello announces.
@@ -151,14 +136,17 @@ function atLeast(a: readonly [number, number, number], b: readonly [number, numb
  * generation its build version is known to have spoken ({@link LEGACY_BUILD_PROTOCOL}); and
  * failing both, generation 1 — the least a peer can be and still be worth talking to. Guessing
  * higher would hand it requests it cannot answer, and every one of those is dropped in silence.
+ *
+ * A version string that is not dotted-numeric orders below every entry in the table, so it lands
+ * on generation 1 without needing a case of its own.
  */
 export function peerProtocolVersion(
   payload: { readonly protocol?: number; readonly version?: string } | undefined,
 ): number {
   if (payload?.protocol !== undefined) return payload.protocol;
-  const build = parseBuildVersion(payload?.version);
-  if (build !== null) {
-    for (const [from, protocol] of LEGACY_BUILD_PROTOCOL) if (atLeast(build, from)) return protocol;
+  const version = payload?.version ?? '';
+  for (const [from, protocol] of LEGACY_BUILD_PROTOCOL) {
+    if (compareVersions(version, from) >= 0) return protocol;
   }
   return 1;
 }

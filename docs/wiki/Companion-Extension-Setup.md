@@ -45,8 +45,8 @@ work out what your extension can actually do:
   report a problem with scraping or lookups.
 - A feature the extension is too old to understand is **not offered**. A barcode lookup uses the
   app's own online lookup instead — asking your permission the first time, exactly as it does
-  when no extension is installed — rather than waiting on an extension that would ignore it. A
-  **Scrape** control simply stays hidden rather than appearing and then doing nothing.
+  when no extension is installed — rather than waiting on an extension that would ignore it, and
+  filling a category's fields from a database asks the same way.
 - Nothing you already had stops working. An older extension keeps every feature it came with;
   it is only the newer ones that wait for you to update it.
 
