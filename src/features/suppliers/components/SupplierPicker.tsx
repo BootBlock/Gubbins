@@ -6,9 +6,9 @@ import { useSuppliers } from '../queries';
 import type { SupplierPickerValue } from '../supplier-picker-value';
 
 /**
- * How many suppliers the list offers at once. Matches the page {@link useSuppliers} reads, so
- * browsing an empty field shows the whole dictionary (the popup scrolls) rather than the
- * type-ahead default of ten.
+ * How many suppliers the type-ahead offers as the user types. Matches the page
+ * {@link useSuppliers} reads, so narrowing a long dictionary is never cut short at the
+ * type-ahead default of ten. Browsing the list from the chevron shows every name regardless.
  */
 const SUPPLIER_OPTION_LIMIT = 100;
 
@@ -115,8 +115,8 @@ export function SupplierPicker({
         value={value.name}
         onChange={handleChange}
         suggestions={names}
-        // A supplier dictionary is a browsable list, not a long-tail one: opening it on an
-        // empty field should show what you actually have, not the first ten of it.
+        // A supplier dictionary is a browsable list, not a long-tail one: typing a common
+        // fragment should narrow to what you actually have, not to the first ten of it.
         maxOptions={SUPPLIER_OPTION_LIMIT}
         error={error}
         placeholder={placeholder ?? t('supplier.picker.placeholder')}

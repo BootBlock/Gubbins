@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { Autocomplete, AutocompleteField } from './autocomplete';
-import { filterSuggestions } from './autocomplete-filter';
+import { browseStartIndex, filterSuggestions, indexOfValue } from './autocomplete-filter';
 
 afterEach(cleanup);
 
@@ -38,6 +38,29 @@ describe('filterSuggestions — type-ahead ranking (pure)', () => {
   it('returns the whole list (capped) for an empty query', () => {
     expect(filterSuggestions(MAKERS, '')).toEqual(MAKERS);
     expect(filterSuggestions(MAKERS, '   ', 2)).toEqual(MAKERS.slice(0, 2));
+  });
+});
+
+describe('browseStartIndex — where a browse starts (pure)', () => {
+  it('finds the held value case-insensitively, ignoring surrounding space', () => {
+    expect(browseStartIndex(MAKERS, '  tdk ')).toBe(1);
+  });
+
+  it('falls back to the option the type-ahead would have ranked first', () => {
+    // The currency field's case: it holds `USD`, the list offers `USD — US Dollar`. Without
+    // the fallback a browse would start at the top of the catalogue — one Enter away from
+    // swapping the value for an unrelated currency.
+    expect(browseStartIndex(['GBP — British Pound', 'USD — US Dollar'], 'USD')).toBe(1);
+  });
+
+  it('reports -1 for a value that matches nothing, and for an empty field', () => {
+    expect(browseStartIndex(MAKERS, 'Acme Widgets')).toBe(-1);
+    expect(browseStartIndex(MAKERS, '   ')).toBe(-1);
+  });
+
+  it('offers indexOfValue for the exact-only case, which takes no near match', () => {
+    expect(indexOfValue(MAKERS, 'tdk')).toBe(1);
+    expect(indexOfValue(MAKERS, 'TD')).toBe(-1);
   });
 });
 
@@ -86,6 +109,19 @@ describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
     expect(input.value).toBe('Yageo');
   });
 
+  it('leaves Escape to the enclosing dialog when no list is on screen', () => {
+    // Text that matches nothing leaves the control "open" with an empty popup. Escape there
+    // must reach the Modal, not be swallowed closing something the user cannot see.
+    render(<Harness initial="" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'Acme Widgets' } });
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it('closes on Escape without clearing the typed value', () => {
     render(<Harness />);
     const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
@@ -104,6 +140,123 @@ describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
     fireEvent.mouseDown(chevron);
     expect(input.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+  });
+
+  it('browses the whole list from the chevron even when the field already holds a value (#414)', () => {
+    // The reported bug: a field holding an exact match filtered down to nothing — the one
+    // suggestion left is dropped as having nothing to complete — so the chevron looked dead.
+    render(<Harness initial="TDK" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.mouseDown(document.querySelector('button')!);
+
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(MAKERS);
+    // The browse starts on the value already held, so a long list opens showing it.
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe('TDK');
+  });
+
+  it('browses past maxOptions, which caps the type-ahead only', () => {
+    render(
+      <AutocompleteField
+        label="Manufacturer"
+        value=""
+        onChange={() => {}}
+        suggestions={MAKERS}
+        maxOptions={2}
+      />,
+    );
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+  });
+
+  it('starts filtering only once the user types into an open browse', () => {
+    render(<Harness initial="T" />);
+    const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+
+    // Typing narrows against everything the field then holds, not just the new character.
+    fireEvent.change(input, { target: { value: 'TD' } });
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['TDK']);
+  });
+
+  it('browses on ArrowDown from a closed list, landing on the held value', () => {
+    render(<Harness initial="Yageo" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe('Yageo');
+  });
+
+  it('lands on the first option when ArrowDown opens on a value that fits nothing', () => {
+    render(<Harness initial="Acme Widgets" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe(MAKERS[0]);
+  });
+
+  it('browses again after a chevron close, rather than staying filtered', () => {
+    render(<Harness initial="" />);
+    const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'TD' } });
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+
+    const chevron = document.querySelector('button')!;
+    fireEvent.mouseDown(chevron); // close the filtered list
+    expect(screen.queryByRole('listbox')).toBeNull();
+    fireEvent.mouseDown(chevron); // reopen — browsing, not filtering
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+    expect(input.value).toBe('TD');
+  });
+
+  it('browses from a click on the input even after text that matched nothing', () => {
+    // Typing leaves the list "open" with nothing to show; the click that follows must still
+    // browse rather than read as another dead control.
+    render(<Harness initial="" />);
+    const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'Acme Widgets' } });
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    fireEvent.click(input);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+  });
+
+  it('opens from the chevron on the first press after text that matched nothing', () => {
+    render(<Harness initial="" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'Acme Widgets' } });
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('leaves Enter free to submit after a click that only placed the caret', () => {
+    // A click into a filled field is caret placement, so it highlights nothing — otherwise
+    // Enter would re-pick the value it already holds instead of submitting the form.
+    render(<Harness initial="TDK" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.click(input);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('starts a browse on the closest option when the value is only a prefix of it', () => {
+    // The currency field's shape: the value is a bare code, the options are code + name.
+    render(
+      <AutocompleteField
+        label="Currency"
+        value="USD"
+        onChange={() => {}}
+        suggestions={['GBP — British Pound', 'USD — US Dollar']}
+      />,
+    );
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe('USD — US Dollar');
   });
 
   it('offers a prefiltered list verbatim, however little it looks like the typed text', () => {
@@ -234,6 +387,54 @@ describe('Autocomplete — creatable mode (onCommit, issue #84)', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(committed).toEqual(['TDK']);
+  });
+
+  it('does not arm a near match when the chevron browses (the typed text is a candidate)', () => {
+    // Typing `Y` then browsing must not pre-arm `Yageo`: Enter would create a tag the user
+    // never asked for. Only the field's own value may be highlighted in creatable mode.
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    const input = screen.getByRole('combobox', { name: 'Add a tag' });
+
+    fireEvent.change(input, { target: { value: 'Y' } });
+    fireEvent.keyDown(input, { key: 'Escape' }); // dismiss the type-ahead the keystroke opened
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(committed).toEqual(['Y']);
+  });
+
+  it('still moves ArrowDown into the nearest option, which is what it is for', () => {
+    // The pointer opens a browse without arming anything here, but ArrowDown is a request to
+    // move into the list: it lands on the nearest option, in plain sight of the user.
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    const input = screen.getByRole('combobox', { name: 'Add a tag' });
+
+    fireEvent.change(input, { target: { value: 'Y' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe('Yageo');
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(committed).toEqual(['Yageo']);
+  });
+
+  it('arms nothing when ArrowDown finds no option near the typed text', () => {
+    // The value the user is typing is the candidate: arming the top of the catalogue instead
+    // would have Enter commit a tag that has nothing to do with what they wrote.
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    const input = screen.getByRole('combobox', { name: 'Add a tag' });
+
+    fireEvent.change(input, { target: { value: 'brand-new-tag' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(committed).toEqual(['brand-new-tag']);
   });
 
   it('ignores Enter on an empty field', () => {
