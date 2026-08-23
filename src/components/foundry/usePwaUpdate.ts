@@ -33,6 +33,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLabFlag } from '@/state/stores/useLabStore';
 import { BASELINE_REVISION } from '@/db/migrations';
 import { APP_VERSION } from '@/lib/app-version';
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /** Callbacks the seam invokes for service-worker lifecycle transitions we surface. */
 export interface PwaUpdateHandlers {
@@ -166,7 +167,10 @@ function pretendPwaUpdateApi(setNeedRefresh: (value: boolean) => void, breaking:
  */
 async function fetchDeployedVersionFromNetwork(): Promise<DeployedVersion | null> {
   try {
-    const response = await fetch(`${import.meta.env.BASE_URL}version.json`, { cache: 'no-store' });
+    const response = await fetch(
+      `${import.meta.env.BASE_URL}version.json`,
+      withTimeout({ cache: 'no-store' } satisfies RequestInit, 'manifest'),
+    );
     if (!response.ok) return null;
     const data: unknown = await response.json();
     if (

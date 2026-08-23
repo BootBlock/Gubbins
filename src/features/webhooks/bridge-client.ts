@@ -27,6 +27,7 @@
  * fixes.
  */
 import { resolveBridgeUrl } from '@/lib/bridge-url';
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /** The bridge's webhook endpoints, appended to the user's configured base URL. */
 export const WEBHOOK_DELIVERIES_PATH = '/api/v1/webhooks/deliveries';
@@ -38,7 +39,7 @@ export const WEBHOOK_DELIVERIES_PAGE = 50;
 /** A minimal `fetch` shape so tests can inject a fake without the DOM lib types. */
 export type FetchLike = (
   input: string,
-  init: { method: string; headers: Record<string, string>; body?: string },
+  init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
 ) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
 /** Where the bridge is and how to authenticate — both already-configured device preferences. */
@@ -164,14 +165,20 @@ async function callBridge(
   }
 
   try {
-    const response = await connection.fetchImpl(request.url, {
-      method: init?.method ?? 'GET',
-      headers: {
-        ...request.headers,
-        ...(init === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      ...(init === undefined ? {} : { body: JSON.stringify(init.body) }),
-    });
+    const response = await connection.fetchImpl(
+      request.url,
+      withTimeout(
+        {
+          method: init?.method ?? 'GET',
+          headers: {
+            ...request.headers,
+            ...(init === undefined ? {} : { 'content-type': 'application/json' }),
+          },
+          ...(init === undefined ? {} : { body: JSON.stringify(init.body) }),
+        },
+        'bridge',
+      ),
+    );
     return {
       ok: true,
       status: response.status,

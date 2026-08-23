@@ -13,6 +13,7 @@
  * `fetchImpl` is injectable so the round-trip is unit-testable without a real network.
  */
 import { buildProductLookupUrl, parseOpenFoodFactsProduct, type ProductLookupParse } from './product-lookup';
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /**
  * Look a GTIN up against Open Food Facts and parse the response into a typed product (or an
@@ -25,7 +26,10 @@ export async function lookupProductOnline(
 ): Promise<ProductLookupParse> {
   let response: Response;
   try {
-    response = await fetchImpl(buildProductLookupUrl(gtin), { headers: { Accept: 'application/json' } });
+    response = await fetchImpl(
+      buildProductLookupUrl(gtin),
+      withTimeout({ headers: { Accept: 'application/json' } }, 'lookup'),
+    );
   } catch {
     return { ok: false, reason: 'Couldn’t reach the product database. Check your connection and try again.' };
   }

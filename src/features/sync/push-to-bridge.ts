@@ -19,6 +19,7 @@ import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { normaliseBridgeBaseUrl } from '@/lib/bridge-url';
 import { buildLocalSnapshot } from './snapshot';
 import { snapshotToBackupJson } from './backup';
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /**
  * The bridge's versioned snapshot-ingest path, appended to the user's base URL.
@@ -82,7 +83,7 @@ export interface PushResult {
 /** A minimal `fetch` shape so tests can inject a fake without the DOM lib types. */
 export type FetchLike = (
   input: string,
-  init: { method: string; headers: Record<string, string>; body: string },
+  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal },
 ) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
 /**
@@ -107,11 +108,15 @@ export async function pushSnapshotToBridge(options: {
   let status: number;
   let payload: unknown;
   try {
-    const response = await options.fetchImpl(request.url, {
-      method: request.method,
-      headers: { ...request.headers },
-      body: request.body,
-    });
+    const response = await options.fetchImpl(
+      request.url,
+      // The snapshot goes up in this request body, so the deadline covers the upload as well as
+      // the bridge's reply — hence the push budget rather than the plain bridge one.
+      withTimeout(
+        { method: request.method, headers: { ...request.headers }, body: request.body },
+        'bridgePush',
+      ),
+    );
     status = response.status;
     payload = await response.json().catch(() => undefined);
   } catch {

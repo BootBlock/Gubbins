@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import en from '@/features/i18n/catalogs/en.json';
-import { describeNetworkError, isTransportFailure, TRANSPORT_FAILURE_MARKERS } from './network-error-message';
+import {
+  describeNetworkError,
+  isRequestTimeout,
+  isTransportFailure,
+  TRANSPORT_FAILURE_MARKERS,
+} from './network-error-message';
 
 const catalog = en as Record<string, string>;
 
@@ -41,7 +46,36 @@ describe('isTransportFailure', () => {
   });
 });
 
+describe('isRequestTimeout (issue #632)', () => {
+  it('recognises an expired request deadline', () => {
+    // What `fetch` rejects with when an `AbortSignal.timeout` fires. Its message is another
+    // untranslated browser diagnostic, so it must not reach the user as an authored sentence.
+    expect(isRequestTimeout(new DOMException('signal timed out', 'TimeoutError'))).toBe(true);
+  });
+
+  it('leaves a deliberate cancellation alone', () => {
+    // The distinction the module rests on: the user closing a picker is not a network problem.
+    expect(isRequestTimeout(new DOMException('The user aborted a request.', 'AbortError'))).toBe(false);
+  });
+
+  it('rejects a transport failure and a non-Error value', () => {
+    expect(isRequestTimeout(fetchFailure('Failed to fetch'))).toBe(false);
+    expect(isRequestTimeout('TimeoutError')).toBe(false);
+  });
+});
+
 describe('describeNetworkError', () => {
+  it('reports an expired deadline as an unreachable service', () => {
+    // Before issue #632 the request simply never settled, so the user saw nothing at all; the
+    // failure now has to arrive as the same sentence a dropped connection produces.
+    expect(describeNetworkError(new DOMException('signal timed out', 'TimeoutError'), true)).toEqual({
+      key: 'network.error.unreachable',
+    });
+    expect(describeNetworkError(new DOMException('signal timed out', 'TimeoutError'), false)).toEqual({
+      key: 'network.error.offline',
+    });
+  });
+
   it('names being offline when the device knows it has no connection', () => {
     expect(describeNetworkError(fetchFailure('Failed to fetch'), false)).toEqual({
       key: 'network.error.offline',

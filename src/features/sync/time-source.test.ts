@@ -27,7 +27,13 @@ describe('httpTimeSource (§7.3 fallback)', () => {
     const when = 'Wed, 21 Oct 2015 07:28:00 GMT';
     const fetchImpl = fetchReturning(when);
     await expect(httpTimeSource({ url: 'https://x/', fetchImpl })).resolves.toBe(Date.parse(when));
-    expect(fetchImpl).toHaveBeenCalledWith('https://x/', { method: 'HEAD', cache: 'no-store' });
+    // The `signal` is the issue #632 deadline: a HEAD to a peer that never answers used to
+    // block the whole sync before anything else ran.
+    expect(fetchImpl).toHaveBeenCalledWith('https://x/', {
+      method: 'HEAD',
+      cache: 'no-store',
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it('degrades to null when the response carries no Date header', async () => {

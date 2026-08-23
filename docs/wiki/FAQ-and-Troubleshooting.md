@@ -95,6 +95,15 @@ healthy bridge looks unreachable. If there's no such notice, the address really 
 check the bridge is running, that the address and port match what it printed on startup, and that
 anything in between (a firewall, another machine) allows it.
 
+**A button stayed greyed out after I pressed it, and nothing ever happened.**
+This used to happen when whatever Gubbins was talking to — your [[bridge|Bridge-Overview]], a
+[[product database|Filling-Fields-from-a-Database]], or [[cloud sync|Cloud-Sync]] — accepted the
+connection and then went quiet, which is common on a phone that switches between Wi-Fi and mobile
+data mid-request, or with a bridge on a computer that has gone to sleep. Gubbins now gives every
+request a time limit and reports a normal "couldn't reach it" message when the limit passes, so
+the control comes back and you can retry. The limit is generous, and scaled to the job: a quick
+question to your bridge gives up sooner than an upload of your whole inventory to cloud sync.
+
 **Gubbins looks broken since it updated — but my data is fine.**
 Gubbins keeps a copy of itself on your device so it works offline, and occasionally that copy is
 what's wrong: an update that only half applied, or a version with a bug in it. **Settings → Danger

@@ -14,6 +14,7 @@
  * external dependency (native-first, §2.4.3). Every failure degrades to `null` (trust the
  * local clock) so a flaky network can never block or crash a sync.
  */
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /**
  * Parse an HTTP `Date` header into epoch milliseconds; `null` if absent/unparseable.
@@ -43,7 +44,10 @@ export async function httpTimeSource(options: HttpTimeSourceOptions = {}): Promi
   const url = options.url ?? defaultOrigin();
   if (!url) return null;
   try {
-    const res = await doFetch(url, { method: 'HEAD', cache: 'no-store' });
+    const res = await doFetch(
+      url,
+      withTimeout({ method: 'HEAD', cache: 'no-store' } satisfies RequestInit, 'probe'),
+    );
     return parseHttpDate(res.headers.get('date'));
   } catch {
     return null;

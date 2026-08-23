@@ -19,6 +19,7 @@
  * message ever carries the bridge token.
  */
 import { resolveBridgeUrl } from '@/lib/bridge-url';
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /** The bridge's opt-in scale endpoints, appended to the user's configured base URL. */
 export const SCALE_ENTITIES_PATH = '/api/v1/scale/entities';
@@ -34,7 +35,7 @@ export interface ScaleEntity {
 /** A minimal `fetch` shape so tests can inject a fake without the DOM lib types. */
 export type FetchLike = (
   input: string,
-  init: { method: string; headers: Record<string, string> },
+  init: { method: string; headers: Record<string, string>; signal?: AbortSignal },
 ) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
 /** Where the bridge is and how to authenticate — both already-configured device preferences. */
@@ -119,10 +120,10 @@ async function getJson(
   }
 
   try {
-    const response = await connection.fetchImpl(request.url, {
-      method: 'GET',
-      headers: { ...request.headers },
-    });
+    const response = await connection.fetchImpl(
+      request.url,
+      withTimeout({ method: 'GET', headers: { ...request.headers } }, 'bridge'),
+    );
     return { ok: true, status: response.status, payload: await response.json().catch(() => undefined) };
   } catch {
     // Network error, CORS, or the bridge is offline — never expose the raw error or the token.
