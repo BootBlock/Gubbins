@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { Autocomplete, AutocompleteField } from './autocomplete';
-import { browseStartIndex, filterSuggestions } from './autocomplete-filter';
+import { browseStartIndex, filterSuggestions, indexOfValue } from './autocomplete-filter';
 
 afterEach(cleanup);
 
@@ -57,6 +57,11 @@ describe('browseStartIndex — where a browse starts (pure)', () => {
     expect(browseStartIndex(MAKERS, 'Acme Widgets')).toBe(-1);
     expect(browseStartIndex(MAKERS, '   ')).toBe(-1);
   });
+
+  it('offers indexOfValue for the exact-only case, which takes no near match', () => {
+    expect(indexOfValue(MAKERS, 'tdk')).toBe(1);
+    expect(indexOfValue(MAKERS, 'TD')).toBe(-1);
+  });
 });
 
 describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
@@ -102,6 +107,19 @@ describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
     fireEvent.change(input, { target: { value: 'y' } });
     fireEvent.mouseDown(screen.getByText('Yageo'));
     expect(input.value).toBe('Yageo');
+  });
+
+  it('leaves Escape to the enclosing dialog when no list is on screen', () => {
+    // Text that matches nothing leaves the control "open" with an empty popup. Escape there
+    // must reach the Modal, not be swallowed closing something the user cannot see.
+    render(<Harness initial="" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'Acme Widgets' } });
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it('closes on Escape without clearing the typed value', () => {
@@ -369,6 +387,23 @@ describe('Autocomplete — creatable mode (onCommit, issue #84)', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(committed).toEqual(['TDK']);
+  });
+
+  it('does not arm a near match when the chevron browses (the typed text is a candidate)', () => {
+    // Typing `Y` then browsing must not pre-arm `Yageo`: Enter would create a tag the user
+    // never asked for. Only the field's own value may be highlighted in creatable mode.
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    const input = screen.getByRole('combobox', { name: 'Add a tag' });
+
+    fireEvent.change(input, { target: { value: 'Y' } });
+    fireEvent.keyDown(input, { key: 'Escape' }); // dismiss the type-ahead the keystroke opened
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(committed).toEqual(['Y']);
   });
 
   it('ignores Enter on an empty field', () => {

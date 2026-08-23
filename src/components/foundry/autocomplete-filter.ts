@@ -33,21 +33,32 @@ export function filterSuggestions(suggestions: readonly string[], query: string,
 }
 
 /**
- * Where a browse of the whole list should start, or `-1` when nothing in it fits the field's
- * current value — so an untouched field opens with no option highlighted.
- *
- * The value itself wins: names are compared through {@link foldName}, the same fold the write
- * paths use, so `größe` meets `GRÖSSE` here as it does there. Failing that, the option the
- * type-ahead would have ranked first stands in — a field whose text is a *prefix* of its
- * option rather than the whole of it (a currency field holding `USD` against a
- * `USD — US Dollar` list) would otherwise start at the top of the catalogue, which for a
- * keyboard user is one Enter away from replacing the value with an unrelated one.
+ * Where the list already holds the field's own value, or `-1`. Names are compared through
+ * {@link foldName} — the same fold the write paths use, so `größe` meets `GRÖSSE` here as it
+ * does there. An empty value matches nothing, so an untouched field starts on no option.
  */
-export function browseStartIndex(suggestions: readonly string[], value: string): number {
+export function indexOfValue(suggestions: readonly string[], value: string): number {
   const folded = foldName(value);
   if (folded.length === 0) return -1;
-  const exact = suggestions.findIndex((suggestion) => foldName(suggestion) === folded);
+  return suggestions.findIndex((suggestion) => foldName(suggestion) === folded);
+}
+
+/**
+ * Where a browse of the whole list should start: the field's own value, or failing that the
+ * option the type-ahead would have ranked first.
+ *
+ * The second branch is for a field whose text is a *prefix* of its option rather than the
+ * whole of it — a currency field holding `USD` against a `USD — US Dollar` list. Without it
+ * that browse starts at the top of the catalogue, which for a keyboard user is one Enter away
+ * from replacing the value with an unrelated one. Where a near match is not good enough —
+ * creatable fields, where the typed text is itself a candidate — use {@link indexOfValue}.
+ */
+export function browseStartIndex(suggestions: readonly string[], value: string): number {
+  const exact = indexOfValue(suggestions, value);
   if (exact >= 0) return exact;
+  // An empty field has nothing to be near, and `filterSuggestions` would answer it with the
+  // whole list — starting a browse on the first option the user never asked for.
+  if (value.trim().length === 0) return -1;
   const [best] = filterSuggestions(suggestions, value, 1);
   return best === undefined ? -1 : suggestions.indexOf(best);
 }

@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
 import { fieldAria } from './field-aria';
-import { browseStartIndex, filterSuggestions } from './autocomplete-filter';
+import { browseStartIndex, filterSuggestions, indexOfValue } from './autocomplete-filter';
 import { InfoHint } from './info-hint';
 import { TextLimitReport, useTextLimit, useTextLimitSlot } from './text-limit';
 import { useAnchoredPopover } from './use-anchored-popover';
@@ -173,6 +173,15 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
    * that merely places the caret in the input starts on nothing, because a highlighted option
    * makes Enter *pick* it instead of submitting the enclosing form.
    */
+  /**
+   * Where a browse of the whole list starts. In creatable mode only the field's own value may
+   * be pre-armed: the typed text is itself a candidate there, and Enter accepts whatever is
+   * highlighted — so arming a merely *near* option would have `cap` create the `capacitor`
+   * that already exists. Elsewhere the nearest option is what the user meant.
+   */
+  const browseStart = () =>
+    onCommit ? indexOfValue(browseList, value) : browseStartIndex(browseList, value);
+
   const openBrowsing = (startIndex: number) => {
     setOpen(true);
     setBrowsing(true);
@@ -209,7 +218,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         if (isOpen) setActiveIndex((i) => Math.min(matches.length - 1, i + 1));
         // ArrowDown must always land on an option, so the top of the list stands in when
         // nothing in it fits what the field holds.
-        else openBrowsing(Math.max(0, browseStartIndex(browseList, value)));
+        else openBrowsing(Math.max(0, browseStart()));
         break;
       case 'ArrowUp':
         if (!isOpen) break;
@@ -241,12 +250,14 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         }
         break;
       case 'Escape':
-        if (open) {
-          // Close the list — not the enclosing Modal — and keep the typed value.
+        // Only a list the user can *see* swallows the key — text matching nothing leaves the
+        // latch set with nothing on screen, and Escape there belongs to the enclosing Modal.
+        if (isOpen) {
+          // Close the list — not the Modal — and keep the typed value.
           event.preventDefault();
           event.stopPropagation();
-          close();
         }
+        if (open) close();
         break;
       case 'Tab':
         close();
@@ -312,7 +323,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
           event.preventDefault();
           // Toggles what the user can see — see the input's onClick for why not `open`.
           if (isOpen) close();
-          else openBrowsing(browseStartIndex(browseList, value));
+          else openBrowsing(browseStart());
           inputRef.current?.focus();
         }}
         className="absolute right-0 top-0 flex h-10 w-9 items-center justify-center text-muted-foreground disabled:opacity-50"
