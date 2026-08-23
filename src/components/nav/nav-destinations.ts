@@ -91,7 +91,10 @@ export interface PaletteDestination {
   readonly feature?: FeatureId;
   /**
    * The read permission a signed-in account needs before this screen is offered or rendered
-   * (issue #522). `undefined` means the screen carries no read gate — either because it shows
+   * (issue #522). Several keys mean **any one of them** suffices, which is what a screen holding
+   * more than one capability needs: Sync hosts both cloud sync and Backup & restore, so a role
+   * granted backups but not sync must still reach it. `undefined` means the screen carries no
+   * read gate — either because it shows
    * nothing a role can withhold (the Dashboard shell, About), because it is this device's own
    * preferences rather than the vault's data (Settings), or because it is the one way back from
    * a hidden module (Modules).
@@ -101,7 +104,7 @@ export interface PaletteDestination {
    * Reads inside a screen the account may open are not filtered further — the repository layer
    * gates writes, and the database file itself is readable by anyone holding the device.
    */
-  readonly permission?: PermissionKey;
+  readonly permission?: PermissionKey | readonly PermissionKey[];
 }
 
 export interface NavDestination extends PaletteDestination {
@@ -228,7 +231,9 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     Icon: CloudIcon,
     group: 'system',
     feature: 'sync',
-    permission: 'sync:read',
+    // Backup & restore lives on this screen, not one of its own, so the gate has to admit a role
+    // granted backups without cloud sync — the split issue #519's Danger-Zone work introduced.
+    permission: ['sync:read', 'backup:read', 'backup:write'],
   },
   {
     to: '/webhooks',
@@ -341,8 +346,17 @@ const OFF_NAV_ROUTE_PERMISSIONS: readonly (readonly [string, PermissionKey])[] =
   ['/share-target', 'items:write'],
 ];
 
+/** Read one destination's gate as a list, so a caller need not care which form it took. */
+export function permissionsFor(
+  permission: PermissionKey | readonly PermissionKey[] | undefined,
+): readonly PermissionKey[] {
+  if (permission === undefined) return [];
+  return typeof permission === 'string' ? [permission] : permission;
+}
+
 /**
- * The read permission each route requires, keyed by path (issue #522).
+ * The read permissions each route requires, keyed by path (issue #522). A route with more than
+ * one is satisfied by **any** of them.
  *
  * Derived from {@link PALETTE_DESTINATIONS} rather than written out a second time, so a screen
  * cannot be hidden from the navigation while still answering to its own URL — the nav surfaces
@@ -353,9 +367,11 @@ const OFF_NAV_ROUTE_PERMISSIONS: readonly (readonly [string, PermissionKey])[] =
  * renders the Activity screen, so an exact-case lookup would let it past the gate. Every path
  * here is already lower-case; the normalisation is stated rather than assumed.
  */
-export const ROUTE_PERMISSIONS: ReadonlyMap<string, PermissionKey> = new Map(
+export const ROUTE_PERMISSIONS: ReadonlyMap<string, readonly PermissionKey[]> = new Map(
   [
-    ...PALETTE_DESTINATIONS.flatMap((d) => (d.permission ? [[d.to as string, d.permission] as const] : [])),
-    ...OFF_NAV_ROUTE_PERMISSIONS,
-  ].map(([path, key]) => [path.toLowerCase(), key] as const),
+    ...PALETTE_DESTINATIONS.flatMap((d) =>
+      d.permission ? [[d.to as string, permissionsFor(d.permission)] as const] : [],
+    ),
+    ...OFF_NAV_ROUTE_PERMISSIONS.map(([path, key]) => [path, [key] as readonly PermissionKey[]] as const),
+  ].map(([path, keys]) => [path.toLowerCase(), keys] as const),
 );

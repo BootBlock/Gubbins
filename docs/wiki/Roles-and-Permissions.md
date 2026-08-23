@@ -51,14 +51,37 @@ Permissions are a grid: a **row for each area** of Gubbins and a **column for ea
 
 ## What **View** actually does
 
-**View** decides which screens open. Take **View** away from an area and its screen disappears from
-the navigation menu, from the Dashboard's tile grid and from the
-[[command palette|Command-Palette-and-Shortcuts]] — and typing the address by hand lands on a short
-"your role doesn't allow this" page instead of the screen. Any [[dashboard|Dashboard-and-Widgets]] card that
-summarises that area drops off the board too, so nothing quietly reports what the screen won't show.
+Most areas have a screen of their own, and for those, **View** decides whether it opens. Take
+**View** away and the screen disappears from the navigation menu, from the Dashboard's tile grid,
+from the keyboard shortcuts and from the [[command palette|Command-Palette-and-Shortcuts]] — and
+typing the address by hand lands on a short "your role doesn't allow this" page instead. Any
+[[dashboard|Dashboard-and-Widgets]] card summarising that area drops off the board too, so nothing
+quietly reports what the screen won't show.
 
-Two screens gather several areas at once — [[Upcoming|Upcoming-Agenda]] and [[Alerts|Alerts]] — so
-they stay available and simply leave out the entries a role can't view.
+Some areas have no screen to hide, and their **View** governs the data wherever it is reached
+instead:
+
+- **Activity history → View** covers the [[activity log|Activity-Log]] screen *and* the per-item
+  and per-location history tabs, which are the same record seen from a different angle.
+- **Backups → View** allows creating a [[backup|Backup-and-Restore]], because a backup file is a
+  copy of the whole database rather than a page to look at. Backup & restore lives on the
+  [[Sync|Cloud-Sync]] screen, so that screen opens for a role granted backups even without
+  **Sync → View**.
+- **Loans → View** and **Maintenance → View** govern the [[Upcoming|Upcoming-Agenda]] and
+  [[Alerts|Alerts]] entries drawn from them, since neither has a screen of its own.
+- **Settings** is the exception that stays open to everyone: it holds this device's own
+  preferences — [[appearance|Appearance-and-Theming]], [[language|Language-and-Region]] — rather
+  than your inventory, so **Settings → Change** is the permission that bites there, not View.
+
+> **ℹ️ Note**
+> A few areas — **Stock levels**, **Locations**, **Categories** and **Wishlist** — currently show
+> a **View** box that nothing in the app checks: their records are read wherever an item shows
+> them, and Gubbins does not gate an item's own page field by field. Their **View** does take
+> effect for the [[bridge|Bridge-Overview]], where locations and categories are separate
+> endpoints. Their **Change** and **Delete** boxes work everywhere.
+
+Those two aggregating screens, Upcoming and Alerts, stay available to everyone and simply leave out
+the entries a role can't view.
 
 Withholding **View** is not the same as hiding individual records:
 
@@ -72,6 +95,7 @@ Withholding **View** is not the same as hiding individual records:
 > If a piece of information genuinely must not be seen by someone, don't rely on **View** to keep it
 > out of sight — keep it out of that vault. Permissions decide which screens and actions a person
 > gets, not which rows exist.
+
 ## What the destructive actions are held to
 
 Permissions are not only about the buttons on an item. The actions that can remove or overwrite
@@ -146,10 +170,10 @@ Deleting a role doesn't delete anyone. People holding it keep their accounts and
 permissions until you give them another one.
 
 A role also governs what an outside tool can do. An [[API token|Bridge-API-Tokens]] minted against
-an account is held to that account's role, so a role that can't see suppliers in the app can't read
-them through the [[bridge|Bridge-Overview]] either. The bridge is the stricter of the two: it checks
-the permission on **every request**, so a role without *View* on the [[activity log|Activity-Log]]
-is refused the activity feed itself, not merely the screen that shows it.
+an account is held to that account's role, so the same limits follow it out of the app. The bridge
+checks the permission on **every request**, against the data rather than a screen: a role without
+**Activity history → View** is refused the activity feed itself, and one without **Items → View**
+is refused the item endpoints, the search and the OData service alike.
 
 > **⚠️ Heads-up**
 > Permissions decide what Gubbins *lets someone do in the app*. They are not a lock on the data

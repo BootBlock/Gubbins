@@ -16,7 +16,7 @@
  */
 import { useCallback } from 'react';
 import { useSessionStore } from '@/state/stores/useSessionStore';
-import { can, type Authority } from './permissions';
+import { can, canAny, type Authority } from './permissions';
 import type { PermissionKey } from './permission-registry';
 
 /** The current session's resolved authority (subscribes to the store). */
@@ -25,14 +25,15 @@ function useAuthority(): Authority {
 }
 
 /**
- * Whether the current session holds `key`.
+ * Whether the current session holds `key` — or, given several, **any** of them.
  *
  * `undefined` answers `true`: a screen or action that declares no permission is ungated, so
- * callers can pass an optional registry field straight in without a branch of their own.
+ * callers can pass an optional registry field straight in without a branch of their own. An
+ * empty list answers `true` for the same reason.
  */
-export function usePermission(key: PermissionKey | undefined): boolean {
+export function usePermission(key: PermissionKey | readonly PermissionKey[] | undefined): boolean {
   const authority = useAuthority();
-  return key === undefined || can(authority, key);
+  return holds(authority, key);
 }
 
 /**
@@ -41,10 +42,17 @@ export function usePermission(key: PermissionKey | undefined): boolean {
  * whole destination list. Calling {@link usePermission} once per row is not an option there
  * (rules of hooks), and each would otherwise re-read the store.
  */
-export function usePermissionCheck(): (key: PermissionKey | undefined) => boolean {
+export function usePermissionCheck(): (key: PermissionKey | readonly PermissionKey[] | undefined) => boolean {
   const authority = useAuthority();
-  return useCallback(
-    (key: PermissionKey | undefined) => key === undefined || can(authority, key),
-    [authority],
-  );
+  return useCallback((key) => holds(authority, key), [authority]);
+}
+
+/**
+ * The shared answer both hooks give. Several keys mean **any** of them suffices — the form a
+ * screen hosting more than one capability needs (Sync carries both cloud sync and Backup &
+ * restore), and the reason this is not simply `can`.
+ */
+function holds(authority: Authority, key: PermissionKey | readonly PermissionKey[] | undefined): boolean {
+  if (key === undefined) return true;
+  return typeof key === 'string' ? can(authority, key) : key.length === 0 || canAny(authority, key);
 }

@@ -48,6 +48,7 @@ import {
   stepHotkeySequence,
   type HotkeyAction,
   hotkeyPermission,
+  COMMAND_DESTINATIONS,
 } from './hotkeys';
 
 /** Mac keyboards fold Command into the primary modifier — settled once, not per key press. */
@@ -119,19 +120,19 @@ export function useGlobalHotkeys(): void {
           // The Add dialog is Inventory's local state with no route of its own, so arriving with
           // an intent is how every other entry point (palette, dashboard hero) opens it too.
           useInventoryEntry.getState().requestIntent('add');
-          void navigate({ to: '/inventory' });
+          void navigate({ to: COMMAND_DESTINATIONS['add-item'] });
           return true;
         case 'start-scan':
           useInventoryEntry.getState().requestIntent('scan');
-          void navigate({ to: '/inventory' });
+          void navigate({ to: COMMAND_DESTINATIONS['start-scan'] });
           return true;
         case 'new-project':
           useHotkeyIntent.getState().request('new-project');
-          void navigate({ to: '/projects' });
+          void navigate({ to: COMMAND_DESTINATIONS['new-project'] });
           return true;
         case 'new-purchase-order':
           useHotkeyIntent.getState().request('new-purchase-order');
-          void navigate({ to: '/purchase-orders' });
+          void navigate({ to: COMMAND_DESTINATIONS['new-purchase-order'] });
           return true;
         case 'toggle-full-width': {
           const state = usePreferencesStore.getState();

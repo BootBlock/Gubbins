@@ -23,6 +23,8 @@ import { cn } from '@/lib/utils';
 import { Button, buttonVariants, MenuLink } from '@/components/foundry';
 import { AddIcon, ScanIcon, ImportIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { ROUTE_PERMISSIONS } from '@/components/nav/nav-destinations';
+import { usePermission } from '@/features/users/usePermission';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { useFeature } from '@/features/modules/useFeature';
 import { useT } from '@/features/i18n';
@@ -31,7 +33,10 @@ import { HeaderSearch } from '@/features/command-palette/HeaderSearch';
 export function DashboardActions() {
   const t = useT();
   const showSearch = usePreferencesStore((s) => s.dashboardCommandPalette);
-  const showQuickActions = usePreferencesStore((s) => s.dashboardQuickActions);
+  // Every quick action lands on Inventory carrying an intent, so a role that cannot open that
+  // screen is offered none of them — the buttons would only reach the refusal page (issue #522).
+  const mayReachInventory = usePermission(ROUTE_PERMISSIONS.get('/inventory'));
+  const showQuickActions = usePreferencesStore((s) => s.dashboardQuickActions) && mayReachInventory;
   // The Scan quick action opens live camera scanning — the `scanner` capability
   // (modular-ui-plan §4, Phase 6). Hidden when Scanner is off; Add item always stays.
   const scannerEnabled = useFeature('scanner');

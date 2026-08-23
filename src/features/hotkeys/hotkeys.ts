@@ -849,16 +849,44 @@ export function isTypingTarget(
 }
 
 /**
- * The read permission a hotkey's destination needs, or `undefined` when it needs none
- * (issue #522).
+ * Where a `command` action ends up, for the commands that navigate (issue #522).
+ *
+ * Four of them do: Add item and Scan both land on Inventory carrying an intent, and the two
+ * "new record" commands land on their own screen the same way. Their effect kind says `command`
+ * because they carry that intent, not because they stay put — so a permission check that looked
+ * only at `kind === 'navigate'` waved all four through, and a role refused Projects was still
+ * offered "New project" in the overlay and dropped on the refusal page when it pressed it.
+ *
+ * `useGlobalHotkeys` navigates through this same map, so the destination a shortcut is *gated*
+ * on and the one it actually goes to cannot drift apart. A command absent from it stays put.
+ */
+export type NavigatingCommand = 'add-item' | 'start-scan' | 'new-project' | 'new-purchase-order';
+
+export const COMMAND_DESTINATIONS: Record<NavigatingCommand, AppRoutePath> = {
+  'add-item': '/inventory',
+  'start-scan': '/inventory',
+  'new-project': '/projects',
+  'new-purchase-order': '/purchase-orders',
+};
+
+/** Whether `command` is one that navigates, so its destination can be looked up above. */
+function navigates(command: HotkeyCommand): command is NavigatingCommand {
+  return command in COMMAND_DESTINATIONS;
+}
+
+/**
+ * The read permissions a hotkey's destination needs, or an empty list when it needs none
+ * (issue #522). Several mean **any** of them suffices, matching `ROUTE_PERMISSIONS`.
  *
  * Derived from `ROUTE_PERMISSIONS` rather than declared a second time on each action: the four
  * surfaces that list shortcuts — the global listener, the overlay, the header hints and the
  * settings list — must agree with the nav menu about which screens exist for this role, and a
- * parallel field per action is exactly the list that drifts. A non-navigating action (the palette,
- * Add item, the scanner) has no destination and so no gate here.
+ * parallel field per action is exactly the list that drifts. A shortcut that goes nowhere (the
+ * palette, Escape, the theme toggle) has no destination and so no gate here.
  */
-export function hotkeyPermission(action: HotkeyAction): PermissionKey | undefined {
-  if (action.effect.kind !== 'navigate') return undefined;
-  return ROUTE_PERMISSIONS.get(action.effect.to.toLowerCase());
+export function hotkeyPermission(action: HotkeyAction): readonly PermissionKey[] {
+  const effect = action.effect;
+  if (effect.kind === 'navigate') return ROUTE_PERMISSIONS.get(effect.to.toLowerCase()) ?? [];
+  if (!navigates(effect.command)) return [];
+  return ROUTE_PERMISSIONS.get(COMMAND_DESTINATIONS[effect.command].toLowerCase()) ?? [];
 }

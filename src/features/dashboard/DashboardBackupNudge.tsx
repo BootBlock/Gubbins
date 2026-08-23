@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 import { Banner, buttonVariants } from '@/components/foundry';
 import { CloudUploadIcon, SecureIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { ROUTE_PERMISSIONS } from '@/components/nav/nav-destinations';
+import { usePermission } from '@/features/users/usePermission';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { useItemCount } from '@/features/inventory/queries';
 import { useT } from '@/features/i18n';
@@ -34,9 +36,16 @@ export function DashboardBackupNudge({ className }: { readonly className?: strin
   // matching how the first-run panel decides the database is non-empty.
   const count = useItemCount({ includeInactive: true });
 
+  // The nudge's only action goes to Sync, which now answers to a permission (issue #522). A
+  // banner whose one button lands on "your role doesn't allow this" is worse than no banner, so
+  // a role that cannot reach the screen is not nudged towards it.
+  const mayReachSync = usePermission(ROUTE_PERMISSIONS.get('/sync'));
+
   // Hide when: dismissed, a sync provider is already connected, the count is still loading
-  // (no flash), or the inventory is empty (nothing to lose yet — the getting-started panel shows).
+  // (no flash), the inventory is empty (nothing to lose yet — the getting-started panel shows),
+  // or this role cannot open the screen the nudge points at.
   if (dismissed || providerId !== null || count.isPending || (count.data ?? 0) === 0) return null;
+  if (!mayReachSync) return null;
 
   return (
     <Banner

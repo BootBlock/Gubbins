@@ -49,6 +49,8 @@ import { fitsInQr } from '@/features/scanner/qr-code';
 import { hasOcr } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
 import { useFeature } from '@/features/modules/useFeature';
+import { ROUTE_PERMISSIONS } from '@/components/nav/nav-destinations';
+import { usePermission } from '@/features/users/usePermission';
 import { useT, hasInterfaceTranslation } from '@/features/i18n';
 import { exceedsTextLimit } from '@/lib/text-limits';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
@@ -230,6 +232,10 @@ export default function SettingsDialog({
   const projectsOn = useFeature('projects');
   const purchaseOrdersOn = useFeature('purchase-orders');
   const bookingsOn = useFeature('bookings');
+  // Settings itself is deliberately open to every role — it holds this device's own preferences,
+  // not the vault's records. The rows that *leave* Settings for a gated screen are not, or the
+  // one page everyone can reach becomes a set of buttons to the refusal page (issue #522).
+  const mayReachWebhooks = usePermission(ROUTE_PERMISSIONS.get('/webhooks'));
 
   // A configurable nav-tile count picker is shown only when its tile's feature is enabled —
   // a hidden tile has no count to re-point. Keyed by the same route as NAV_COUNT_METRIC_CONFIG.
@@ -1531,25 +1537,27 @@ export default function SettingsDialog({
               Manage modules
             </Link>
           </SettingRow>
-          <SettingRow
-            noWrap
-            label="Webhooks"
-            description="Call a URL of your choosing when something changes in your inventory. Delivery is handled by the bridge."
-            hint={
-              'Opens the **Webhooks** screen: subscribe a URL to events (an item created, stock adjusted, something moved), narrow it with filters, and choose what the payload looks like.\n\n' +
-              'Webhooks are **delivered by the bridge**, not by the app itself — a browser cannot reliably reach the endpoints people actually own. Subscriptions reach the bridge on the next sync. Opening this leaves Settings.'
-            }
-          >
-            <Link
-              to="/webhooks"
-              data-testid="open-webhooks-settings"
-              onClick={onClose}
-              className={cn(buttonVariants({ variant: 'outline' }))}
+          {mayReachWebhooks ? (
+            <SettingRow
+              noWrap
+              label="Webhooks"
+              description="Call a URL of your choosing when something changes in your inventory. Delivery is handled by the bridge."
+              hint={
+                'Opens the **Webhooks** screen: subscribe a URL to events (an item created, stock adjusted, something moved), narrow it with filters, and choose what the payload looks like.\n\n' +
+                'Webhooks are **delivered by the bridge**, not by the app itself — a browser cannot reliably reach the endpoints people actually own. Subscriptions reach the bridge on the next sync. Opening this leaves Settings.'
+              }
             >
-              <WebhookIcon />
-              Webhooks
-            </Link>
-          </SettingRow>
+              <Link
+                to="/webhooks"
+                data-testid="open-webhooks-settings"
+                onClick={onClose}
+                className={cn(buttonVariants({ variant: 'outline' }))}
+              >
+                <WebhookIcon />
+                Webhooks
+              </Link>
+            </SettingRow>
+          ) : null}
           <SettingRow
             label="About Gubbins"
             description="Version, project &amp; support links, author, licence and disclaimer."

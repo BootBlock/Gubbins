@@ -186,12 +186,41 @@ describe('RoutePermissionGuard', () => {
 
 describe('ROUTE_PERMISSIONS — the promises the wiki makes', () => {
   it('gates the two screens the built-in Viewer role is described as not seeing', () => {
-    expect(ROUTE_PERMISSIONS.get('/activity')).toBe('audit:view');
-    expect(ROUTE_PERMISSIONS.get('/users')).toBe('users:read');
+    expect(ROUTE_PERMISSIONS.get('/activity')).toEqual(['audit:view']);
+    expect(ROUTE_PERMISSIONS.get('/users')).toEqual(['users:read']);
   });
 
   it('keys every entry in lower case, so a differently-cased URL still resolves', () => {
     for (const path of ROUTE_PERMISSIONS.keys()) expect(path).toBe(path.toLowerCase());
+  });
+
+  /**
+   * Backup & restore lives on the Sync screen rather than one of its own, so a role granted
+   * backups but not cloud sync — exactly the split issue #519 introduced — must still get in.
+   * A single-key gate on `sync:read` would have locked that role out of its own backups.
+   */
+  it('lets any one of a screen’s permissions open it', () => {
+    expect(ROUTE_PERMISSIONS.get('/sync')).toEqual(['sync:read', 'backup:read', 'backup:write']);
+
+    pathname = '/sync';
+    grant('backup:read');
+    render(
+      <RoutePermissionGuard>
+        <Screen />
+      </RoutePermissionGuard>,
+    );
+    expect(screen.getByTestId('real-screen')).toBeTruthy();
+  });
+
+  it('still refuses a screen when the session holds none of its permissions', () => {
+    pathname = '/sync';
+    grant('items:read');
+    render(
+      <RoutePermissionGuard>
+        <Screen />
+      </RoutePermissionGuard>,
+    );
+    expect(screen.queryByTestId('real-screen')).toBeNull();
   });
 
   it('leaves the ways back from a restricted session ungated', () => {

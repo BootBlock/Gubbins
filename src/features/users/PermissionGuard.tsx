@@ -34,8 +34,12 @@ import { permissionLabelKeys } from './permission-labels';
 import { usePermission } from './usePermission';
 
 export interface PermissionGuardProps {
-  /** The read permission this screen requires; sourced from the nav registry. */
-  readonly permission: PermissionKey;
+  /**
+   * The read permission this screen requires; sourced from the nav registry. Several mean **any**
+   * of them suffices, and the refusal names the first — the one an operator is most likely to
+   * have meant to grant.
+   */
+  readonly permission: PermissionKey | readonly PermissionKey[];
   /** The screen to render when the session holds it. */
   readonly children: ReactNode;
 }
@@ -47,7 +51,11 @@ export interface PermissionGuardProps {
 export function PermissionGuard({ permission, children }: PermissionGuardProps) {
   const allowed = usePermission(permission);
   if (allowed) return <>{children}</>;
-  return <PermissionDeniedInterstitial permission={permission} />;
+  // Several keys mean any one would do; the refusal names the first, which is the one an
+  // operator is most likely to have meant to grant.
+  const named = typeof permission === 'string' ? permission : permission[0];
+  if (named === undefined) return <>{children}</>;
+  return <PermissionDeniedInterstitial permission={named} />;
 }
 
 /**
@@ -59,7 +67,7 @@ export function PermissionGuard({ permission, children }: PermissionGuardProps) 
 export function RoutePermissionGuard({ children }: { readonly children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const permission = ROUTE_PERMISSIONS.get(normalisePath(pathname));
-  if (!permission) return <>{children}</>;
+  if (!permission || permission.length === 0) return <>{children}</>;
   return <PermissionGuard permission={permission}>{children}</PermissionGuard>;
 }
 
