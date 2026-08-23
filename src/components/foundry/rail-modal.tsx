@@ -205,10 +205,9 @@ export function RailModal({
             //
             // Setting `overflow-y` also makes the *horizontal* axis clip (CSS resolves the other
             // axis of a scroll container away from `visible`), which would shave the focus ring
-            // off every tab, since a tab stretches to the full width of the rail. `-mx-ring-bleed
-            // px-ring-bleed` cancels out, so no tab moves; it only gives that ring room to paint
-            // (issue #417).
-            className="-mx-ring-bleed flex max-w-[calc(13rem+2*var(--spacing-ring-bleed))] min-h-0 shrink-0 flex-col gap-1 overflow-y-auto px-ring-bleed"
+            // off every tab, since a tab stretches to the full width of the rail. `ring-bleed-x`
+            // cancels out, so no tab moves; it only gives that ring room to paint (issue #417).
+            className="flex max-w-[calc(var(--spacing)*52+2*var(--spacing-ring-bleed))] min-h-0 shrink-0 flex-col gap-1 overflow-y-auto ring-bleed-x"
           >
             {tabs.map((tab) => {
               const selected = tab.id === active.id;

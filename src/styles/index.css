@@ -1062,8 +1062,9 @@
    * the Surface already has, the content does not move, and the ring has somewhere to go.
    *
    * 0.5rem clears the widest ring the Foundry draws — a `ring-[3px] ring-offset-2` on a
-   * control that also scales up on selection. Used by the `dialog-scroll` utility below and,
-   * as `-mx-ring-bleed px-ring-bleed`, by any other clipping scroller holding controls.
+   * control that also scales up on selection. Read by the `dialog-scroll` and `ring-bleed-x`
+   * utilities below: the first for a dialog's own body, the second for every other clipping
+   * scroller that holds controls.
    */
   --spacing-ring-bleed: 0.5rem; /* 8px */
 
@@ -1466,6 +1467,19 @@
  * element itself stops a stray-wide child from adding a horizontal bar. Centralised so every
  * dialog scroll area shares the behaviour and it tunes in one place.
  */
+/*
+ * The ring bleed on its own, for a scroll container that is not a dialog's body — a tab rail
+ * scrolling its own stack, a bounded list, a panel taken out of flow. `overflow` on either axis
+ * makes the box clip on *both*, so a control flush against an edge loses whatever it paints
+ * outside its border box. One utility rather than a margin and a padding written side by side:
+ * the two only work as a pair, and a pair is exactly what gets half-applied — or applied at one
+ * breakpoint and not another.
+ */
+@utility ring-bleed-x {
+  margin-inline: calc(var(--spacing-ring-bleed) * -1);
+  padding-inline: var(--spacing-ring-bleed);
+}
+
 @utility dialog-scroll {
   overflow-x: hidden;
   overflow-y: auto;

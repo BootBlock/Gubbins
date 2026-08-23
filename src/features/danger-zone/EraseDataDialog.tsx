@@ -347,10 +347,11 @@ export function EraseDataDialog({ open, onClose }: EraseDataDialogProps) {
             // `min-h-0 overflow-y-auto`: the rail is `shrink-0`, so on a short viewport the
             // category stack would otherwise spill straight out past the footer. It scrolls.
             // That also makes the horizontal axis clip, which would shave the focus ring off
-            // every tab (a tab stretches to the rail's full width) — so the rail bleeds
-            // sideways and cancels it with equal padding, exactly as the Foundry rail does.
-            // Each width carries the bleed in its own sum, since the cap is on the border box.
-            className="-mx-ring-bleed flex w-[calc(13rem+2*var(--spacing-ring-bleed))] min-h-0 shrink-0 flex-col gap-1 overflow-y-auto px-ring-bleed handset:w-[calc(3.5rem+2*var(--spacing-ring-bleed))]"
+            // every tab (a tab stretches to the rail's full width) — so the rail takes the same
+            // `ring-bleed-x` the Foundry rail does. Each width carries the bleed in its own sum,
+            // since a width is the border box, padding and all: `--spacing`×52 is the `w-52` the
+            // rail asked for, ×14 the `w-14` of its icon-only handset form (issue #417).
+            className="flex w-[calc(var(--spacing)*52+2*var(--spacing-ring-bleed))] min-h-0 shrink-0 flex-col gap-1 overflow-y-auto ring-bleed-x handset:w-[calc(var(--spacing)*14+2*var(--spacing-ring-bleed))]"
           >
             {permittedSections.map((section) => (
               <TabButton
