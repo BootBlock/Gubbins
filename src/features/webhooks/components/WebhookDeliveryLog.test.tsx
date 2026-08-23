@@ -1,5 +1,6 @@
 /**
- * Delivery-log rendering tests, focused on the row that has no event behind it (issue #643).
+ * Delivery-log rendering tests, focused on the row that has no event behind it (issue #643) and on
+ * what the screen says after a bridge restart (issue #645).
  *
  * A subscription whose bridge-held secret is missing is refused before any event is considered, so
  * its row names no event type. The row must still read as a refusal rather than as a delivery of
@@ -28,8 +29,12 @@ const DELIVERY: WebhookDelivery = {
   detail: null,
 };
 
-function renderLog(deliveries: readonly WebhookDelivery[]) {
-  return render(<WebhookDeliveryLog state={{ status: 'ready', deliveries }} onRefresh={() => {}} />);
+function renderLog(deliveries: readonly WebhookDelivery[], restarted = false) {
+  // The poller hands each row a key of its own, because `seq` restarts with the bridge.
+  const keyed = deliveries.map((delivery, index) => ({ key: String(index + 1), delivery }));
+  return render(
+    <WebhookDeliveryLog state={{ status: 'ready', deliveries: keyed, restarted }} onRefresh={() => {}} />,
+  );
 }
 
 describe('WebhookDeliveryLog', () => {
@@ -56,5 +61,27 @@ describe('WebhookDeliveryLog', () => {
     // rendered empty: there was no event, so the row must not keep a place for one.
     const empty = [...container.querySelectorAll('span')].filter((el) => el.textContent === '');
     expect(empty).toEqual([]);
+  });
+
+  /**
+   * Issue #645: the log is bridge memory, so a restart empties it. Saying nothing leaves a user who
+   * restarted to apply a setting reading a list that got shorter, which looks like the setting did
+   * nothing.
+   */
+  it('says the log started again when the bridge restarted', () => {
+    renderLog([DELIVERY], true);
+    expect(screen.getByText(/started a new delivery log/i)).toBeTruthy();
+  });
+
+  it('says nothing about a restart when there has not been one', () => {
+    renderLog([DELIVERY]);
+    expect(screen.queryByText(/started a new delivery log/i)).toBeNull();
+  });
+
+  /** An empty log still has to explain itself when the emptiness is a restart. */
+  it('explains a restart even when the new log has nothing in it yet', () => {
+    renderLog([], true);
+    expect(screen.getByText(/started a new delivery log/i)).toBeTruthy();
+    expect(screen.getByText(/Nothing delivered yet/i)).toBeTruthy();
   });
 });

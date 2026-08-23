@@ -13,6 +13,11 @@
  * failure reason renders its own sentence, and `blocked` rows in particular are explained rather
  * than shown raw: a refused private address is the **expected** setup for a LAN receiver and is a
  * configuration step, not an error.
+ *
+ * A bridge restart gets the same treatment. The log is in bridge memory, so a restart empties it —
+ * and restarting to apply a setting is exactly what the "Blocked" explanation above asks a user to
+ * do. A list that silently got shorter would read as "the change did nothing", so the restart is
+ * stated instead.
  */
 import { Banner, Button, Surface } from '@/components/foundry';
 import { RefreshIcon } from '@/components/icons';
@@ -77,18 +82,31 @@ export function WebhookDeliveryLog({ state, onRefresh }: WebhookDeliveryLogProps
         <Banner tone={state.failure === 'not-enabled' ? 'warning' : 'danger'} role="alert">
           {t(FAILURE_KEYS[state.failure])}
         </Banner>
-      ) : state.deliveries.length === 0 ? (
-        <Surface className="p-4">
-          <p className="text-sm text-muted-foreground">{t('webhooks.log.empty')}</p>
-        </Surface>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {state.deliveries.map((delivery) => (
-            <li key={delivery.seq}>
-              <DeliveryRow delivery={delivery} />
-            </li>
-          ))}
-        </ul>
+        <>
+          {/* `status`, not `alert`: it arrives on a poll rather than in response to anything the
+              user just did, so it is announced politely instead of interrupting. */}
+          {state.restarted ? (
+            <Banner tone="info" role="status">
+              {t('webhooks.log.restarted')}
+            </Banner>
+          ) : null}
+          {state.deliveries.length === 0 ? (
+            <Surface className="p-4">
+              <p className="text-sm text-muted-foreground">{t('webhooks.log.empty')}</p>
+            </Surface>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {/* Keyed by the poller's own row id, not `seq`: sequence numbers are unique only
+                  within one log instance, and a restart starts them again from zero. */}
+              {state.deliveries.map(({ key, delivery }) => (
+                <li key={key}>
+                  <DeliveryRow delivery={delivery} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </section>
   );

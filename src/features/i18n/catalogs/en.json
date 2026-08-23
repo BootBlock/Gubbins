@@ -1637,6 +1637,7 @@
   "webhooks.log.refresh": "Refresh",
   "webhooks.log.loading": "Checking with the bridge…",
   "webhooks.log.empty": "Nothing delivered yet. Send a test event to check a webhook end to end.",
+  "webhooks.log.restarted": "Your bridge restarted, so it started a new delivery log. Anything it recorded before the restart is gone, and the list below begins there.",
   "webhooks.log.unconfigured": "Set up a bridge to see what your webhooks actually did — what was delivered, what failed, and why.",
   "webhooks.log.attempts.one": "{count} attempt",
   "webhooks.log.attempts.other": "{count} attempts",

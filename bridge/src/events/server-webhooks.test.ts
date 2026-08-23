@@ -103,7 +103,11 @@ describe('GET /api/v1/webhooks/deliveries', () => {
     try {
       const res = await fetch(`${baseUrl}${PATH}`, { headers: auth() });
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ deliveries: [], latestSeq: 0 });
+      expect(await res.json()).toEqual({
+        deliveries: [],
+        latestSeq: 0,
+        logId: expect.any(String) as unknown as string,
+      });
     } finally {
       await stop();
     }
@@ -149,6 +153,30 @@ describe('GET /api/v1/webhooks/deliveries', () => {
         await fetch(`${baseUrl}${PATH}?since=${first.latestSeq}`, { headers: auth() })
       ).json()) as { deliveries: Array<{ eventId: string }> };
       expect(next.deliveries.map((d) => d.eventId)).toEqual(['hist-0002']);
+    } finally {
+      await stop();
+    }
+  });
+
+  /**
+   * Issue #645: `seq` restarts at zero with the bridge, so a poller cannot tell a quiet minute from
+   * a restarted log by the numbers alone. `logId` is what makes it decidable.
+   */
+  it('identifies the log instance, so a poller can see that it restarted', async () => {
+    const log = createWebhookDeliveryLog();
+    const { baseUrl, stop } = await startServer(log);
+    try {
+      const first = (await (await fetch(`${baseUrl}${PATH}`, { headers: auth() })).json()) as {
+        logId: string;
+      };
+      expect(first.logId).not.toBe('');
+
+      // Same log, same id — a second read must not look like a restart.
+      log.record(delivery({ eventId: 'hist-0001' }));
+      const second = (await (await fetch(`${baseUrl}${PATH}`, { headers: auth() })).json()) as {
+        logId: string;
+      };
+      expect(second.logId).toBe(first.logId);
     } finally {
       await stop();
     }

@@ -28,7 +28,7 @@ const delivery = (seq: number) => ({
  * Recording the URLs is how the "does it re-arm?" assertions are made.
  */
 function stableConnection(
-  respond: (url: string) => { deliveries: unknown[]; latestSeq: number },
+  respond: (url: string) => { deliveries: unknown[]; latestSeq: number; logId?: string },
   status = 200,
 ): BridgeConnection & { readonly urls: string[] } {
   const urls: string[] = [];
@@ -131,6 +131,145 @@ describe('useWebhookDeliveries', () => {
     const { state } = result.current;
     expect(state.status).toBe('ready');
     expect(state.status === 'ready' && state.deliveries.length).toBeLessThanOrEqual(MAX_VISIBLE_DELIVERIES);
+  });
+
+  /**
+   * Issue #645. The log lives in bridge memory and its sequence numbers count from zero again on
+   * every start, so a cursor held across a restart addresses records that no longer exist: the
+   * bridge answers "nothing after 5" and the rows it *does* hold are never asked for again.
+   */
+  describe('when the bridge restarts underneath the cursor', () => {
+    it('re-reads the new log from the start instead of losing its first rows', async () => {
+      let logId = 'log-a';
+      const conn = stableConnection((url) => {
+        if (logId === 'log-a') return { deliveries: [delivery(5)], latestSeq: 5, logId };
+        // The restarted log holds three records and knows nothing of the old cursor.
+        const all = [delivery(3), delivery(2), delivery(1)];
+        return {
+          deliveries: url.includes('since=') ? [] : all,
+          latestSeq: 3,
+          logId,
+        };
+      });
+      const { result } = renderHook(() => useWebhookDeliveries(conn));
+      await settle();
+
+      logId = 'log-b';
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WEBHOOK_POLL_INTERVAL_MS);
+      });
+
+      // The cursor'd poll answered nothing, so a second, cursor-free read was made.
+      expect(conn.urls).toHaveLength(3);
+      expect(conn.urls[1]).toContain('since=5');
+      expect(conn.urls[2]).not.toContain('since=');
+
+      const { state } = result.current;
+      expect(state.status).toBe('ready');
+      if (state.status !== 'ready') throw new Error('expected a ready log');
+      // The pre-restart row is gone (it is not in the new log) and all three new ones are shown.
+      expect(state.deliveries.map((entry) => entry.delivery.seq)).toEqual([3, 2, 1]);
+      expect(state.restarted).toBe(true);
+    });
+
+    it('never re-uses a row key, so old and new rows cannot collide', async () => {
+      const keys: string[] = [];
+      let logId = 'log-a';
+      const conn = stableConnection((url) =>
+        logId === 'log-a'
+          ? { deliveries: [delivery(1)], latestSeq: 1, logId }
+          : { deliveries: url.includes('since=') ? [] : [delivery(1)], latestSeq: 1, logId },
+      );
+      const { result } = renderHook(() => useWebhookDeliveries(conn));
+      await settle();
+      if (result.current.state.status !== 'ready') throw new Error('expected a ready log');
+      keys.push(...result.current.state.deliveries.map((entry) => entry.key));
+
+      logId = 'log-b';
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WEBHOOK_POLL_INTERVAL_MS);
+      });
+      if (result.current.state.status !== 'ready') throw new Error('expected a ready log');
+      keys.push(...result.current.state.deliveries.map((entry) => entry.key));
+
+      // Both rows are `seq` 1 — from two different logs — so the keys must still differ.
+      expect(new Set(keys).size).toBe(keys.length);
+    });
+
+    /** A bridge too old to report a `logId` still gives one unambiguous signal: a cursor that ran backwards. */
+    it('falls back to a latestSeq that went backwards when the bridge reports no log id', async () => {
+      let restarted = false;
+      const conn = stableConnection((url) => {
+        if (!restarted) return { deliveries: [delivery(5)], latestSeq: 5 };
+        return { deliveries: url.includes('since=') ? [] : [delivery(2), delivery(1)], latestSeq: 2 };
+      });
+      const { result } = renderHook(() => useWebhookDeliveries(conn));
+      await settle();
+
+      restarted = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WEBHOOK_POLL_INTERVAL_MS);
+      });
+
+      expect(conn.urls[2]).not.toContain('since=');
+      const { state } = result.current;
+      if (state.status !== 'ready') throw new Error('expected a ready log');
+      expect(state.deliveries.map((entry) => entry.delivery.seq)).toEqual([2, 1]);
+      expect(state.restarted).toBe(true);
+    });
+
+    it('leaves an ordinary quiet poll alone', async () => {
+      const conn = stableConnection((url) => ({
+        deliveries: url.includes('since=') ? [] : [delivery(5)],
+        latestSeq: 5,
+        logId: 'log-a',
+      }));
+      const { result } = renderHook(() => useWebhookDeliveries(conn));
+      await settle();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WEBHOOK_POLL_INTERVAL_MS);
+      });
+
+      expect(conn.urls).toHaveLength(2);
+      const { state } = result.current;
+      if (state.status !== 'ready') throw new Error('expected a ready log');
+      expect(state.deliveries).toHaveLength(1);
+      expect(state.restarted).toBe(false);
+    });
+
+    it('reports the failure when the re-read itself fails', async () => {
+      let logId = 'log-a';
+      let failRead = false;
+      const urls: string[] = [];
+      const conn: BridgeConnection & { readonly urls: string[] } = {
+        baseUrl: 'http://bridge.test:8787',
+        token: 'placeholder-token',
+        urls,
+        fetchImpl: (url: string) => {
+          urls.push(url);
+          const cursorFree = !url.includes('since=');
+          if (failRead && cursorFree) {
+            return Promise.resolve({ status: 401, json: () => Promise.resolve({}) });
+          }
+          return Promise.resolve({
+            status: 200,
+            json: () => Promise.resolve({ deliveries: cursorFree ? [delivery(1)] : [], latestSeq: 1, logId }),
+          });
+        },
+      };
+      const { result } = renderHook(() => useWebhookDeliveries(conn));
+      await settle();
+
+      logId = 'log-b';
+      failRead = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WEBHOOK_POLL_INTERVAL_MS);
+      });
+
+      expect(result.current.state.status).toBe('failed');
+      expect(result.current.state.status === 'failed' && result.current.state.failure).toBe('unauthorised');
+    });
   });
 
   it('surfaces a failure rather than an empty log', async () => {

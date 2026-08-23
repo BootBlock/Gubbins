@@ -104,6 +104,13 @@ export type WebhookDeliveriesResult =
       readonly ok: true;
       readonly deliveries: readonly WebhookDelivery[];
       readonly latestSeq: number;
+      /**
+       * Which log instance answered — a fresh value after every bridge restart, or `null` from a
+       * bridge too old to report one. The log is in bridge memory and its sequence numbers count
+       * from zero again on each start, so this is what lets a poller tell "nothing new" apart from
+       * "the numbering restarted underneath me".
+       */
+      readonly logId: string | null;
     }
   | { readonly ok: false; readonly failure: WebhookBridgeFailure };
 
@@ -215,7 +222,9 @@ export async function fetchWebhookDeliveries(
   const deliveries = readDeliveries(response.payload);
   const latestSeq = readNumber(response.payload, 'latestSeq');
   if (deliveries === null || latestSeq === null) return { ok: false, failure: 'bad-response' };
-  return { ok: true, deliveries, latestSeq };
+  // `logId` is read leniently rather than required: a bridge predating it is otherwise perfectly
+  // able to answer this call, and the poller has a (weaker) fallback for that case.
+  return { ok: true, deliveries, latestSeq, logId: readString(response.payload, 'logId') };
 }
 
 /**
