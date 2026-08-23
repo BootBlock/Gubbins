@@ -62,32 +62,81 @@ const reportRepo = {
   }),
 };
 
-/** Two items, served as one full-and-final page, for the items-export tests below. */
+/**
+ * Two items, served as one full-and-final page, for the items-export tests below. The unset
+ * columns are spelled out as `null` for the same reason the locations are: the vault writes
+ * every one of them into the item note's YAML frontmatter.
+ */
+const emptyItemFields = {
+  trackingMode: 'DISCRETE',
+  mpn: null,
+  manufacturer: null,
+  unitCost: null,
+  categoryId: null,
+  locationId: 'l1',
+  description: null,
+  notes: null,
+  isActive: true,
+};
+
 const itemRepo = {
   list: vi.fn(async () => ({
     rows: [
-      { id: 'i1', name: 'NE555 Timer', quantity: 12, isUnlimited: false },
-      { id: 'i2', name: 'Bolt', quantity: 4, isUnlimited: false },
+      { id: 'i1', name: 'NE555 Timer', quantity: 12, isUnlimited: false, ...emptyItemFields },
+      { id: 'i2', name: 'Bolt', quantity: 4, isUnlimited: false, ...emptyItemFields },
     ],
     hasMore: false,
   })),
+  getHistory: vi.fn(async () => ({ rows: [], hasMore: false })),
 };
 
-/** Two locations, one nested under the other — the JSON export's `locations` array. */
+/** One image per item, both pointing at a full-resolution OPFS file (present or not per test). */
+const imageRepo = {
+  listForItem: vi.fn(async (itemId: string) =>
+    itemId === 'i1'
+      ? [{ id: 'img1', fullResOpfsPath: 'images/abc.webp', thumbnailBlob: new Uint8Array([1, 2, 3]) }]
+      : [],
+  ),
+};
+
+/**
+ * Two locations, one nested under the other — the JSON export's `locations` array, and the
+ * folder notes the vault writes. The unset columns are spelled out as `null` rather than left
+ * off: the vault's folder note renders every one of them into YAML, so an absent key is an
+ * `undefined` the renderer has no honest value for.
+ */
+const emptyLocationFields = {
+  icon: null,
+  itemCount: 0,
+  capacity: null,
+  width: null,
+  height: null,
+  depth: null,
+  usableVolume: null,
+  packingFactor: null,
+  walkOrder: null,
+  isDefault: false,
+  archivedAt: null,
+  lastCountedAt: null,
+  deadStockMode: null,
+  deadStockDays: null,
+  color: null,
+};
+
 const locationRepo = {
   listAll: vi.fn(async () => [
-    { id: 'l1', name: 'Workshop', parentId: null, description: 'The good bench' },
-    { id: 'l2', name: 'Cabinet A', parentId: 'l1', description: null },
+    { id: 'l1', name: 'Workshop', parentId: null, description: 'The good bench', ...emptyLocationFields },
+    { id: 'l2', name: 'Cabinet A', parentId: 'l1', description: null, ...emptyLocationFields },
   ]),
 };
 
 vi.mock('@/db/repositories', () => ({
   getReportRepository: () => reportRepo,
-  getAttachmentRepository: () => ({}),
+  getAttachmentRepository: () => ({ listForItem: async () => [] }),
   getCheckoutRepository: () => ({ listForItem: async () => ({ rows: [], hasMore: false }) }),
-  getCategoryRepository: () => ({}),
+  getCategoryRepository: () => ({ listAll: async () => [] }),
   getContactRepository: () => ({ list: async () => ({ rows: [], hasMore: false }) }),
-  getImageRepository: () => ({}),
+  getImageRepository: () => imageRepo,
   getItemRepository: () => itemRepo,
   getLocationRepository: () => locationRepo,
   getProjectRepository: () => ({}),
@@ -97,6 +146,21 @@ vi.mock('@/db/repositories', () => ({
 const downloadSpy = vi.fn();
 vi.mock('./download', () => ({ download: (...args: unknown[]) => downloadSpy(...args) }));
 
+/** Whether this device holds the full-resolution file, per test. */
+let fullResBlob: Blob | undefined;
+vi.mock('@/features/images/opfs-images', () => ({
+  readImageBlob: async () => fullResBlob,
+}));
+
+/** Captures what the vault would have zipped, instead of spawning the worker. */
+const zipped: { files: Record<string, string>; assets: Record<string, Uint8Array> }[] = [];
+vi.mock('./zip-in-worker', () => ({
+  zipInVaultWorker: async (files: Record<string, string>, assets: Record<string, Uint8Array>) => {
+    zipped.push({ files, assets });
+    return new Uint8Array([0]);
+  },
+}));
+
 const { runExport } = await import('./run-export');
 
 /** A window that is valid but never the default, so a fallback can't masquerade as a pass. */
@@ -104,6 +168,8 @@ const PICKED = 365;
 
 beforeEach(() => {
   for (const key of Object.keys(calls)) delete calls[key];
+  zipped.length = 0;
+  fullResBlob = undefined;
   vi.clearAllMocks();
   // Reset every preference these tests write, so no test inherits a previous one's pick
   // (`deadStockDays` included — it is set below and would otherwise leak forwards).
@@ -243,5 +309,37 @@ describe('JSON export — locations travel with the items', () => {
     expect(locationRepo.listAll).toHaveBeenCalled();
     expect(payload.locations.map((l: { id: string }) => l.id)).toEqual(['l1', 'l2']);
     expect(payload.locations[0].description).toBe('The good bench');
+  });
+});
+
+describe('VAULT export — the note embeds a file the zip really carries (issue #635)', () => {
+  /** The one item note the vault writes for `i1`, the item carrying the image. */
+  function noteFor(files: Record<string, string>): string {
+    const path = Object.keys(files).find((p) => p.endsWith('NE555 Timer.md'));
+    return files[path!]!;
+  }
+
+  it('embeds the full-resolution image when this device holds the file', async () => {
+    fullResBlob = new Blob([new Uint8Array([9, 9, 9, 9])]);
+    await runExport('VAULT', { includeInactive: false });
+    const { files, assets } = zipped[0]!;
+    expect(noteFor(files)).toContain('![[NE555 Timer-i1-1.webp]]');
+    expect(Object.keys(assets)).toContain('assets/NE555 Timer-i1-1.webp');
+  });
+
+  it('embeds the thumbnail when the full-resolution file is not on this device', async () => {
+    // A peer device, a Storage-Triage downgrade, or a photo added while storage was critical:
+    // the row points at an OPFS file that was never written here. The export used to link the
+    // full-res name anyway, so every photo landed as a broken embed.
+    fullResBlob = undefined;
+    await runExport('VAULT', { includeInactive: false });
+    const { files, assets } = zipped[0]!;
+    expect(noteFor(files)).toContain('![[NE555 Timer-i1-1.thumb.webp]]');
+    expect(noteFor(files)).not.toContain('![[NE555 Timer-i1-1.webp]]');
+    // Every embed resolves: nothing is linked that the zip does not hold.
+    for (const [, name] of noteFor(files).matchAll(/![[(.+?)]]/g)) {
+      expect(Object.keys(assets)).toContain(`assets/${name}`);
+    }
+    expect(Object.keys(assets)).not.toContain('assets/NE555 Timer-i1-1.webp');
   });
 });

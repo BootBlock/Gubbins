@@ -20,6 +20,11 @@ Get your data out in whichever form suits:
   images** extracted alongside. Each location folder also gets a page of its own, carrying that
   location's description, icon, capacity, size and walk order. Great for archiving or reading
   outside Gubbins.
+
+  > **ℹ️ Note** — a photo shows in the vault at whatever size *this* device holds. Full-resolution
+  > photos stay on the device that took them, so on a second device, or on a photo you have let
+  > [[Storage Triage|Storage-Triage]] shrink, the vault embeds the smaller preview instead.
+  > Export from the device that holds the originals if you want them at full size.
 - **Raw `.sqlite`** — the database file itself, for anyone who wants the data directly.
 - **CSV** — from [[reports|Reports-Overview]], for spreadsheets.
 
