@@ -2111,7 +2111,9 @@ try {
       await manualInput.waitFor({ state: 'visible', timeout: 10000 });
       await manualInput.fill('not-a-gubbins-code');
       await manualSubmit.click({ force: true });
-      await notice.getByText('That code is not a Gubbins code.').waitFor({ state: 'visible', timeout: 5000 });
+      await notice
+        .getByText('Nothing in your inventory has that code.', { exact: false })
+        .waitFor({ state: 'visible', timeout: 5000 });
 
       // A real scan: the hidden announcement region carries "Scanned <name>".
       await manualInput.fill(scannedUrl);
