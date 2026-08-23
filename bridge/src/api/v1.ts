@@ -402,7 +402,9 @@ function handleWebhookDeliveries(
   });
   // `latestSeq` is returned alongside the page so a poller can advance its cursor even when the
   // page is empty — otherwise a quiet minute would leave it re-requesting the same `since` forever.
-  sendJson(res, 200, { deliveries, latestSeq: log.latestSeq() });
+  // `logId` identifies *this* log instance: it changes on every bridge restart, which is the only
+  // way a poller can tell "nothing new" from "the counter went back to zero underneath me".
+  sendJson(res, 200, { deliveries, latestSeq: log.latestSeq(), logId: log.logId() });
 }
 
 // --- Webhook test-fire (opt-in, off by default) -----------------------------------

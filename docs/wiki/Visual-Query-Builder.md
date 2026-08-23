@@ -43,7 +43,9 @@ all build the same query:
   express things like *"(low quantity **OR** on order) **AND** in the garage"*.
 - **Clear.** Remove everything and start over with **Clear**.
 
-Results update as you build, and the panel shows how many items currently match.
+Results update as you build, and the panel shows how many items currently match. Changes you
+make from the results themselves — stepping a quantity up or down, editing an item, removing
+one — show on the cards straight away, just as they do in the ordinary item list.
 
 > **💡 Tip**
 > The three inputs interoperate: type a request in plain English or the text box to *populate*

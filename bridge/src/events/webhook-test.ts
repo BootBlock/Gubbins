@@ -237,6 +237,7 @@ export function createWebhookTestFirer(options: WebhookTestFirerOptions): Webhoo
       },
       list: (listOptions) => options.deliveryLog.list(listOptions),
       latestSeq: () => options.deliveryLog.latestSeq(),
+      logId: () => options.deliveryLog.logId(),
     };
 
     const deliverer = createWebhookDeliverer({

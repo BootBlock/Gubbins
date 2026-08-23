@@ -40,6 +40,22 @@ describe('createWebhookDeliveryLog', () => {
     expect(log.list()[0]!.at).toBe(1_751_000_000_000);
   });
 
+  /**
+   * Issue #645. The log is in memory, so a restart is a *new* log whose `seq` counts from one
+   * again. A poller that cannot tell the two apart silently skips everything the new log recorded
+   * before its next poll, so each instance identifies itself.
+   */
+  it('mints a distinct id per log instance and keeps it for that instance', () => {
+    const first = createWebhookDeliveryLog();
+    const second = createWebhookDeliveryLog();
+
+    expect(first.logId()).not.toBe('');
+    expect(first.logId()).toBe(first.logId());
+    expect(second.logId()).not.toBe(first.logId());
+    // The ids differ even though both logs number their records identically.
+    expect(first.record(delivery()).seq).toBe(second.record(delivery()).seq);
+  });
+
   it('returns records newest first', () => {
     const log = createWebhookDeliveryLog();
     log.record(delivery({ eventId: 'a' }));

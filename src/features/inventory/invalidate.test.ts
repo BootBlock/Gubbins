@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { QueryClient } from '@tanstack/react-query';
+import { emptyAst } from '@/db/search/ast';
 import { agendaKeys } from '@/features/calendar/keys';
 import { projectKeys } from '@/features/projects/keys';
 import { reportKeys } from '@/features/reports/keys';
@@ -71,5 +72,31 @@ describe('invalidateItemStock — the narrow sweep (#166)', () => {
     // …and that the stable half is genuinely outside it, or the split saves nothing.
     const stableKey = inventoryKeys.stableStatuses(tuning);
     expect(stableKey.slice(0, inventoryKeys.items().length)).not.toEqual([...inventoryKeys.items()]);
+  });
+});
+
+describe('the Visual-Builder search keys (#622)', () => {
+  // The AST search caches item rows, so both sweeps have to reach it. It used to hang off a
+  // *sibling* prefix of `items()`, which no item write touched: while the builder drove the
+  // Inventory list, a ± tap wrote the new quantity and the card never moved, an edit left the
+  // card behind the dialog stale, and a removed item kept its row. Nothing recovered it either —
+  // the client does not refetch on window focus, and the user is parked on the screen.
+  const AST = emptyAst();
+
+  it.each([
+    ['results', inventoryKeys.astSearch(AST, null, null)],
+    ['count', inventoryKeys.astCount(AST, null)],
+  ])('the %s key sits under items(), so both helpers sweep it by prefix', (_name, key) => {
+    expect(key.slice(0, inventoryKeys.items().length)).toEqual([...inventoryKeys.items()]);
+  });
+
+  it('keeps the results and the count distinguishable by shape, not merely by length', () => {
+    // The write side matches result pages by prefix in order to patch them optimistically, and
+    // the count caches a bare number the `InfiniteData` updater would crash on. Sharing an
+    // `'ast'` segment left the two the same length, separable only by inspecting the last one.
+    const results = inventoryKeys.astSearch(AST, null, null);
+    const count = inventoryKeys.astCount(AST, null);
+    const shared = inventoryKeys.search().length;
+    expect(results[shared]).not.toEqual(count[shared]);
   });
 });

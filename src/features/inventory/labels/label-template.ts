@@ -205,6 +205,13 @@ export interface SheetLayout {
 }
 
 /**
+ * The {@link SHEET_STOCK_PRESETS} id of the plain-paper layout — the one entry that is not a
+ * packet of die-cut stock. Named so the surfaces that treat "printing onto stickers" differently
+ * from "printing onto paper" (the print-scale notice, for one) can ask without a bare string.
+ */
+export const PLAIN_PAPER_SHEET_ID = 'plain';
+
+/**
  * The default A4 tiling: plain paper, generous margins and gutters, and a cut outline —
  * the layout to reach for when you are printing onto a blank sheet and cutting the
  * labels out yourself. Its numbers are chosen to divide the page exactly, so each label
@@ -249,7 +256,7 @@ export interface SheetStockPreset {
  */
 export const SHEET_STOCK_PRESETS = [
   {
-    id: 'plain',
+    id: PLAIN_PAPER_SHEET_ID,
     code: '',
     layout: PLAIN_PAPER_SHEET_LAYOUT,
   },

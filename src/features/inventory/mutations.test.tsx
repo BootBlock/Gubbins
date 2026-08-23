@@ -17,6 +17,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ToastProvider } from '@/components/foundry';
 import { DbError } from '@/db/errors';
+import { emptyAst } from '@/db/search/ast';
 
 const repo = {
   update: vi.fn(),
@@ -339,5 +340,140 @@ describe('optimistic item writes guard the detail cache', () => {
 
     // Still the optimistic value: the stale fetch was cancelled, not merely raced.
     expect(client.getQueryData(DETAIL_KEY)).toMatchObject({ quantity: 15 });
+  });
+});
+
+/**
+ * While the Visual Builder drives the Inventory list, the rows on screen come from the AST
+ * search's cache, not the plain item list's (issue #622). The optimistic patch used to match the
+ * list keys alone, so in that one mode a ± tap wrote the new quantity to the database and left
+ * the number on the card exactly where it was — which reads as a broken control rather than a
+ * stale cache, and invites the user to tap again, each tap a real write.
+ */
+describe('optimistic item writes reach the Visual-Builder result pages (#622)', () => {
+  const AST = emptyAst();
+  const RESULTS_KEY = inventoryKeys.astSearch(AST, null, null);
+  const COUNT_KEY = inventoryKeys.astCount(AST, null);
+
+  /** One resident page of AST results holding the item the test taps ± on. */
+  function seededPage() {
+    return {
+      pages: [
+        {
+          rows: [
+            { id: 'item-0', name: 'Other', quantity: 3 },
+            { id: 'item-1', name: 'Widget', quantity: 10 },
+          ],
+          total: 2,
+          offset: 0,
+          limit: 50,
+          hasMore: false,
+        },
+      ],
+      pageParams: [0],
+    };
+  }
+
+  function withAstClient() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(RESULTS_KEY, seededPage());
+    // The count caches a bare number, not `InfiniteData`. It must stay outside the patch — the
+    // updater would crash on it — which is why it carries its own key segment.
+    client.setQueryData(COUNT_KEY, 2);
+    return {
+      client,
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>
+          <ToastProvider>{children}</ToastProvider>
+        </QueryClientProvider>
+      ),
+    };
+  }
+
+  /** Read the tapped row back out of the cached result pages. */
+  function tappedRow(client: QueryClient) {
+    const data = client.getQueryData<{ pages: Array<{ rows: Array<{ id: string; quantity: number }> }> }>(
+      RESULTS_KEY,
+    );
+    return data?.pages[0].rows.find((row) => row.id === 'item-1');
+  }
+
+  it('moves the tapped card’s quantity, leaving the other rows and the count alone', async () => {
+    repo.adjustQuantity.mockResolvedValue(undefined);
+    const { client, wrapper: local } = withAstClient();
+
+    const { result } = renderHook(() => useAdjustQuantity(), { wrapper: local });
+    act(() => result.current.mutate({ id: 'item-1', delta: 5 }));
+
+    await waitFor(() => expect(tappedRow(client)).toMatchObject({ quantity: 15 }));
+    const data = client.getQueryData<{ pages: Array<{ rows: Array<{ id: string; quantity: number }> }> }>(
+      RESULTS_KEY,
+    );
+    expect(data?.pages[0].rows[0]).toMatchObject({ id: 'item-0', quantity: 3 });
+    expect(client.getQueryData(COUNT_KEY)).toBe(2);
+  });
+
+  it('reaches a location-scoped search’s pages too, and still leaves its count alone (#626)', async () => {
+    // The sidebar's selected location is a key segment of its own, so a scoped search caches
+    // under a different key than the inventory-wide one. The optimistic patch matches result
+    // pages by prefix *and length*, so a segment added there has to be counted — miss it and the
+    // ± tap silently stops moving the card again, exactly as in #622.
+    const scopedResults = inventoryKeys.astSearch(AST, null, 'loc-garage');
+    const scopedCount = inventoryKeys.astCount(AST, 'loc-garage');
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(scopedResults, seededPage());
+    client.setQueryData(scopedCount, 2);
+    const local = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+
+    repo.adjustQuantity.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useAdjustQuantity(), { wrapper: local });
+    act(() => result.current.mutate({ id: 'item-1', delta: 5 }));
+
+    await waitFor(() => {
+      const data = client.getQueryData<{
+        pages: Array<{ rows: Array<{ id: string; quantity: number }> }>;
+      }>(scopedResults);
+      expect(data?.pages[0].rows.find((row) => row.id === 'item-1')).toMatchObject({ quantity: 15 });
+    });
+    expect(client.getQueryData(scopedCount)).toBe(2);
+  });
+
+  it('rolls the result page back when the write fails', async () => {
+    let failWrite = () => {};
+    repo.adjustQuantity.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          failWrite = () => reject(new DbError('SQLITE_BUSY', 'database is locked'));
+        }),
+    );
+    const { client, wrapper: local } = withAstClient();
+
+    const { result } = renderHook(() => useAdjustQuantity(), { wrapper: local });
+    act(() => result.current.mutate({ id: 'item-1', delta: 5 }));
+    await waitFor(() => expect(tappedRow(client)).toMatchObject({ quantity: 15 }));
+
+    act(() => failWrite());
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(tappedRow(client)).toMatchObject({ quantity: 10 });
+  });
+
+  it('patches an edited item’s fields on the card behind the detail dialog', async () => {
+    // The detail dialog's own slice always refreshed; the card underneath it kept the pre-edit
+    // name, because it was rendered from these pages.
+    repo.update.mockResolvedValue({ id: 'item-1' });
+    const { client, wrapper: local } = withAstClient();
+
+    const { result } = renderHook(() => useUpdateItem(), { wrapper: local });
+    act(() => result.current.mutate({ id: 'item-1', input: { name: 'Renamed' } }));
+
+    await waitFor(() => expect(tappedRow(client)).toMatchObject({ name: 'Renamed' }));
   });
 });

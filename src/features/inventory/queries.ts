@@ -191,17 +191,34 @@ export const inventoryKeys = {
   itemAttachments: (itemId: string) => [...inventoryKeys.item(itemId), 'attachments'] as const,
   // Phase 5 — weighted capabilities & Visual-Builder search.
   itemCapabilities: (itemId: string) => [...inventoryKeys.item(itemId), 'capabilities'] as const,
-  search: () => [...inventoryKeys.all, 'search'] as const,
-  /** One Visual-Builder (AST) search. `sort` is part of the key — an explicit ordering replaces
-   *  the search's own relevance ranking, so re-sorting must re-run it (issue #128) — and so is
-   *  `locationId`, the sidebar scope the search runs inside (issue #626). */
+  /**
+   * Every Visual-Builder (AST) search read. A **child of {@link inventoryKeys.items}**, not a
+   * sibling (issue #622): the rows it caches *are* item rows, so an item write has to reach them.
+   * While it sat outside the prefix, nothing swept it — a ± tap on a result card wrote the new
+   * quantity and left the card showing the old one, an edit updated only the dialog above it, and
+   * a removed item kept its row. Under `items()` both {@link invalidateItems} and
+   * {@link invalidateItemStock} sweep it by prefix, as does any future write that sweeps that
+   * prefix, so the mode cannot drift back out of the invalidation.
+   */
+  search: () => [...inventoryKeys.items(), 'search'] as const,
+  /** One Visual-Builder (AST) search's result pages. `sort` is part of the key — an explicit
+   *  ordering replaces the search's own relevance ranking, so re-sorting must re-run it
+   *  (issue #128) — and so is `locationId`, the sidebar scope the search runs inside
+   *  (issue #626): it decides which items match, so changing the selection must re-run it. */
   astSearch: (ast: SearchAST, sort: readonly ItemSort[] | null, locationId: string | null) =>
     [...inventoryKeys.search(), 'ast', ast, locationId, sort] as const,
   /** How many items an AST matches in total (issue #220). Order-independent, so — unlike
-   *  {@link inventoryKeys.astSearch} — it deliberately omits the sort axis. It keeps the
-   *  location scope, so the summary can never disagree with the list it heads. */
+   *  {@link inventoryKeys.astSearch} — it deliberately omits the sort axis. It does keep
+   *  `locationId`: that scope changes which items match, so dropping it would let the summary
+   *  announce a total the list beneath it contradicts (issue #626).
+   *
+   *  It carries its own `'ast-count'` segment rather than suffixing the results key. Suffixed, the
+   *  two families were the *same length* — separable only by inspecting the last segment — and the
+   *  write side matches result pages by length and prefix in order to patch them optimistically. A
+   *  count caches a bare number, not `InfiniteData`, so it must never be mistaken for a page of
+   *  rows (issue #622). */
   astCount: (ast: SearchAST, locationId: string | null) =>
-    [...inventoryKeys.search(), 'ast', ast, locationId, 'count'] as const,
+    [...inventoryKeys.search(), 'ast-count', ast, locationId] as const,
   // Phase 8 — Universal Alias Mapping (§4 external scraping).
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
   // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`

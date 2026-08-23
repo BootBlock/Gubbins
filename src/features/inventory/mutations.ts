@@ -46,6 +46,9 @@ import {
   type UpdateSupplierPartInput,
 } from '@/db/repositories';
 import { currentGrossWeight, percentageRemaining, type GaugeConfigChange } from '@/db/repositories/gauge';
+// The write side executes no search machinery, but it patches the Visual Builder's cached
+// result pages, whose key carries an AST (issue #622).
+import { emptyAst } from '@/db/search/ast';
 import { activityKeys } from '@/features/activity/queries';
 import { checkoutKeys } from '@/features/contacts/keys';
 import { reportKeys } from '@/features/reports/keys';
@@ -81,22 +84,48 @@ function itemListPrefix(): readonly unknown[] {
   return inventoryKeys.itemList({}).slice(0, -1);
 }
 
-const itemListFilter = {
-  // Match only the infinite list queries — exactly [...itemListPrefix(), filters].
-  // The count query (…,'list',filters,'count') is one segment longer and holds a number,
-  // so it must be excluded or the InfiniteData updater would crash on it.
-  predicate: (query: { queryKey: readonly unknown[] }) => {
-    const prefix = itemListPrefix();
-    return (
-      query.queryKey.length === prefix.length + 1 &&
-      prefix.every((segment, i) => query.queryKey[i] === segment)
-    );
-  },
+/**
+ * The `['inventory','items','search','ast']` prefix every Visual-Builder result-page key opens
+ * with, taken from the factory for the same reason {@link itemListPrefix} is: the trailing `ast`,
+ * `locationId` and `sort` segments are this query's own inputs, so the prefix is everything
+ * before them.
+ *
+ * A throwaway empty tree and a null location supply those arguments — only their position in the
+ * key matters here, never their content, and they are sliced straight back off.
+ */
+function astPagesPrefix(): readonly unknown[] {
+  return inventoryKeys.astSearch(emptyAst(), null, null).slice(0, -3);
+}
+
+/** Does `key` sit directly under `prefix`, with exactly `trailing` segments of its own? */
+function isUnder(key: readonly unknown[], prefix: readonly unknown[], trailing: number): boolean {
+  return key.length === prefix.length + trailing && prefix.every((segment, i) => key[i] === segment);
+}
+
+/**
+ * Every cached page of item rows: the infinite list — exactly `[...itemListPrefix(), filters]` —
+ * **and** the Visual-Builder search results, `[...astPagesPrefix(), ast, locationId, sort]`
+ * (issues #622, #626).
+ *
+ * The AST results were previously outside this filter, so while the builder drove the list the
+ * optimistic patch reached nothing on screen: a ± tap wrote the new quantity and the card kept
+ * the old one. They cache the same `InfiniteData<Page<Item>>` as the plain list, so one filter
+ * patches, cancels and reads across both.
+ *
+ * The two count queries are excluded by the exact-length tests: `(…,'list',filters,'count')` is
+ * one segment longer than a list key, and an AST count carries its own `'ast-count'` segment,
+ * which puts it one segment shorter than a page of results. Both cache a bare number, on which
+ * the `InfiniteData` updater would crash — and while the count suffixed the results key instead,
+ * the two were the same length, so length alone could not have told them apart.
+ */
+const itemPagesFilter = {
+  predicate: (query: { queryKey: readonly unknown[] }) =>
+    isUnder(query.queryKey, itemListPrefix(), 1) || isUnder(query.queryKey, astPagesPrefix(), 3),
 } as const;
 
-/** Apply a transform to a single item across every cached list page + its detail. */
+/** Apply a transform to a single item across every cached page of rows + its detail. */
 function patchItem(client: QueryClient, id: string, patch: (item: Item) => Item): void {
-  client.setQueriesData<ItemListData>(itemListFilter, (data) =>
+  client.setQueriesData<ItemListData>(itemPagesFilter, (data) =>
     data
       ? {
           ...data,
@@ -124,16 +153,16 @@ function patchItem(client: QueryClient, id: string, patch: (item: Item) => Item)
  */
 async function cancelItemQueries(client: QueryClient, id: string): Promise<void> {
   await Promise.all([
-    client.cancelQueries(itemListFilter),
+    client.cancelQueries(itemPagesFilter),
     client.cancelQueries({ queryKey: inventoryKeys.item(id), exact: true }),
   ]);
 }
 
-/** Read the current cached copy of an item — the detail slice first, then any list page holds it. */
+/** Read the current cached copy of an item — the detail slice first, then any cached page. */
 function readCachedItem(client: QueryClient, id: string): Item | undefined {
   const detail = client.getQueryData<Item>(inventoryKeys.item(id));
   if (detail) return detail;
-  for (const [, data] of client.getQueriesData<ItemListData>(itemListFilter)) {
+  for (const [, data] of client.getQueriesData<ItemListData>(itemPagesFilter)) {
     const found = data?.pages.flatMap((page) => page.rows).find((row) => row.id === id);
     if (found) return found;
   }
