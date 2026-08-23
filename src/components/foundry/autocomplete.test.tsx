@@ -406,6 +406,22 @@ describe('Autocomplete — creatable mode (onCommit, issue #84)', () => {
     expect(committed).toEqual(['Y']);
   });
 
+  it('still moves ArrowDown into the nearest option, which is what it is for', () => {
+    // The pointer opens a browse without arming anything here, but ArrowDown is a request to
+    // move into the list: it lands on the nearest option, in plain sight of the user.
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    const input = screen.getByRole('combobox', { name: 'Add a tag' });
+
+    fireEvent.change(input, { target: { value: 'Y' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe('Yageo');
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(committed).toEqual(['Yageo']);
+  });
+
   it('ignores Enter on an empty field', () => {
     const committed: string[] = [];
     render(<CreatableHarness onCommit={(v) => committed.push(v)} />);

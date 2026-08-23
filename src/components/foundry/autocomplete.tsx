@@ -174,10 +174,13 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
    * makes Enter *pick* it instead of submitting the enclosing form.
    */
   /**
-   * Where a browse of the whole list starts. In creatable mode only the field's own value may
-   * be pre-armed: the typed text is itself a candidate there, and Enter accepts whatever is
-   * highlighted — so arming a merely *near* option would have `cap` create the `capacitor`
-   * that already exists. Elsewhere the nearest option is what the user meant.
+   * Where a browse opened with the *pointer* starts. In creatable mode only the field's own
+   * value may be pre-armed: the typed text is itself a candidate there, and Enter accepts
+   * whatever is highlighted — so arming a merely *near* option would have `cap` create the
+   * `capacitor` that already exists. Elsewhere the nearest option is what the user meant.
+   *
+   * ArrowDown is the exception: it is a request to move *into* the list, so it takes the
+   * nearest option (and the top of the list when nothing is near) whatever the mode.
    */
   const browseStart = () =>
     onCommit ? indexOfValue(browseList, value) : browseStartIndex(browseList, value);
@@ -217,8 +220,9 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         event.preventDefault();
         if (isOpen) setActiveIndex((i) => Math.min(matches.length - 1, i + 1));
         // ArrowDown must always land on an option, so the top of the list stands in when
-        // nothing in it fits what the field holds.
-        else openBrowsing(Math.max(0, browseStart()));
+        // nothing in it is near what the field holds. See {@link browseStart} for why this
+        // takes the nearest option even where a pointer open would not.
+        else openBrowsing(Math.max(0, browseStartIndex(browseList, value)));
         break;
       case 'ArrowUp':
         if (!isOpen) break;
