@@ -111,8 +111,10 @@ export async function buildItemList(
     throw err;
   }
 
-  // Resolve location names from one bounded read of the (physical, not 100k-row) tree,
-  // rather than an N+1 lookup per row.
+  // Resolve location names from one read of the (physical, not 100k-row) location tree, rather
+  // than an N+1 lookup per row. Bounded by the hierarchy because it asks for nothing but the
+  // rows: the tree read's volume aggregate — which walks the stock ledger — is opt-in, and this
+  // path, which keeps only id and name, does not opt in (issue #525).
   const locationNames = await locationNameMap(driver);
   const rows: readonly unknown[] =
     selection === undefined
@@ -387,7 +389,13 @@ export function itemCount(
     : items.count(filters);
 }
 
-/** A bounded id→name map of all locations (the physical hierarchy, not the item set). */
+/**
+ * A bounded id→name map of all locations (the physical hierarchy, not the item set).
+ *
+ * Bounded because the default tree read is: it joins `locations` to the trigger-maintained item
+ * counter and stops there. Do not give this the volume aggregate (issue #525) — it would cost a
+ * walk of `item_stock` per request to produce columns this map immediately throws away.
+ */
 export async function locationNameMap(driver: Driver): Promise<Map<string, string>> {
   const tree = await new LocationRepository(driver).getTree();
   const map = new Map<string, string>();

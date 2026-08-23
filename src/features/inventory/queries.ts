@@ -123,6 +123,8 @@ export const inventoryKeys = {
   /** One location's activity record (issue #691). Under locations() so every location write —
    *  which is exactly what appends to it — refreshes it by prefix. */
   locationHistory: (id: string) => [...inventoryKeys.locations(), 'history', id] as const,
+  /** How many locations exist — the Dashboard's tally, which wants the number and no rows. */
+  locationCount: () => [...inventoryKeys.locations(), 'count'] as const,
   // Phase 3 — categories, custom fields, tags, images & attachments.
   categories: () => [...inventoryKeys.all, 'categories'] as const,
   categoryList: () => [...inventoryKeys.categories(), 'list'] as const,
@@ -751,11 +753,17 @@ export function useLocationHistory(id: string | undefined) {
   });
 }
 
-/** The full nested location hierarchy (powers the location sidebar/tree). */
+/**
+ * The full nested location hierarchy (powers the location sidebar/tree).
+ *
+ * Asks for the volume totals (issue #457) because each tree row renders a cube-utilisation fill
+ * bar from them. That aggregate is opt-in precisely because it costs O(stock) — see
+ * `LocationRepository.list` — so it is requested here and nowhere it isn't drawn.
+ */
 export function useLocationTree() {
   return useQuery({
     queryKey: inventoryKeys.locationTree(),
-    queryFn: () => getLocationRepository().getTree(),
+    queryFn: () => getLocationRepository().getTree({ withVolume: true }),
   });
 }
 
@@ -769,6 +777,12 @@ export function useLocationTree() {
  * like the tree it mirrors.
  *
  * The `Page` shape is kept (`.rows`) so every existing caller reads it unchanged.
+ *
+ * Deliberately **without** the volume totals (issue #525). Every caller here wants names,
+ * parents and counts — pickers, move targets, ancestry maths, filters — and the totals cost a
+ * walk of the `item_stock` ledger. The one row that does draw a fullness bar (the selected
+ * location's summary card) is read from {@link useLocationTree} instead, which computes them
+ * once for the screen.
  */
 export function useLocations() {
   return useQuery({
@@ -777,6 +791,18 @@ export function useLocations() {
       const rows = await getLocationRepository().listAll();
       return { rows, limit: rows.length, offset: 0, hasMore: false };
     },
+  });
+}
+
+/**
+ * How many locations exist — for a caller that wants the tally and not the rows (the Dashboard's
+ * totals widget). Its own read rather than `useLocations().data.rows.length`: that materialises
+ * every location row to discard all but its length (issue #525).
+ */
+export function useLocationCount() {
+  return useQuery({
+    queryKey: inventoryKeys.locationCount(),
+    queryFn: () => getLocationRepository().count(),
   });
 }
 

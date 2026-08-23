@@ -183,3 +183,26 @@ export function formatVolume(mm3: number, unit: VolumeUnit, locale = 'en-GB'): s
   const formatted = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value);
   return `${formatted} ${VOLUME_UNIT_LABELS[unit]}`;
 }
+
+/**
+ * The **raw** (pre-packing-factor) usable volume of a container in canonical mm³, or `null`
+ * when it has no measured internal size: an explicit `usableVolume` override when one is set,
+ * else the W×H×D product. A non-positive figure from either source is `null` — a container with
+ * no positive internal volume has no volumetric reading at all.
+ *
+ * The single definition of "is this container measured?", and deliberately shared: the fullness
+ * resolver scales this by the packing factor to get a location's capacity volume, and
+ * `LocationRepository` asks the same question to decide whether its volume-totals aggregate is
+ * worth running at all and which rows may carry the result (issue #525). Two definitions would
+ * let a location be handed totals its own reading can make no use of, or be left without ones it
+ * needs.
+ */
+export function rawContainerVolume(
+  usableVolume: number | null,
+  width: number | null,
+  height: number | null,
+  depth: number | null,
+): number | null {
+  const raw = usableVolume ?? volumeFromDimensions(width, height, depth);
+  return raw != null && Number.isFinite(raw) && raw > 0 ? raw : null;
+}

@@ -3,6 +3,7 @@ import {
   collectDescendantIds,
   defaultLocationForNewItem,
   defaultParentForNewLocation,
+  findTreeNode,
   flattenVisibleTree,
   locationAncestry,
   locationPath,
@@ -137,6 +138,31 @@ describe('defaultLocationForNewItem', () => {
     expect(defaultLocationForNewItem(null, flat, 'workshop')).toBe('workshop');
     // An explicit, valid selection still wins over the fallback.
     expect(defaultLocationForNewItem('cabinet', flat, 'workshop')).toBe('cabinet');
+  });
+});
+
+describe('findTreeNode (issue #525)', () => {
+  interface Node {
+    id: string;
+    label: string;
+    children: Node[];
+  }
+  const n = (id: string, children: Node[] = []): Node => ({ id, label: id.toUpperCase(), children });
+  const tree = [n('a', [n('a1'), n('a2', [n('a2x')])]), n('b')];
+
+  it('finds a node nested at any depth, with everything it carries', () => {
+    expect(findTreeNode(tree, 'a2x')).toEqual(n('a2x'));
+    // The whole node, not a copy of its id: callers read fields only the tree read computes.
+    expect(findTreeNode(tree, 'a2')?.label).toBe('A2');
+  });
+
+  it('finds a root node', () => {
+    expect(findTreeNode(tree, 'b')?.id).toBe('b');
+  });
+
+  it('returns undefined for an id nothing carries, and for an empty tree', () => {
+    expect(findTreeNode(tree, 'nope')).toBeUndefined();
+    expect(findTreeNode([], 'a')).toBeUndefined();
   });
 });
 

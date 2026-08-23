@@ -93,6 +93,13 @@ describe('LocationRepository', () => {
     expect(moved.parentId).toBe(a.id);
   });
 
+  it('count matches the flat list, without reading its rows (issue #525)', async () => {
+    for (let i = 0; i < 5; i += 1) await locations.create({ name: `Bay ${i}` });
+    // The Dashboard's tally must agree with the list it stands in for, archived branches and
+    // seeded system locations included.
+    expect(await locations.count()).toBe((await locations.listAll()).length);
+  });
+
   describe('dead-stock reporting fields (issue #92)', () => {
     it('defaults to inheriting, with no idle-threshold override', async () => {
       const loc = await locations.create({ name: 'Shelf' });
@@ -229,7 +236,7 @@ describe('LocationRepository', () => {
 
   describe('volume totals for cube utilisation (issue #457)', () => {
     it('aggregates measured stock volume and the measured/total unit split per location', async () => {
-      const drawer = await locations.create({ name: 'Drawer' });
+      const drawer = await locations.create({ name: 'Drawer', width: 500, height: 500, depth: 500 });
       // Two measured items (different quantities) + one unmeasured item held here.
       await items.create({
         name: 'Measured A',
@@ -249,7 +256,7 @@ describe('LocationRepository', () => {
       });
       await items.create({ name: 'Unmeasured', locationId: drawer.id, quantity: 5 });
 
-      const row = (await locations.list()).rows.find((l) => l.id === drawer.id);
+      const row = (await locations.list({ withVolume: true })).rows.find((l) => l.id === drawer.id);
       expect(row?.volumeTotals).toEqual({
         usedVolume: 3_000_000,
         measuredUnits: 3,
@@ -259,9 +266,9 @@ describe('LocationRepository', () => {
       });
     });
 
-    it('reports a zeroed aggregate for a location holding nothing', async () => {
-      const empty = await locations.create({ name: 'Empty' });
-      const row = (await locations.getTree()).find((n) => n.id === empty.id);
+    it('reports a zeroed aggregate for a measured location holding nothing', async () => {
+      const empty = await locations.create({ name: 'Empty', width: 100, height: 100, depth: 100 });
+      const row = (await locations.getTree({ withVolume: true })).find((n) => n.id === empty.id);
       expect(row?.volumeTotals).toEqual({
         usedVolume: 0,
         measuredUnits: 0,
@@ -271,9 +278,66 @@ describe('LocationRepository', () => {
       });
     });
 
+    // Issue #525: the aggregate walks the stock ledger, so it is opt-in and is computed only
+    // where a volumetric reading could actually be rendered. Both halves are asserted here, since
+    // an absent aggregate must be distinguishable from a genuinely empty one.
+    it('omits the aggregate entirely unless the caller opts in', async () => {
+      const drawer = await locations.create({ name: 'Drawer', width: 100, height: 100, depth: 100 });
+      await items.create({
+        name: 'Widget',
+        locationId: drawer.id,
+        quantity: 1,
+        width: 10,
+        height: 10,
+        depth: 10,
+      });
+
+      expect((await locations.list()).rows.find((l) => l.id === drawer.id)?.volumeTotals).toBeUndefined();
+      expect((await locations.listAll()).find((l) => l.id === drawer.id)?.volumeTotals).toBeUndefined();
+      expect((await locations.getTree()).find((n) => n.id === drawer.id)?.volumeTotals).toBeUndefined();
+      expect(
+        (await locations.listAll({ withVolume: true })).find((l) => l.id === drawer.id)?.volumeTotals
+          ?.usedVolume,
+      ).toBe(1_000);
+    });
+
+    it('leaves an unmeasured location without totals even when asked for them', async () => {
+      const shelf = await locations.create({ name: 'Shelf' });
+      await items.create({
+        name: 'Widget',
+        locationId: shelf.id,
+        quantity: 2,
+        width: 10,
+        height: 10,
+        depth: 10,
+      });
+
+      // No internal size means no volumetric reading, so there is nothing for the totals to feed
+      // and they are never computed — `undefined`, not a zeroed aggregate that would read as
+      // "measured, and empty".
+      const row = (await locations.getTree({ withVolume: true })).find((n) => n.id === shelf.id);
+      expect(row?.volumeTotals).toBeUndefined();
+    });
+
+    it('counts a location measured by an explicit usable volume, not just W×H×D', async () => {
+      const tank = await locations.create({ name: 'Tank', usableVolume: 5_000_000 });
+      await items.create({
+        name: 'Widget',
+        locationId: tank.id,
+        quantity: 2,
+        width: 10,
+        height: 10,
+        depth: 10,
+      });
+
+      const row = (await locations.getTree({ withVolume: true })).find((n) => n.id === tank.id);
+      expect(row?.volumeTotals?.usedVolume).toBe(2_000);
+      expect(row?.volumeTotals?.totalUnits).toBe(2);
+    });
+
     it('counts stock at the ledger grain, so a moved unit lands in its new location only', async () => {
       const from = await locations.create({ name: 'From', width: 100, height: 100, depth: 100 });
-      const to = await locations.create({ name: 'To' });
+      const to = await locations.create({ name: 'To', width: 100, height: 100, depth: 100 });
       const item = await items.create({
         name: 'Widget',
         locationId: from.id,
@@ -284,7 +348,7 @@ describe('LocationRepository', () => {
       });
       await items.transferStock(item.id, from.id, to.id, 1);
 
-      const rows = (await locations.list()).rows;
+      const rows = (await locations.list({ withVolume: true })).rows;
       const fromRow = rows.find((l) => l.id === from.id);
       const toRow = rows.find((l) => l.id === to.id);
       // 2 units remain at From, 1 unit moved to To — used volume follows the units.

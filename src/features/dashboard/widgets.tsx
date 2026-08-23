@@ -47,7 +47,7 @@ import { daysOverdue, overdueLabel } from '@/features/contacts/overdue';
 import { useOnOrderQtys } from '@/features/purchasing/queries';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
 import { projectBudgetHealth } from '@/features/projects/budget';
-import { useItemCount, useLocations } from '@/features/inventory/queries';
+import { useItemCount, useLocationCount } from '@/features/inventory/queries';
 import { useCategories } from '@/features/inventory/categories';
 import { useInventoryValue } from '@/features/reports/queries';
 import { useActivityFeed } from '@/features/activity/queries';
@@ -557,13 +557,13 @@ function InventoryTotalsWidget() {
   const fmt = useFormatters();
   const value = useInventoryValue();
   const itemCount = useItemCount();
-  const locations = useLocations();
+  const locations = useLocationCount();
   const categories = useCategories();
   // "How big is my inventory, and what's it worth" — the at-a-glance pulse the
   // exception-list widgets don't provide. Values reuse the Reports valuation (Phase 74).
   const totalItems = itemCount.data ?? 0;
   const totalValue = value.data?.totalValue ?? 0;
-  const locationCount = locations.data?.rows.length ?? 0;
+  const locationCount = locations.data ?? 0;
   const categoryCount = categories.data?.rows.length ?? 0;
   const loading = value.isPending || itemCount.isPending || locations.isPending || categories.isPending;
   const error = value.isError || itemCount.isError || locations.isError || categories.isError;
