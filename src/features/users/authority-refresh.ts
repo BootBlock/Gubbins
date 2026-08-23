@@ -15,7 +15,13 @@
  * toggled, and after a user or role is edited. Missing a call leaves a stale authority, which
  * is why the sign-in path and the module toggle both go through it rather than setting the
  * store directly.
+ *
+ * "Edited" includes an edit made somewhere else and *arriving* here — `users`, `roles` and
+ * `api_tokens` are synced tables, so a merge, a backup restore or a conflict restore can change
+ * any of them without this device touching the admin screens (issue #631). Those paths go
+ * through {@link adoptAuthorityChange}.
  */
+import type { QueryClient } from '@tanstack/react-query';
 import { getRoleRepository, getUserRepository } from '@/db/repositories';
 import { ADMIN_USER_ID } from '@/db/repositories/constants';
 import { useSessionStore } from '@/state/stores/useSessionStore';
@@ -45,6 +51,26 @@ export async function refreshAuthority(): Promise<ResolvedSession> {
   });
   useSessionStore.getState().setResolved(resolved.authority, resolved.actorId);
   return resolved;
+}
+
+/**
+ * Adopt rows that arrived from elsewhere: re-resolve the authority, then drop every cached read.
+ *
+ * The whole-database paths — a sync merge, a backup restore, a conflict restore — replace rows
+ * of `users` and `roles` just as the admin screens do, but nothing about *this* device's session
+ * changes, so neither the sign-in gate's effect nor a mutation hook re-runs. Without this the
+ * device keeps writing under the permissions it started with until the next reload: a role
+ * narrowed, an account disabled, or an account deleted on another device has no effect here
+ * (issue #631).
+ *
+ * The order matches `refreshAfterWrite` in `mutations.ts` — refresh first, so the refetches the
+ * invalidation triggers run under the new permissions rather than the ones being replaced. The
+ * invalidation is unscoped because the caller has just replaced arbitrary tables, not because
+ * the authority needs it.
+ */
+export async function adoptAuthorityChange(client: QueryClient): Promise<void> {
+  await refreshAuthority();
+  await client.invalidateQueries();
 }
 
 /** What an unresolvable session is permitted to do: nothing. */
