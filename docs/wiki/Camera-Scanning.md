@@ -17,7 +17,10 @@ smooth. Where your camera supports it, Gubbins keeps the picture in focus automa
 held at reading distance stays sharp.
 
 Scan a code and Gubbins matches it to an item by its barcode, then lets you act on it — view it,
-adjust stock, [[check it out|Loans-Check-Out-and-In]], or move it.
+adjust stock, [[check it out|Loans-Check-Out-and-In]], or move it. That match is on whatever the
+item's **Barcode** field holds, so a workshop's own Code 128 part label or a supplier's Code 39
+asset tag finds its item exactly as a shop's EAN does — anything you scanned or typed into that
+field is scannable again.
 
 > **💡 Tip**
 > Scanning every kind of code at once is convenient, but if you only ever scan one type — say
@@ -140,11 +143,17 @@ location, exactly as scanning would have. See
 
 ## When a code isn't found
 
-A barcode with no matching item isn't an error — it just means nothing's linked to it yet. Gubbins
-offers to **add an item** with the barcode already saved to it, and — right there in the scanner —
-to **look the product up** so its name and brand are filled in for you before you add it. That
-lookup is optional: it happens only when you tap **Look up**, and you're asked once before the
-first time (see [[Barcode → product lookup|Scraping-Supplier-Data]]).
+A barcode with no matching item isn't an error — it just means nothing's linked to it yet. For a
+retail barcode, Gubbins offers to **add an item** with the barcode already saved to it, and — right
+there in the scanner — to **look the product up** so its name and brand are filled in for you
+before you add it. That lookup is optional: it happens only when you tap **Look up**, and you're
+asked once before the first time (see [[Barcode → product lookup|Scraping-Supplier-Data]]).
+
+Any other code — a part label, an asset tag, a code you made up yourself — gets a plainer answer:
+Gubbins says nothing in your inventory has it. There's no product to look up for a code only you
+use, so link it yourself: open the item it belongs to, put the code in its **Barcode** field
+(the **Scan** button beside the field reads it straight off the label), and every later scan finds
+that item.
 
 ## Related pages
 

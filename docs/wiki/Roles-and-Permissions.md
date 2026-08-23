@@ -169,6 +169,19 @@ role** can sign in but can't do anything, which is a useful holding state for a 
 Deleting a role doesn't delete anyone. People holding it keep their accounts and simply have no
 permissions until you give them another one.
 
+### When a change reaches another device
+
+A change to someone's role — or disabling or deleting their account — applies on the device you
+made it on straight away. Another device picks it up on its next [[sync|Cloud-Sync]], and the new
+permissions apply there as soon as that sync finishes. Nobody has to reload or sign in again for it
+to take. If the account was disabled or deleted, that device is returned to the
+[[sign-in screen|Signing-In]] at the same moment.
+
+> **ℹ️ Note**
+> Sync is how the change travels between devices, so a device that hasn't synced since you made
+> it is still working to the permissions it last knew about. Restoring a
+> [[backup|Backup-and-Restore]] applies the accounts and roles in the file the same way.
+
 A role also governs what an outside tool can do. An [[API token|Bridge-API-Tokens]] minted against
 an account is held to that account's role, so the same limits follow it out of the app. The bridge
 checks the permission on **every request**, against the data rather than a screen: a role without

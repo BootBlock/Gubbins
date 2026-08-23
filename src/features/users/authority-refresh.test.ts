@@ -19,7 +19,7 @@ vi.mock('@/db/repositories', () => ({
 }));
 vi.mock('./module', () => ({ usersModuleEnabled: () => moduleEnabled() }));
 
-const { refreshAuthority } = await import('./authority-refresh');
+const { adoptAuthorityChange, refreshAuthority } = await import('./authority-refresh');
 const { useSessionStore } = await import('@/state/stores/useSessionStore');
 
 const USER: User = {
@@ -150,5 +150,39 @@ describe('refreshAuthority', () => {
       mode: 'granted',
       grants: new Set(['items:read', 'items:write']),
     });
+  });
+});
+
+describe('adoptAuthorityChange', () => {
+  it('re-resolves the session before the caches are dropped', async () => {
+    // Order is the point (issue #631). A refetch that runs first would be answered under the
+    // permissions being replaced, and its rows would then be cached as if they had been read
+    // under the new ones.
+    const order: string[] = [];
+    getById.mockImplementation(async () => {
+      order.push('resolve');
+      return USER;
+    });
+    const client = {
+      invalidateQueries: vi.fn(async () => {
+        order.push('invalidate');
+      }),
+    };
+    signedIn();
+
+    await adoptAuthorityChange(client as never);
+
+    expect(order).toEqual(['resolve', 'invalidate']);
+    expect(useSessionStore.getState().authority.mode).toBe('granted');
+  });
+
+  it('adopts an account deleted elsewhere as a denial, not as Admin', async () => {
+    // The sync/restore case the issue describes: the row is simply gone by the time this runs.
+    getById.mockResolvedValue(undefined);
+    signedIn('deleted-user');
+
+    await adoptAuthorityChange({ invalidateQueries: vi.fn().mockResolvedValue(undefined) } as never);
+
+    expect(useSessionStore.getState().authority).toEqual({ mode: 'denied', reason: 'signed-out' });
   });
 });
