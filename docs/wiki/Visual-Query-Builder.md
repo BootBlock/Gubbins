@@ -51,8 +51,23 @@ Results update as you build, and the panel shows how many items currently match.
 > with a rough phrase and adjust.
 
 > **ℹ️ Note**
-> While the visual builder is active it supersedes the quick-search box and status chips, so
-> you're always seeing exactly this query's results. Close the panel to return to quick search.
+> While the visual builder is active it supersedes the quick-search box, the status chips and the
+> category/tag filters, so you're always seeing exactly this query's results. Close the panel to
+> return to quick search.
+
+## The selected location still applies
+
+The location you have selected in the Inventory sidebar is **not** superseded — it scopes the
+query. Select *Garage* and search for `quantity < 5`, and you get the low-stock items in the
+Garage, not in the whole inventory. The result line above the list says which location the query
+ran in, so you can always see the scope you are under.
+
+To search everywhere, select **All items** at the top of the sidebar before you run the query.
+
+> **💡 Tip**
+> A query that names a location itself — *"items in the shed"* in the plain-English box —
+> overrides the sidebar instead of fighting it. The query then decides where to look, so it still
+> finds Shed items while *Garage* is selected.
 
 ## Keeping a query
 

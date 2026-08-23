@@ -10,7 +10,7 @@
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { DEFAULT_PAGE_SIZE, MAX_LIST_PAGES, getItemRepository, type ItemSort } from '@/db/repositories';
 import type { SearchAST } from '@/db/search/ast';
-import { parseASTtoSQL } from '@/db/search/parseASTtoSQL';
+import { astFiltersLocation, parseASTtoSQL } from '@/db/search/parseASTtoSQL';
 import { inventoryKeys } from '@/features/inventory/queries';
 
 /**
@@ -27,23 +27,42 @@ export function astError(ast: SearchAST): string | null {
 }
 
 /**
+ * Which location a Visual-Builder search actually runs inside (issue #626) — the caller's
+ * selected location, or `null` when the search spans the whole inventory.
+ *
+ * The scope is lifted for a tree that names `location` itself: that condition already says
+ * where to look, and AND-ing a *different* location onto it can only return nothing. The
+ * repository applies the same rule, so a caller that skips this helper is still safe; the
+ * point of having it on the UI side is that the screen can say which scope the results are
+ * under without restating the rule and drifting from it.
+ */
+export function astLocationScope(ast: SearchAST, locationId: string | null): string | null {
+  return locationId && !astFiltersLocation(ast) ? locationId : null;
+}
+
+/**
  * @param sort - the inventory's ordering axis (issue #128), or `undefined` to keep the AST
  *   search's own relevance ordering (capability "best match" rank, then alphabetical). An
  *   explicit sort **replaces** that ranking — the user asked for a specific order, so it wins
  *   over relevance. Part of the query key, so re-sorting re-runs the search.
+ * @param locationId - the location the search is scoped to (issue #626), or `null` to search
+ *   the whole inventory. The Inventory sidebar's selection scopes these results exactly as it
+ *   scopes the plain list, so the screen's chrome and its rows can't disagree. Also part of the
+ *   query key, so changing the selection re-runs the search.
  */
 export function useAstSearch(
   ast: SearchAST,
   enabled: boolean,
   sort?: readonly ItemSort[],
+  locationId: string | null = null,
   pageSize = DEFAULT_PAGE_SIZE,
 ) {
   return useInfiniteQuery({
-    queryKey: inventoryKeys.astSearch(ast, sort ?? null),
+    queryKey: inventoryKeys.astSearch(ast, sort ?? null, locationId),
     enabled,
     initialPageParam: 0,
     queryFn: ({ pageParam }) =>
-      getItemRepository().searchByAst(ast, { limit: pageSize, offset: pageParam, sort }),
+      getItemRepository().searchByAst(ast, { limit: pageSize, offset: pageParam, sort, locationId }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined),
     // Bound the resident window exactly as the plain list does (spec §2.1) so a
     // long AST result set never accumulates every page's thumbnail BLOBs.
@@ -63,13 +82,15 @@ export function useAstSearch(
  * honest source for the result summary a screen-reader user hears.
  *
  * Order-independent, so it deliberately omits the sort axis from the key — re-sorting must not
- * re-run a count that is certain to return the same number (mirrors `useItemCount`).
+ * re-run a count that is certain to return the same number (mirrors `useItemCount`). It does
+ * carry `locationId`, though: that scope changes which items match, so the summary would
+ * otherwise announce a total the list beneath it contradicts (issue #626).
  */
-export function useAstCount(ast: SearchAST, enabled: boolean) {
+export function useAstCount(ast: SearchAST, enabled: boolean, locationId: string | null = null) {
   return useQuery({
-    queryKey: inventoryKeys.astCount(ast),
+    queryKey: inventoryKeys.astCount(ast, locationId),
     enabled,
-    queryFn: () => getItemRepository().countByAst(ast),
+    queryFn: () => getItemRepository().countByAst(ast, { locationId }),
     // Hold the previous count while a refined AST re-counts, so the summary doesn't blink.
     placeholderData: keepPreviousData,
   });

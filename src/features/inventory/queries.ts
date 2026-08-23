@@ -193,12 +193,15 @@ export const inventoryKeys = {
   itemCapabilities: (itemId: string) => [...inventoryKeys.item(itemId), 'capabilities'] as const,
   search: () => [...inventoryKeys.all, 'search'] as const,
   /** One Visual-Builder (AST) search. `sort` is part of the key — an explicit ordering replaces
-   *  the search's own relevance ranking, so re-sorting must re-run it (issue #128). */
-  astSearch: (ast: SearchAST, sort: readonly ItemSort[] | null) =>
-    [...inventoryKeys.search(), 'ast', ast, sort] as const,
+   *  the search's own relevance ranking, so re-sorting must re-run it (issue #128) — and so is
+   *  `locationId`, the sidebar scope the search runs inside (issue #626). */
+  astSearch: (ast: SearchAST, sort: readonly ItemSort[] | null, locationId: string | null) =>
+    [...inventoryKeys.search(), 'ast', ast, locationId, sort] as const,
   /** How many items an AST matches in total (issue #220). Order-independent, so — unlike
-   *  {@link inventoryKeys.astSearch} — it deliberately omits the sort axis. */
-  astCount: (ast: SearchAST) => [...inventoryKeys.search(), 'ast', ast, 'count'] as const,
+   *  {@link inventoryKeys.astSearch} — it deliberately omits the sort axis. It keeps the
+   *  location scope, so the summary can never disagree with the list it heads. */
+  astCount: (ast: SearchAST, locationId: string | null) =>
+    [...inventoryKeys.search(), 'ast', ast, locationId, 'count'] as const,
   // Phase 8 — Universal Alias Mapping (§4 external scraping).
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
   // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`

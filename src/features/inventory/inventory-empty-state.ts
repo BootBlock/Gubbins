@@ -33,6 +33,12 @@ export interface InventoryEmptyContext {
   readonly search?: string;
   /** Whether the Visual Builder is driving the list (it supersedes the quick filters). */
   readonly visualSearch?: boolean;
+  /**
+   * Whether that visual search is scoped to the selected location (issue #626). False when no
+   * location is selected, and when the tree names `location` itself — the search then spans the
+   * whole inventory, so the copy must not claim otherwise.
+   */
+  readonly visualSearchScoped?: boolean;
   /** How many status ("attention") chips are active. */
   readonly statusFilterCount?: number;
   /** Whether a category facet is active. */
@@ -59,11 +65,16 @@ export function inventoryEmptyState(ctx: InventoryEmptyContext): InventoryEmptyC
   const hasFilters = filterCount > 0;
 
   // The Visual Builder supersedes the quick search/filters, so when it is driving the list its
-  // message wins and the (inapplicable) quick-filter scope is not mentioned.
+  // message wins and the (inapplicable) quick-filter scope is not mentioned. The *location* is
+  // not superseded — it scopes the search (issue #626) — so name it when it applied, or the
+  // banner reads "nothing anywhere" for a query that only looked in one room.
   if (ctx.visualSearch) {
+    const scoped = ctx.visualSearchScoped && ctx.locationId && ctx.locationName;
     return {
       title: 'No matching items',
-      body: 'No items match your visual search. Adjust the builder above, or clear it to see everything.',
+      body: scoped
+        ? `No items in ${ctx.locationName} match your visual search. Adjust the builder above, pick another location, or clear the search to see everything.`
+        : 'No items match your visual search. Adjust the builder above, or clear it to see everything.',
     };
   }
 

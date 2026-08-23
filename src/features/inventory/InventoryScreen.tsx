@@ -70,7 +70,7 @@ import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/Searc
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
 import { SavedSearchMenu } from '@/features/search/components/SavedSearchMenu';
 import { planSavedSearchRecall } from '@/features/search/saved-searches';
-import { astError, useAstCount, useAstSearch } from '@/features/search/queries';
+import { astError, astLocationScope, useAstCount, useAstSearch } from '@/features/search/queries';
 import {
   useApplicableStatuses,
   useInventoryItems,
@@ -253,9 +253,16 @@ function InventoryWorkspace() {
   const cloneItem = useCloneItem();
 
   const { ast, conditionCount, dispatch: builderDispatch } = useSearchBuilder();
-  // The Visual Builder supersedes the quick search/location filters when it is open
-  // and holds at least one valid condition (spec §5.1).
+  // The Visual Builder supersedes the quick search and the status/category/tag filters when
+  // it is open and holds at least one valid condition (spec §5.1). The sidebar's location is
+  // the exception — it scopes the search rather than being superseded by it (issue #626).
   const astActive = builderOpen && conditionCount > 0 && astError(ast) === null;
+  // The sidebar's selected location scopes a Visual-Builder search exactly as it scopes the
+  // plain list (issue #626) — otherwise "Garage" stays highlighted, its info card stays on
+  // screen, and the rows underneath come from every other room. `null` once the tree names
+  // `location` itself, because the user's own condition then says where to look.
+  const astLocationId = astLocationScope(ast, selectedLocationId);
+
   // "By location" grouping arranges the standard filtered list into collapsible sections
   // (spec §3 grouping axis). The Visual Builder produces a flat AST result set that isn't
   // organised by location, so while it's active we fall back to the flat list regardless
@@ -424,7 +431,7 @@ function InventoryWorkspace() {
   const listItems = useInventoryItems(filters, undefined, !paginated);
   // The chosen ordering applies to Visual-search results too — otherwise the Sort control would
   // silently do nothing while the builder drives the list.
-  const astItems = useAstSearch(ast, astActive, itemSort);
+  const astItems = useAstSearch(ast, astActive, itemSort, astLocationId);
   const active = astActive ? astItems : listItems;
   // Discrete-pagination reads (issue #20), gated off unless the flat list is paginated: one page of
   // rows plus the filtered total that sizes the page count.
@@ -445,7 +452,7 @@ function InventoryWorkspace() {
   // pagination control are both hidden then — so don't spend a `COUNT(*)` the map/treemap
   // can't show. (The AST count below stays ungated: the builder panel is still on screen.)
   const matchCount = useItemCount(countFilters, !astActive && !isVizMode);
-  const astMatchCount = useAstCount(ast, astActive);
+  const astMatchCount = useAstCount(ast, astActive, astLocationId);
   const resultCount = astActive ? astMatchCount : matchCount;
   const matchTotal = resultCount.data ?? 0;
 
@@ -1003,8 +1010,17 @@ function InventoryWorkspace() {
           <div className="pb-4" inert={!builderOpen}>
             <VisualBuilder
               resultSummary={
-                // The true match count, not the resident-page count (issue #220).
-                astActive ? t('inventory.results.builderSummary', { vars: { count: matchTotal } }) : undefined
+                // The true match count, not the resident-page count (issue #220) — named with
+                // the location it is scoped to, so the panel agrees with the sidebar (#626).
+                astActive
+                  ? // Only name the location once it has resolved — `selectedLocationLabel`
+                    // falls back to "All items" until then, which would misdescribe the scope.
+                    astLocationId && selectedLocation
+                    ? t('inventory.results.builderSummaryInLocation', {
+                        vars: { count: matchTotal, location: selectedLocationLabel },
+                      })
+                    : t('inventory.results.builderSummary', { vars: { count: matchTotal } })
+                  : undefined
               }
               onClose={() => setBuilderOpen(false)}
             />
@@ -1127,7 +1143,13 @@ function InventoryWorkspace() {
                       : grouped
                         ? t('inventory.results.grouped', { vars: { count: matchTotal } })
                         : astActive
-                          ? t('inventory.results.visualSearch', { vars: { count: matchTotal } })
+                          ? // Named only once the location has resolved — see the builder
+                            // panel's summary above.
+                            astLocationId && selectedLocation
+                            ? t('inventory.results.visualSearchInLocation', {
+                                vars: { count: matchTotal, location: selectedLocationLabel },
+                              })
+                            : t('inventory.results.visualSearch', { vars: { count: matchTotal } })
                           : t('inventory.results.count', { vars: { count: matchTotal } })}
                   </p>
                   {/* Only shown when it applies (removed items exist in view, or it's already on) —
@@ -1336,7 +1358,7 @@ function InventoryWorkspace() {
                     cardFields={cardFields}
                     emptyContext={
                       astActive
-                        ? { visualSearch: true }
+                        ? { visualSearch: true, visualSearchScoped: astLocationId !== null }
                         : {
                             search,
                             statusFilterCount: statusFilters.size,

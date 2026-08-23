@@ -205,6 +205,9 @@ export const FTS_TEXT_ITEM_COLUMNS: readonly string[] = Object.values(ITEM_FIELD
 /** The `active` field name, shared with {@link astFiltersActiveFlag} so the two can't drift. */
 const ACTIVE_FIELD = 'active';
 
+/** The `location` field name, shared with {@link astFiltersLocation} so the two can't drift. */
+const LOCATION_FIELD = 'location';
+
 /**
  * Look a field name up in {@link ITEM_FIELDS} — via `Object.hasOwn`, never a bare index.
  *
@@ -281,11 +284,32 @@ export function collectCapabilityKeys(ast: SearchAST): string[] {
  * without validating depth, so it never throws on a tree the parser would reject.
  */
 export function astFiltersActiveFlag(ast: SearchAST): boolean {
+  return astFiltersField(ast, ACTIVE_FIELD);
+}
+
+/**
+ * True when a tree filters on the `location` field anywhere (issue #626).
+ *
+ * The Inventory screen scopes a Visual-Builder search to the location selected in its sidebar,
+ * so the results match what that sidebar says is in scope. A tree that names `location` itself
+ * is already saying where to look, and AND-ing the sidebar's location onto a *different* one is
+ * unsatisfiable — so the caller drops the sidebar scope when this returns true and lets the
+ * user's own condition decide, exactly as {@link astFiltersActiveFlag} does for `active`.
+ */
+export function astFiltersLocation(ast: SearchAST): boolean {
+  return astFiltersField(ast, LOCATION_FIELD);
+}
+
+/**
+ * Whether any condition in the tree names `field`. Pure and recursion-safe: it walks the whole
+ * tree without validating depth, so it never throws on a tree the parser would reject.
+ */
+function astFiltersField(ast: SearchAST, field: string): boolean {
   const visit = (node: ASTGroupNode): boolean =>
     node.conditions.some((child) =>
       // Matched exactly as `translateCondition` looks the field up (`ITEM_FIELDS[field.trim()]`),
       // so the flag can never be set by a spelling the translator would reject as unknown.
-      isGroupNode(child) ? visit(child) : child.field.trim() === ACTIVE_FIELD,
+      isGroupNode(child) ? visit(child) : child.field.trim() === field,
     );
   return visit(ast);
 }

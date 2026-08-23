@@ -5,6 +5,7 @@ import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { and, leaf, or } from '@/test/ast';
 import { ItemRepository } from './ItemRepository';
+import { LocationRepository } from './LocationRepository';
 
 /**
  * Phase 5: the FTS5 full-text swap and the Weighted Capabilities surface
@@ -195,6 +196,65 @@ describe('ItemRepository.searchByAst (spec §5.1)', () => {
     const active = await items.searchByAst(and(leaf('active', 'EQUALS', true)));
     expect(active.rows.map((r) => r.name)).toEqual(['LM7805 Regulator']);
     expect(await items.countByAst(and(leaf('quantity', 'GREATER_THAN', -1)))).toBe(1);
+  });
+});
+
+/**
+ * The Inventory sidebar's selected location scopes a Visual-Builder search exactly as it scopes
+ * the plain list (issue #626) — before this, the sidebar kept "Garage" highlighted while the
+ * results came from every room.
+ */
+describe('ItemRepository.searchByAst — location scope (issue #626)', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+  let garageId: string;
+  let shedId: string;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    const locations = new LocationRepository(driver);
+    items = new ItemRepository(driver);
+    garageId = (await locations.create({ name: 'Garage' })).id;
+    shedId = (await locations.create({ name: 'Shed' })).id;
+    await items.create({ name: 'Socket Set', locationId: garageId, quantity: 2 });
+    await items.create({ name: 'Spanner', locationId: garageId, quantity: 40 });
+    await items.create({ name: 'Trowel', locationId: shedId, quantity: 1 });
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  it('restricts the results to the given location', async () => {
+    const page = await items.searchByAst(and(leaf('quantity', 'LESS_THAN', 5)), { locationId: garageId });
+    expect(page.rows.map((r) => r.name)).toEqual(['Socket Set']);
+  });
+
+  it('counts the same set the search returns, so the summary cannot disagree with the list', async () => {
+    const ast = and(leaf('quantity', 'LESS_THAN', 5));
+    expect(await items.countByAst(ast)).toBe(2); // Socket Set + Trowel, inventory-wide
+    expect(await items.countByAst(ast, { locationId: garageId })).toBe(1);
+  });
+
+  it('searches the whole inventory when no location is given', async () => {
+    const page = await items.searchByAst(and(leaf('quantity', 'LESS_THAN', 5)));
+    expect(page.rows.map((r) => r.name).sort()).toEqual(['Socket Set', 'Trowel']);
+  });
+
+  it('lets a tree that names `location` itself decide, rather than AND-ing it away', async () => {
+    // Without the lift, "in the Shed" AND-ed with the Garage scope is unsatisfiable.
+    const ast = and(leaf('location', 'EQUALS', shedId));
+    const page = await items.searchByAst(ast, { locationId: garageId });
+    expect(page.rows.map((r) => r.name)).toEqual(['Trowel']);
+    expect(await items.countByAst(ast, { locationId: garageId })).toBe(1);
+  });
+
+  it('applies the location scope alongside the implicit active-inventory one', async () => {
+    const all = await items.list({ limit: 100 });
+    await items.softDelete(all.rows.find((r) => r.name === 'Socket Set')!.id);
+    expect(await items.countByAst(and(), { locationId: garageId })).toBe(1); // Spanner only
+    expect(await items.countByAst(and(), { locationId: garageId, includeInactive: true })).toBe(2);
   });
 });
 

@@ -11,6 +11,7 @@ import {
 import { MAX_AST_GROUP_DEPTH, type ASTGroupNode, type FilterCondition } from './ast';
 import {
   astFiltersActiveFlag,
+  astFiltersLocation,
   collectCapabilityKeys,
   itemFieldEnumValues,
   parseASTtoSQL,
@@ -589,6 +590,30 @@ describe('astFiltersActiveFlag — lifting the implicit active-only scope (issue
     // Matched exactly as `ITEM_FIELDS` is keyed, so a near-miss never lifts the scope.
     expect(astFiltersActiveFlag(and({ field: 'Active', operator: 'EQUALS', value: true }))).toBe(false);
     expect(astFiltersActiveFlag(and({ field: 'inactive', operator: 'EQUALS', value: true }))).toBe(false);
+  });
+});
+
+describe('astFiltersLocation — lifting a caller-supplied location scope (issue #626)', () => {
+  it('is false for a tree that never mentions the location field', () => {
+    expect(astFiltersLocation(and())).toBe(false);
+    expect(astFiltersLocation(and({ field: 'quantity', operator: 'GREATER_THAN', value: 1 }))).toBe(false);
+  });
+
+  it('is true wherever the condition sits in the tree', () => {
+    expect(astFiltersLocation(and({ field: 'location', operator: 'EQUALS', value: 'loc-1' }))).toBe(true);
+    expect(
+      astFiltersLocation(
+        and(
+          { field: 'quantity', operator: 'GREATER_THAN', value: 1 },
+          or({ field: ' location ', operator: 'EQUALS', value: 'loc-1' }),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('ignores a field the translator would reject as unknown', () => {
+    expect(astFiltersLocation(and({ field: 'Location', operator: 'EQUALS', value: 'loc-1' }))).toBe(false);
+    expect(astFiltersLocation(and({ field: 'locations', operator: 'EQUALS', value: 'loc-1' }))).toBe(false);
   });
 });
 
