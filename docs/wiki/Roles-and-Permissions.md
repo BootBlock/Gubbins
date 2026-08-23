@@ -131,9 +131,9 @@ to take. If the account was disabled or deleted, that device is returned to the
 [[sign-in screen|Signing-In]] at the same moment.
 
 > **ℹ️ Note**
-> Sync is the only way the change travels, so a device that hasn't synced since you made it is
-> still working to the permissions it last knew about. Restoring a [[backup|Backup-and-Restore]]
-> applies the accounts and roles in the file the same way.
+> Sync is how the change travels between devices, so a device that hasn't synced since you made
+> it is still working to the permissions it last knew about. Restoring a
+> [[backup|Backup-and-Restore]] applies the accounts and roles in the file the same way.
 
 A role also governs what an outside tool can do. An [[API token|Bridge-API-Tokens]] minted against
 an account is held to that account's role, so a role that can't see suppliers in the app can't read

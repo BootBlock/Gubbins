@@ -1,7 +1,7 @@
 /**
  * Issue #631: the Sync screen re-resolves the session's permissions whenever rows arrive.
  *
- * `users`, `roles` and `api_tokens` sync like any other table, so a role narrowed, an account
+ * `users` and `roles` sync like any other table, so a role narrowed, an account
  * disabled or an account deleted on another device reaches this one through a merge, a backup
  * restore or a conflict restore. None of those touch the local admin screens, and the sign-in
  * gate's effect is keyed on the module flag and the session's user id — neither of which
@@ -16,6 +16,7 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { useSyncConflictsStore } from './conflict-store';
+import { SyncPushFailedError } from './sync-errors';
 import type { SyncResult } from './sync-engine';
 
 // --- mocks ------------------------------------------------------------------
@@ -96,9 +97,9 @@ vi.mock('@/lib/env/feature-detection', () => ({ hasFileSystemAccess: () => false
 const { SyncScreen } = await import('./SyncScreen');
 
 /** A merge that landed and published, with nothing else to report. */
-function mergedOutcome(): SyncResult {
+function mergedOutcome(overrides: Partial<SyncResult> = {}): SyncResult {
   return {
-    status: 'OK',
+    status: 'SYNCED',
     pulled: 1,
     deleted: 0,
     reparented: 0,
@@ -111,7 +112,8 @@ function mergedOutcome(): SyncResult {
     tagEdgesAdded: 0,
     tagEdgesRemoved: 0,
     conflicts: [],
-  } as SyncResult;
+    ...overrides,
+  };
 }
 
 describe('SyncScreen — permissions are re-resolved when rows arrive (#631)', () => {
@@ -147,7 +149,21 @@ describe('SyncScreen — permissions are re-resolved when rows arrive (#631)', (
     await waitFor(() => expect(mockAdoptAuthorityChange).toHaveBeenCalled());
   });
 
-  it('leaves a failed sync alone — nothing was adopted, so nothing is re-resolved', async () => {
+  it('re-resolves when the merge landed and only the push failed', async () => {
+    // Issue #638's half-completed pass: the rows are already durable on this device, so the
+    // permissions among them count exactly as much as they would on a clean sync.
+    mockRunSync.mockRejectedValue(
+      new SyncPushFailedError('publishing failed', mergedOutcome({ status: 'MERGED_NOT_PUBLISHED' }), {
+        cause: new Error('Failed to fetch'),
+      }),
+    );
+    render(<SyncScreen />);
+    await userEvent.click(await screen.findByRole('button', { name: /sync now/i }));
+
+    await waitFor(() => expect(mockAdoptAuthorityChange).toHaveBeenCalled());
+  });
+
+  it('leaves a sync that failed before the merge alone — no rows arrived to re-resolve for', async () => {
     mockRunSync.mockRejectedValue(new Error('Failed to fetch'));
     render(<SyncScreen />);
     await userEvent.click(await screen.findByRole('button', { name: /sync now/i }));

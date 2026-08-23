@@ -16,10 +16,10 @@
  * is why the sign-in path and the module toggle both go through it rather than setting the
  * store directly.
  *
- * "Edited" includes an edit made somewhere else and *arriving* here — `users`, `roles` and
- * `api_tokens` are synced tables, so a merge, a backup restore or a conflict restore can change
- * any of them without this device touching the admin screens (issue #631). Those paths go
- * through {@link adoptAuthorityChange}.
+ * "Edited" includes an edit made somewhere else and *arriving* here — `users` and `roles` are
+ * synced tables, so a merge, a backup restore or a conflict restore can change either of them
+ * without this device touching the admin screens (issue #631). Those paths go through
+ * {@link adoptAuthorityChange}.
  */
 import type { QueryClient } from '@tanstack/react-query';
 import { getRoleRepository, getUserRepository } from '@/db/repositories';
