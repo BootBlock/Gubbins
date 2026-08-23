@@ -144,10 +144,16 @@ location, exactly as scanning would have. See
 ## When a code isn't found
 
 A barcode with no matching item isn't an error — it just means nothing's linked to it yet. For a
-retail barcode, Gubbins offers to **add an item** with the barcode already saved to it, and — right there in the scanner —
-to **look the product up** so its name and brand are filled in for you before you add it. That
-lookup is optional: it happens only when you tap **Look up**, and you're asked once before the
-first time (see [[Barcode → product lookup|Scraping-Supplier-Data]]).
+retail barcode, Gubbins offers to **add an item** with the barcode already saved to it, and — right
+there in the scanner — to **look the product up** so its name and brand are filled in for you
+before you add it. That lookup is optional: it happens only when you tap **Look up**, and you're
+asked once before the first time (see [[Barcode → product lookup|Scraping-Supplier-Data]]).
+
+Any other code — a part label, an asset tag, a code you made up yourself — gets a plainer answer:
+Gubbins says nothing in your inventory has it. There's no product to look up for a code only you
+use, so link it yourself: open the item it belongs to, put the code in its **Barcode** field
+(the **Scan** button beside the field reads it straight off the label), and every later scan finds
+that item.
 
 ## Related pages
 

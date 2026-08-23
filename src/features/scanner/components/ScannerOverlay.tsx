@@ -122,8 +122,9 @@ function ScannerOverlayInner({
   const [manual, setManual] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   // The "What can I scan?" explainer — the scanner accepts several kinds of code (Gubbins
-  // item/location QR labels and retail EAN/UPC barcodes) and this is where that is spelled
-  // out, so the button is never a mystery. Closed by default; opened from the header.
+  // item/location QR labels, printed short codes, and any barcode an item records) and this is
+  // where that is spelled out, so the button is never a mystery. Closed by default; opened from
+  // the header.
   const [helpOpen, setHelpOpen] = useState(false);
   const [discreteResult, setDiscreteResult] = useState<Item | null>(null);
   // A recognised retail barcode that no item carries yet — offer to create one (point 1).
@@ -271,9 +272,7 @@ function ScannerOverlayInner({
       // a barcode whether or not an item records it — so the notice says *that*, and points at
       // the field that would make it resolve next time (issue #506).
       setNotice(
-        isStructuredQrPayload(raw)
-          ? 'That’s a website link, not a Gubbins code or a product barcode.'
-          : t('scanner.notice.unknownCode'),
+        isStructuredQrPayload(raw) ? t('scanner.notice.websiteLink') : t('scanner.notice.unknownCode'),
       );
     },
     [t, state.mode, queue, beepEnabled, hapticsEnabled, locationRows, onLocationScanned],
