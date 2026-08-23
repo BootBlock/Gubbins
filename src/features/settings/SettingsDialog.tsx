@@ -55,6 +55,7 @@ import { useT, hasInterfaceTranslation } from '@/features/i18n';
 import { exceedsTextLimit } from '@/lib/text-limits';
 import { usePreferencesStore, type Accent, type Mode } from '@/state/stores/usePreferencesStore';
 import { SettingsSection, SettingRow } from './SettingsSection';
+import { CompanionExtensionStatus } from './CompanionExtensionStatus';
 import { SettingsSearchGroup, SettingsSearchResults } from './SettingsSearchResults';
 import { ReminderSettings } from '@/features/alerts/ReminderSettings';
 import { CardFieldsSetting } from '@/features/inventory/components/CardFieldsSetting';
@@ -1207,6 +1208,9 @@ export default function SettingsDialog({
               a hidden capability leaves no orphaned setting behind. */}
           {scrapingOn ? (
             <SettingsSection icon={<PackageIcon />} title="Product lookup">
+              {/* Which extension the bridge is actually talking to (issue #664): a silent,
+                  out-of-date extension is otherwise indistinguishable from no extension. */}
+              <CompanionExtensionStatus />
               <SettingRow
                 label="Online product lookup"
                 description="Allow a barcode lookup to query the open Open Food Facts database over the internet when the companion extension isn’t installed."

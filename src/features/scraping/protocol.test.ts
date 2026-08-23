@@ -8,9 +8,15 @@ import { describe, expect, it } from 'vitest';
 import {
   EXTENSION_SOURCE,
   extensionMessageSchema,
+  isPeerBehind,
   makeMessage,
   parseExtensionMessage,
+  peerProtocolVersion,
+  peerSupports,
+  PROTOCOL_CAPABILITY_VERSIONS,
+  PROTOCOL_VERSION,
   SCRAPE_ERROR_TYPES,
+  type ProtocolCapability,
   type ScrapeResultPayload,
 } from './protocol';
 
@@ -270,5 +276,77 @@ describe('requestId correlation (§9 multi-scrape)', () => {
   it('round-trips the requestId on a valid result', () => {
     const parsed = parseExtensionMessage(makeMessage('SCRAPE_RESULT', validResult, 'req-7'), ctx);
     expect(parsed?.type === 'SCRAPE_RESULT' && parsed.requestId).toBe('req-7');
+  });
+});
+
+describe('wire-version negotiation (issue #664)', () => {
+  it('validates a hello carrying a version and a generation, in either direction', () => {
+    for (const type of ['EXTENSION_READY', 'APP_READY'] as const) {
+      const msg = makeMessage(type, { version: '1.7.0', protocol: PROTOCOL_VERSION });
+      expect(parseExtensionMessage(msg, ctx)?.type).toBe(type);
+    }
+  });
+
+  it('still validates a hello from a peer that predates negotiation', () => {
+    // Dropping it would turn an out-of-date peer into an invisible one — the very failure the
+    // negotiation exists to remove — so every field, and the payload itself, stays optional.
+    expect(parseExtensionMessage(makeMessage('EXTENSION_READY', { version: '1.6.0' }), ctx)).not.toBeNull();
+    expect(parseExtensionMessage(makeMessage('EXTENSION_READY'), ctx)).not.toBeNull();
+  });
+
+  it('refuses a generation that is not a positive whole number', () => {
+    for (const protocol of [0, -1, 2.5, '3']) {
+      const msg = { source: EXTENSION_SOURCE, type: 'EXTENSION_READY', payload: { protocol } };
+      expect(parseExtensionMessage(msg, ctx)).toBeNull();
+    }
+  });
+
+  it('recovers a missing generation from the build version that shipped it', () => {
+    // The message set grew in step with the extension's own version, so a pre-negotiation build
+    // is placed exactly rather than guessed. Crediting every one of them with the newest set
+    // would hand a 1.2.0 install three capabilities it has never had.
+    expect(peerProtocolVersion({ version: '1.0.0' })).toBe(1);
+    expect(peerProtocolVersion({ version: '1.1.0' })).toBe(1);
+    expect(peerProtocolVersion({ version: '1.2.0' })).toBe(2);
+    expect(peerProtocolVersion({ version: '1.3.0' })).toBe(3);
+    expect(peerProtocolVersion({ version: '1.4.0' })).toBe(4);
+    expect(peerProtocolVersion({ version: '1.6.0' })).toBe(4);
+  });
+
+  it('falls back to generation 1 when the hello says nothing usable at all', () => {
+    // Guessing higher would hand the peer requests it cannot answer, each dropped in silence.
+    expect(peerProtocolVersion(undefined)).toBe(1);
+    expect(peerProtocolVersion({})).toBe(1);
+    expect(peerProtocolVersion({ version: 'nightly' })).toBe(1);
+  });
+
+  it('prefers a stated generation over anything the version implies', () => {
+    expect(peerProtocolVersion({ version: '1.0.0', protocol: 5 })).toBe(5);
+    expect(peerProtocolVersion({ protocol: 2 })).toBe(2);
+  });
+
+  it('gates each capability on the generation it arrived in', () => {
+    const capabilities = Object.keys(PROTOCOL_CAPABILITY_VERSIONS) as ProtocolCapability[];
+    for (const capability of capabilities) {
+      const introduced = PROTOCOL_CAPABILITY_VERSIONS[capability];
+      expect(peerSupports(introduced, capability)).toBe(true);
+      expect(peerSupports(introduced - 1, capability)).toBe(false);
+      expect(peerSupports(PROTOCOL_VERSION, capability)).toBe(true);
+      // No peer at all supports nothing — the same answer a control needs before one announces.
+      expect(peerSupports(null, capability)).toBe(false);
+    }
+  });
+
+  it('flags a peer that speaks an older generation than this build', () => {
+    expect(isPeerBehind(PROTOCOL_VERSION - 1)).toBe(true);
+    expect(isPeerBehind(PROTOCOL_VERSION)).toBe(false);
+    expect(isPeerBehind(PROTOCOL_VERSION + 1)).toBe(false); // ahead is not behind
+    expect(isPeerBehind(null)).toBe(false); // absent is not behind — there is nothing to update
+  });
+
+  it('this build speaks a generation at least as new as every capability it knows', () => {
+    for (const introduced of Object.values(PROTOCOL_CAPABILITY_VERSIONS)) {
+      expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(introduced);
+    }
   });
 });

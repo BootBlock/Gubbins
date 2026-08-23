@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { bridgeReducer, initialBridgeState, pendingScrapeCount, type BridgeState } from './bridge-reducer';
-import type { ProductLookupResultPayload, ScrapeErrorPayload, ScrapeResultPayload } from './protocol';
+import {
+  PROTOCOL_VERSION,
+  type ProductLookupResultPayload,
+  type ScrapeErrorPayload,
+  type ScrapeResultPayload,
+} from './protocol';
 
 const result: ScrapeResultPayload = {
   mpn: 'NE555P',
@@ -19,16 +24,35 @@ const product: ProductLookupResultPayload = {
   quantity: null,
 };
 
-const ready: BridgeState = bridgeReducer(initialBridgeState, { type: 'READY' });
+/** The peer a plain `READY` announces in these tests: the generation this build itself speaks. */
+const peer = { version: '9.9.9', protocol: PROTOCOL_VERSION };
+
+const ready: BridgeState = bridgeReducer(initialBridgeState, { type: 'READY', peer });
 
 describe('bridgeReducer (§9.3 lifecycle)', () => {
   it('starts not-ready with no requests, lookups or incoming scrapes', () => {
-    expect(initialBridgeState).toEqual({ ready: false, requests: {}, lookups: {}, incoming: {} });
+    expect(initialBridgeState).toEqual({
+      ready: false,
+      peer: null,
+      requests: {},
+      lookups: {},
+      incoming: {},
+    });
   });
 
-  it('READY flips the gate and is idempotent', () => {
+  it('READY flips the gate, records the peer, and is idempotent', () => {
     expect(ready.ready).toBe(true);
-    expect(bridgeReducer(ready, { type: 'READY' })).toBe(ready); // same reference, no churn
+    expect(ready.peer).toEqual(peer);
+    // The content script announces itself three times over (§9.3) — a repeat must not churn.
+    expect(bridgeReducer(ready, { type: 'READY', peer })).toBe(ready);
+  });
+
+  it('READY re-announcing a *different* peer replaces it (a rebuilt extension was reloaded)', () => {
+    const older = { version: '1.6.0', protocol: 4 };
+    const next = bridgeReducer(ready, { type: 'READY', peer: older });
+    expect(next).not.toBe(ready);
+    expect(next.peer).toEqual(older);
+    expect(next.ready).toBe(true);
   });
 
   it('REQUEST → RESULT yields SUCCESS with the payload, keyed by id', () => {

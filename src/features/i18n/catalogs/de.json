@@ -2118,5 +2118,14 @@
   "field.colour.format.rgb": "RGB",
   "field.colour.format.hsl": "HSL",
   "field.colour.format.hsb": "HSB",
-  "field.colour.format.name": "Farbname"
+  "field.colour.format.name": "Farbname",
+  "scraping.extension.label": "Begleit-Erweiterung",
+  "scraping.extension.status.connected": "Verbunden",
+  "scraping.extension.status.absent": "Nicht erkannt",
+  "scraping.extension.status.behind": "Update verfügbar",
+  "scraping.extension.description.connected": "Version {version}, spricht Protokollgeneration {protocol}.",
+  "scraping.extension.description.absent": "Auf dieser Seite hat sich keine Begleit-Erweiterung gemeldet.",
+  "scraping.extension.description.behind": "Version {version} spricht Protokollgeneration {protocol}, diese App spricht {current}. Bauen Sie die Erweiterung neu und laden Sie sie neu, um die neueren Fähigkeiten zu erhalten.",
+  "scraping.extension.unknownVersion": "unbekannt",
+  "scraping.extension.hint": "Die **Begleit-Erweiterung für den Browser** ruft Lieferantenseiten, Barcodes und Einträge offener Datenbanken im Auftrag der App ab.\n\nApp und Erweiterung werden getrennt aktualisiert und können daher eine Generation auseinanderliegen. Beide geben die **Protokollgeneration** an, die sie sprechen, und eine Fähigkeit wird nur angeboten, wenn die Erweiterung sie auch versteht — eine Barcode-Suche nutzt daher die eigene Online-Suche der App (nach vorheriger Rückfrage), statt auf eine Erweiterung zu warten, die sie ignorieren würde.\n\nNennen Sie die hier angezeigte Version, wenn Sie ein Problem mit dem Auslesen oder mit Suchen melden."
 }

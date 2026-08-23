@@ -7,6 +7,11 @@
  */
 export {
   EXTENSION_SOURCE,
+  PROTOCOL_CAPABILITY_VERSIONS,
+  PROTOCOL_VERSION,
+  isPeerBehind,
+  peerProtocolVersion,
+  peerSupports,
   parseExtensionMessage,
   makeMessage,
   extensionMessageSchema,
@@ -19,6 +24,7 @@ export {
   type ScrapeErrorPayload,
   type ScrapeErrorType,
   type ProductLookupResultPayload,
+  type ProtocolCapability,
 } from './protocol';
 export { buildProductLookupUrl, parseOpenFoodFactsProduct } from './product-lookup';
 export { describeScrapeError } from './scrape-errors';
@@ -57,7 +63,13 @@ export {
 } from './price-refresh';
 export { SUPPORTED_SUPPLIER_LABELS } from './parsers/registry';
 export { classifySupplierUrl, isAllowedSupplierUrl, type UrlRefusal } from './parsers/suppliers';
-export { ScrapeBridgeProvider, useScrapeBridge } from './ScrapeBridgeContext';
+export {
+  ScrapeBridgeProvider,
+  useScrapeBridge,
+  useScrapeBridgeStatus,
+  type BridgeStatus,
+} from './ScrapeBridgeContext';
+export type { BridgePeer } from './bridge-reducer';
 export { ScrapeSupplierPanel } from './components/ScrapeSupplierPanel';
 export { ProductLookupPanel } from './components/ProductLookupPanel';
 export { ScrapeReviewDialog } from './components/ScrapeReviewDialog';

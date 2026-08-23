@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { peerSupports, PROTOCOL_VERSION, type ProtocolCapability } from '../protocol';
 
 /**
  * Behaviour tests for {@link ProductLookupPanel} — the barcode → product enrichment control
@@ -17,6 +18,9 @@ vi.mock('@/components/foundry', async (orig) => ({
 
 const bridge = {
   ready: false,
+  /** The wire generation the fake extension speaks — drives `supports` through the real table. */
+  protocol: PROTOCOL_VERSION,
+  supports: (capability: ProtocolCapability) => bridge.ready && peerSupports(bridge.protocol, capability),
   lookups: {} as Record<string, unknown>,
   requestLookup: vi.fn(() => 'req-1'),
   clearLookup: vi.fn(),
@@ -40,6 +44,7 @@ import { ProductLookupPanel } from './ProductLookupPanel';
 
 beforeEach(() => {
   bridge.ready = false;
+  bridge.protocol = PROTOCOL_VERSION;
   prefState.allowOnlineProductLookup = false;
   show.mockClear();
   bridge.requestLookup.mockClear();
@@ -124,6 +129,23 @@ describe('ProductLookupPanel (issue #59)', () => {
     expect(bridge.requestLookup).toHaveBeenCalledWith('4006381333931');
     expect(online).not.toHaveBeenCalled();
     expect(screen.queryByTestId('product-lookup-consent-confirm')).toBeNull();
+  });
+
+  it('takes the online path when the extension is too old to know the lookup (issue #664)', async () => {
+    // A generation-1 extension has no PRODUCT_LOOKUP_REQUEST in its schema, so it drops the
+    // request in silence — the button used to sit at "Looking up…" for the whole request
+    // deadline while the extension-free path beside it would have answered straight away.
+    bridge.ready = true;
+    bridge.protocol = 1;
+    prefState.allowOnlineProductLookup = true;
+    online.mockResolvedValue({ ok: true, payload: { gtin: '4006381333931', name: 'Sticky Notes' } });
+    const onResult = vi.fn();
+    render(<ProductLookupPanel barcode="4006381333931" onResult={onResult} />);
+
+    fireEvent.click(screen.getByTestId('product-lookup-submit'));
+
+    await waitFor(() => expect(onResult).toHaveBeenCalled());
+    expect(bridge.requestLookup).not.toHaveBeenCalled();
   });
 
   it('drops a still-running lookup when the dialog closes (issue #665)', () => {

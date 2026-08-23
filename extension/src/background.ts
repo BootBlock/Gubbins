@@ -314,6 +314,9 @@ const AMAZON_MENU_PATTERNS = [
 
 const QUEUE_KEY = 'gubbins:activeTabQueue';
 
+/** How many undelivered active-tab scrapes the worker will hold for the next PWA tab. */
+const MAX_QUEUED_SCRAPES = 20;
+
 interface QueuedScrape {
   requestId: string;
   outcome: ActiveTabOutcome;
@@ -331,21 +334,35 @@ async function readQueue(): Promise<QueuedScrape[]> {
 
 async function writeQueue(queue: readonly QueuedScrape[]): Promise<void> {
   try {
-    await chrome.storage.session.set({ [QUEUE_KEY]: queue });
+    // Bounded: a payload may be kept rather than cleared when the app would not understand it,
+    // and every scrape taken while no PWA tab is open is appended here regardless, so without a
+    // limit this grows for the whole browser session. The oldest go first — a scrape the user
+    // triggered an hour ago is the one they have given up on.
+    const capped = queue.length > MAX_QUEUED_SCRAPES ? queue.slice(-MAX_QUEUED_SCRAPES) : queue;
+    await chrome.storage.session.set({ [QUEUE_KEY]: capped });
   } catch {
     /* session storage unavailable — a queued payload is best-effort */
   }
 }
 
-/** Push one already-correlated scrape to a specific PWA tab; resolves false if it can't. */
+/**
+ * Push one already-correlated scrape to a specific PWA tab; resolves false if it can't.
+ *
+ * "Can't" covers two cases. The send may fail outright (no content script in that tab), or the
+ * content script may *refuse* — it answers `{ delivered: false }` when the app on its page speaks
+ * a wire generation that would not understand an active-tab payload (issue #664). Without the
+ * refusal a payload posted into an app that discards it still counts as delivered, and the caller
+ * then clears it from the queue: the user's scrape is lost with no trace on either side. Only an
+ * explicit `false` refuses, so a reply of any other shape still reads as delivered.
+ */
 async function sendToTab(tabId: number, item: QueuedScrape): Promise<boolean> {
   try {
-    await chrome.tabs.sendMessage(tabId, {
+    const reply = (await chrome.tabs.sendMessage(tabId, {
       kind: 'DELIVER_ACTIVE_TAB',
       requestId: item.requestId,
       outcome: item.outcome,
-    });
-    return true;
+    })) as { delivered?: boolean } | undefined;
+    return reply?.delivered !== false;
   } catch {
     // The tab has no ready Gubbins content script (not the PWA, or not yet injected).
     return false;
@@ -377,12 +394,23 @@ async function deliverToPwa(outcome: ActiveTabOutcome): Promise<void> {
   if (!delivered) await writeQueue([...(await readQueue()), item]);
 }
 
-/** Flush any queued scrapes to a freshly-ready PWA tab, then clear the queue. */
+/**
+ * Flush any queued scrapes to a freshly-ready PWA tab, keeping back anything it would not take.
+ *
+ * A tab that refuses a payload (an app that would not understand it — see {@link sendToTab}) must
+ * not have it cleared out from under it: the PWA updates itself, so the *next* `PWA_READY` from
+ * that same tab is what finally delivers it (issue #664).
+ *
+ * A tab announces itself before the app has stated its generation, so a flush is answered on the
+ * benefit of the doubt and this runs as it always did. The retention matters for the other caller
+ * of {@link sendToTab} — a live delivery into a tab that turns it down.
+ */
 async function flushQueueTo(tabId: number): Promise<void> {
   const queue = await readQueue();
   if (queue.length === 0) return;
-  for (const item of queue) await sendToTab(tabId, item);
-  await writeQueue([]);
+  const undelivered: QueuedScrape[] = [];
+  for (const item of queue) if (!(await sendToTab(tabId, item))) undelivered.push(item);
+  await writeQueue(undelivered);
 }
 
 /** Inject the active-tab scraper into the user's Amazon tab (explicit-gesture only). */

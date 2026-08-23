@@ -26,17 +26,54 @@ import {
   bridgeReducer,
   initialBridgeState,
   pendingScrapeCount,
+  type BridgePeer,
   type IncomingScrapeState,
   type BridgeAction,
   type ProductLookupState,
   type ScrapeRequestState,
 } from './bridge-reducer';
+import { APP_VERSION } from '@/lib/app-version';
 import { hostOf } from './parsers/types';
 import { OPEN_FOOD_FACTS_HOST } from './product-lookup';
-import { makeMessage, parseExtensionMessage, type ScrapeErrorPayload } from './protocol';
+import {
+  isPeerBehind,
+  makeMessage,
+  parseExtensionMessage,
+  peerProtocolVersion,
+  peerSupports,
+  PROTOCOL_VERSION,
+  type ProtocolCapability,
+  type ScrapeErrorPayload,
+} from './protocol';
 
 interface ScrapeBridgeValue {
+  /**
+   * True once *some* extension has announced itself (§9.3).
+   *
+   * Deliberately **not** a capability gate (issue #664): an extension a generation behind is
+   * ready and silent at the same time, so a control gated on this alone is offered and then goes
+   * unanswered. Gate on {@link supports} instead. This answers only "is the companion extension
+   * here at all" — the settings status row, and the message telling a user to install it.
+   */
   readonly ready: boolean;
+  /** What the announcing extension said about itself, or null while none has announced. */
+  readonly peer: BridgePeer | null;
+  /**
+   * True when the peer speaks an older generation than this build.
+   *
+   * Nothing is broken — it keeps every capability it already had — but it is the one thing the
+   * user can act on, so the Settings row says the extension is behind instead of leaving the
+   * missing capabilities to be discovered as controls that are simply not there.
+   */
+  readonly peerBehind: boolean;
+  /**
+   * Does the connected extension speak `capability`? False when none is connected.
+   *
+   * This is the gate every bridge affordance should use. A peer that does not speak a capability
+   * drops the request in silence by design (§9.1), so asking it anything is a guaranteed
+   * non-answer — better to take the app's own path (or offer nothing) immediately.
+   */
+  readonly supports: (capability: ProtocolCapability) => boolean;
   /** Tracked scrapes keyed by `requestId` — several may be in flight at once (§9). */
   readonly requests: Readonly<Record<string, ScrapeRequestState>>;
   /** Tracked barcode product lookups keyed by `requestId` (recommendation point 2). */
@@ -193,9 +230,20 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
       const msg = parseExtensionMessage(event.data, { origin: event.origin, trustedOrigins });
       if (!msg) return; // §9.1: invalid/foreign message silently dropped
       switch (msg.type) {
-        case 'EXTENSION_READY':
-          dispatch({ type: 'READY' });
+        case 'EXTENSION_READY': {
+          dispatch({
+            type: 'READY',
+            peer: { version: msg.payload?.version ?? null, protocol: peerProtocolVersion(msg.payload) },
+          });
+          // Answer the hello with our own (issue #664). The extension has no other way to learn
+          // which generation this app speaks, and without it a payload it pushes unsolicited —
+          // an active-tab scrape — is posted into an app that may drop it in silence.
+          window.postMessage(
+            makeMessage('APP_READY', { version: APP_VERSION, protocol: PROTOCOL_VERSION }),
+            window.location.origin,
+          );
           break;
+        }
         case 'SCRAPE_RESULT':
           // Correlate by requestId — the reducer ignores a stale/foreign id (§9). The disarm is
           // correlated the same way, by kind *and* id, so a foreign or mis-kinded echo cannot
@@ -234,7 +282,7 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
         case 'DATA_FETCH_ERROR':
           settleDataFetch(msg.requestId, () => ({ ok: false, error: msg.payload }));
           break;
-        // *_REQUEST kinds are outbound-only from the PWA — ignore our own echo.
+        // *_REQUEST kinds and the PWA's own APP_READY are outbound-only — ignore our echo.
       }
     };
 
@@ -310,9 +358,17 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const supports = useCallback(
+    (capability: ProtocolCapability) => peerSupports(state.peer?.protocol ?? null, capability),
+    [state.peer],
+  );
+
   const value = useMemo<ScrapeBridgeValue>(
     () => ({
       ready: state.ready,
+      peer: state.peer,
+      peerBehind: isPeerBehind(state.peer?.protocol ?? null),
+      supports,
       requests: state.requests,
       lookups: state.lookups,
       incoming: state.incoming,
@@ -324,10 +380,28 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
       clearIncoming,
       fetchDataUrl,
     }),
-    [state, requestScrape, clear, requestLookup, clearLookup, clearIncoming, fetchDataUrl],
+    [state, supports, requestScrape, clear, requestLookup, clearLookup, clearIncoming, fetchDataUrl],
   );
 
   return <ScrapeBridgeContext.Provider value={value}>{children}</ScrapeBridgeContext.Provider>;
+}
+
+/** What {@link useScrapeBridgeStatus} reports when no provider is mounted above it. */
+const NO_BRIDGE: BridgeStatus = { ready: false, peer: null, peerBehind: false };
+
+/** The read-only slice of the bridge that describes the peer itself, rather than a request. */
+export type BridgeStatus = Pick<ScrapeBridgeValue, 'ready' | 'peer' | 'peerBehind'>;
+
+/**
+ * The connected extension's status, for a surface that only wants to *describe* the bridge
+ * rather than use it — the Settings status row (issue #664).
+ *
+ * Unlike {@link useScrapeBridge} this does not throw without a provider. The row is one line of
+ * a large dialog that is also rendered on its own in tests, and "no bridge is mounted" and "no
+ * extension has announced itself" are the same answer to the only question it asks.
+ */
+export function useScrapeBridgeStatus(): BridgeStatus {
+  return useContext(ScrapeBridgeContext) ?? NO_BRIDGE;
 }
 
 export function useScrapeBridge(): ScrapeBridgeValue {

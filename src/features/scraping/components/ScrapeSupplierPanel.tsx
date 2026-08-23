@@ -101,9 +101,12 @@ export function ScrapeSupplierPanel({
     }
   }, [request, onResult, show, bridge, t]);
 
-  // §9.3: the Scrape control only exists once the extension has announced itself — and only
-  // when the Product & supplier lookup module is switched on (Modular UI).
-  if (!bridge.ready || !scrapingEnabled) return null;
+  // §9.3: the Scrape control only exists once an extension that speaks the scrape capability has
+  // announced itself (issue #664) — and only when the Product & supplier lookup module is switched
+  // on (Modular UI). Scraping is the original capability, so every extension ever built has it and
+  // this asks the same question readiness did; it is phrased as a capability so every bridge
+  // affordance is gated the one way, rather than this one being the exception.
+  if (!bridge.supports('scrape') || !scrapingEnabled) return null;
 
   const trimmed = url.trim();
   const isScraping = request?.status === 'SCRAPING';
