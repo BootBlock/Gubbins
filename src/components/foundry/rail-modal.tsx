@@ -195,12 +195,20 @@ export function RailModal({
             role="tablist"
             aria-orientation="vertical"
             aria-label={railAriaLabel}
-            // `max-w-[13rem]` is sized to hold the longest section name a caller ships without
-            // ellipsis, while stopping a pathological label from crowding out the panel.
+            // The max-width is sized to hold the longest section name a caller ships without
+            // ellipsis, while stopping a pathological label from crowding out the panel. It
+            // carries the ring bleed below in its own sum, so that widening the bleed never
+            // quietly costs the labels room (the cap applies to the border box, padding and all).
             // `min-h-0 overflow-y-auto` matters once the labels are showing on a short viewport:
             // the rail is `shrink-0`, so a ten-section stack that no longer fits would otherwise
             // spill straight out past the footer and off the Surface. It scrolls instead.
-            className="flex max-w-[13rem] min-h-0 shrink-0 flex-col gap-1 overflow-y-auto"
+            //
+            // Setting `overflow-y` also makes the *horizontal* axis clip (CSS resolves the other
+            // axis of a scroll container away from `visible`), which would shave the focus ring
+            // off every tab, since a tab stretches to the full width of the rail. `-mx-ring-bleed
+            // px-ring-bleed` cancels out, so no tab moves; it only gives that ring room to paint
+            // (issue #417).
+            className="-mx-ring-bleed flex max-w-[calc(13rem+2*var(--spacing-ring-bleed))] min-h-0 shrink-0 flex-col gap-1 overflow-y-auto px-ring-bleed"
           >
             {tabs.map((tab) => {
               const selected = tab.id === active.id;

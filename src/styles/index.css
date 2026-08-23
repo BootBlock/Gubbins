@@ -1055,6 +1055,19 @@
   --spacing-field-gap-compact: 0.5rem; /* 8px */
 
   /*
+   * Room an outward focus/selection ring needs to paint, for a scroll container that clips
+   * it away (issue #417). A scroller sets `overflow`, so its box clips at its padding edge —
+   * and a control flush against that edge loses its ring entirely. Bleed the container by
+   * this much and cancel it with equal padding: the box grows outwards into whatever padding
+   * the Surface already has, the content does not move, and the ring has somewhere to go.
+   *
+   * 0.5rem clears the widest ring the Foundry draws — a `ring-[3px] ring-offset-2` on a
+   * control that also scales up on selection. Used by the `dialog-scroll` utility below and,
+   * as `-mx-ring-bleed px-ring-bleed`, by any other clipping scroller holding controls.
+   */
+  --spacing-ring-bleed: 0.5rem; /* 8px */
+
+  /*
    * Safe-area insets (issue #655).
    *
    * `index.html` opts the app into `viewport-fit=cover`, so the layout viewport is the
@@ -1458,6 +1471,17 @@
   overflow-y: auto;
   margin-right: -1rem;
   padding-right: 1rem;
+  /*
+   * The matching *left* bleed, for a different reason: `overflow-x: hidden` above clips the
+   * box, so it would otherwise shave the ring off a control sitting flush against the left
+   * edge — e.g. the leading "No colour" swatch in the location dialogs, whose selection ring
+   * (`ring-2 ring-offset-2`, and a `scale-110` on top of it) is always drawn. As on the
+   * right, the negative margin and equal padding cancel, so nothing shifts — it only gives
+   * an outward ring room to paint into the Surface's own padding. The right bleed above is
+   * wider because it is sized for a scrollbar, not a ring.
+   */
+  margin-left: calc(var(--spacing-ring-bleed) * -1);
+  padding-left: var(--spacing-ring-bleed);
 }
 
 @utility animate-fade-in {
