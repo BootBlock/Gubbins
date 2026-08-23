@@ -20,10 +20,11 @@
  * 2. **Both utilities still bleed, and each bleed still cancels.** A bleed removed brings the
  *    clipping straight back; a bleed whose padding no longer matches its margin shifts the
  *    content sideways instead.
- * 3. **Every scroller found to clip a control still carries `ring-bleed-x`.** These are the ones
- *    `dialog-scroll` cannot reach, because each scrolls something of its own — a tab rail, a
- *    bounded list, a column taken out of flow. This list is what the sweep in #417 turned up; it
- *    is not a claim that no other scroller in the app will ever need it.
+ * 3. **Every scroller found to clip a control still carries `ring-bleed-x`** — the ones
+ *    `dialog-scroll` cannot reach, because each scrolls something of its own: a tab rail, a
+ *    bounded list, a column taken out of flow. Plus the two controls whose clip cannot be bled
+ *    at all, which draw their ring inside instead. Both lists are what the sweep in #417 turned
+ *    up; neither claims no other scroller in the app will ever need the same.
  * 4. **No call site hand-rolls the bleed the utilities own.** `Modal` used to carry its own copy,
  *    which is exactly why the fix reached the Modal-scrolled dialogs and missed the RailModal
  *    ones (Edit location among them). Centralising it is the whole of the fix, so a re-added
@@ -98,27 +99,40 @@ const SCROLLERS = [
     variant: '',
     width: null,
   },
-  {
-    // Not itself a scroller: the resizable frame around the emoji picker's group rail, which
-    // clips for its resize handle. A bleed reaches only as far as the nearest clipping
-    // ancestor, so the rail's own bleed does nothing until this box is bled too.
-    what: "the emoji picker's resizable frame",
-    file: ['src', 'components', 'foundry', 'emoji-picker', 'EmojiPicker.tsx'],
-    marker: '[resize:both]',
-    variant: '',
-    width: null,
-  },
 ] as const;
 
 /**
- * The one place a bleed is the wrong answer: the gauge's segmented radiogroup clips for its
- * *rounded corners*, so bleeding it would hand the segments their square corners back. Its
- * ring is drawn inside the segment instead — the other way to keep a ring out of a clip.
+ * The two controls whose ring is drawn *inside* instead — the other way to keep a ring out of a
+ * clip, for the two boxes that cannot be bled:
+ *
+ * - the gauge's segmented picker clips to round the group's corners, and bleeding it would hand
+ *   the segments their square corners back;
+ * - the emoji picker's frame carries an explicit width and is measured by a `ResizeObserver`
+ *   reading the content box, so padding it would feed a shrink loop on the first drag.
+ *
+ * Each is anchored by a class of the control itself, and the assertion reads a window after that
+ * anchor rather than a whole file — both classNames are built with `cn(…)`, so there is no single
+ * literal for {@link classesOf} to split.
  */
-const RING_INSET = {
-  file: ['src', 'features', 'inventory', 'components', 'GaugeAdjustDialog.tsx'],
-  marker: 'focus-visible:ring-[3px]',
-} as const;
+const RING_INSET = [
+  {
+    what: "the gauge picker's segments",
+    file: ['src', 'features', 'inventory', 'components', 'GaugeAdjustDialog.tsx'],
+    marker: 'last:border-r-0',
+  },
+  {
+    what: "the emoji picker's group rail",
+    file: ['src', 'components', 'foundry', 'emoji-picker', 'EmojiPicker.tsx'],
+    marker: 'truncate rounded-md px-2 py-1.5',
+  },
+] as const;
+
+/** The `cn(…)` argument list following a marker — enough to hold one control's classes. */
+function classesNear(source: string, marker: string): string {
+  const at = source.indexOf(marker);
+  if (at === -1) throw new Error(`No \`${marker}\` in the file — re-anchor this guard.`);
+  return source.slice(at, at + 600);
+}
 
 /**
  * A horizontal margin utility, negated or not: the physical `ml-` / `mr-` / `mx-` and the
@@ -211,17 +225,22 @@ describe('every scroller that clips a control carries the bleed', () => {
     ).toContain(`${scroller.variant}ring-bleed-x`);
     if (scroller.width) expect(classes).toContain(scroller.width);
   });
+});
 
-  it('draws the gauge segments’ ring inside, where a bleed cannot help', () => {
-    const source = readFileSync(repoPath(import.meta.dirname, ...RING_INSET.file), 'utf8');
+describe('a control whose clip cannot be bled draws its ring inside instead', () => {
+  it.each(RING_INSET.map((c) => [c.what, c] as const))('%s', (_what, control) => {
+    const near = classesNear(
+      readFileSync(repoPath(import.meta.dirname, ...control.file), 'utf8'),
+      control.marker,
+    );
     expect(
-      source,
-      'The gauge segments sit in a group that clips for its rounded corners, so their focus ' +
-        'ring has to be inset — a bleed would square the corners off (issue #417).',
+      near,
+      `${control.what} sit inside a box that cannot take the bleed, so their focus ring has to ` +
+        'be inset or the clip eats it (issue #417).',
     ).toContain('focus-visible:ring-inset');
     expect(
-      source,
-      '`z-10` cannot lift a ring out of an ancestor’s overflow clip; it only read as if it could.',
+      near,
+      'A z-index cannot lift a ring out of an ancestor’s overflow clip; it only reads as if it can.',
     ).not.toContain('focus-visible:z-10');
   });
 });

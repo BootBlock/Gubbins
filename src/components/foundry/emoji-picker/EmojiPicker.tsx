@@ -212,11 +212,12 @@ export function EmojiPicker({
             maxWidth: '90vw',
             maxHeight: '65vh',
           }}
-          // `overflow-hidden` (for the resize handle) clips at this box, which would undo the
-          // group rail's own bleed below and shave the focus ring off every group again — a
-          // bleed only reaches as far as its nearest clipping ancestor. `ring-bleed-x` moves
-          // that ancestor's clip out by the same amount, and cancels, so nothing moves (#417).
-          className="ring-bleed-x grid grid-cols-[10rem_1fr] gap-3 overflow-hidden [resize:both]"
+          // Deliberately *not* bled for the group rail's focus ring (#417): this box carries an
+          // explicit width and is the one a ResizeObserver measures, so padding would come out of
+          // that width rather than adding to it, and every observation would report 16px less
+          // than it wrote — a loop that walks the panel down to its minimum on the first drag.
+          // The rail draws its ring inside itself instead; see below.
+          className="grid grid-cols-[10rem_1fr] gap-3 overflow-hidden [resize:both]"
         >
           {/* Left column: search box above the group listview. */}
           <div className="flex min-h-0 flex-col gap-2">
@@ -273,7 +274,9 @@ export function EmojiPicker({
                       onKeyDown={onRailKeyDown}
                       className={cn(
                         'w-full truncate rounded-md px-2 py-1.5 text-left text-xs transition-colors outline-none',
-                        'focus-visible:ring-2 focus-visible:ring-ring',
+                        // Inset, because the ring has two clips to survive: this list's own, and
+                        // the resizable frame's above, which cannot be bled (#417).
+                        'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                         isActive
                           ? 'bg-primary/15 font-medium text-primary'
                           : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',

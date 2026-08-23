@@ -1490,14 +1490,22 @@
 
 /*
  * The ring bleed on its own, for a scroll container that is not a dialog's body — a tab rail
- * scrolling its own stack, a bounded list, a panel taken out of flow, a resizable picker frame.
- * `overflow` on either axis makes the box clip on *both*, so a control flush against an edge
- * loses whatever it paints outside its border box. One utility rather than a margin and a
- * padding written side by side: the two only work as a pair, and a pair is exactly what gets
- * half-applied — or applied at one breakpoint and not the other.
+ * scrolling its own stack, a bounded list, a panel taken out of flow. `overflow` on either axis
+ * makes the box clip on *both*, so a control flush against an edge loses whatever it paints
+ * outside its border box. One utility rather than a margin and a padding written side by side:
+ * the two only work as a pair, and a pair is exactly what gets half-applied — or applied at one
+ * breakpoint and not the other.
  *
- * A bleed only reaches as far as the nearest clipping ancestor, so a scroller nested inside
- * another clipping box needs the outer box bled too (the emoji picker's resizable frame).
+ * Two limits, both of which have a call site:
+ *
+ * 1. **A declared width has to carry the bleed in its own sum.** Widths are border boxes here,
+ *    so the padding comes out of the width rather than adding to it — see the two rails, whose
+ *    `w-*` reads `calc(var(--spacing)*N + 2*var(--spacing-ring-bleed))`.
+ * 2. **A bleed reaches only as far as the nearest clipping ancestor**, and that ancestor cannot
+ *    always be bled in turn: the emoji picker's frame is measured by a `ResizeObserver` that
+ *    reads the *content* box, so padding there would feed a shrink loop. Where the outer clip
+ *    has to stay put, draw the ring inside the control (`ring-inset`) instead — the gauge's
+ *    segmented picker does the same, for a frame that clips to round its corners.
  */
 @utility ring-bleed-x {
   margin-inline: calc(var(--spacing-ring-bleed) * -1);
