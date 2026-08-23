@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Modal, Select } from '@/components/foundry';
 import { CloseIcon, DownloadIcon, NfcIcon, PrintIcon, SuccessIcon } from '@/components/icons';
+import { download } from '@/features/export/download';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { qrSvgOrNull } from '@/features/scanner/qr-code';
 import { useT } from '@/features/i18n';
@@ -144,16 +145,12 @@ export function QrCodeDialog({
     w.print();
   };
 
-  const download = () => {
+  const downloadSvg = () => {
     const svg = qr ?? barcode;
     if (!svg) return;
-    const blob = new Blob([svg], { type: 'image/svg+xml' });
-    const href = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = href;
-    a.download = `${slug(itemName)}-${qr ? 'qr' : 'barcode'}.svg`;
-    a.click();
-    URL.revokeObjectURL(href);
+    // Through the shared seam, never a hand-rolled anchor: it is the one place that appends the
+    // anchor and defers the revoke, which Firefox needs for the file to arrive at all (issue #646).
+    download(new Blob([svg], { type: 'image/svg+xml' }), `${slug(itemName)}-${qr ? 'qr' : 'barcode'}.svg`);
   };
 
   return (
@@ -271,7 +268,7 @@ export function QrCodeDialog({
           ) : null}
           {/* Nothing encoded (e.g. a deep-link too long to fit a QR) means there is nothing to
               download or print — leaving these live would just make them look broken. */}
-          <Button variant="outline" onClick={download} disabled={!hasCode}>
+          <Button variant="outline" onClick={downloadSvg} disabled={!hasCode}>
             <DownloadIcon />
             Download SVG
           </Button>

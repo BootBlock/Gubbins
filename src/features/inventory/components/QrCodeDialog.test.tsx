@@ -133,3 +133,35 @@ describe('QrCodeDialog — short code', () => {
     usePreferencesStore.setState({ labelTemplate: DEFAULT_LABEL_TEMPLATE });
   });
 });
+
+describe('QrCodeDialog — Download SVG (issue #646)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    document.querySelectorAll('a[download]').forEach((a) => a.remove());
+  });
+
+  it('clicks an attached anchor and defers the revoke, so the file arrives outside Chromium', () => {
+    vi.useFakeTimers();
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    let attachedAtClick = false;
+    let filenameAtClick: string | null = null;
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      attachedAtClick = this.isConnected;
+      filenameAtClick = this.download;
+    });
+
+    render(<QrCodeDialog {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Download SVG' }));
+
+    // A detached anchor's synthetic click is ignored outside Chromium, and revoking on the
+    // click's own tick races Firefox's asynchronous blob fetch (Bugzilla 1282407).
+    expect(attachedAtClick).toBe(true);
+    expect(filenameAtClick).toBe('widget-qr.svg');
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+
+    vi.runAllTimers();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+  });
+});
