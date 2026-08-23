@@ -35,9 +35,12 @@ describe('checkBridgeBuild', () => {
     const fetchImpl = respondWith(200, INDEX);
     await checkBridgeBuild('http://bridge.test:8787/', 'tok', fetchImpl);
 
+    // The `signal` is the issue #632 deadline; asserted here so a call site that quietly drops
+    // it fails this test rather than only the tree-wide sweep.
     expect(fetchImpl).toHaveBeenCalledWith(`http://bridge.test:8787${API_INDEX_PATH}`, {
       method: 'GET',
       headers: { authorization: 'Bearer tok' },
+      signal: expect.any(AbortSignal),
     });
   });
 

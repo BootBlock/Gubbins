@@ -15,6 +15,7 @@
 import { normaliseBridgeBaseUrl } from '@/lib/bridge-url';
 import { APP_VERSION, APP_SCHEMA_VERSION } from '@/lib/app-version';
 import { compareBridgeBuild, type BridgeBuild, type BridgeVersionStatus } from './bridge-version';
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /** The bridge's discovery index, appended to the user's base URL. */
 export const API_INDEX_PATH = '/api/v1';
@@ -22,7 +23,7 @@ export const API_INDEX_PATH = '/api/v1';
 /** A minimal `fetch` shape so tests can inject a fake without the DOM lib types. */
 export type FetchLike = (
   input: string,
-  init: { method: string; headers: Record<string, string> },
+  init: { method: string; headers: Record<string, string>; signal?: AbortSignal },
 ) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
 /**
@@ -113,10 +114,10 @@ export async function checkBridgeBuild(
   if (trimmedToken === '') return { ok: false };
 
   try {
-    const response = await fetchImpl(url, {
-      method: 'GET',
-      headers: { authorization: `Bearer ${trimmedToken}` },
-    });
+    const response = await fetchImpl(
+      url,
+      withTimeout({ method: 'GET', headers: { authorization: `Bearer ${trimmedToken}` } }, 'bridge'),
+    );
     if (response.status < 200 || response.status >= 300) return { ok: false };
 
     const payload = await response.json().catch(() => undefined);

@@ -8,6 +8,7 @@
  * injected {@link DriveApi.token} seam, so this module is fully unit-testable with a fake
  * `fetch` and never imports the OAuth glue.
  */
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /** The single file under `appDataFolder` that holds the whole sync snapshot. */
 export const SNAPSHOT_NAME = 'gubbins-sync.json';
@@ -38,12 +39,29 @@ export interface DriveApi {
   readonly token: () => Promise<string>;
 }
 
+/**
+ * Add the caller's bearer token and a request deadline, and turn a non-OK status into a
+ * {@link GoogleApiError}.
+ *
+ * The deadline is applied here rather than per call site so no Drive request can be added without
+ * one (issue #632). It overrides any `signal` on `init` — no caller passes one, and a second
+ * abort source would need composing rather than choosing.
+ */
 async function authedFetch(api: DriveApi, url: string, init: RequestInit = {}): Promise<Response> {
   const token = await api.token();
-  const res = await api.fetch(url, {
-    ...init,
-    headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` },
-  });
+  const res = await api.fetch(
+    url,
+    withTimeout(
+      {
+        ...init,
+        headers: {
+          ...(init.headers as Record<string, string> | undefined),
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      'cloud',
+    ),
+  );
   if (res.status === 401) {
     throw new GoogleApiError(401, 'Google Drive sign-in has expired. Reconnect to continue syncing.');
   }

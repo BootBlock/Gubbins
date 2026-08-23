@@ -22,6 +22,7 @@
  * no real clock.
  */
 import type { LookupProvider, LookupRequest, LookupResult } from './types';
+import { withTimeout } from '@/lib/fetch-timeout';
 
 /**
  * Performs one already-gated request and returns its raw body (or the reason it has none).
@@ -143,7 +144,10 @@ export class LookupRunner {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(request.url, { headers: { ...request.headers } });
+      response = await this.fetchImpl(
+        request.url,
+        withTimeout({ headers: { ...request.headers } }, 'lookup'),
+      );
     } catch {
       // A CSP-blocked request is indistinguishable from an offline one here, which is exactly why
       // the origin must be in `connect-src` — see `src/csp.ts`.
