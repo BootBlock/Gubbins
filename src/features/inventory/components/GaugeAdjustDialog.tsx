@@ -299,6 +299,10 @@ function LevelSlider({
       <span id="gauge-level-label" className="block text-sm font-medium">
         How full is it?
       </span>
+      {/* `overflow-hidden` is what clips the segments' square corners to the rounded group, so
+          the ring is drawn *inside* the segment rather than bled outwards: a bleed here would
+          give the corners back their squareness. The segments' `z-10` went with it — a z-index
+          cannot lift anything out of an ancestor's overflow clip (#417). */}
       <div
         role="radiogroup"
         aria-labelledby="gauge-level-label"
@@ -321,7 +325,7 @@ function LevelSlider({
               data-testid={`gauge-level-${option.key}`}
               className={cn(
                 'flex-1 border-r border-border px-1 py-2 text-center outline-none transition-colors last:border-r-0',
-                'focus-visible:z-10 focus-visible:ring-[3px] focus-visible:ring-ring',
+                'focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring',
                 checked
                   ? 'bg-primary/10 text-foreground ring-1 ring-inset ring-primary'
                   : 'bg-secondary/30 text-muted-foreground hover:bg-secondary/50',

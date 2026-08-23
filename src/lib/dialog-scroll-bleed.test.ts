@@ -27,7 +27,7 @@
  * 4. **No call site hand-rolls the bleed the utilities own.** `Modal` used to carry its own copy,
  *    which is exactly why the fix reached the Modal-scrolled dialogs and missed the RailModal
  *    ones (Edit location among them). Centralising it is the whole of the fix, so a re-added
- *    local copy is the regression to catch.
+ *    local copy — beside either utility — is the regression to catch.
  */
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
@@ -98,17 +98,40 @@ const SCROLLERS = [
     variant: '',
     width: null,
   },
+  {
+    // Not itself a scroller: the resizable frame around the emoji picker's group rail, which
+    // clips for its resize handle. A bleed reaches only as far as the nearest clipping
+    // ancestor, so the rail's own bleed does nothing until this box is bled too.
+    what: "the emoji picker's resizable frame",
+    file: ['src', 'components', 'foundry', 'emoji-picker', 'EmojiPicker.tsx'],
+    marker: '[resize:both]',
+    variant: '',
+    width: null,
+  },
 ] as const;
+
+/**
+ * The one place a bleed is the wrong answer: the gauge's segmented radiogroup clips for its
+ * *rounded corners*, so bleeding it would hand the segments their square corners back. Its
+ * ring is drawn inside the segment instead — the other way to keep a ring out of a clip.
+ */
+const RING_INSET = {
+  file: ['src', 'features', 'inventory', 'components', 'GaugeAdjustDialog.tsx'],
+  marker: 'focus-visible:ring-[3px]',
+} as const;
 
 /**
  * A horizontal margin utility, negated or not: the physical `ml-` / `mr-` / `mx-` and the
  * logical `ms-` / `me-`, each also matched behind a variant prefix (`sm:-mx-2`) — this codebase
  * leans on `sm:` and `handset:` heavily, so a bleed re-added at one breakpoint is the likeliest
- * spelling of the regression, not the bare one. Paired with a `dialog-scroll` on the same line,
- * it is the hand-rolled bleed the utility now owns. Only class strings written literally are
- * read, which is every call site today.
+ * spelling of the regression, not the bare one. Paired with either bleed utility on the same
+ * line, it is the hand-rolled copy they now own. Only class strings written literally are read,
+ * which is every call site today.
  */
 const HORIZONTAL_MARGIN = /(?:^|[^\w-])-?m[lrxse]-[\w.[\]/-]+/;
+
+/** The two utilities that own the bleed. A local margin beside either is the regression. */
+const BLEED_UTILITIES = ['dialog-scroll', 'ring-bleed-x'];
 
 function repoRelative(path: string): string {
   return relative(REPO_ROOT, path).replaceAll('\\', '/');
@@ -188,6 +211,19 @@ describe('every scroller that clips a control carries the bleed', () => {
     ).toContain(`${scroller.variant}ring-bleed-x`);
     if (scroller.width) expect(classes).toContain(scroller.width);
   });
+
+  it('draws the gauge segments’ ring inside, where a bleed cannot help', () => {
+    const source = readFileSync(repoPath(import.meta.dirname, ...RING_INSET.file), 'utf8');
+    expect(
+      source,
+      'The gauge segments sit in a group that clips for its rounded corners, so their focus ' +
+        'ring has to be inset — a bleed would square the corners off (issue #417).',
+    ).toContain('focus-visible:ring-inset');
+    expect(
+      source,
+      '`z-10` cannot lift a ring out of an ancestor’s overflow clip; it only read as if it could.',
+    ).not.toContain('focus-visible:z-10');
+  });
 });
 
 describe('no call site hand-rolls the bleed the utilities own', () => {
@@ -195,15 +231,16 @@ describe('no call site hand-rolls the bleed the utilities own', () => {
     .filter((path) =>
       readFileSync(path, 'utf8')
         .split('\n')
-        .some((line) => line.includes('dialog-scroll') && HORIZONTAL_MARGIN.test(line)),
+        .some((line) => BLEED_UTILITIES.some((u) => line.includes(u)) && HORIZONTAL_MARGIN.test(line)),
     )
     .map(repoRelative);
 
-  it('pairs `dialog-scroll` with no local horizontal margin', () => {
+  it('pairs neither utility with a local horizontal margin', () => {
     expect(
       offenders,
-      'These re-add a bleed beside `dialog-scroll`. It belongs in the utility, so that every ' +
-        'dialog scroll area gets it — a local copy reaches only the one call site (issue #417).',
+      'These re-add a bleed beside `dialog-scroll` or `ring-bleed-x`. It belongs in the ' +
+        'utility, so every scroll area gets it — a local copy reaches only the one call site ' +
+        '(issue #417).',
     ).toEqual([]);
   });
 

@@ -212,7 +212,11 @@ export function EmojiPicker({
             maxWidth: '90vw',
             maxHeight: '65vh',
           }}
-          className="grid grid-cols-[10rem_1fr] gap-3 overflow-hidden [resize:both]"
+          // `overflow-hidden` (for the resize handle) clips at this box, which would undo the
+          // group rail's own bleed below and shave the focus ring off every group again — a
+          // bleed only reaches as far as its nearest clipping ancestor. `ring-bleed-x` moves
+          // that ancestor's clip out by the same amount, and cancels, so nothing moves (#417).
+          className="ring-bleed-x grid grid-cols-[10rem_1fr] gap-3 overflow-hidden [resize:both]"
         >
           {/* Left column: search box above the group listview. */}
           <div className="flex min-h-0 flex-col gap-2">

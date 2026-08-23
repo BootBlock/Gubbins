@@ -260,9 +260,12 @@ export function Modal({
             dialog's scroll area (`dialog-scroll`), which bleeds its scrollbar sideways into the
             Surface's own padding — so the bar (classic OR floating overlay) sits over that padding,
             never over the content, and content still aligns with the header. Because this region is
-            a direct child of the padded Surface, that bleed has nowhere to leak. A dialog that owns
-            its own inner scroller passes `scrollBody={false}`, leaving this region at `overflow:
-            visible` so the inner bleed can reach the Surface padding too.
+            a direct child of the padded Surface, that bleed has nowhere to leak. A dialog whose
+            inner scroller bleeds its *scrollbar* too passes `scrollBody={false}`, leaving this
+            region at `overflow: visible` so that bleed can reach the Surface padding as well. A
+            dialog whose inner scroller only bleeds a *ring* (`ring-bleed-x`) needs no such thing:
+            that overhang is the same width as this region's own left bleed, so it lands exactly
+            on this box's clip edge.
 
             `dialog-scroll` bleeds the *left* edge too, so the ring on a control sitting flush
             against that edge is not shaved off by the same `overflow-x: hidden` (issue #417).
