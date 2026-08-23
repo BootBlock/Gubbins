@@ -84,8 +84,8 @@ describe('the Visual-Builder search keys (#622)', () => {
   const AST = emptyAst();
 
   it.each([
-    ['results', inventoryKeys.astSearch(AST, null)],
-    ['count', inventoryKeys.astCount(AST)],
+    ['results', inventoryKeys.astSearch(AST, null, null)],
+    ['count', inventoryKeys.astCount(AST, null)],
   ])('the %s key sits under items(), so both helpers sweep it by prefix', (_name, key) => {
     expect(key.slice(0, inventoryKeys.items().length)).toEqual([...inventoryKeys.items()]);
   });
@@ -94,8 +94,8 @@ describe('the Visual-Builder search keys (#622)', () => {
     // The write side matches result pages by prefix in order to patch them optimistically, and
     // the count caches a bare number the `InfiniteData` updater would crash on. Sharing an
     // `'ast'` segment left the two the same length, separable only by inspecting the last one.
-    const results = inventoryKeys.astSearch(AST, null);
-    const count = inventoryKeys.astCount(AST);
+    const results = inventoryKeys.astSearch(AST, null, null);
+    const count = inventoryKeys.astCount(AST, null);
     const shared = inventoryKeys.search().length;
     expect(results[shared]).not.toEqual(count[shared]);
   });

@@ -352,8 +352,8 @@ describe('optimistic item writes guard the detail cache', () => {
  */
 describe('optimistic item writes reach the Visual-Builder result pages (#622)', () => {
   const AST = emptyAst();
-  const RESULTS_KEY = inventoryKeys.astSearch(AST, null);
-  const COUNT_KEY = inventoryKeys.astCount(AST);
+  const RESULTS_KEY = inventoryKeys.astSearch(AST, null, null);
+  const COUNT_KEY = inventoryKeys.astCount(AST, null);
 
   /** One resident page of AST results holding the item the test taps ± on. */
   function seededPage() {
@@ -413,6 +413,37 @@ describe('optimistic item writes reach the Visual-Builder result pages (#622)', 
     );
     expect(data?.pages[0].rows[0]).toMatchObject({ id: 'item-0', quantity: 3 });
     expect(client.getQueryData(COUNT_KEY)).toBe(2);
+  });
+
+  it('reaches a location-scoped search’s pages too, and still leaves its count alone (#626)', async () => {
+    // The sidebar's selected location is a key segment of its own, so a scoped search caches
+    // under a different key than the inventory-wide one. The optimistic patch matches result
+    // pages by prefix *and length*, so a segment added there has to be counted — miss it and the
+    // ± tap silently stops moving the card again, exactly as in #622.
+    const scopedResults = inventoryKeys.astSearch(AST, null, 'loc-garage');
+    const scopedCount = inventoryKeys.astCount(AST, 'loc-garage');
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    client.setQueryData(scopedResults, seededPage());
+    client.setQueryData(scopedCount, 2);
+    const local = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+
+    repo.adjustQuantity.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useAdjustQuantity(), { wrapper: local });
+    act(() => result.current.mutate({ id: 'item-1', delta: 5 }));
+
+    await waitFor(() => {
+      const data = client.getQueryData<{
+        pages: Array<{ rows: Array<{ id: string; quantity: number }> }>;
+      }>(scopedResults);
+      expect(data?.pages[0].rows.find((row) => row.id === 'item-1')).toMatchObject({ quantity: 15 });
+    });
+    expect(client.getQueryData(scopedCount)).toBe(2);
   });
 
   it('rolls the result page back when the write fails', async () => {

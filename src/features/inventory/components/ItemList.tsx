@@ -92,7 +92,12 @@ export function ItemList({
    */
   emptyContext?: Pick<
     InventoryEmptyContext,
-    'search' | 'visualSearch' | 'statusFilterCount' | 'categoryFilter' | 'tagFilterCount'
+    | 'search'
+    | 'visualSearch'
+    | 'visualSearchScoped'
+    | 'statusFilterCount'
+    | 'categoryFilter'
+    | 'tagFilterCount'
   >;
   /**
    * How many items match in total — a `COUNT(*)`, never the resident row count (issue #220) —
@@ -397,7 +402,12 @@ function EmptyState({
   locationName?: string;
   emptyContext?: Pick<
     InventoryEmptyContext,
-    'search' | 'visualSearch' | 'statusFilterCount' | 'categoryFilter' | 'tagFilterCount'
+    | 'search'
+    | 'visualSearch'
+    | 'visualSearchScoped'
+    | 'statusFilterCount'
+    | 'categoryFilter'
+    | 'tagFilterCount'
   >;
 }) {
   const { title, body } = inventoryEmptyState({

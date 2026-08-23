@@ -59,8 +59,10 @@ Search combines with the other ways to narrow the list:
 
 > **ℹ️ Note**
 > When the **Visual search** panel is driving the results, it takes over from the quick-search
-> box and status chips — so you're always looking at exactly one query's results, never a
-> confusing mix.
+> box, the status chips and the category/tag facets — so you're always looking at exactly one
+> query's results, never a confusing mix. The **location** selected in the sidebar is the
+> exception: it still scopes the query, and the result line names it. See
+> [[Visual query builder|Visual-Query-Builder]].
 
 ## How many matched
 

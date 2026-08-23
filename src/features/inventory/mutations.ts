@@ -86,14 +86,15 @@ function itemListPrefix(): readonly unknown[] {
 
 /**
  * The `['inventory','items','search','ast']` prefix every Visual-Builder result-page key opens
- * with, taken from the factory for the same reason {@link itemListPrefix} is: the trailing `ast`
- * and `sort` segments are this query's own inputs, so the prefix is everything before them.
+ * with, taken from the factory for the same reason {@link itemListPrefix} is: the trailing `ast`,
+ * `locationId` and `sort` segments are this query's own inputs, so the prefix is everything
+ * before them.
  *
- * A throwaway empty tree supplies the `ast` argument — only its position in the key matters here,
- * never its content, and it is sliced straight back off.
+ * A throwaway empty tree and a null location supply those arguments — only their position in the
+ * key matters here, never their content, and they are sliced straight back off.
  */
 function astPagesPrefix(): readonly unknown[] {
-  return inventoryKeys.astSearch(emptyAst(), null).slice(0, -2);
+  return inventoryKeys.astSearch(emptyAst(), null, null).slice(0, -3);
 }
 
 /** Does `key` sit directly under `prefix`, with exactly `trailing` segments of its own? */
@@ -103,7 +104,8 @@ function isUnder(key: readonly unknown[], prefix: readonly unknown[], trailing: 
 
 /**
  * Every cached page of item rows: the infinite list — exactly `[...itemListPrefix(), filters]` —
- * **and** the Visual-Builder search results, `[...astPagesPrefix(), ast, sort]` (issue #622).
+ * **and** the Visual-Builder search results, `[...astPagesPrefix(), ast, locationId, sort]`
+ * (issues #622, #626).
  *
  * The AST results were previously outside this filter, so while the builder drove the list the
  * optimistic patch reached nothing on screen: a ± tap wrote the new quantity and the card kept
@@ -118,7 +120,7 @@ function isUnder(key: readonly unknown[], prefix: readonly unknown[], trailing: 
  */
 const itemPagesFilter = {
   predicate: (query: { queryKey: readonly unknown[] }) =>
-    isUnder(query.queryKey, itemListPrefix(), 1) || isUnder(query.queryKey, astPagesPrefix(), 2),
+    isUnder(query.queryKey, itemListPrefix(), 1) || isUnder(query.queryKey, astPagesPrefix(), 3),
 } as const;
 
 /** Apply a transform to a single item across every cached page of rows + its detail. */

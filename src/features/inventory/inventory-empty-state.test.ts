@@ -68,6 +68,26 @@ describe('inventoryEmptyState', () => {
     expect(copy.body).not.toMatch(/selected filters/i);
   });
 
+  it('names the location a visual search was scoped to (issue #626)', () => {
+    const copy = inventoryEmptyState({
+      visualSearch: true,
+      visualSearchScoped: true,
+      locationId: 'loc-1',
+      locationName: 'Garage',
+    });
+    expect(copy.body).toContain('in Garage');
+  });
+
+  it('does not claim a location scope the visual search did not run under', () => {
+    const copy = inventoryEmptyState({
+      visualSearch: true,
+      visualSearchScoped: false,
+      locationId: 'loc-1',
+      locationName: 'Garage',
+    });
+    expect(copy.body).not.toContain('Garage');
+  });
+
   it('treats a blank/whitespace search as no narrowing', () => {
     expect(inventoryEmptyState({ search: '   ' }).title).toBe('No items here yet');
   });
