@@ -20,7 +20,7 @@ import { locationHistoryStatement, type LocationHistoryFields } from './location
 import { UNASSIGNED_LOCATION_ID, clampDeadStockDays, type LocationHistoryAction } from './constants';
 import { rowToLocation, rowToLocationHistoryEntry } from './mappers';
 import { parseLocationBranch } from '@/features/inventory/location-path';
-import { PACKING_FACTOR_BOUNDS } from '@/lib/volume';
+import { PACKING_FACTOR_BOUNDS, rawContainerVolume } from '@/lib/volume';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
@@ -29,6 +29,7 @@ import type {
   LocationHistoryRow,
   LocationRow,
   LocationTreeNode,
+  LocationVolumeTotals,
   LocationWithCount,
   Page,
   PageParams,
@@ -66,11 +67,34 @@ function locationHistoryActionFilter(actions: readonly LocationHistoryAction[] |
 
 interface LocationCountRow extends LocationRow {
   readonly item_count: number;
-  readonly used_volume: number;
-  readonly measured_units: number;
-  readonly total_units: number;
-  readonly measured_items: number;
-  readonly total_items: number;
+}
+
+/**
+ * One group of {@link VOLUME_TOTALS_SQL} — a location's aggregated stock volume.
+ *
+ * The sums are nullable because SQLite's `SUM` returns NULL over no rows, and because the
+ * `w·h·d` product is NULL for an item missing any dimension. Both mean "nothing to add", so the
+ * mapper coalesces to zero.
+ */
+interface LocationVolumeTotalsRow {
+  readonly location_id: string;
+  readonly used_volume: number | null;
+  readonly measured_units: number | null;
+  readonly total_units: number | null;
+  readonly measured_items: number | null;
+  readonly total_items: number | null;
+}
+
+/** Options shared by the three location reads ({@link LocationRepository.list}, `listAll`, `getTree`). */
+export interface LocationReadOptions {
+  /**
+   * Also aggregate the per-location stock volume totals (issue #457) that the cube-utilisation
+   * fill bar needs. **Off by default, and deliberately so** (issue #525): the aggregate walks the
+   * `item_stock` ledger, so it costs O(stock), not O(locations) — while the great majority of
+   * callers (every picker's name lookup, the bridge's id→name map, the export walk) want the
+   * location rows and nothing else. Ask for it only where a fullness bar is actually rendered.
+   */
+  readonly withVolume?: boolean;
 }
 
 /**
@@ -85,23 +109,47 @@ interface LocationCountRow extends LocationRow {
  * `COALESCE` covers a location with no counter row: the cache only gains one when a location
  * first holds an item, so "no row" and "zero" are the same statement.
  *
- * The volume totals (issue #457) come from a bounded aggregate over the per-location `item_stock`
- * ledger joined to `items` — the "supply" side of cube utilisation, measuring the stock that
- * physically occupies space *here*. It groups by `item_stock.location_id` (the placement) and
- * reads the ledger quantity, never `items.quantity` (the grand total spread across every
- * placement), so stock split across drawers is measured where it actually sits. `used_volume`
- * sums `w·h·d·qty` only for fully-measured items — SQLite's `SUM` skips the NULL product of an
- * item missing any dimension — while the measured/total unit split (needed for the honest
- * coverage caption) uses the `CASE` idiom the valuation reports use. On-hand only (`quantity > 0`)
- * and unlimited-supply items excluded (their quantity is meaningless for space). Indexed by
- * `idx_item_stock_location_id`, so the grouped scan stays bounded.
+ * The volume totals (issue #457) are an aggregate over the per-location `item_stock` ledger
+ * joined to `items` — the "supply" side of cube utilisation, measuring the stock that physically
+ * occupies space *here*. It groups by `item_stock.location_id` (the placement) and reads the
+ * ledger quantity, never `items.quantity` (the grand total spread across every placement), so
+ * stock split across drawers is measured where it actually sits. `used_volume` sums `w·h·d·qty`
+ * only for fully-measured items — SQLite's `SUM` skips the NULL product of an item missing any
+ * dimension — while the measured/total unit split (needed for the honest coverage caption) uses
+ * the `CASE` idiom the valuation reports use. On-hand only (`quantity > 0`) and unlimited-supply
+ * items excluded (their quantity is meaningless for space).
+ *
+ * **This aggregate is NOT bounded by the location hierarchy, and never was** (issue #525): every
+ * qualifying `item_stock` row is visited and joined back to `items`, so it costs O(stock), not
+ * O(locations). `idx_item_stock_location_id` orders the grouping; it does not shrink the work.
+ * It is therefore kept off the hot paths rather than made cheaper, in two steps:
+ *
+ * 1. It is **opt-in** — {@link LocationReadOptions.withVolume} — so the pickers, the bridge's
+ *    id→name map, the export walk and the Dashboard's location tally never run it at all.
+ * 2. Even when asked for, it runs only if the rows just read contain a location with a measured
+ *    internal size ({@link rawContainerVolume}). Nothing else can render a volumetric bar, so a
+ *    catalogue where no container has been measured — every catalogue, until someone enters a
+ *    size — pays nothing for a feature it is not using.
+ *
+ * Attempts to make the aggregate itself proportional to the measured locations were measured and
+ * rejected: restricting it to them leaves the planner (which has no statistics — Gubbins runs
+ * `ANALYZE` only on Compact database) still driving from `items`, and forcing the other join
+ * order with `CROSS JOIN` wins hugely when few locations are measured but costs ~1.8× when they
+ * all are. Skipping the read outright has no such trade-off. Making the totals a
+ * trigger-maintained cache, as `location_item_counts` is, remains the way to remove the cost for
+ * a fully-measured catalogue.
+ *
+ * A separate statement, not a `LEFT JOIN` sub-select, because that is what lets step 2 decide
+ * after seeing the rows; `LocationRepository.withVolumeTotals` pairs the two up. It also keeps a location
+ * with no measured size free of a `volumeTotals` it can make no use of — a zeroed aggregate
+ * there would read as "measured, and empty".
  *
  * Note this is a *different grain* from the `location_item_counts` counter above, which counts
  * active items by their **home** `location_id` regardless of quantity: so `total_items` here
  * (distinct items with stock physically placed at this location) can legitimately differ from
  * `item_count` (items homed here) when stock is split across locations or an item is unlimited.
  */
-const VOLUME_TOTALS_SUBQUERY = `
+const VOLUME_TOTALS_SQL = `
   SELECT s.location_id AS location_id,
          SUM(i.width * i.height * i.depth * s.quantity) AS used_volume,
          SUM(CASE WHEN i.width IS NOT NULL AND i.height IS NOT NULL AND i.depth IS NOT NULL
@@ -113,26 +161,25 @@ const VOLUME_TOTALS_SUBQUERY = `
   FROM item_stock s
   JOIN items i ON i.id = s.item_id
   WHERE i.is_active = 1 AND s.quantity > 0 AND i.is_unlimited = 0
-  GROUP BY s.location_id
+  GROUP BY s.location_id;
 `;
 
-const SELECT_WITH_COUNT = `
-  SELECT l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
+const LOCATION_COLUMNS = `l.id, l.name, l.parent_id, l.is_system, l.description, l.color,
          l.icon, l.capacity, l.is_default, l.archived_at, l.last_counted_at,
          l.dead_stock_mode, l.dead_stock_days,
          l.width, l.height, l.depth, l.usable_volume, l.packing_factor,
          l.walk_order,
          l.updated_at,
-         COALESCE(c.item_count, 0) AS item_count,
-         COALESCE(v.used_volume, 0) AS used_volume,
-         COALESCE(v.measured_units, 0) AS measured_units,
-         COALESCE(v.total_units, 0) AS total_units,
-         COALESCE(v.measured_items, 0) AS measured_items,
-         COALESCE(v.total_items, 0) AS total_items
+         COALESCE(c.item_count, 0) AS item_count`;
+
+const SELECT_WITH_COUNT = `
+  SELECT ${LOCATION_COLUMNS}
   FROM locations l
   LEFT JOIN location_item_counts c ON c.location_id = l.id
-  LEFT JOIN (${VOLUME_TOTALS_SUBQUERY}) v ON v.location_id = l.id
 `;
+
+/** The shared ordering of every location read: the system locations first, then by name. */
+const ORDER_BY_LOCATION = `ORDER BY l.is_system DESC, l.name COLLATE NOCASE ASC`;
 
 /**
  * Cycle guard for a parent move (§7.5.3), designed to live in the WHERE clause of the
@@ -165,16 +212,36 @@ export class LocationRepository extends BaseRepository {
     return row ? rowToLocation(row) : undefined;
   }
 
-  /** A paginated flat list of locations with live (active) item counts. */
-  async list(params: PageParams = {}): Promise<Page<LocationWithCount>> {
+  /**
+   * A paginated flat list of locations with live (active) item counts.
+   *
+   * Note the volume aggregate, when asked for, groups the whole `item_stock` ledger however
+   * small the page is — its cost tracks the stock, not the rows returned — so one page of a
+   * `withVolume` read is no cheaper than the whole list. Another reason to leave it off unless a
+   * fullness bar needs it (issue #525).
+   */
+  async list(params: PageParams & LocationReadOptions = {}): Promise<Page<LocationWithCount>> {
     const { limit, offset } = this.resolvePage(params);
-    const rows = await this.driver.query<LocationCountRow>(
-      `${SELECT_WITH_COUNT}
-       ORDER BY l.is_system DESC, l.name COLLATE NOCASE ASC
-       LIMIT ? OFFSET ?;`,
-      [limit, offset],
-    );
-    return this.toPage(rows.map(toWithCount), limit, offset);
+    const rows = (
+      await this.driver.query<LocationCountRow>(
+        `${SELECT_WITH_COUNT} ${ORDER_BY_LOCATION} LIMIT ? OFFSET ?;`,
+        [limit, offset],
+      )
+    ).map(toWithCount);
+    return this.toPage(await this.withVolumeTotals(rows, params.withVolume), limit, offset);
+  }
+
+  /**
+   * How many locations exist — the whole physical hierarchy, archived branches included, exactly
+   * as the flat list counts them.
+   *
+   * Its own read rather than `(await listAll()).length` (issue #525): the Dashboard's totals
+   * widget wants one integer, and reading the rows to count them made it materialise every
+   * location row to discard all but the length.
+   */
+  async count(): Promise<number> {
+    const row = await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM locations;');
+    return Number(row?.n ?? 0);
   }
 
   /**
@@ -188,12 +255,11 @@ export class LocationRepository extends BaseRepository {
    * missing from it (a search finds nothing, an ancestry breadcrumb stops early), so this read is
    * never capped. Use {@link list} where a genuine page is wanted.
    */
-  async listAll(): Promise<LocationWithCount[]> {
-    const rows = await this.driver.query<LocationCountRow>(
-      `${SELECT_WITH_COUNT}
-       ORDER BY l.is_system DESC, l.name COLLATE NOCASE ASC;`,
-    );
-    return rows.map(toWithCount);
+  async listAll(options: LocationReadOptions = {}): Promise<LocationWithCount[]> {
+    const rows = (
+      await this.driver.query<LocationCountRow>(`${SELECT_WITH_COUNT} ${ORDER_BY_LOCATION};`)
+    ).map(toWithCount);
+    return this.withVolumeTotals(rows, options.withVolume);
   }
 
   /**
@@ -201,13 +267,39 @@ export class LocationRepository extends BaseRepository {
    * Locations are a bounded physical hierarchy (not the 100k+ item set), so a
    * single bounded read assembled in memory is appropriate here; the strict RPC
    * pagination mandate (§2.1) targets the item lists feeding virtualisation.
+   *
+   * That "bounded" holds for the default read only. Ask for `withVolume` and the read also walks
+   * the `item_stock` ledger (see {@link LocationReadOptions.withVolume}) — the sidebar needs it
+   * for its fill bars, a caller that only wants names and counts does not.
    */
-  async getTree(): Promise<LocationTreeNode[]> {
-    const rows = await this.driver.query<LocationCountRow>(
-      `${SELECT_WITH_COUNT}
-       ORDER BY l.is_system DESC, l.name COLLATE NOCASE ASC;`,
+  async getTree(options: LocationReadOptions = {}): Promise<LocationTreeNode[]> {
+    const rows = (
+      await this.driver.query<LocationCountRow>(`${SELECT_WITH_COUNT} ${ORDER_BY_LOCATION};`)
+    ).map(toWithCount);
+    return buildTree(await this.withVolumeTotals(rows, options.withVolume));
+  }
+
+  /**
+   * The rows back, each measured location carrying its stock volume totals (issue #457) — or
+   * unchanged when the caller did not ask, or when none of them is measured.
+   *
+   * The early return is the point (issue #525): the aggregate walks the whole `item_stock`
+   * ledger, and a location with no measured internal size has no volumetric reading for it to
+   * feed. Deciding *after* the rows are read is why the totals are a second statement rather
+   * than a sub-select — see {@link VOLUME_TOTALS_SQL}.
+   */
+  private async withVolumeTotals(
+    rows: readonly LocationWithCount[],
+    withVolume: boolean | undefined,
+  ): Promise<LocationWithCount[]> {
+    if (withVolume !== true || !rows.some(isMeasured)) return [...rows];
+    // Spelled as a template rather than the bare constant so `query-row-shape.test.ts` can see
+    // the statement text and check this projection against it, as it does every other read here.
+    const totals = await this.driver.query<LocationVolumeTotalsRow>(`${VOLUME_TOTALS_SQL}`);
+    const byLocation = new Map(totals.map((row) => [row.location_id, row] as const));
+    return rows.map((row) =>
+      isMeasured(row) ? { ...row, volumeTotals: toVolumeTotals(byLocation.get(row.id)) } : row,
     );
-    return buildTree(rows.map(toWithCount));
   }
 
   async create(input: CreateLocationInput): Promise<Location> {
@@ -862,17 +954,32 @@ export class LocationRepository extends BaseRepository {
   }
 }
 
+/** A location row plus its item count — the default read, which computes no volume totals. */
 function toWithCount(row: LocationCountRow): LocationWithCount {
+  return { ...rowToLocation(row), itemCount: Number(row.item_count) };
+}
+
+/**
+ * Does this location have a measured internal size — i.e. can a volumetric fullness bar be drawn
+ * for it at all? The same question `locationCapacityVolume` asks before scaling by the packing
+ * factor, and the one that decides whether the volume aggregate is worth running (issue #525).
+ */
+function isMeasured(location: LocationWithCount): boolean {
+  return rawContainerVolume(location.usableVolume, location.width, location.height, location.depth) !== null;
+}
+
+/**
+ * One location's aggregated row as {@link LocationVolumeTotals}, or a zeroed aggregate when the
+ * aggregate produced no group for it — a measured location that holds no countable stock, which
+ * is a genuine zero and not a missing reading.
+ */
+function toVolumeTotals(row: LocationVolumeTotalsRow | undefined): LocationVolumeTotals {
   return {
-    ...rowToLocation(row),
-    itemCount: Number(row.item_count),
-    volumeTotals: {
-      usedVolume: Number(row.used_volume),
-      measuredUnits: Number(row.measured_units),
-      totalUnits: Number(row.total_units),
-      measuredItems: Number(row.measured_items),
-      totalItems: Number(row.total_items),
-    },
+    usedVolume: Number(row?.used_volume ?? 0),
+    measuredUnits: Number(row?.measured_units ?? 0),
+    totalUnits: Number(row?.total_units ?? 0),
+    measuredItems: Number(row?.measured_items ?? 0),
+    totalItems: Number(row?.total_items ?? 0),
   };
 }
 

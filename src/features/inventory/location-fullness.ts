@@ -13,7 +13,7 @@
  * picks the honest one per location; everything here is pure and unit-tested.
  */
 import type { LocationVolumeTotals } from '@/db/repositories';
-import { DEFAULT_PACKING_FACTOR, PACKING_FACTOR_BOUNDS, volumeFromDimensions } from '@/lib/volume';
+import { DEFAULT_PACKING_FACTOR, PACKING_FACTOR_BOUNDS, rawContainerVolume } from '@/lib/volume';
 
 export type { LocationVolumeTotals };
 
@@ -89,8 +89,8 @@ function safePackingFactor(factor: number): number {
  * skewing the maths).
  */
 export function locationCapacityVolume(loc: LocationVolumeShape, globalPackingFactor: number): number | null {
-  const raw = loc.usableVolume ?? volumeFromDimensions(loc.width, loc.height, loc.depth);
-  if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+  const raw = rawContainerVolume(loc.usableVolume, loc.width, loc.height, loc.depth);
+  if (raw == null) return null;
   return raw * safePackingFactor(loc.packingFactor ?? globalPackingFactor);
 }
 

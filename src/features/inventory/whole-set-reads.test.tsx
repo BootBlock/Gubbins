@@ -26,6 +26,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
 const repos = vi.hoisted(() => ({
   locationList: vi.fn(),
   locationListAll: vi.fn(),
+  locationGetTree: vi.fn(),
   categoryList: vi.fn(),
   categoryListAll: vi.fn(),
 }));
@@ -34,13 +35,17 @@ vi.mock('@/db/repositories', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/db/repositories')>();
   return {
     ...actual,
-    getLocationRepository: () => ({ list: repos.locationList, listAll: repos.locationListAll }),
+    getLocationRepository: () => ({
+      list: repos.locationList,
+      listAll: repos.locationListAll,
+      getTree: repos.locationGetTree,
+    }),
     getCategoryRepository: () => ({ list: repos.categoryList, listAll: repos.categoryListAll }),
   };
 });
 
 import { useCategories } from './categories';
-import { useLocations } from './queries';
+import { useLocationTree, useLocations } from './queries';
 
 type QueryOptions = { queryFn?: (context?: unknown) => Promise<{ rows: readonly unknown[] }> };
 
@@ -83,5 +88,34 @@ describe('catalogue lookup reads are unbounded (#148)', () => {
     expect(repos.categoryList).not.toHaveBeenCalled();
     expect(page.rows).toHaveLength(rows.length);
     expect(page).toMatchObject({ limit: rows.length, offset: 0, hasMore: false });
+  });
+});
+
+/**
+ * Which location reads ask for the volume totals (issue #525).
+ *
+ * The totals are an aggregate over the whole `item_stock` ledger, so they are opt-in: only the
+ * tree — whose rows each draw a cube-utilisation fill bar — asks for them. The flat lookup list
+ * behind every picker must not, or the ledger is walked again on each of the ~12 item writes
+ * that invalidate the location cache. The argument is what regressed, so the argument is pinned.
+ */
+describe('the volume aggregate is opt-in (#525)', () => {
+  it('useLocationTree asks for the volume totals its fill bars need', async () => {
+    repos.locationGetTree.mockResolvedValue([]);
+
+    await capturedQueryFn(() => useLocationTree())();
+
+    expect(repos.locationGetTree).toHaveBeenCalledWith({ withVolume: true });
+  });
+
+  it('useLocations reads the flat list without them', async () => {
+    repos.locationListAll.mockResolvedValue([]);
+
+    await capturedQueryFn(() => useLocations())();
+
+    expect(repos.locationListAll).toHaveBeenCalledTimes(1);
+    // No argument at all, rather than `{ withVolume: false }` — the read's own default is the
+    // cheap one, so a caller that says nothing can never pay for the aggregate by accident.
+    expect(repos.locationListAll.mock.calls[0]).toEqual([]);
   });
 });

@@ -145,8 +145,12 @@ export interface LocationWithCount extends Location {
   readonly itemCount: number;
   /**
    * Aggregated stock volume held directly here (issue #457) — feeds the cube-utilisation gauge.
-   * Present on the app's tree/list reads (`SELECT_WITH_COUNT`); `undefined` on reads that don't
-   * compute it (e.g. the bridge's ad-hoc single-location assembly), where callers fall back to a
+   *
+   * `undefined` whenever it was not computed, which is the common case: the aggregate walks the
+   * `item_stock` ledger, so a location read only runs it when the caller opts in
+   * (`LocationReadOptions.withVolume` — issue #525), and even then only for a location with a
+   * positive raw internal volume, since an unmeasured one has no volumetric reading to render.
+   * The bridge's ad-hoc single-location assembly likewise leaves it unset. Callers fall back to a
    * zeroed aggregate. Optional for the same reason {@link Item.thumbnailBlob} is.
    */
   readonly volumeTotals?: LocationVolumeTotals;

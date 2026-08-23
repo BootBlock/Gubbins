@@ -68,6 +68,24 @@ export function pruneArchivedTree<T extends { archivedAt?: number | null; childr
 }
 
 /**
+ * One node of a nested tree by id, or `undefined` when nothing carries it. Depth-first, and
+ * generic over any self-referential node — the tree counterpart of a `rows.find(…)` on the flat
+ * list, for the callers that must read a row the *tree* read enriched (its volume totals, issue
+ * #525) rather than the flat one.
+ */
+export function findTreeNode<T extends { id: string; children: T[] }>(
+  nodes: readonly T[],
+  id: string,
+): T | undefined {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = findTreeNode(node.children, id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
  * The set of ids covering every location in `matchIds` **plus all of their ancestors** — the
  * rows a tag filter must keep visible so a matching location stays reachable in the tree with
  * its parent context intact (issue #84). Walks each match up its parent chain; defensive against

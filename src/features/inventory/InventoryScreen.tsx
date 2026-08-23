@@ -100,7 +100,7 @@ import type { CardFieldsListContext } from './components/card-fields-render';
 import { useItemFieldValues } from './categories';
 import { useItemsTags } from './tags';
 import { locationColorTextClass, locationColorTintClass } from './location-color';
-import { defaultLocationForNewItem, markedDefaultLocationId } from './location-tree';
+import { defaultLocationForNewItem, findTreeNode, markedDefaultLocationId } from './location-tree';
 import { InventoryFilterBar } from './components/InventoryFilterBar';
 import { InventoryFacetBar } from './components/InventoryFacetBar';
 import { LocationInfoCard } from './components/LocationInfoCard';
@@ -547,9 +547,13 @@ function InventoryWorkspace() {
   }, [paginated, totalPages, page]);
   const flatLocations = flat.data?.rows ?? [];
   // The selected location's live row (with its item count), for the compact summary card.
+  //
+  // Taken from the **tree**, not the flat list: the summary card draws a cube-utilisation bar,
+  // which needs the volume totals only the tree read asks for. The flat list stays on the cheap
+  // read the pickers want, so the aggregate runs once for the screen rather than twice (#525).
   const selectedLocation = useMemo(
-    () => (selectedLocationId ? (flat.data?.rows.find((l) => l.id === selectedLocationId) ?? null) : null),
-    [flat.data, selectedLocationId],
+    () => (selectedLocationId ? (findTreeNode(tree.data ?? [], selectedLocationId) ?? null) : null),
+    [tree.data, selectedLocationId],
   );
   // What the list is currently scoped to, in words — shown on the compact drawer trigger, which
   // stands in for the master pane's own highlighted row. With no location selected (or its row
