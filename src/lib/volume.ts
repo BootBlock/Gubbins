@@ -190,11 +190,12 @@ export function formatVolume(mm3: number, unit: VolumeUnit, locale = 'en-GB'): s
  * else the W×H×D product. A non-positive figure from either source is `null` — a container with
  * no positive internal volume has no volumetric reading at all.
  *
- * The single definition of "is this container measured?", shared by the fullness resolver
- * (which scales this by the packing factor) and by `LocationRepository`, whose volume-totals
- * aggregate is computed only for the locations this returns a volume for. The two must agree:
- * were the SQL predicate to drift from this, a location would either render a bar from totals
- * that were never computed, or aggregate stock no reader can use.
+ * The single definition of "is this container measured?", and deliberately shared: the fullness
+ * resolver scales this by the packing factor to get a location's capacity volume, and
+ * `LocationRepository` asks the same question to decide whether its volume-totals aggregate is
+ * worth running at all and which rows may carry the result (issue #525). Two definitions would
+ * let a location be handed totals its own reading can make no use of, or be left without ones it
+ * needs.
  */
 export function rawContainerVolume(
   usableVolume: number | null,
