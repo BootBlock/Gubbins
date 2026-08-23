@@ -7,20 +7,22 @@
  * clips horizontally as well. A control against that edge then loses whatever it paints outside
  * its own border box. For the leading "No colour" swatch of the location dialogs that is a
  * permanent `ring-2 ring-offset-2` plus a `scale-110`, so the clip showed at rest, not only on
- * focus; for a RailModal tab, which stretches to the rail's full width, it was the focus ring on
- * both sides. The fix is a negative margin cancelled by an equal padding: the box grows outwards
- * into padding the Surface already has, the content does not move, and the ring has room.
+ * focus; for a tab in a vertical rail, which stretches to the rail's full width, it was the focus
+ * ring on both sides. The fix is a negative margin cancelled by an equal padding: the box grows
+ * outwards into padding the Surface already has, the content does not move, and the ring has room.
  *
  * Asserted against the sources rather than a rendered component because jsdom applies no Tailwind
- * utility, so no component test can see any of these declarations. Three things are checked, and
+ * utility, so no component test can see any of these declarations. Four things are checked, and
  * they fail for different reasons:
  *
  * 1. **`--spacing-ring-bleed` still exists and is still wide enough** for the widest ring the
- *    Foundry draws (`ring-[3px] ring-offset-2` on a control that scales up on selection).
- * 2. **Each of the two scrollers still bleeds, and each bleed still cancels.** A bleed removed
+ *    Foundry draws, on the control that magnifies it most.
+ * 2. **`dialog-scroll` still bleeds both edges, and each bleed still cancels.** A bleed removed
  *    brings the clipping straight back; a bleed whose padding no longer matches its margin shifts
- *    the content sideways instead.
- * 3. **No call site hand-rolls the bleed `dialog-scroll` owns.** `Modal` used to carry its own
+ *    every dialog's content sideways instead.
+ * 3. **Every hand-built vertical rail still bleeds too.** A rail is not a `dialog-scroll` — it
+ *    scrolls its own stack of tabs — so the utility cannot reach it, and there are three of them.
+ * 4. **No call site hand-rolls the bleed `dialog-scroll` owns.** `Modal` used to carry its own
  *    copy, which is exactly why the fix reached the Modal-scrolled dialogs and missed the
  *    RailModal ones (Edit location among them). Centralising it is the whole of the fix, so a
  *    re-added local copy is the regression to catch.
@@ -33,10 +35,6 @@ import { repoPath, sourceFiles } from '../test/repo-path';
 const REPO_ROOT = repoPath(import.meta.dirname);
 const SRC_DIR = repoPath(import.meta.dirname, 'src');
 const CSS = readFileSync(repoPath(import.meta.dirname, 'src', 'styles', 'index.css'), 'utf8');
-const RAIL_MODAL = readFileSync(
-  repoPath(import.meta.dirname, 'src', 'components', 'foundry', 'rail-modal.tsx'),
-  'utf8',
-);
 
 /** The declarations inside `@utility dialog-scroll { … }`, with comments stripped. */
 function readUtility(): Map<string, string> {
@@ -51,11 +49,45 @@ function readUtility(): Map<string, string> {
 const DIALOG_SCROLL = readUtility();
 
 /**
- * A horizontal margin utility (`ml-` / `mr-` / `mx-`, negated or not). Paired with a
- * `dialog-scroll` on the same line, it is the hand-rolled bleed the utility now owns. Only class
- * strings written literally are read, which is every call site today.
+ * The three hand-built vertical rails, each named by a marker that identifies *the rail element
+ * itself* — its `className` is the next one in the file after that marker. A rail scrolls its own
+ * tab stack, so it clips its own tabs, and `dialog-scroll` (which the neighbouring panel gets)
+ * cannot reach it. The preset picker only becomes a scroller at `sm:`, so its bleed is scoped the
+ * same way; below that its chips wrap and clip nothing.
  */
-const HORIZONTAL_MARGIN = /(?:^|["'`\s])-?m[lrx]-[\w.[\]/-]+/;
+const RAILS = [
+  {
+    file: ['src', 'components', 'foundry', 'rail-modal.tsx'],
+    marker: 'aria-orientation="vertical"',
+    prefix: '',
+    // The width cap applies to the border box, so it has to carry the padding, or the section
+    // labels quietly lose exactly the room the bleed took.
+    width: 'max-w-[calc(13rem+2*var(--spacing-ring-bleed))]',
+  },
+  {
+    file: ['src', 'features', 'danger-zone', 'EraseDataDialog.tsx'],
+    marker: 'aria-label="Data categories"',
+    prefix: '',
+    width: 'w-[calc(13rem+2*var(--spacing-ring-bleed))]',
+  },
+  {
+    file: ['src', 'features', 'inventory', 'components', 'CategoryPresetPicker.tsx'],
+    marker: "aria-label={t('inventory.presets.sections.label')}",
+    prefix: 'sm:',
+    // No width to compensate: this column is sized by its parent, not by the list itself.
+    width: null,
+  },
+] as const;
+
+/**
+ * A horizontal margin utility, negated or not: the physical `ml-` / `mr-` / `mx-` and the
+ * logical `ms-` / `me-`, each also matched behind a variant prefix (`sm:-mx-2`) — this codebase
+ * leans on `sm:` and `handset:` heavily, so a bleed re-added at one breakpoint is the likeliest
+ * spelling of the regression, not the bare one. Paired with a `dialog-scroll` on the same line,
+ * it is the hand-rolled bleed the utility now owns. Only class strings written literally are
+ * read, which is every call site today.
+ */
+const HORIZONTAL_MARGIN = /(?:^|[^\w-])-?m[lrxse]-[\w.[\]/-]+/;
 
 function repoRelative(path: string): string {
   return relative(REPO_ROOT, path).replaceAll('\\', '/');
@@ -65,9 +97,13 @@ describe('the ring-bleed token (issue #417)', () => {
   it('is defined, and wide enough for the widest ring the Foundry draws', () => {
     const match = /--spacing-ring-bleed:\s*([\d.]+)rem\s*;/.exec(CSS);
     expect(match, '`--spacing-ring-bleed` is gone from src/styles/index.css.').not.toBeNull();
-    // A `ring-[3px] ring-offset-2` is 5px outside the border box, and a `scale-110` on a 28px
-    // swatch pushes another 1.4px past that.
-    expect(Number(match![1]) * 16).toBeGreaterThanOrEqual(6.4);
+    // The worst case is the colour swatch: a 28px box, `focus-visible:ring-[3px] ring-offset-2`
+    // (5px outside it), and `scale-110` when checked — and the scale magnifies the ring too, not
+    // just the box. Painted half-extent (14 + 5) × 1.1 = 20.9px against a 14px layout half-box,
+    // so 6.9px sits outside. Computing it here rather than hard-coding 6.9 keeps the reason
+    // legible when someone changes one of the three numbers.
+    const outside = (14 + 5) * 1.1 - 14;
+    expect(Number(match![1]) * 16).toBeGreaterThanOrEqual(outside);
   });
 });
 
@@ -94,17 +130,18 @@ describe('dialog-scroll bleeds both horizontal edges', () => {
   });
 });
 
-describe("the RailModal rail bleeds its own clip, so a tab's focus ring survives", () => {
-  it('cancels the bleed on both edges', () => {
-    const rail = RAIL_MODAL.split('\n').find((line) => line.includes('role="tablist"'));
-    expect(rail, 'The rail no longer declares `role="tablist"`.').toBeDefined();
-    const className = /className="([^"]*)"/.exec(
-      RAIL_MODAL.slice(RAIL_MODAL.indexOf('aria-orientation="vertical"')),
-    )?.[1];
-    expect(className).toContain('-mx-ring-bleed');
-    expect(className).toContain('px-ring-bleed');
-    // The cap applies to the border box, so it has to carry the padding or the labels lose room.
-    expect(className).toContain('max-w-[calc(13rem+2*var(--spacing-ring-bleed))]');
+describe("every vertical rail bleeds its own clip, so a tab's focus ring survives", () => {
+  it.each(RAILS.map((rail) => [rail.file.at(-1)!, rail] as const))('%s', (_name, rail) => {
+    const source = readFileSync(repoPath(import.meta.dirname, ...rail.file), 'utf8');
+    const marker = source.indexOf(rail.marker);
+    expect(marker, `The rail no longer carries \`${rail.marker}\` — re-anchor this guard.`).toBeGreaterThan(
+      -1,
+    );
+    const className = /className="([^"]*)"/.exec(source.slice(marker))?.[1];
+    expect(className, 'No literal className follows the rail marker.').toBeDefined();
+    expect(className).toContain(`${rail.prefix}-mx-ring-bleed`);
+    expect(className).toContain(`${rail.prefix}px-ring-bleed`);
+    if (rail.width) expect(className).toContain(rail.width);
   });
 });
 
@@ -125,16 +162,23 @@ describe('no call site hand-rolls the bleed the utility owns', () => {
     ).toEqual([]);
   });
 
-  it('still matches the shape issue #417 removed (positive control)', () => {
+  it('still matches the shape issue #417 removed, and its variants (positive control)', () => {
     // A passing sweep finds nothing, which is indistinguishable from a pattern that quietly
-    // stopped matching — so re-run it against the line the fix actually deleted.
+    // stopped matching — so re-run it against the line the fix actually deleted, and against the
+    // spellings a re-added bleed is likelier to take in a codebase this full of variants.
     const removed = `cn('mt-5 min-h-0', scrollBody ? 'dialog-scroll -ml-2 pl-2' : 'flex flex-col')`;
     expect(HORIZONTAL_MARGIN.test(removed)).toBe(true);
     expect(HORIZONTAL_MARGIN.test(removed.replace(' -ml-2 pl-2', ''))).toBe(false);
+    expect(HORIZONTAL_MARGIN.test(`className="dialog-scroll sm:-mx-2 sm:px-2"`)).toBe(true);
+    expect(HORIZONTAL_MARGIN.test(`className="dialog-scroll handset:-ml-2 handset:pl-2"`)).toBe(true);
+    expect(HORIZONTAL_MARGIN.test(`className="dialog-scroll -ms-2 ps-2"`)).toBe(true);
   });
 
   it('leaves an ordinary dialog-scroll class alone (negative control)', () => {
+    // Every one of these carries an `m`-prefixed utility that is *not* a horizontal margin, so a
+    // pattern widened too far would start reporting the whole codebase.
     expect(HORIZONTAL_MARGIN.test(`className="dialog-scroll flex min-h-0 flex-1 flex-col"`)).toBe(false);
+    expect(HORIZONTAL_MARGIN.test(`className="dialog-scroll mt-5 mb-field-gap max-w-lg"`)).toBe(false);
   });
 
   it('scans the whole source tree (guards against a silently-narrow sweep)', () => {
