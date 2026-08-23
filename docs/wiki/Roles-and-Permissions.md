@@ -58,15 +58,14 @@ typing the address by hand lands on a short "your role doesn't allow this" page 
 [[dashboard|Dashboard-and-Widgets]] card summarising that area drops off the board too, so nothing
 quietly reports what the screen won't show.
 
-Some areas have no screen to hide, and their **View** governs the data wherever it is reached
-instead:
+**View** does more than open a screen, and for some areas it is all it does. Where each one bites:
 
 - **Activity history → View** covers the [[activity log|Activity-Log]] screen *and* the per-item
   and per-location history tabs, which are the same record seen from a different angle.
 - **Backups → View** allows creating a [[backup|Backup-and-Restore]], because a backup file is a
-  copy of the whole database rather than a page to look at. Backup & restore lives on the
+  copy of the whole database rather than a page to look at. Backup & restore shares the
   [[Sync|Cloud-Sync]] screen, so that screen opens for a role granted backups even without
-  **Sync → View**.
+  **Sync → View** — and shows only the backup half to it.
 - **Loans → View** and **Maintenance → View** govern the [[Upcoming|Upcoming-Agenda]] and
   [[Alerts|Alerts]] entries drawn from them, since neither has a screen of its own.
 - **Settings** is the exception that stays open to everyone: it holds this device's own
@@ -74,11 +73,12 @@ instead:
   than your inventory, so **Settings → Change** is the permission that bites there, not View.
 
 > **ℹ️ Note**
-> A few areas — **Stock levels**, **Locations**, **Categories** and **Wishlist** — currently show
-> a **View** box that nothing in the app checks: their records are read wherever an item shows
-> them, and Gubbins does not gate an item's own page field by field. Their **View** does take
-> effect for the [[bridge|Bridge-Overview]], where locations and categories are separate
-> endpoints. Their **Change** and **Delete** boxes work everywhere.
+> Four areas — **Stock levels**, **Locations**, **Categories** and **Wishlist** — currently show a
+> **View** box the app itself never checks. Their records are read wherever an item shows them,
+> and Gubbins does not hide an item's own page field by field. **Locations → View** and
+> **Categories → View** do take effect for the [[bridge|Bridge-Overview]], which serves those two
+> as endpoints of their own; **Stock levels → View** and **Wishlist → View** take effect nowhere
+> yet. Their **Change** boxes, and the **Delete** boxes they have, work as described.
 
 Those two aggregating screens, Upcoming and Alerts, stay available to everyone and simply leave out
 the entries a role can't view.

@@ -345,10 +345,19 @@ describe('hotkeyPermission', () => {
   });
 
   it('leaves a shortcut that goes nowhere ungated, so it never stops working', () => {
-    for (const id of ['app.commandPalette', 'app.shortcuts', 'app.settings'] as const) {
+    // Named explicitly rather than skipped when absent: a typo'd id that quietly `continue`d
+    // would make this assert nothing at all.
+    for (const id of [
+      'command.palette',
+      'command.settings',
+      'command.hotkeys',
+      'command.shortcutsOverlay',
+      'action.toggleFullWidth',
+      'action.toggleTheme',
+    ] as const) {
       const action = HOTKEY_ACTIONS.find((a) => a.id === id);
-      if (!action) continue;
-      expect(hotkeyPermission(action), id).toEqual([]);
+      expect(action, `no action with id ${id}`).toBeDefined();
+      expect(hotkeyPermission(action!), id).toEqual([]);
     }
   });
 

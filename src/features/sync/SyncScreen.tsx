@@ -33,7 +33,7 @@ import { useFormatters } from '@/lib/useFormatters';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { BackupDialog } from '@/features/backup/BackupDialog';
-import { canAny } from '@/features/users/permissions';
+import { can, canAny } from '@/features/users/permissions';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { consumeRestoreNotice, type RestoreNotice } from '@/features/backup/restore-backup';
 import { SettingsGroupPicker } from '@/features/backup/SettingsGroupPicker';
@@ -125,6 +125,11 @@ export function SyncScreen() {
   const [backupOpen, setBackupOpen] = useState(false);
   const authority = useSessionStore((state) => state.authority);
   const mayUseBackup = canAny(authority, ['backup:read', 'backup:write']);
+  // The route admits `sync:read` OR either backup key, because Backup & restore lives on this
+  // screen. Inside it the two halves are separate: a backups-only role gets the backup panel and
+  // none of the cloud-sync controls (issue #522).
+  const mayUseSync = can(authority, 'sync:read');
+  const mayUseBridge = can(authority, 'bridge:read');
   const [conflictsOpen, setConflictsOpen] = useState(false);
   // Issue #72: device-local record of edits a sync overwrote — surfaced for review below.
   const conflictCount = useSyncConflictsStore((s) => s.conflicts.length);
@@ -448,184 +453,202 @@ export function SyncScreen() {
           </Banner>
         ) : null}
 
-        {/* Initial Handshake */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Connection</h2>
-          {connected ? (
-            <Surface className="flex flex-wrap items-center gap-3 p-4">
-              <span className="grid size-9 place-items-center rounded-xl bg-success/15 text-success [&_svg]:size-5">
-                <CloudIcon />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="font-medium" data-testid="sync-provider-label">
-                  {auth.providerLabel}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {auth.lastSyncedAt ? `Last synced ${fmt.dateTime(auth.lastSyncedAt)}` : 'Not yet synced.'}
-                </p>
-              </div>
-              <Tooltip
-                content="Stop syncing and forget this provider. Your local inventory is untouched; the synced copy stays in place."
-                triggerTabIndex={-1}
-              >
-                <span>
-                  <Button variant="outline" size="sm" onClick={disconnect}>
-                    <DisconnectIcon />
-                    Disconnect
-                  </Button>
-                </span>
-              </Tooltip>
-            </Surface>
-          ) : (
-            <Surface className="space-y-3 p-4">
-              <p className="text-sm text-muted-foreground">
-                Choose where to synchronise. Gubbins is provider-agnostic — sign in to
-                <strong> Google Drive</strong> (an app-private folder), connect a local folder (shared via
-                your own cloud drive), or use the in-memory provider to try it out.
-              </p>
-              {reconnectable ? (
-                <Banner tone="info">
-                  <div className="space-y-2">
-                    <p>
-                      Found your previous sync folder ({auth.providerLabel}). Re-grant access to resume
-                      syncing through it.
+        {/* The cloud-sync half of this screen answers to `sync:read` (issue #522). The screen
+            itself opens for a backups-only role too — Backup & restore lives here rather than on
+            a page of its own — so the two halves are gated separately rather than the route
+            standing in for both. */}
+        {mayUseSync ? (
+          <>
+            {/* Initial Handshake */}
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Connection
+              </h2>
+              {connected ? (
+                <Surface className="flex flex-wrap items-center gap-3 p-4">
+                  <span className="grid size-9 place-items-center rounded-xl bg-success/15 text-success [&_svg]:size-5">
+                    <CloudIcon />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium" data-testid="sync-provider-label">
+                      {auth.providerLabel}
                     </p>
-                    <Button size="sm" onClick={reconnectFolder} data-testid="reconnect-folder">
-                      <FolderSyncIcon />
-                      Reconnect folder
-                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      {auth.lastSyncedAt
+                        ? `Last synced ${fmt.dateTime(auth.lastSyncedAt)}`
+                        : 'Not yet synced.'}
+                    </p>
                   </div>
-                </Banner>
-              ) : googleReconnectable ? (
-                <Banner tone="info">
-                  <div className="space-y-2">
-                    <p>Your Google Drive sign-in has expired. Reconnect to resume syncing.</p>
-                    <Button size="sm" onClick={connectGoogle} data-testid="reconnect-google-drive">
-                      <CloudIcon />
-                      Reconnect Google Drive
-                    </Button>
-                  </div>
-                </Banner>
-              ) : configuredButOffline ? (
-                <Banner tone="warning">
-                  Previously connected to {auth.providerLabel}. Reconnect to resume syncing.
-                </Banner>
-              ) : null}
-              <div className="flex flex-wrap gap-2">
-                <Tooltip
-                  content={
-                    driveConfigured
-                      ? 'Sign in to Google to sync through an **app-private** folder in your Drive. Gubbins can only see that folder — never your other files.'
-                      : 'Google Drive sync is not configured for this build. Set `VITE_GOOGLE_CLIENT_ID` and register your OAuth client (see docs/dev/google-drive-sync.md).'
-                  }
-                >
-                  <span>
-                    <Button
-                      onClick={connectGoogle}
-                      disabled={!driveConfigured}
-                      data-testid="connect-google-drive"
+                  <Tooltip
+                    content="Stop syncing and forget this provider. Your local inventory is untouched; the synced copy stays in place."
+                    triggerTabIndex={-1}
+                  >
+                    <span>
+                      <Button variant="outline" size="sm" onClick={disconnect}>
+                        <DisconnectIcon />
+                        Disconnect
+                      </Button>
+                    </span>
+                  </Tooltip>
+                </Surface>
+              ) : (
+                <Surface className="space-y-3 p-4">
+                  <p className="text-sm text-muted-foreground">
+                    Choose where to synchronise. Gubbins is provider-agnostic — sign in to
+                    <strong> Google Drive</strong> (an app-private folder), connect a local folder (shared via
+                    your own cloud drive), or use the in-memory provider to try it out.
+                  </p>
+                  {reconnectable ? (
+                    <Banner tone="info">
+                      <div className="space-y-2">
+                        <p>
+                          Found your previous sync folder ({auth.providerLabel}). Re-grant access to resume
+                          syncing through it.
+                        </p>
+                        <Button size="sm" onClick={reconnectFolder} data-testid="reconnect-folder">
+                          <FolderSyncIcon />
+                          Reconnect folder
+                        </Button>
+                      </div>
+                    </Banner>
+                  ) : googleReconnectable ? (
+                    <Banner tone="info">
+                      <div className="space-y-2">
+                        <p>Your Google Drive sign-in has expired. Reconnect to resume syncing.</p>
+                        <Button size="sm" onClick={connectGoogle} data-testid="reconnect-google-drive">
+                          <CloudIcon />
+                          Reconnect Google Drive
+                        </Button>
+                      </div>
+                    </Banner>
+                  ) : configuredButOffline ? (
+                    <Banner tone="warning">
+                      Previously connected to {auth.providerLabel}. Reconnect to resume syncing.
+                    </Banner>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <Tooltip
+                      content={
+                        driveConfigured
+                          ? 'Sign in to Google to sync through an **app-private** folder in your Drive. Gubbins can only see that folder — never your other files.'
+                          : 'Google Drive sync is not configured for this build. Set `VITE_GOOGLE_CLIENT_ID` and register your OAuth client (see docs/dev/google-drive-sync.md).'
+                      }
                     >
-                      <CloudIcon />
-                      Google Drive…
-                    </Button>
-                  </span>
-                </Tooltip>
+                      <span>
+                        <Button
+                          onClick={connectGoogle}
+                          disabled={!driveConfigured}
+                          data-testid="connect-google-drive"
+                        >
+                          <CloudIcon />
+                          Google Drive…
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    <Tooltip
+                      content={
+                        fsSupported
+                          ? 'Pick a folder to sync through (e.g. inside a cloud-drive mount).'
+                          : 'This browser does not support the File System Access API.'
+                      }
+                    >
+                      <span>
+                        <Button variant="outline" onClick={connectFolder} disabled={!fsSupported}>
+                          <FolderSyncIcon />
+                          Local folder…
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    <Tooltip content="Try the sync flow without a real backend — the **remote** lives only in this browser session. **Nothing is saved**: it doesn't persist across a reload and won't sync between devices. For trying it out, not for backups.">
+                      <span>
+                        <Button variant="outline" onClick={connectMemory} data-testid="connect-memory">
+                          <ConnectIcon />
+                          In-memory (test)
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  </div>
+                </Surface>
+              )}
+            </section>
+
+            {/* Sync */}
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Synchronise
+              </h2>
+              <div className="flex flex-wrap items-center gap-3">
                 <Tooltip
-                  content={
-                    fsSupported
-                      ? 'Pick a folder to sync through (e.g. inside a cloud-drive mount).'
-                      : 'This browser does not support the File System Access API.'
-                  }
+                  content="Exchange changes both ways with the connected provider, merging newest-wins. Pauses automatically if local storage is critically full."
+                  triggerTabIndex={-1}
                 >
                   <span>
-                    <Button variant="outline" onClick={connectFolder} disabled={!fsSupported}>
-                      <FolderSyncIcon />
-                      Local folder…
+                    {/* Wrapped, not passed directly: `onClick` would hand the click event to
+                      `allowRemoteReset`, which is truthy — the exact overwrite this guards. */}
+                    <Button
+                      onClick={() => void syncNow()}
+                      disabled={!connected || busy}
+                      data-testid="sync-now"
+                    >
+                      <SyncIcon />
+                      Sync now
                     </Button>
                   </span>
                 </Tooltip>
-                <Tooltip content="Try the sync flow without a real backend — the **remote** lives only in this browser session. **Nothing is saved**: it doesn't persist across a reload and won't sync between devices. For trying it out, not for backups.">
-                  <span>
-                    <Button variant="outline" onClick={connectMemory} data-testid="connect-memory">
-                      <ConnectIcon />
-                      In-memory (test)
-                    </Button>
-                  </span>
-                </Tooltip>
+                {/* Always-mounted polite region: the sync outcome appears in place after an
+                explicit "Sync now", which a screen reader would otherwise miss (WCAG 4.1.3).
+                The region must pre-exist for the later content change to be announced. */}
+                <LiveRegion className="text-sm text-muted-foreground" data-testid="sync-result">
+                  {result && result.status !== 'HARD_STOP' ? describeSyncOutcome(result) : null}
+                </LiveRegion>
               </div>
-            </Surface>
-          )}
-        </section>
+            </section>
 
-        {/* Sync */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Synchronise</h2>
-          <div className="flex flex-wrap items-center gap-3">
-            <Tooltip
-              content="Exchange changes both ways with the connected provider, merging newest-wins. Pauses automatically if local storage is critically full."
-              triggerTabIndex={-1}
-            >
-              <span>
-                {/* Wrapped, not passed directly: `onClick` would hand the click event to
-                    `allowRemoteReset`, which is truthy — the exact overwrite this guards. */}
-                <Button onClick={() => void syncNow()} disabled={!connected || busy} data-testid="sync-now">
-                  <SyncIcon />
-                  Sync now
-                </Button>
-              </span>
-            </Tooltip>
-            {/* Always-mounted polite region: the sync outcome appears in place after an
-              explicit "Sync now", which a screen reader would otherwise miss (WCAG 4.1.3).
-              The region must pre-exist for the later content change to be announced. */}
-            <LiveRegion className="text-sm text-muted-foreground" data-testid="sync-result">
-              {result && result.status !== 'HARD_STOP' ? describeSyncOutcome(result) : null}
-            </LiveRegion>
-          </div>
-        </section>
-
-        {/* Shared settings (issue #382) — opt in, per group, on this device. */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('sync.settings.heading')}
-          </h2>
-          <Surface className="space-y-3 p-4">
-            <div className="space-y-field-gap-compact">
-              <label className="flex cursor-pointer items-start gap-3 text-sm font-medium text-foreground">
-                <Checkbox
-                  className="mt-0.5"
-                  checked={settingsSyncEnabled}
-                  onChange={(e) => setSettingsSyncEnabled(e.target.checked)}
-                  aria-describedby={settingsSyncHintId}
-                  data-testid="settings-sync-enabled"
+            {/* Shared settings (issue #382) — opt in, per group, on this device. */}
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('sync.settings.heading')}
+              </h2>
+              <Surface className="space-y-3 p-4">
+                <div className="space-y-field-gap-compact">
+                  <label className="flex cursor-pointer items-start gap-3 text-sm font-medium text-foreground">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={settingsSyncEnabled}
+                      onChange={(e) => setSettingsSyncEnabled(e.target.checked)}
+                      aria-describedby={settingsSyncHintId}
+                      data-testid="settings-sync-enabled"
+                    />
+                    {t('sync.settings.enable.label')}
+                  </label>
+                  {/* Described-by rather than part of the label: the paragraph explains the consequence,
+                    which a screen reader should hear as a description, not as the control's name. */}
+                  <p id={settingsSyncHintId} className="pl-7 text-sm text-muted-foreground">
+                    {t('sync.settings.enable.hint')}
+                  </p>
+                </div>
+                <SettingsGroupPicker
+                  ids={LIVE_SYNCABLE_SETTINGS_GROUP_IDS}
+                  value={settingsSyncGroups}
+                  onChange={setSettingsSyncGroups}
+                  titleKey="sync.settings.chooseTitle"
+                  hintKey="sync.settings.chooseHint"
+                  emptyKey="sync.settings.none"
+                  testIdPrefix="settings-sync-group"
+                  disabled={!settingsSyncEnabled}
                 />
-                {t('sync.settings.enable.label')}
-              </label>
-              {/* Described-by rather than part of the label: the paragraph explains the consequence,
-                  which a screen reader should hear as a description, not as the control's name. */}
-              <p id={settingsSyncHintId} className="pl-7 text-sm text-muted-foreground">
-                {t('sync.settings.enable.hint')}
-              </p>
-            </div>
-            <SettingsGroupPicker
-              ids={LIVE_SYNCABLE_SETTINGS_GROUP_IDS}
-              value={settingsSyncGroups}
-              onChange={setSettingsSyncGroups}
-              titleKey="sync.settings.chooseTitle"
-              hintKey="sync.settings.chooseHint"
-              emptyKey="sync.settings.none"
-              testIdPrefix="settings-sync-group"
-              disabled={!settingsSyncEnabled}
-            />
-            <p className="text-sm text-muted-foreground">{t('sync.settings.publishNote')}</p>
-            {/* Always mounted so the count of settings a sync brought in is announced (WCAG 4.1.3). */}
-            <LiveRegion className="text-sm text-muted-foreground" data-testid="settings-sync-result">
-              {settingsNotice ? <p>{settingsNotice}</p> : null}
-            </LiveRegion>
-          </Surface>
-        </section>
+                <p className="text-sm text-muted-foreground">{t('sync.settings.publishNote')}</p>
+                {/* Always mounted so the count of settings a sync brought in is announced (WCAG 4.1.3). */}
+                <LiveRegion className="text-sm text-muted-foreground" data-testid="settings-sync-result">
+                  {settingsNotice ? <p>{settingsNotice}</p> : null}
+                </LiveRegion>
+              </Surface>
+            </section>
+          </>
+        ) : null}
 
         {/* Conflicts — surfaced only when a sync overwrote one of the user's own edits (#72). */}
-        {conflictCount > 0 ? (
+        {mayUseSync && conflictCount > 0 ? (
           <section className="space-y-3" data-testid="sync-conflicts-section">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Conflicts</h2>
             <Banner
@@ -682,134 +705,141 @@ export function SyncScreen() {
           </section>
         ) : null}
 
-        {/* Push to bridge — for users without folder sync, hand the dataset straight to the
-          optional Home Assistant query bridge over HTTP (the bridge re-hydrates it). */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Push to bridge
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Send your whole inventory to a Gubbins query bridge (e.g. for Home Assistant) over your local
-            network, without needing a shared folder. The bridge must have pushes enabled (
-            <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_ALLOW_PUSH=on</code>). Your URL and
-            token are stored only on this device.
-          </p>
-          {/* Entry point to the interactive Home Assistant setup guide — the natural place to
-            discover it, since the bridge and push settings it walks through live right here. The
-            guide is a lazily-loaded route, so linking to it adds nothing to this screen's bundle. */}
-          <Banner
-            tone="info"
-            icon={<VoiceIcon />}
-            heading="Setting up Home Assistant voice control?"
-            action={
-              <Link
-                to="/home-assistant"
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="open-ha-guide"
+        {/* The bridge half follows the bridge keys, not the sync ones: pushing the dataset to a
+            bridge is a different capability from syncing to a folder, and this screen is now
+            reachable by a role holding neither (issue #522). */}
+        {mayUseBridge ? (
+          <>
+            {/* Push to bridge — for users without folder sync, hand the dataset straight to the
+            optional Home Assistant query bridge over HTTP (the bridge re-hydrates it). */}
+            <section className="space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Push to bridge
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Send your whole inventory to a Gubbins query bridge (e.g. for Home Assistant) over your local
+                network, without needing a shared folder. The bridge must have pushes enabled (
+                <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_ALLOW_PUSH=on</code>). Your URL
+                and token are stored only on this device.
+              </p>
+              {/* Entry point to the interactive Home Assistant setup guide — the natural place to
+              discover it, since the bridge and push settings it walks through live right here. The
+              guide is a lazily-loaded route, so linking to it adds nothing to this screen's bundle. */}
+              <Banner
+                tone="info"
+                icon={<VoiceIcon />}
+                heading="Setting up Home Assistant voice control?"
+                action={
+                  <Link
+                    to="/home-assistant"
+                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                    data-testid="open-ha-guide"
+                  >
+                    Open setup guide
+                  </Link>
+                }
               >
-                Open setup guide
-              </Link>
-            }
-          >
-            Follow the step-by-step guide to run the bridge, connect Home Assistant, and generate the access
-            token — it walks you through every choice.
-          </Banner>
-          {/* Issue #385: a bridge address the app was not started with cannot be contacted until
-            it reloads, and the browser reports that block as an ordinary network failure — so
-            say so here, beside the field it is about, instead of letting "Push now" report a
-            running bridge as unreachable. Renders nothing once the address is reachable. */}
-          <BridgeReloadNotice />
-          {/* Issue #282: the bridge never updates itself, so a checkout left behind is invisible
-            unless we say so. Shown here, beside the connection it is about, rather than as a
-            top-of-page banner. Silent when the bridge is current or unreachable. */}
-          {buildCheck?.ok && buildCheck.status !== 'current' ? (
-            <Banner
-              // Only a bridge that may be *misreading* the data warrants a warning; a bridge that
-              // is merely a release behind (or ahead) is reading it correctly, so it stays a note.
-              tone={BRIDGE_BUILD_INFORMATIONAL.has(buildCheck.status) ? 'info' : 'warning'}
-              icon={
-                BRIDGE_BUILD_INFORMATIONAL.has(buildCheck.status) ? (
-                  <InfoIcon aria-hidden="true" />
-                ) : (
-                  <WarningIcon aria-hidden="true" />
-                )
-              }
-              heading={
-                buildCheck.status === 'ahead'
-                  ? t('sync.bridge.build.aheadHeading')
-                  : t('sync.bridge.build.heading')
-              }
-              data-testid="bridge-build-notice"
-            >
-              {t(BRIDGE_BUILD_MESSAGE_KEYS[buildCheck.status], {
-                vars: {
-                  bridgeVersion: buildCheck.bridge?.version ?? '',
-                  appVersion: buildCheck.app.version,
-                },
-              })}
-            </Banner>
-          ) : null}
-          <Surface className="space-y-4 p-4">
-            <FormField
-              label="Bridge URL"
-              hint="The bridge's base address on your network, e.g. `http://127.0.0.1:8787`. The snapshot endpoint is added automatically."
-            >
-              <Input
-                type="url"
-                inputMode="url"
-                placeholder="http://127.0.0.1:8787"
-                value={bridgeUrl}
-                onChange={(e) => setBridgeUrl(e.target.value)}
-                data-testid="bridge-url"
-              />
-            </FormField>
-            <FormField
-              label="Access token"
-              hint="An API token minted in Users → the account → API tokens. Treated as a secret — stored only on this device and never synced. Where accounts are in use, signing out forgets it."
-            >
-              <Input
-                type="password"
-                autoComplete="off"
-                placeholder="Bridge access token"
-                value={bridgeToken}
-                onChange={(e) => setBridgeToken(e.target.value)}
-                data-testid="bridge-token"
-              />
-            </FormField>
-            <div className="flex flex-wrap items-center gap-3">
-              <Tooltip
-                content="Build a snapshot of everything and POST it to the bridge. It replaces the snapshot the bridge serves."
-                triggerTabIndex={-1}
-              >
-                <span>
-                  <Button onClick={pushToBridge} disabled={busy || !canPush} data-testid="push-to-bridge">
-                    <CloudUploadIcon />
-                    Push now
-                  </Button>
-                </span>
-              </Tooltip>
-              {!canPush ? (
-                <span className="text-xs text-muted-foreground">
-                  Enter the bridge URL and token to enable pushing.
-                </span>
+                Follow the step-by-step guide to run the bridge, connect Home Assistant, and generate the
+                access token — it walks you through every choice.
+              </Banner>
+              {/* Issue #385: a bridge address the app was not started with cannot be contacted until
+              it reloads, and the browser reports that block as an ordinary network failure — so
+              say so here, beside the field it is about, instead of letting "Push now" report a
+              running bridge as unreachable. Renders nothing once the address is reachable. */}
+              <BridgeReloadNotice />
+              {/* Issue #282: the bridge never updates itself, so a checkout left behind is invisible
+              unless we say so. Shown here, beside the connection it is about, rather than as a
+              top-of-page banner. Silent when the bridge is current or unreachable. */}
+              {buildCheck?.ok && buildCheck.status !== 'current' ? (
+                <Banner
+                  // Only a bridge that may be *misreading* the data warrants a warning; a bridge that
+                  // is merely a release behind (or ahead) is reading it correctly, so it stays a note.
+                  tone={BRIDGE_BUILD_INFORMATIONAL.has(buildCheck.status) ? 'info' : 'warning'}
+                  icon={
+                    BRIDGE_BUILD_INFORMATIONAL.has(buildCheck.status) ? (
+                      <InfoIcon aria-hidden="true" />
+                    ) : (
+                      <WarningIcon aria-hidden="true" />
+                    )
+                  }
+                  heading={
+                    buildCheck.status === 'ahead'
+                      ? t('sync.bridge.build.aheadHeading')
+                      : t('sync.bridge.build.heading')
+                  }
+                  data-testid="bridge-build-notice"
+                >
+                  {t(BRIDGE_BUILD_MESSAGE_KEYS[buildCheck.status], {
+                    vars: {
+                      bridgeVersion: buildCheck.bridge?.version ?? '',
+                      appVersion: buildCheck.app.version,
+                    },
+                  })}
+                </Banner>
               ) : null}
-              {/* The push outcome appears in place beside the button — close to where the
-                user just clicked — rather than as a banner at the top they might miss. The
-                region is always mounted so screen readers announce the later content change
-                (WCAG 4.1.3), and errors interrupt (assertive) while successes queue (polite). */}
-              <LiveRegion
-                urgency={pushResult && !pushResult.ok ? 'assertive' : 'polite'}
-                className={cn(
-                  'text-sm',
-                  pushResult ? (pushResult.ok ? 'text-glyph-success' : 'text-glyph-danger') : undefined,
-                )}
-                data-testid="push-result"
-              >
-                {pushResult ? pushResult.message : null}
-              </LiveRegion>
-            </div>
-          </Surface>
-        </section>
+              <Surface className="space-y-4 p-4">
+                <FormField
+                  label="Bridge URL"
+                  hint="The bridge's base address on your network, e.g. `http://127.0.0.1:8787`. The snapshot endpoint is added automatically."
+                >
+                  <Input
+                    type="url"
+                    inputMode="url"
+                    placeholder="http://127.0.0.1:8787"
+                    value={bridgeUrl}
+                    onChange={(e) => setBridgeUrl(e.target.value)}
+                    data-testid="bridge-url"
+                  />
+                </FormField>
+                <FormField
+                  label="Access token"
+                  hint="An API token minted in Users → the account → API tokens. Treated as a secret — stored only on this device and never synced. Where accounts are in use, signing out forgets it."
+                >
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    placeholder="Bridge access token"
+                    value={bridgeToken}
+                    onChange={(e) => setBridgeToken(e.target.value)}
+                    data-testid="bridge-token"
+                  />
+                </FormField>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Tooltip
+                    content="Build a snapshot of everything and POST it to the bridge. It replaces the snapshot the bridge serves."
+                    triggerTabIndex={-1}
+                  >
+                    <span>
+                      <Button onClick={pushToBridge} disabled={busy || !canPush} data-testid="push-to-bridge">
+                        <CloudUploadIcon />
+                        Push now
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  {!canPush ? (
+                    <span className="text-xs text-muted-foreground">
+                      Enter the bridge URL and token to enable pushing.
+                    </span>
+                  ) : null}
+                  {/* The push outcome appears in place beside the button — close to where the
+                  user just clicked — rather than as a banner at the top they might miss. The
+                  region is always mounted so screen readers announce the later content change
+                  (WCAG 4.1.3), and errors interrupt (assertive) while successes queue (polite). */}
+                  <LiveRegion
+                    urgency={pushResult && !pushResult.ok ? 'assertive' : 'polite'}
+                    className={cn(
+                      'text-sm',
+                      pushResult ? (pushResult.ok ? 'text-glyph-success' : 'text-glyph-danger') : undefined,
+                    )}
+                    data-testid="push-result"
+                  >
+                    {pushResult ? pushResult.message : null}
+                  </LiveRegion>
+                </div>
+              </Surface>
+            </section>
+          </>
+        ) : null}
       </main>
 
       <BackupDialog

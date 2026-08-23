@@ -346,8 +346,8 @@ const OFF_NAV_ROUTE_PERMISSIONS: readonly (readonly [string, PermissionKey])[] =
   ['/share-target', 'items:write'],
 ];
 
-/** Read one destination's gate as a list, so a caller need not care which form it took. */
-export function permissionsFor(
+/** Read one destination's gate as a list, so the map below need not care which form it took. */
+function permissionsFor(
   permission: PermissionKey | readonly PermissionKey[] | undefined,
 ): readonly PermissionKey[] {
   if (permission === undefined) return [];

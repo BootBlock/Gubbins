@@ -869,9 +869,15 @@ export const COMMAND_DESTINATIONS: Record<NavigatingCommand, AppRoutePath> = {
   'new-purchase-order': '/purchase-orders',
 };
 
-/** Whether `command` is one that navigates, so its destination can be looked up above. */
+/**
+ * Whether `command` is one that navigates, so its destination can be looked up above.
+ *
+ * `Object.hasOwn` rather than `in`: the latter walks the prototype chain, so a command named
+ * `toString` or `constructor` would answer yes and be gated on whatever `Object.prototype`
+ * happened to hold. No such command exists today, and this is how it stays that way.
+ */
 function navigates(command: HotkeyCommand): command is NavigatingCommand {
-  return command in COMMAND_DESTINATIONS;
+  return Object.hasOwn(COMMAND_DESTINATIONS, command);
 }
 
 /**
