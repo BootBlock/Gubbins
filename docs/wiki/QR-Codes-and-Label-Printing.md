@@ -77,8 +77,10 @@ dialog. Two of its settings undo the layout:
 - **Margins** — leave them as the document sets them (**Default**, or whatever your browser calls
   the option that does not override the page). *Minimum* or *None* moves the grid on the page.
 
-Gubbins picks the print dialog's settings up as they are; it cannot set them for you, so it says
-so in the dialog whenever you choose a sheet other than plain paper.
+The same goes for a **Custom…** grid: stock the list does not carry needs the settings to be right
+just as much, with no preset to fall back on. Gubbins cannot see or set either one — the browser
+applies them to the finished page — so it says so in the print dialog whenever you choose anything
+other than plain paper.
 
 > **💡 Tip**
 > Run one sheet on **ordinary paper** first and hold it against a sheet of the real labels up to

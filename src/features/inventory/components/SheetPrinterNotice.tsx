@@ -16,9 +16,10 @@ import type { LabelSizeValue } from './LabelSizeControls';
  * The sibling of `DieCutPrinterNotice`, and deliberately the same shape: an exact
  * geometry the app cannot enforce past the print dialog is worth saying out loud.
  *
- * Renders nothing unless a sheet layout with die-cuts is selected — plain paper is cut by
- * hand along the printed guides, so a scaled print costs a sheet of paper and no
- * registration.
+ * Renders nothing for the plain-paper layout, which is cut by hand along the printed guides —
+ * a scaled print there costs a sheet of paper and no registration. Every other layout gets the
+ * notice, a hand-entered one included: stock the picker does not list is exactly the case that
+ * cannot fall back on a preset being right.
  */
 export function SheetPrinterNotice({
   size,
