@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
 import { fieldAria } from './field-aria';
-import { filterSuggestions, indexOfValue } from './autocomplete-filter';
+import { browseStartIndex, filterSuggestions } from './autocomplete-filter';
 import { InfoHint } from './info-hint';
 import { TextLimitReport, useTextLimit, useTextLimitSlot } from './text-limit';
 import { useAnchoredPopover } from './use-anchored-popover';
@@ -166,16 +166,17 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
   };
 
   /**
-   * Open the list to browse the whole catalogue, starting on the value the field already
-   * holds. `fallbackIndex` is where to start when that value is not in the list — `0` for
-   * ArrowDown, which must always land on an option, and `-1` for a pointer open, which
-   * highlights nothing.
+   * Open the list to browse the whole catalogue, highlighting `startIndex` (`-1` for nothing).
+   *
+   * Which index that is belongs to the gesture. Asking for the list — the chevron, ArrowDown —
+   * starts on the value the field already holds, so a long catalogue opens showing it; a click
+   * that merely places the caret in the input starts on nothing, because a highlighted option
+   * makes Enter *pick* it instead of submitting the enclosing form.
    */
-  const openBrowsing = (fallbackIndex = -1) => {
+  const openBrowsing = (startIndex: number) => {
     setOpen(true);
     setBrowsing(true);
-    const current = indexOfValue(browseList, value);
-    setActiveIndex(current >= 0 ? current : fallbackIndex);
+    setActiveIndex(startIndex);
   };
 
   const close = () => {
@@ -206,7 +207,9 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
       case 'ArrowDown':
         event.preventDefault();
         if (isOpen) setActiveIndex((i) => Math.min(matches.length - 1, i + 1));
-        else openBrowsing(0);
+        // ArrowDown must always land on an option, so the top of the list stands in when
+        // nothing in it fits what the field holds.
+        else openBrowsing(Math.max(0, browseStartIndex(browseList, value)));
         break;
       case 'ArrowUp':
         if (!isOpen) break;
@@ -284,7 +287,9 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         // Open on click/tap (not merely on focus — Tabbing *through* a field shouldn't pop a
         // list); typing and ArrowDown open it too. A click browses; it never filters.
         onClick={() => {
-          if (!open) openBrowsing();
+          // `isOpen`, not `open`: text matching nothing leaves the latch set with no list on
+          // screen, and a click there must still open the browse rather than read as a no-op.
+          if (!isOpen) openBrowsing(-1);
         }}
         onBlur={onBlur}
         onKeyDown={onKeyDown}
@@ -305,8 +310,9 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         onMouseDown={(event) => {
           if (disabled) return;
           event.preventDefault();
-          if (open) close();
-          else openBrowsing();
+          // Toggles what the user can see — see the input's onClick for why not `open`.
+          if (isOpen) close();
+          else openBrowsing(browseStartIndex(browseList, value));
           inputRef.current?.focus();
         }}
         className="absolute right-0 top-0 flex h-10 w-9 items-center justify-center text-muted-foreground disabled:opacity-50"

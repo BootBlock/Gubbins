@@ -38,10 +38,11 @@ Common fields at creation:
 > same, right where you're typing.
 
 > **💡 Tip**
-> Fields with a chevron — **Manufacturer**, **Unit**, **Currency** and the like — suggest values
-> already in your catalogue. Click the chevron to browse the whole list, even when the field is
-> already filled in; start typing and the list narrows to what matches. Whatever you type is
-> accepted either way: the suggestions are a shortcut, never a restriction.
+> **Manufacturer** and **Unit** are type-in boxes that suggest values already in your catalogue.
+> Click the arrow at the end of the box to browse the whole list, even when the box is already
+> filled in; start typing and the list narrows to what matches. Whatever you type is accepted
+> either way: the suggestions are a shortcut, never a restriction. (**Tracking**, **Category**
+> and **Condition** look similar but are pick-one lists — there, the choice is the whole answer.)
 
 > **💡 Tip**
 > For a one-off, always-available supply (tap water, sunlight, a shared mains outlet) you can

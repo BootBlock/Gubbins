@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { Autocomplete, AutocompleteField } from './autocomplete';
-import { filterSuggestions, indexOfValue } from './autocomplete-filter';
+import { browseStartIndex, filterSuggestions } from './autocomplete-filter';
 
 afterEach(cleanup);
 
@@ -41,14 +41,21 @@ describe('filterSuggestions — type-ahead ranking (pure)', () => {
   });
 });
 
-describe('indexOfValue — where a browse starts (pure)', () => {
+describe('browseStartIndex — where a browse starts (pure)', () => {
   it('finds the held value case-insensitively, ignoring surrounding space', () => {
-    expect(indexOfValue(MAKERS, '  tdk ')).toBe(1);
+    expect(browseStartIndex(MAKERS, '  tdk ')).toBe(1);
   });
 
-  it('reports -1 for a value that is not in the list, and for an empty field', () => {
-    expect(indexOfValue(MAKERS, 'Acme Widgets')).toBe(-1);
-    expect(indexOfValue(MAKERS, '   ')).toBe(-1);
+  it('falls back to the option the type-ahead would have ranked first', () => {
+    // The currency field's case: it holds `USD`, the list offers `USD — US Dollar`. Without
+    // the fallback a browse would start at the top of the catalogue — one Enter away from
+    // swapping the value for an unrelated currency.
+    expect(browseStartIndex(['GBP — British Pound', 'USD — US Dollar'], 'USD')).toBe(1);
+  });
+
+  it('reports -1 for a value that matches nothing, and for an empty field', () => {
+    expect(browseStartIndex(MAKERS, 'Acme Widgets')).toBe(-1);
+    expect(browseStartIndex(MAKERS, '   ')).toBe(-1);
   });
 });
 
@@ -164,6 +171,14 @@ describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
     expect(screen.getByRole('option', { selected: true }).textContent).toBe('Yageo');
   });
 
+  it('lands on the first option when ArrowDown opens on a value that fits nothing', () => {
+    render(<Harness initial="Acme Widgets" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe(MAKERS[0]);
+  });
+
   it('browses again after a chevron close, rather than staying filtered', () => {
     render(<Harness initial="" />);
     const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
@@ -176,6 +191,54 @@ describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
     fireEvent.mouseDown(chevron); // reopen — browsing, not filtering
     expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
     expect(input.value).toBe('TD');
+  });
+
+  it('browses from a click on the input even after text that matched nothing', () => {
+    // Typing leaves the list "open" with nothing to show; the click that follows must still
+    // browse rather than read as another dead control.
+    render(<Harness initial="" />);
+    const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'Acme Widgets' } });
+    expect(screen.queryByRole('listbox')).toBeNull();
+
+    fireEvent.click(input);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+  });
+
+  it('opens from the chevron on the first press after text that matched nothing', () => {
+    render(<Harness initial="" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'Acme Widgets' } });
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('leaves Enter free to submit after a click that only placed the caret', () => {
+    // A click into a filled field is caret placement, so it highlights nothing — otherwise
+    // Enter would re-pick the value it already holds instead of submitting the form.
+    render(<Harness initial="TDK" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.click(input);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('starts a browse on the closest option when the value is only a prefix of it', () => {
+    // The currency field's shape: the value is a bare code, the options are code + name.
+    render(
+      <AutocompleteField
+        label="Currency"
+        value="USD"
+        onChange={() => {}}
+        suggestions={['GBP — British Pound', 'USD — US Dollar']}
+      />,
+    );
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe('USD — US Dollar');
   });
 
   it('offers a prefiltered list verbatim, however little it looks like the typed text', () => {

@@ -124,8 +124,9 @@ export function TagEditorControl({
             value={input}
             onChange={onInputChange}
             suggestions={unusedSuggestions}
-            // Deliberately above the 6 the old hand-rolled list showed: the control now doubles
-            // as "what tags already exist?", so a longer glance-able list earns its space.
+            // Deliberately above the 6 the old hand-rolled list showed: a longer glance-able
+            // list earns its space while typing. ("What tags already exist?" is the chevron's
+            // job — it browses every unused tag, whatever this cap says.)
             maxOptions={10}
             onCommit={add}
             placeholder="Add a tag and press Enter…"
