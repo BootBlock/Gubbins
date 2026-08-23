@@ -10,7 +10,7 @@ manual entry when it is absent — the extension is never required.
 
 | File | Role |
 | --- | --- |
-| `src/content-script.ts` | Page-side bridge on the Gubbins origins: broadcasts `EXTENSION_READY`, validates inbound messages with the shared `parseExtensionMessage` (origin + signature + Zod), parses fetched HTML with the shared Strategy parsers, posts `SCRAPE_RESULT`/`SCRAPE_ERROR`. Also receives active-tab scrapes routed from the background worker and posts them into the page as `ACTIVE_TAB_RESULT`/`ACTIVE_TAB_ERROR`. |
+| `src/content-script.ts` | Page-side bridge on the Gubbins origins: broadcasts `EXTENSION_READY` (with the wire generation it speaks), validates inbound messages with the shared `parseExtensionMessage` (origin + signature + Zod), parses fetched HTML with the shared Strategy parsers, posts `SCRAPE_RESULT`/`SCRAPE_ERROR`. Also receives active-tab scrapes routed from the background worker and posts them into the page as `ACTIVE_TAB_RESULT`/`ACTIVE_TAB_ERROR`. |
 | `src/background.ts` | CORS-bypassing fetcher (MV3 service worker — no DOM, so parsing lives in a content script). Maps transport failures to the §9.4.2 error taxonomy. Also hosts the **active-tab** trigger (toolbar click / "Add to Gubbins" context menu): injects `active-tab-scrape.js` into the Amazon tab and routes the result to an open PWA tab (or queues it). |
 | `src/active-tab-scrape.ts` | Injected into the user's **live Amazon tab** (Path A2) via `chrome.scripting.executeScript` under the `activeTab` permission; runs the shared `runParser` against the rendered DOM and messages the outcome back to the background worker. |
 | `manifest.json` | MV3 manifest. Content script injects on the Gubbins app pages only (see below); `host_permissions` allow **fetching** supplier pages; the `activeTab`/`scripting`/`contextMenus` permissions drive the Amazon active-tab flow **without** a broad host grant. |
@@ -18,6 +18,21 @@ manual entry when it is absent — the extension is never required.
 The protocol schema (`src/features/scraping/protocol.ts`) and the Strategy parsers
 (`src/features/scraping/parsers/`) are **shared with the PWA** and unit-tested there, so the
 wire contract and DOM-drift handling cannot drift between the two halves.
+
+### Wire versioning (issue #664)
+
+The app and this extension are updated independently, so they routinely run a generation apart.
+`PROTOCOL_VERSION` in `protocol.ts` is the wire generation, and each peer announces the one it
+speaks — the extension in `EXTENSION_READY`, the app in its answering `APP_READY`. Each side then
+gates a capability on the *other's* number (`peerSupports`) instead of on "a peer exists", so a
+request that would be dropped in silence is never sent, and an unsolicited active-tab payload the
+app could not read is held in the queue rather than lost.
+
+**When you add a message kind:** add its capability to `PROTOCOL_CAPABILITY_VERSIONS`, bump
+`PROTOCOL_VERSION` to that generation, and bump `manifest.json`'s `version` so a user can see
+which build they have (the app shows it under Settings → Product lookup). `MIN_PROTOCOL_VERSION`
+is a separate, deliberate decision: raise it only when an older peer genuinely cannot be worked
+with, because doing so replaces its capabilities with an "update the extension" message.
 
 ### Where the content script runs (issue #493)
 

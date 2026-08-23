@@ -337,15 +337,25 @@ async function writeQueue(queue: readonly QueuedScrape[]): Promise<void> {
   }
 }
 
-/** Push one already-correlated scrape to a specific PWA tab; resolves false if it can't. */
+/**
+ * Push one already-correlated scrape to a specific PWA tab; resolves false if it can't.
+ *
+ * "Can't" now covers two cases, not one. The send may fail outright (no content script in that
+ * tab), and the content script may *refuse* — it answers `{ delivered: false }` when the app on
+ * its page speaks a wire generation too old to understand an active-tab payload (issue #664).
+ * Before that refusal existed, the send resolved, this returned true, and the caller cleared the
+ * queue: the user's scrape was dropped into an app that discarded it, with no trace on either
+ * side. Only an explicit `false` counts as a refusal, so a content script that answers nothing
+ * (every build before 1.7.0) still reads as delivered.
+ */
 async function sendToTab(tabId: number, item: QueuedScrape): Promise<boolean> {
   try {
-    await chrome.tabs.sendMessage(tabId, {
+    const reply = (await chrome.tabs.sendMessage(tabId, {
       kind: 'DELIVER_ACTIVE_TAB',
       requestId: item.requestId,
       outcome: item.outcome,
-    });
-    return true;
+    })) as { delivered?: boolean } | undefined;
+    return reply?.delivered !== false;
   } catch {
     // The tab has no ready Gubbins content script (not the PWA, or not yet injected).
     return false;
@@ -377,12 +387,19 @@ async function deliverToPwa(outcome: ActiveTabOutcome): Promise<void> {
   if (!delivered) await writeQueue([...(await readQueue()), item]);
 }
 
-/** Flush any queued scrapes to a freshly-ready PWA tab, then clear the queue. */
+/**
+ * Flush any queued scrapes to a freshly-ready PWA tab, keeping back anything it would not take.
+ *
+ * A tab that refuses a payload (an app too old to understand it — see {@link sendToTab}) must not
+ * have it cleared out from under it: the PWA updates itself, so the *next* `PWA_READY` from that
+ * same tab is the thing that finally delivers it (issue #664).
+ */
 async function flushQueueTo(tabId: number): Promise<void> {
   const queue = await readQueue();
   if (queue.length === 0) return;
-  for (const item of queue) await sendToTab(tabId, item);
-  await writeQueue([]);
+  const undelivered: QueuedScrape[] = [];
+  for (const item of queue) if (!(await sendToTab(tabId, item))) undelivered.push(item);
+  await writeQueue(undelivered);
 }
 
 /** Inject the active-tab scraper into the user's Amazon tab (explicit-gesture only). */

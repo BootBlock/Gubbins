@@ -215,14 +215,19 @@ export function RefreshPricesButton({ item, parts }: { item: Item; parts: readon
       return;
     }
 
-    if (!bridge.ready) {
+    // A peer that does not speak the scrape capability is no more use here than no peer at all
+    // (issue #664), but it needs a different sentence: the extension *is* installed, so telling
+    // the user to install it would send them round a loop they cannot leave.
+    if (!bridge.supports('scrape')) {
       show({
         tone: 'warning',
         icon: <WarningIcon />,
         heading: 'Companion extension needed',
-        message:
-          'Live prices are fetched by the Gubbins companion browser extension. Install and enable ' +
-          'it, then try again.',
+        message: bridge.ready
+          ? 'The installed Gubbins companion extension is too old to fetch prices. Rebuild and ' +
+            'reload it, then try again.'
+          : 'Live prices are fetched by the Gubbins companion browser extension. Install and ' +
+            'enable it, then try again.',
       });
       return;
     }

@@ -225,12 +225,15 @@ export function CategoryLookupPanel({
   /**
    * The extension's privileged fetch, or undefined to fetch directly.
    *
-   * A `null` outcome means the extension is present but did not answer (an older build with no
-   * `DATA_FETCH_REQUEST` handler): reported as a network failure rather than silently falling back
-   * to a direct fetch, because that fallback would cross to the network on a path the user has not
-   * consented to.
+   * Offered only when the peer speaks the data-fetch capability (issue #664) — an older build
+   * would drop the request in silence, and the consent flow below is the honest way to reach the
+   * database without it.
+   *
+   * A `null` outcome means a peer that claims the capability still did not answer: reported as a
+   * network failure rather than silently falling back to a direct fetch, because that fallback
+   * would cross to the network on a path the user has not consented to.
    */
-  const bridgeFetcher: LookupFetcher | undefined = bridge.ready
+  const bridgeFetcher: LookupFetcher | undefined = bridge.supports('dataFetch')
     ? async (request) => {
         const outcome = await bridge.fetchDataUrl(request.url);
         if (outcome === null) return { ok: false, failure: { code: 'NETWORK' } };
@@ -257,7 +260,7 @@ export function CategoryLookupPanel({
   /** Prefer the privileged extension; otherwise ask for consent to *these* hosts first. */
   const start = (lookup: RunnableLookup) => {
     const consented = lookup.provider.hosts.every((host) => consentHosts.includes(host.toLowerCase()));
-    if (bridge.ready || consented) void runSearch(lookup);
+    if (bridgeFetcher !== undefined || consented) void runSearch(lookup);
     else setConsentFor(lookup.provider);
   };
 

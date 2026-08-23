@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { Item, SupplierPart } from '@/db/repositories';
+import { peerSupports, type ProtocolCapability } from '@/features/scraping/protocol';
 import { RefreshPricesButton } from './RefreshPricesButton';
 
 const spies = vi.hoisted(() => ({
@@ -8,7 +9,7 @@ const spies = vi.hoisted(() => ({
   show: vi.fn(),
   requestScrape: vi.fn(() => 'req-1'),
   clear: vi.fn(),
-  bridge: { ready: true } as { ready: boolean },
+  bridge: { ready: true, protocol: 5 } as { ready: boolean; protocol: number },
 }));
 
 // The item's supplier lookup module is on.
@@ -23,6 +24,8 @@ vi.mock('@/features/scraping', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/scraping')>()),
   useScrapeBridge: () => ({
     ready: spies.bridge.ready,
+    supports: (capability: ProtocolCapability) =>
+      spies.bridge.ready && peerSupports(spies.bridge.protocol, capability),
     requests: {},
     requestScrape: spies.requestScrape,
     clear: spies.clear,

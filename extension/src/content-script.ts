@@ -20,8 +20,12 @@
  * message from another *window* on the app's own origin is dropped too — the app talks to itself.
  */
 import {
+  ASSUMED_PROTOCOL_VERSION,
   makeMessage,
   parseExtensionMessage,
+  peerProtocolVersion,
+  peerSupports,
+  PROTOCOL_VERSION,
   type DataFetchRequestMessage,
   type ProductLookupRequestMessage,
   type ProductLookupResultPayload,
@@ -35,8 +39,22 @@ import { OPEN_FOOD_FACTS_HOST } from '../../src/features/scraping/product-lookup
 import { isGubbinsAppUrl } from '../../src/features/scraping/app-origins';
 import type { ScrapeErrorType } from '../../src/features/scraping/protocol';
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const trustedOrigins = [window.location.origin];
+
+/**
+ * The wire generation the PWA on this page speaks, learned from its `APP_READY` (issue #664).
+ *
+ * `null` means it has not answered — which, once the page has had a moment, means an app build
+ * that predates negotiation and therefore speaks {@link ASSUMED_PROTOCOL_VERSION}. Read through
+ * {@link appProtocolVersion} so the two cases are handled in one place.
+ */
+let appProtocol: number | null = null;
+
+/** The generation to credit the app with: what it announced, or the pre-negotiation default. */
+function appProtocolVersion(): number {
+  return appProtocol ?? ASSUMED_PROTOCOL_VERSION;
+}
 
 type FetchReply = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
 type LookupReply =
@@ -63,7 +81,7 @@ function post(message: unknown): void {
 }
 
 function announce(): void {
-  post(makeMessage('EXTENSION_READY', { version: VERSION }));
+  post(makeMessage('EXTENSION_READY', { version: VERSION, protocol: PROTOCOL_VERSION }));
 }
 
 async function handleScrape(msg: ScrapeRequestMessage): Promise<void> {
@@ -209,23 +227,39 @@ function install(): void {
     if (msg?.type === 'SCRAPE_REQUEST') void handleScrape(msg);
     else if (msg?.type === 'PRODUCT_LOOKUP_REQUEST') void handleLookup(msg);
     else if (msg?.type === 'DATA_FETCH_REQUEST') void handleDataFetch(msg);
+    // The app's answer to our hello (issue #664): remember the generation it speaks, so a payload
+    // it would silently drop is held back rather than posted into the void. Nothing is replied to
+    // — answering an `APP_READY` with an `EXTENSION_READY` would bounce the two forever.
+    else if (msg?.type === 'APP_READY') appProtocol = peerProtocolVersion(msg.payload);
   });
 
   /**
    * Receive an active-tab Amazon scrape the background worker routes to this PWA tab (Path A2)
-   * and post it into the page as a validated ACTIVE_TAB_RESULT/ERROR. The extension generates
+   * and post it into the page as a validated ACTIVE_TAB_RESULT/ERROR — unless the app on this page
+   * speaks a generation that would not understand it, in which case the worker is told so and
+   * keeps the payload queued (issue #664). The extension generates
    * the correlation id (the PWA never requested this), which the PWA bridge uses to dedupe a
    * payload delivered to more than one open tab. The payload still passes through the same
    * `parseExtensionMessage` origin/shape validation on the PWA side — this only *posts* it.
    */
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const msg = message as { kind?: string; requestId?: string; outcome?: ActiveTabOutcome } | null;
     if (msg?.kind !== 'DELIVER_ACTIVE_TAB' || typeof msg.requestId !== 'string' || !msg.outcome) return;
+    // An app too old to know `ACTIVE_TAB_RESULT` drops it in silence (§9.1) and the worker, seeing
+    // the send resolve, clears its queue — so the user's "Add to Gubbins" click is lost with no
+    // trace on either side. Reporting the refusal instead makes the worker re-queue it, and the
+    // PWA updates itself, so the next open collects it (issue #664).
+    if (!peerSupports(appProtocolVersion(), 'activeTab')) {
+      sendResponse({ delivered: false });
+      return false;
+    }
     post(
       msg.outcome.ok
         ? makeMessage('ACTIVE_TAB_RESULT', msg.outcome.payload, msg.requestId)
         : makeMessage('ACTIVE_TAB_ERROR', msg.outcome.error, msg.requestId),
     );
+    sendResponse({ delivered: true });
+    return false;
   });
 
   // The PWA is a single-page app that may mount its listener slightly after we inject,

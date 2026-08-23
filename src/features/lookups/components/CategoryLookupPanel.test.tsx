@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
+import { peerSupports, PROTOCOL_VERSION, type ProtocolCapability } from '@/features/scraping/protocol';
 
 /**
  * Behaviour tests for {@link CategoryLookupPanel} — the whole flow's contract.
@@ -25,6 +26,9 @@ vi.mock('@/components/foundry', async (orig) => ({
 
 const bridge = {
   ready: false,
+  /** The wire generation the fake extension speaks — drives `supports` through the real table. */
+  protocol: PROTOCOL_VERSION,
+  supports: (capability: ProtocolCapability) => bridge.ready && peerSupports(bridge.protocol, capability),
   fetchDataUrl: vi.fn(async () => null as { ok: true; body: string } | null),
 };
 vi.mock('@/features/scraping', () => ({ useScrapeBridge: () => bridge }));

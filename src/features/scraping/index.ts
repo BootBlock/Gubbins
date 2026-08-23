@@ -57,7 +57,12 @@ export {
 } from './price-refresh';
 export { SUPPORTED_SUPPLIER_LABELS } from './parsers/registry';
 export { classifySupplierUrl, isAllowedSupplierUrl, type UrlRefusal } from './parsers/suppliers';
-export { ScrapeBridgeProvider, useScrapeBridge } from './ScrapeBridgeContext';
+export {
+  ScrapeBridgeProvider,
+  useScrapeBridge,
+  useScrapeBridgeStatus,
+  type BridgeStatus,
+} from './ScrapeBridgeContext';
 export { ScrapeSupplierPanel } from './components/ScrapeSupplierPanel';
 export { ProductLookupPanel } from './components/ProductLookupPanel';
 export { ScrapeReviewDialog } from './components/ScrapeReviewDialog';

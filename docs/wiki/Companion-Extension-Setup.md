@@ -29,6 +29,30 @@ those controls stay hidden — nothing to configure and nothing running in the b
 > This is the one feature that reaches out to the web, and only when *you* trigger it on a page.
 > The rest of Gubbins stays fully [[offline and local|How-Your-Data-Is-Stored]].
 
+## Keeping it up to date
+
+Gubbins updates itself; the extension does not. The app is served from the web and refreshes on
+its own, while the extension is a folder you loaded into your browser by hand — so it only
+changes when you rebuild it and reload it on your browser's extensions page. That means the two
+can end up a version apart, with the extension knowing nothing about a feature the app has since
+gained.
+
+The two now tell each other which version of their shared language they speak, so the app can
+work out what your extension can actually do:
+
+- **Settings → Product lookup → Companion extension** names the extension it is connected to,
+  with its version number. Quote that line if you ever report a problem with scraping or lookups.
+- A feature the extension is too old to understand is **not offered**. A barcode lookup goes
+  straight to the online database instead of waiting on an extension that would ignore it, and a
+  **Scrape** control simply stays hidden rather than appearing and then doing nothing.
+- If the extension is too old to work with at all, that same settings row says so and asks you
+  to update it.
+
+> **💡 Tip**
+> After rebuilding the extension, open your browser's extensions page and press **Reload** on
+> it, then reload the Gubbins tab. The version shown in Settings is how you confirm the new
+> build is the one you are talking to.
+
 ## Where it works
 
 The extension talks to Gubbins itself and nowhere else — the hosted app at

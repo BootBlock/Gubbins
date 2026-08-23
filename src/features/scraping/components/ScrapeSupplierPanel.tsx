@@ -101,9 +101,11 @@ export function ScrapeSupplierPanel({
     }
   }, [request, onResult, show, bridge, t]);
 
-  // §9.3: the Scrape control only exists once the extension has announced itself — and only
-  // when the Product & supplier lookup module is switched on (Modular UI).
-  if (!bridge.ready || !scrapingEnabled) return null;
+  // §9.3: the Scrape control only exists once an extension that actually speaks the scrape
+  // capability has announced itself (issue #664) — and only when the Product & supplier lookup
+  // module is switched on (Modular UI). Gating on mere readiness would offer the button to a peer
+  // that drops the request in silence, leaving it to time out with nothing to show for it.
+  if (!bridge.supports('scrape') || !scrapingEnabled) return null;
 
   const trimmed = url.trim();
   const isScraping = request?.status === 'SCRAPING';

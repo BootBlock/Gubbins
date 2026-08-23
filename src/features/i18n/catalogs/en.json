@@ -2118,5 +2118,15 @@
   "field.colour.format.rgb": "RGB",
   "field.colour.format.hsl": "HSL",
   "field.colour.format.hsb": "HSB",
-  "field.colour.format.name": "Colour name"
+  "field.colour.format.name": "Colour name",
+  "scraping.extension.label": "Companion extension",
+  "scraping.extension.status.connected": "Connected",
+  "scraping.extension.status.outdated": "Update needed",
+  "scraping.extension.status.absent": "Not detected",
+  "scraping.extension.description.connected": "Version {version}, speaking protocol generation {protocol}.",
+  "scraping.extension.description.absent": "No companion extension has announced itself on this page.",
+  "scraping.extension.unknownVersion": "unknown",
+  "scraping.extension.hint": "The **companion browser extension** fetches supplier pages, barcodes and open-database records on the app’s behalf.\n\nThe app and the extension are updated separately, so they can end up a generation apart. Each announces the **protocol generation** it speaks, and a capability is offered only when the extension actually understands it — which is why a barcode lookup falls back to the online path instead of waiting on an extension that would ignore it.\n\nQuote the version here if you ever report a problem with scraping or lookups.",
+  "scraping.extension.outdated.heading": "Update the companion extension",
+  "scraping.extension.outdated.body": "The installed extension speaks a protocol generation this version of Gubbins can no longer work with. Rebuild it and reload it on your browser’s extensions page."
 }

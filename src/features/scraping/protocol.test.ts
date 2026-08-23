@@ -6,11 +6,19 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  ASSUMED_PROTOCOL_VERSION,
   EXTENSION_SOURCE,
   extensionMessageSchema,
+  isPeerTooOld,
   makeMessage,
+  MIN_PROTOCOL_VERSION,
   parseExtensionMessage,
+  peerProtocolVersion,
+  peerSupports,
+  PROTOCOL_CAPABILITY_VERSIONS,
+  PROTOCOL_VERSION,
   SCRAPE_ERROR_TYPES,
+  type ProtocolCapability,
   type ScrapeResultPayload,
 } from './protocol';
 
@@ -270,5 +278,60 @@ describe('requestId correlation (§9 multi-scrape)', () => {
   it('round-trips the requestId on a valid result', () => {
     const parsed = parseExtensionMessage(makeMessage('SCRAPE_RESULT', validResult, 'req-7'), ctx);
     expect(parsed?.type === 'SCRAPE_RESULT' && parsed.requestId).toBe('req-7');
+  });
+});
+
+describe('wire-version negotiation (issue #664)', () => {
+  it('validates a hello carrying a version and a generation, in either direction', () => {
+    for (const type of ['EXTENSION_READY', 'APP_READY'] as const) {
+      const msg = makeMessage(type, { version: '1.7.0', protocol: PROTOCOL_VERSION });
+      expect(parseExtensionMessage(msg, ctx)?.type).toBe(type);
+    }
+  });
+
+  it('still validates a hello from a peer that predates negotiation', () => {
+    // Dropping it would turn an out-of-date peer into an invisible one — the very failure the
+    // negotiation exists to remove — so every field, and the payload itself, stays optional.
+    expect(parseExtensionMessage(makeMessage('EXTENSION_READY', { version: '1.6.0' }), ctx)).not.toBeNull();
+    expect(parseExtensionMessage(makeMessage('EXTENSION_READY'), ctx)).not.toBeNull();
+  });
+
+  it('refuses a generation that is not a positive whole number', () => {
+    for (const protocol of [0, -1, 2.5, '3']) {
+      const msg = { source: EXTENSION_SOURCE, type: 'EXTENSION_READY', payload: { protocol } };
+      expect(parseExtensionMessage(msg, ctx)).toBeNull();
+    }
+  });
+
+  it('reads a missing generation as the pre-negotiation set, not as zero', () => {
+    expect(peerProtocolVersion(undefined)).toBe(ASSUMED_PROTOCOL_VERSION);
+    expect(peerProtocolVersion({})).toBe(ASSUMED_PROTOCOL_VERSION);
+    expect(peerProtocolVersion({ protocol: 2 })).toBe(2);
+  });
+
+  it('gates each capability on the generation it arrived in', () => {
+    const capabilities = Object.keys(PROTOCOL_CAPABILITY_VERSIONS) as ProtocolCapability[];
+    for (const capability of capabilities) {
+      const introduced = PROTOCOL_CAPABILITY_VERSIONS[capability];
+      expect(peerSupports(introduced, capability)).toBe(true);
+      expect(peerSupports(introduced - 1, capability)).toBe(false);
+      expect(peerSupports(PROTOCOL_VERSION, capability)).toBe(true);
+      // No peer at all supports nothing — the same answer a control needs before one announces.
+      expect(peerSupports(null, capability)).toBe(false);
+    }
+  });
+
+  it('offers a peer below the minimum nothing at all, and flags it as too old', () => {
+    const belowMinimum = MIN_PROTOCOL_VERSION - 1;
+    expect(isPeerTooOld(belowMinimum)).toBe(true);
+    expect(peerSupports(belowMinimum, 'scrape')).toBe(false);
+    expect(isPeerTooOld(MIN_PROTOCOL_VERSION)).toBe(false);
+    expect(isPeerTooOld(null)).toBe(false); // absent is not outdated — there is nothing to update
+  });
+
+  it('this build speaks a generation at least as new as every capability it knows', () => {
+    for (const introduced of Object.values(PROTOCOL_CAPABILITY_VERSIONS)) {
+      expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(introduced);
+    }
   });
 });

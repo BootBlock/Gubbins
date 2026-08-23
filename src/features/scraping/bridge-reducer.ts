@@ -51,9 +51,26 @@ export interface ProductLookupState {
   readonly error: ScrapeErrorPayload | null;
 }
 
+/**
+ * What the extension told us about itself in its `EXTENSION_READY` (issue #664).
+ *
+ * Kept so a capability can be gated on the generation the peer actually speaks rather than on
+ * "a peer exists", and so a support report has something to name: before this, the app read the
+ * version off the wire and discarded it, leaving "the lookup button does nothing" with no way
+ * to reach its cause.
+ */
+export interface BridgePeer {
+  /** The extension's own build version, when it announced one (diagnostics only). */
+  readonly version: string | null;
+  /** The wire generation it speaks — see `PROTOCOL_VERSION`. Never null: a silent hello is assumed. */
+  readonly protocol: number;
+}
+
 export interface BridgeState {
   /** True once an EXTENSION_READY has been received — gates the bridge affordances (§9.3). */
   readonly ready: boolean;
+  /** The announcing peer, or null while none has announced itself. */
+  readonly peer: BridgePeer | null;
   /** In-flight and recently-finished scrapes, keyed by `requestId`. */
   readonly requests: Readonly<Record<string, ScrapeRequestState>>;
   /** In-flight and recently-finished product lookups, keyed by `requestId` (point 2). */
@@ -64,13 +81,14 @@ export interface BridgeState {
 
 export const initialBridgeState: BridgeState = {
   ready: false,
+  peer: null,
   requests: {},
   lookups: {},
   incoming: {},
 };
 
 export type BridgeAction =
-  | { type: 'READY' }
+  | { type: 'READY'; peer: BridgePeer }
   | { type: 'REQUEST'; id: string; url: string }
   | { type: 'RESULT'; id: string; payload: ScrapeResultPayload }
   | { type: 'ERROR'; id: string; payload: ScrapeErrorPayload }
@@ -131,9 +149,18 @@ function addIncoming(state: BridgeState, id: string, entry: IncomingScrapeState)
 
 export function bridgeReducer(state: BridgeState, action: BridgeAction): BridgeState {
   switch (action.type) {
-    case 'READY':
-      // Idempotent: a re-broadcast just confirms readiness, never disturbs a request.
-      return state.ready ? state : { ...state, ready: true };
+    case 'READY': {
+      // The content script announces itself several times over (§9.3), so a re-broadcast must
+      // never disturb a request — but it may still *correct* what we know about the peer, which
+      // matters when the user reloads a rebuilt extension into a live tab. Identity is preserved
+      // when nothing actually changed, so the common repeat costs no re-render.
+      const same =
+        state.ready &&
+        state.peer !== null &&
+        state.peer.protocol === action.peer.protocol &&
+        state.peer.version === action.peer.version;
+      return same ? state : { ...state, ready: true, peer: action.peer };
+    }
     case 'REQUEST':
       return {
         ...state,

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { peerSupports, PROTOCOL_VERSION, type ProtocolCapability } from '../protocol';
 
 /**
  * Behaviour tests for {@link ScrapeSupplierPanel}'s app-side allow-list gate (issue #667).
@@ -20,6 +21,9 @@ vi.mock('@/components/foundry', async (orig) => ({
 
 const bridge = {
   ready: true,
+  /** The wire generation the fake extension speaks — drives `supports` through the real table. */
+  protocol: PROTOCOL_VERSION,
+  supports: (capability: ProtocolCapability) => bridge.ready && peerSupports(bridge.protocol, capability),
   requests: {} as Record<string, unknown>,
   requestScrape: vi.fn(() => 'req-1'),
   clear: vi.fn(),
@@ -30,6 +34,7 @@ import { ScrapeSupplierPanel } from './ScrapeSupplierPanel';
 
 beforeEach(() => {
   bridge.ready = true;
+  bridge.protocol = PROTOCOL_VERSION;
   bridge.requests = {};
   show.mockClear();
   bridge.requestScrape.mockClear();

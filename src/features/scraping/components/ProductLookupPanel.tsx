@@ -124,8 +124,11 @@ export function ProductLookupPanel({
 
   const submit = () => {
     if (trimmed.length === 0 || isLooking) return;
-    // Prefer the privileged extension when present; otherwise go online — gated by consent.
-    if (bridge.ready) {
+    // Prefer the privileged extension when it actually speaks the lookup capability; otherwise go
+    // online — gated by consent. An extension too old to know PRODUCT_LOOKUP_REQUEST drops it in
+    // silence (§9.1), so preferring it on readiness alone spent the whole request deadline to
+    // arrive nowhere, when the extension-free path beside it works (issue #664).
+    if (bridge.supports('productLookup')) {
       setRequestId(bridge.requestLookup(trimmed));
     } else if (allowOnline) {
       void runOnline();

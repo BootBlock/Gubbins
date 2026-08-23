@@ -30,6 +30,10 @@ export const EXTENSION_SOURCE = 'HARDWARE_TRACKER_EXT' as const;
  * so the PWA can dedupe re-delivery. There is no `ACTIVE_TAB_REQUEST`: the request originates
  * outside the page, in the extension, on an explicit user gesture.
  *
+ * `APP_READY` is the PWA's mirror of `EXTENSION_READY` (issue #664): the app announces the wire
+ * generation *it* speaks, so the extension can tell an app that would understand a payload from
+ * one that would drop it in silence, and hold the payload back instead of losing it.
+ *
  * The `DATA_FETCH_*` trio is the **category data lookup** (issue #616): the extension fetches an
  * open database's JSON on the PWA's behalf, returning the **raw body** for the PWA's own pure
  * provider parser to read. Deliberately *not* a `PRODUCT_LOOKUP`-shaped message that names a
@@ -41,6 +45,7 @@ export const EXTENSION_SOURCE = 'HARDWARE_TRACKER_EXT' as const;
  */
 export const EXTENSION_MESSAGE_TYPES = [
   'EXTENSION_READY',
+  'APP_READY',
   'SCRAPE_REQUEST',
   'SCRAPE_RESULT',
   'SCRAPE_ERROR',
@@ -54,6 +59,103 @@ export const EXTENSION_MESSAGE_TYPES = [
   'DATA_FETCH_ERROR',
 ] as const;
 export type ExtensionMessageType = (typeof EXTENSION_MESSAGE_TYPES)[number];
+
+/**
+ * The wire generation **this build** speaks (issue #664).
+ *
+ * The PWA and the companion extension are updated independently — the app refreshes itself from
+ * its own host through the service worker, while the extension is a `Load unpacked` build that
+ * only changes when the user rebuilds it and reloads it in `chrome://extensions`. So the two are
+ * routinely a generation apart, and §9.1 has the receiving side drop an unknown message in
+ * silence (anti-injection), which makes drift indistinguishable from a hostile page: a control
+ * spins, or a click does nothing, and neither side can say why.
+ *
+ * A single integer fixes that. Each peer announces the generation it speaks in its own hello
+ * ({@link extensionMessageSchema}'s `EXTENSION_READY` / `APP_READY`), and each capability is
+ * gated on the peer's number rather than on "a peer exists" — see {@link peerSupports}.
+ *
+ * **Bump this whenever a message kind is added**, and add the capability it belongs to in
+ * {@link PROTOCOL_CAPABILITY_VERSIONS}. The generations so far:
+ *
+ * | Gen | Added |
+ * | --- | --- |
+ * | 1 | the original `SCRAPE_*` trio |
+ * | 2 | `PRODUCT_LOOKUP_*` (keyless barcode lookup) |
+ * | 3 | `ACTIVE_TAB_*` (Amazon active-tab enrichment, Path A2) |
+ * | 4 | `DATA_FETCH_*` (category data lookup, issue #616) |
+ * | 5 | version negotiation itself — `protocol` on the hello, plus `APP_READY` |
+ */
+export const PROTOCOL_VERSION = 5;
+
+/**
+ * The oldest peer generation this build can still work with.
+ *
+ * Below it, the peer is not merely missing a capability — it cannot be talked to usefully at all,
+ * so the app says so plainly ("update the companion extension") instead of offering controls that
+ * would go unanswered. Every generation so far is still workable (a gen-1 peer scrapes, and the
+ * newer capabilities simply gate themselves off), so this sits at 1 until a change genuinely
+ * breaks an older peer. Raising it is a deliberate, user-visible act, not a side effect of adding
+ * a message kind — that is what {@link PROTOCOL_VERSION} is for.
+ */
+export const MIN_PROTOCOL_VERSION = 1;
+
+/**
+ * The generation assumed for a peer whose hello carries **no** `protocol` at all.
+ *
+ * Only a build older than generation 5 can do that, and every such build shipped the full
+ * generation-4 message set — so assuming 4 is what an installed pre-negotiation extension
+ * actually speaks, and gating on it changes nothing for a user who has one. Assuming 1 instead
+ * would switch off three working capabilities to describe a build that never existed.
+ */
+export const ASSUMED_PROTOCOL_VERSION = 4;
+
+/**
+ * The generation each bridge capability arrived in — the table {@link peerSupports} reads.
+ *
+ * A capability is a *group* of message kinds that stand or fall together (a request and its two
+ * replies), because a peer that cannot answer the request is no more use than one that cannot
+ * receive it.
+ */
+export const PROTOCOL_CAPABILITY_VERSIONS = {
+  /** `SCRAPE_REQUEST` → `SCRAPE_RESULT` / `SCRAPE_ERROR`. */
+  scrape: 1,
+  /** `PRODUCT_LOOKUP_REQUEST` → `PRODUCT_LOOKUP_RESULT` / `PRODUCT_LOOKUP_ERROR`. */
+  productLookup: 2,
+  /** `ACTIVE_TAB_RESULT` / `ACTIVE_TAB_ERROR`, pushed by the extension unsolicited. */
+  activeTab: 3,
+  /** `DATA_FETCH_REQUEST` → `DATA_FETCH_RESULT` / `DATA_FETCH_ERROR`. */
+  dataFetch: 4,
+} as const;
+export type ProtocolCapability = keyof typeof PROTOCOL_CAPABILITY_VERSIONS;
+
+/**
+ * Does a peer speaking `peerVersion` understand `capability`?
+ *
+ * `null` means no peer has announced itself yet, which supports nothing. A peer below
+ * {@link MIN_PROTOCOL_VERSION} supports nothing either, whatever its number implies: the app has
+ * already decided it cannot work with such a peer, so offering it one capability would contradict
+ * the message telling the user to update it.
+ */
+export function peerSupports(peerVersion: number | null, capability: ProtocolCapability): boolean {
+  if (peerVersion === null || isPeerTooOld(peerVersion)) return false;
+  return peerVersion >= PROTOCOL_CAPABILITY_VERSIONS[capability];
+}
+
+/** Is this peer too old to work with at all — i.e. below {@link MIN_PROTOCOL_VERSION}? */
+export function isPeerTooOld(peerVersion: number | null): boolean {
+  return peerVersion !== null && peerVersion < MIN_PROTOCOL_VERSION;
+}
+
+/**
+ * The generation a hello announces, defaulting a **missing** number to
+ * {@link ASSUMED_PROTOCOL_VERSION} rather than to zero.
+ *
+ * A hello is the one message whose payload is optional in both directions, so "said nothing" has
+ * to mean something definite — see {@link ASSUMED_PROTOCOL_VERSION} for why it means 4.
+ */
+export function peerProtocolVersion(payload: { readonly protocol?: number } | undefined): number {
+  return payload?.protocol ?? ASSUMED_PROTOCOL_VERSION;
+}
 
 /**
  * The strictly-typed payload an extension returns for a successful scrape (§9.2).
@@ -187,15 +289,38 @@ const sourceLiteral = z.literal(EXTENSION_SOURCE);
 const requestIdSchema = z.string().min(1);
 
 /**
+ * The payload both hellos carry: the peer's own build version (for diagnostics) and the wire
+ * generation it speaks (for capability gating — see {@link PROTOCOL_VERSION}).
+ *
+ * Every field stays optional, and the payload itself stays optional, so a hello from a peer that
+ * predates negotiation still validates rather than being dropped as malformed — which would turn
+ * an out-of-date peer into an invisible one, the exact failure this is here to remove. A missing
+ * `protocol` is read as {@link ASSUMED_PROTOCOL_VERSION} by {@link peerProtocolVersion}.
+ */
+const helloPayloadSchema = z
+  .object({ version: z.string(), protocol: z.number().int().positive() })
+  .partial()
+  .optional();
+
+/** The payload of either hello — `EXTENSION_READY` or `APP_READY`. */
+export type HelloPayload = z.infer<typeof helloPayloadSchema>;
+
+/**
  * The `ExtensionMessage<T>` union (§9.2). A discriminated union on `type` keeps the
- * payload strongly typed per kind. `EXTENSION_READY` carries an optional version
- * string and is otherwise payload-free; the three scrape kinds carry a `requestId`.
+ * payload strongly typed per kind. The two hellos (`EXTENSION_READY` from the extension,
+ * `APP_READY` from the PWA) carry an optional version/generation payload; the correlated
+ * request kinds carry a `requestId`.
  */
 export const extensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
     source: sourceLiteral,
     type: z.literal('EXTENSION_READY'),
-    payload: z.object({ version: z.string() }).partial().optional(),
+    payload: helloPayloadSchema,
+  }),
+  z.object({
+    source: sourceLiteral,
+    type: z.literal('APP_READY'),
+    payload: helloPayloadSchema,
   }),
   z.object({
     source: sourceLiteral,
@@ -301,12 +426,12 @@ export function parseExtensionMessage(raw: unknown, context: MessageOriginContex
 }
 
 /**
- * The constructor args for a given message kind: `EXTENSION_READY` takes only an
- * optional payload; the three scrape kinds require `(payload, requestId)` so the
- * correlation id can never be forgotten at a call site (the type enforces it).
+ * The constructor args for a given message kind: a hello takes only an optional
+ * payload; every correlated kind requires `(payload, requestId)` so the correlation
+ * id can never be forgotten at a call site (the type enforces it).
  */
-type MessageArgs<T extends ExtensionMessage['type']> = T extends 'EXTENSION_READY'
-  ? [payload?: Extract<ExtensionMessage, { type: 'EXTENSION_READY' }>['payload']]
+type MessageArgs<T extends ExtensionMessage['type']> = T extends 'EXTENSION_READY' | 'APP_READY'
+  ? [payload?: HelloPayload]
   : [payload: Extract<ExtensionMessage, { type: T }>['payload'], requestId: string];
 
 /** Build a well-formed envelope for the extension/content script to post. */
