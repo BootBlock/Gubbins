@@ -1638,6 +1638,7 @@
   "webhooks.log.refresh": "Aktualisieren",
   "webhooks.log.loading": "Abfrage bei der Bridge…",
   "webhooks.log.empty": "Noch nichts zugestellt. Senden Sie ein Testereignis, um einen Webhook durchgängig zu prüfen.",
+  "webhooks.log.restarted": "Ihre Bridge wurde neu gestartet und hat daher ein neues Zustellungsprotokoll begonnen. Alles, was davor aufgezeichnet wurde, ist verloren, und die Liste unten beginnt an dieser Stelle.",
   "webhooks.log.unconfigured": "Richten Sie eine Bridge ein, um zu sehen, was Ihre Webhooks tatsächlich getan haben — was zugestellt wurde, was fehlschlug und warum.",
   "webhooks.log.attempts.one": "{count} Versuch",
   "webhooks.log.attempts.other": "{count} Versuche",

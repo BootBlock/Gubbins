@@ -1944,7 +1944,7 @@ export const openapiDocument: JsonValue = {
               'application/json': {
                 schema: {
                   type: 'object',
-                  required: ['deliveries', 'latestSeq'],
+                  required: ['deliveries', 'latestSeq', 'logId'],
                   properties: {
                     deliveries: {
                       type: 'array',
@@ -1955,6 +1955,15 @@ export const openapiDocument: JsonValue = {
                       description:
                         'The highest sequence number assigned so far. Returned even when the page ' +
                         'is empty, so a poller can always advance its cursor.',
+                    },
+                    logId: {
+                      type: 'string',
+                      description:
+                        'Identifies this log instance. The log is in memory and its sequence ' +
+                        'numbers restart at zero with the bridge, so a poller that sees a ' +
+                        'different "logId" from the one it last saw must discard its cursor and ' +
+                        'read from the start — otherwise it silently skips everything the new ' +
+                        'log recorded before its next poll.',
                     },
                   },
                 },
@@ -1977,6 +1986,7 @@ export const openapiDocument: JsonValue = {
                     },
                   ],
                   latestSeq: 42,
+                  logId: '2b0f2a4e-9c1d-4f8a-9a55-6d7c1f0e3b21',
                 },
               },
             },

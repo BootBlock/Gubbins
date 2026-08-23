@@ -27,11 +27,14 @@
  * hard: a receiver's error body is useful for debugging ("invalid channel id"), but an unbounded one
  * would be both a memory risk and a way to pull arbitrary third-party content into the app's UI.
  *
- * Pure and I/O-free apart from the injected clock, so it tests directly.
+ * Pure and I/O-free apart from the injected clock and the id each instance mints for itself, so it
+ * tests directly.
  *
  * Imported by the bridge, so it must survive Node's **strip-only** loader: no `enum`, no
  * `namespace`, no TS parameter properties.
  */
+
+import { randomUUID } from 'node:crypto';
 
 /** How a delivery ended. */
 export type WebhookDeliveryOutcome =
@@ -89,6 +92,16 @@ export interface WebhookDeliveryLog {
   list(options?: { readonly since?: number; readonly limit?: number }): readonly WebhookDeliveryRecord[];
   /** The highest `seq` assigned so far — what a poller passes back as `since`. */
   latestSeq(): number;
+  /**
+   * This log instance's id, minted when the log is created and therefore **different after every
+   * bridge restart**.
+   *
+   * `seq` counts from zero again on each start, so a poller holding a cursor from the previous
+   * process would ask for records "after 57" from a log that has only reached 3 — and never see
+   * those three at all. The id makes that unambiguous: a different id means a different log, so the
+   * poller drops its cursor and reads from the start instead of guessing from the numbers.
+   */
+  logId(): string;
 }
 
 export interface WebhookDeliveryLogOptions {
@@ -118,6 +131,10 @@ function truncateDetail(detail: string | null): string | null {
 export function createWebhookDeliveryLog(options: WebhookDeliveryLogOptions = {}): WebhookDeliveryLog {
   const size = Math.max(1, options.size ?? DEFAULT_DELIVERY_LOG_SIZE);
   const now = options.now ?? Date.now;
+  // Minted here rather than taken as an option: the id's only job is to differ between instances,
+  // and an injected one could be passed the same value twice — which is precisely the state it
+  // exists to make visible.
+  const id = randomUUID();
   const records: WebhookDeliveryRecord[] = [];
   let seq = 0;
 
@@ -147,6 +164,10 @@ export function createWebhookDeliveryLog(options: WebhookDeliveryLogOptions = {}
 
     latestSeq(): number {
       return seq;
+    },
+
+    logId(): string {
+      return id;
     },
   };
 }

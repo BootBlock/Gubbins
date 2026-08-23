@@ -1614,8 +1614,14 @@ curl -H "Authorization: Bearer <YOUR_TOKEN>" \
 ```
 
 The response carries the page plus `latestSeq`, so a poller can advance its cursor even when the
-page comes back empty. Records are **newest first** and deliberately carry **no secret, signature,
-request header or query string**; the URL is reduced to its origin and path.
+page comes back empty, and `logId`, which identifies the log instance that answered. Records are
+**newest first** and deliberately carry **no secret, signature, request header or query string**;
+the URL is reduced to its origin and path.
+
+Watch `logId`: the log is in memory and its `seq` counter starts again at zero with the bridge, so a
+cursor from a previous run addresses records that no longer exist. A `logId` you have not seen
+before means a different log — discard the cursor and read from the start, or you will silently skip
+everything the new log recorded before your next poll.
 
 > **The log lives in bridge memory, and that is deliberate.** The bridge is read-only over a
 > snapshot that is **swapped wholesale on every hydration**, so a delivery outcome written back into

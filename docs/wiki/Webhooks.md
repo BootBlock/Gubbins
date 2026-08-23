@@ -146,6 +146,12 @@ attempt marked:
 > stops updating; come back and it catches up. Deliveries themselves carry on regardless — the log
 > is a window onto the bridge, not the thing doing the work.
 
+> **ℹ️ Note — restarting the bridge empties the log**
+> The bridge keeps this log in memory, so restarting it starts a fresh one and everything recorded
+> before is gone. Restarting to allow a private address is exactly the case where that matters, so
+> the page says the log started again rather than just showing a shorter list, and it picks the new
+> log up from its first delivery. The webhooks themselves are unaffected.
+
 If the log says **webhooks are switched off on your bridge**, that's different from *"nothing
 delivered yet"*: the bridge is running but its webhook delivery hasn't been enabled, so nothing is
 being sent at all. Turn it on in the bridge's own configuration.
