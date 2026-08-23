@@ -23,6 +23,10 @@ const checkoutMutateAsync = vi.fn().mockResolvedValue(undefined);
 let scanResult: Item | null = null;
 // What a typed/scanned short code resolves to (issue #338) — empty, one item, or ambiguous.
 let shortCodeMatches: Item[] = [];
+// What an item's stored Barcode field resolves to, and every value the overlay looked up —
+// the scanner resolves *any* symbology it captured, not only a valid GTIN (issue #506).
+let barcodeMatch: Item | null = null;
+const barcodeQueries: string[] = [];
 
 // The camera/decoder is neutered, but the props the overlay hands the hook are kept so a test can
 // play the part of the decode loop — specifically reporting the engine it resolved (issue #678).
@@ -68,7 +72,10 @@ vi.mock('@/db/repositories', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/db/repositories')>()),
   getItemRepository: () => ({
     getById: () => Promise.resolve(scanResult),
-    getByBarcode: () => Promise.resolve(null),
+    getByBarcode: (value: string) => {
+      barcodeQueries.push(value);
+      return Promise.resolve(barcodeMatch);
+    },
     findByShortCode: () => Promise.resolve(shortCodeMatches),
   }),
 }));
@@ -159,6 +166,8 @@ async function scan(item: Item, props: Partial<React.ComponentProps<typeof Scann
 beforeEach(() => {
   scanResult = null;
   shortCodeMatches = [];
+  barcodeMatch = null;
+  barcodeQueries.length = 0;
   adjustMutate.mockReset();
   moveMutateAsync.mockReset().mockResolvedValue(undefined);
   checkoutMutateAsync.mockReset().mockResolvedValue(undefined);
@@ -210,6 +219,8 @@ describe('ScannerOverlay — "What can I scan?" explainer', () => {
     expect(dialog).toHaveTextContent('Gubbins labels');
     expect(dialog).toHaveTextContent('Short codes');
     expect(dialog).toHaveTextContent('Product barcodes');
+    // …including the codes that are only a barcode because an item records them (issue #506).
+    expect(dialog).toHaveTextContent('Other barcodes');
     expect(dialog).toHaveTextContent(/Looking a product up online is optional/i);
 
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
@@ -294,12 +305,68 @@ describe('ScannerOverlay — printed short code', () => {
     );
   });
 
-  it('still reports an unrecognised code when no record carries it', async () => {
+  it('says nothing carries that code when no record does', async () => {
     render(<ScannerOverlay open onClose={vi.fn()} />);
 
     enter('DEADBEEF');
 
-    await waitFor(() => expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/isn’t a Gubbins/i));
+    await waitFor(() =>
+      expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/Nothing in your inventory/i),
+    );
+  });
+});
+
+/**
+ * Any code an item records in its Barcode field resolves — not only a valid GTIN (issue #506).
+ * The Add/Edit-item "Scan" button captures every symbology the decoder reads (Code 128, Code 39,
+ * ITF, …) verbatim into that field, so a scan of the same physical label has to find the item
+ * again; otherwise the app cannot read back what it just wrote.
+ */
+describe('ScannerOverlay — a stored barcode of any symbology (issue #506)', () => {
+  const enter = (value: string) => {
+    fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value } });
+    fireEvent.click(screen.getByTestId('scanner-manual-submit'));
+  };
+
+  it('resolves a Code 128 part label to the item that carries it', async () => {
+    barcodeMatch = { ...baseItem, barcode: 'RS-482-9021' };
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter('RS-482-9021');
+
+    expect(await screen.findByTestId('scanner-discrete-result')).toHaveTextContent('NE555 timer');
+    // Looked up exactly as scanned — the stored value is verbatim, so the match must be too.
+    expect(barcodeQueries).toContain('RS-482-9021');
+  });
+
+  it('looks a retail barcode up by its canonical GTIN, as before', async () => {
+    barcodeMatch = { ...baseItem, barcode: EAN13 };
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter(`  ${EAN13}  `);
+
+    expect(await screen.findByTestId('scanner-discrete-result')).toHaveTextContent('NE555 timer');
+    expect(barcodeQueries).toContain(EAN13);
+  });
+
+  it('prefers a stored barcode over a printed short code when both could match', async () => {
+    // Eight hex characters is both a label's short code and a value an item may record.
+    barcodeMatch = baseItem;
+    shortCodeMatches = [{ ...baseItem, id: 'item-2', name: 'Short-code item' }];
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter('A1B2C3D4');
+
+    expect(await screen.findByTestId('scanner-discrete-result')).toHaveTextContent('NE555 timer');
+  });
+
+  it('still names a website link rather than calling it an unknown code', async () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter('https://example.com/promo');
+
+    await waitFor(() => expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/website link/i));
+    expect(screen.queryByTestId('scanner-discrete-result')).toBeNull();
   });
 });
 

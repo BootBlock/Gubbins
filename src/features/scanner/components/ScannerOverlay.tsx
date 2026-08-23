@@ -208,23 +208,10 @@ function ScannerOverlayInner({
       };
 
       const code = parseScannedCode(raw);
-      if (!code) {
-        // Not a code the pure parser knows — but a short code names nothing on its own, so it
-        // can only be recognised by asking the database. Try that before giving up.
-        if (await resolveShortCode(raw)) return;
-        // A marketing QR resolves to a website link, not a Gubbins code or a barcode — name
-        // that plainly rather than a generic "unrecognised" (issue #59).
-        setNotice(
-          isStructuredQrPayload(raw)
-            ? 'That’s a website link, not a Gubbins code or a product barcode.'
-            : 'That code isn’t a Gubbins code or a recognised barcode.',
-        );
-        return;
-      }
 
       // A scanned location label jumps straight to that location (Phase 73). Validate
       // it against the loaded list, then hand off to the parent to select it + close.
-      if (code.kind === 'location') {
+      if (code?.kind === 'location') {
         const loc = locationRows.find((l) => l.id === code.id);
         if (!loc) {
           setNotice('No matching location found.');
@@ -236,18 +223,39 @@ function ScannerOverlayInner({
         return;
       }
 
-      // A retail barcode (GTIN): resolve it to an item that already records it; failing
-      // that, offer to create one (recommendation point 1). Never a dead end.
-      if (code.kind === 'gtin') {
-        const existing = await getItemRepository().getByBarcode(code.gtin);
-        if (existing) {
-          presentItem(existing);
+      if (code?.kind === 'item') {
+        const item = await getItemRepository().getById(code.id);
+        if (!item) {
+          setNotice('No matching item found.');
           return;
         }
-        // An eight-digit short code is also a syntactically valid EAN-8, so a label's own
-        // fallback code can arrive here. A retail barcode an item actually carries wins (above);
-        // failing that, try the short code before offering to create a product for it.
-        if (await resolveShortCode(raw)) return;
+        presentItem(item);
+        return;
+      }
+
+      // Anything that isn't a Gubbins code is a *barcode* as far as the app is concerned, and
+      // one lookup covers every symbology it stores (issue #506). The Add/Edit-item "Scan"
+      // button captures a valid retail GTIN in its canonical form, and every other decoded
+      // symbology — a Code 128 part label, a Code 39 asset tag, an ITF carton code — verbatim
+      // into an item's Barcode field. The read path has to accept the same range: "an item
+      // records this exact string" is a resolution in its own right, not a privilege of GTINs.
+      const barcode = code?.kind === 'gtin' ? code.gtin : raw.trim();
+      const existing = await getItemRepository().getByBarcode(barcode);
+      if (existing) {
+        presentItem(existing);
+        return;
+      }
+
+      // Failing that, a printed short code — which names nothing on its own, so it can only be
+      // recognised by asking the database. It comes second because a stored barcode is a value
+      // someone deliberately recorded against an item, while a short code is a derived prefix;
+      // the two overlap (eight hex characters is both a short code and a valid EAN-8), and the
+      // deliberate one should win.
+      if (await resolveShortCode(raw)) return;
+
+      // A retail barcode no item carries: offer to create one (recommendation point 1). Never
+      // a dead end.
+      if (code?.kind === 'gtin') {
         setNotice(null);
         feedback.current.confirm(confirmOpts);
         dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view for the prompt
@@ -257,12 +265,16 @@ function ScannerOverlayInner({
         return;
       }
 
-      const item = await getItemRepository().getById(code.id);
-      if (!item) {
-        setNotice('No matching item found.');
-        return;
-      }
-      presentItem(item);
+      // A marketing QR resolves to a website link, not a Gubbins code or a barcode — name
+      // that plainly rather than a generic "unrecognised" (issue #59). Anything else read this
+      // far is a perfectly good code that simply names nothing here — a Code 128 part label is
+      // a barcode whether or not an item records it — so the notice says *that*, and points at
+      // the field that would make it resolve next time (issue #506).
+      setNotice(
+        isStructuredQrPayload(raw)
+          ? 'That’s a website link, not a Gubbins code or a product barcode.'
+          : t('scanner.notice.unknownCode'),
+      );
     },
     [t, state.mode, queue, beepEnabled, hapticsEnabled, locationRows, onLocationScanned],
   );
@@ -748,6 +760,13 @@ function ScannerOverlayInner({
                 <span className="font-medium">Product barcodes</span> — a shop's EAN or UPC barcode. Gubbins
                 finds the item that already carries it, or offers to add a new item with the barcode saved to
                 it — and can look the product up to fill in its name and brand.
+              </span>
+            </li>
+            <li className="flex gap-3" data-testid="scanner-help-other-codes">
+              <SerialisedIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+              <span>
+                <span className="font-medium">{t('scanner.help.otherCodes.title')}</span> —{' '}
+                {t('scanner.help.otherCodes.body')}
               </span>
             </li>
             {nfcReady ? (
