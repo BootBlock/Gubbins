@@ -23,6 +23,7 @@ import { DieCutPrinterNotice } from './DieCutPrinterNotice';
 import { LabelCellPreview } from './LabelCellPreview';
 import { LabelSizeControls, type LabelSizeValue } from './LabelSizeControls';
 import { SheetLayoutControls } from './SheetLayoutControls';
+import { SheetPrinterNotice } from './SheetPrinterNotice';
 
 const COPY_OPTIONS = [1, 2, 4, 6, 8, 12, 24];
 
@@ -188,6 +189,9 @@ export function PrintLocationLabelDialog({
 
         {/* An exact-millimetre page needs a printer loaded with that exact label (issue #337). */}
         <DieCutPrinterNotice size={size} testId="loc-label-die-cut-printer" />
+
+        {/* A sheet tiled to a packet's die-cuts only lands on them at 100% scale (issue #514). */}
+        <SheetPrinterNotice size={size} layout={sheet} testId="loc-label-sheet-printer" />
 
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
           <LabelSizeControls

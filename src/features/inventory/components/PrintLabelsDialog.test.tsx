@@ -172,6 +172,31 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(screen.queryByTestId('labels-die-cut-printer')).toBeNull();
   });
 
+  it('cautions about the print scale once a die-cut sheet stock is chosen (issue #514)', () => {
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    // Plain paper is cut by hand along the guides, so a scaled print costs nothing but paper.
+    expect(screen.queryByTestId('labels-sheet-printer')).toBeNull();
+
+    chooseOption('label-sheet-layout', /21 per sheet/);
+    expect(screen.getByTestId('labels-sheet-printer').textContent).toContain('100%');
+
+    // Back on plain paper there is no registration to lose, so the notice goes away again.
+    chooseOption('label-sheet-layout', /18 per sheet — 60 × 42 mm/);
+    expect(screen.queryByTestId('labels-sheet-printer')).toBeNull();
+
+    // A hand-entered grid is stock the list doesn't carry — it needs the same 100% print.
+    chooseOption('label-sheet-layout', /Custom/);
+    const rows = screen.getByTestId('label-sheet-layout-rows') as HTMLInputElement;
+    fireEvent.change(rows, { target: { value: '4' } });
+    fireEvent.blur(rows);
+    expect(screen.getByTestId('labels-sheet-printer')).toBeTruthy();
+
+    // A die-cut size is one label per page, so its own notice takes over.
+    chooseOption('label-size', /50 .* 80 mm/);
+    expect(screen.queryByTestId('labels-sheet-printer')).toBeNull();
+    expect(screen.getByTestId('labels-die-cut-printer')).toBeTruthy();
+  });
+
   it('reveals width/height inputs for a custom die-cut size', () => {
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
     expect(screen.queryByTestId('label-size-width')).toBeNull();

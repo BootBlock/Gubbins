@@ -97,6 +97,22 @@ describe('PrintLocationLabelDialog — die-cut print target (issue #337)', () =>
   });
 });
 
+describe('PrintLocationLabelDialog — sheet print scale (issue #514)', () => {
+  it('cautions about the print scale once a die-cut sheet stock is chosen', () => {
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    // Plain paper is cut by hand along the guides, so a scaled print costs nothing but paper.
+    expect(screen.queryByTestId('loc-label-sheet-printer')).toBeNull();
+
+    chooseOption('loc-label-sheet-layout', /21 per sheet/);
+    expect(screen.getByTestId('loc-label-sheet-printer').textContent).toContain('100%');
+
+    // A die-cut size is one label per page, so its own notice takes over.
+    chooseOption('loc-label-size', /40 .* 30 mm/);
+    expect(screen.queryByTestId('loc-label-sheet-printer')).toBeNull();
+    expect(screen.getByTestId('loc-label-die-cut-printer')).toBeTruthy();
+  });
+});
+
 /** The printed fallback identifier — what still names the bin once its code is damaged (#338). */
 describe('PrintLocationLabelDialog — short-code fallback line', () => {
   it('prints the location’s short code by default, and drops it when the toggle is cleared', () => {

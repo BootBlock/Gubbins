@@ -19,6 +19,7 @@ import { DieCutPrinterNotice } from './DieCutPrinterNotice';
 import { LabelCellPreview } from './LabelCellPreview';
 import { LabelSizeControls, type LabelSizeValue } from './LabelSizeControls';
 import { SheetLayoutControls } from './SheetLayoutControls';
+import { SheetPrinterNotice } from './SheetPrinterNotice';
 
 /**
  * Batch label-sheet preview & print (spec §6 "Printable QR generation"; Phase 73
@@ -158,6 +159,9 @@ export function PrintLabelsDialog({
 
         {/* An exact-millimetre page needs a printer loaded with that exact label (issue #337). */}
         <DieCutPrinterNotice size={size} testId="labels-die-cut-printer" />
+
+        {/* A sheet tiled to a packet's die-cuts only lands on them at 100% scale (issue #514). */}
+        <SheetPrinterNotice size={size} layout={template.sheet} testId="labels-sheet-printer" />
 
         {/* Template controls */}
         <div className="grid gap-3 rounded-lg border border-border bg-card/40 p-3 sm:grid-cols-2">
