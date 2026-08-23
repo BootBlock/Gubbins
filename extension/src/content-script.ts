@@ -20,13 +20,13 @@
  * message from another *window* on the app's own origin is dropped too — the app talks to itself.
  */
 import {
-  ASSUMED_PROTOCOL_VERSION,
   makeMessage,
   parseExtensionMessage,
   peerProtocolVersion,
   peerSupports,
   PROTOCOL_VERSION,
   type DataFetchRequestMessage,
+  type ProtocolCapability,
   type ProductLookupRequestMessage,
   type ProductLookupResultPayload,
   type ScrapeErrorPayload,
@@ -45,15 +45,42 @@ const trustedOrigins = [window.location.origin];
 /**
  * The wire generation the PWA on this page speaks, learned from its `APP_READY` (issue #664).
  *
- * `null` means it has not answered — which, once the page has had a moment, means an app build
- * that predates negotiation and therefore speaks {@link ASSUMED_PROTOCOL_VERSION}. Read through
- * {@link appProtocolVersion} so the two cases are handled in one place.
+ * `null` means it has not said — an app build that predates negotiation, or one that has not
+ * answered our hello yet. Unlike the extension's own version, an app build number says nothing
+ * about the message set it knows, so there is nothing to recover it from.
  */
 let appProtocol: number | null = null;
 
-/** The generation to credit the app with: what it announced, or the pre-negotiation default. */
-function appProtocolVersion(): number {
-  return appProtocol ?? ASSUMED_PROTOCOL_VERSION;
+/**
+ * May we hand the app a `capability`'s payload?
+ *
+ * Only *positive* knowledge that the app is too old holds a payload back. An app that has said
+ * nothing is given the benefit of the doubt, because refusing it would break the active-tab
+ * import for every app build that predates negotiation — a real loss traded for a hypothetical
+ * one. What this does remove is the case the app told us about.
+ */
+function appSupports(capability: ProtocolCapability): boolean {
+  return appProtocol === null || peerSupports(appProtocol, capability);
+}
+
+/**
+ * Tell the background worker this Gubbins tab can receive queued active-tab scrapes.
+ *
+ * Sent twice on purpose. The first goes out with the rest of the handshake, so an app that never
+ * answers a hello still collects its queue exactly as before. The second goes out when the app
+ * *does* answer, because only then is {@link appProtocol} known — a flush before that would
+ * decide what the app can read from no information at all, and the queue is cleared of whatever
+ * it hands over.
+ */
+function announceTabReady(): void {
+  void chrome.runtime.sendMessage({ kind: 'PWA_READY' }).catch(() => undefined);
+}
+
+/** Record the generation the app announced, flushing the worker's queue the first time. */
+function learnApp(protocol: number): void {
+  const first = appProtocol === null;
+  appProtocol = protocol;
+  if (first) announceTabReady();
 }
 
 type FetchReply = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
@@ -228,9 +255,9 @@ function install(): void {
     else if (msg?.type === 'PRODUCT_LOOKUP_REQUEST') void handleLookup(msg);
     else if (msg?.type === 'DATA_FETCH_REQUEST') void handleDataFetch(msg);
     // The app's answer to our hello (issue #664): remember the generation it speaks, so a payload
-    // it would silently drop is held back rather than posted into the void. Nothing is replied to
+    // it would silently drop is held back rather than posted into the void. Nothing is posted back
     // — answering an `APP_READY` with an `EXTENSION_READY` would bounce the two forever.
-    else if (msg?.type === 'APP_READY') appProtocol = peerProtocolVersion(msg.payload);
+    else if (msg?.type === 'APP_READY') learnApp(peerProtocolVersion(msg.payload));
   });
 
   /**
@@ -249,7 +276,7 @@ function install(): void {
     // the send resolve, clears its queue — so the user's "Add to Gubbins" click is lost with no
     // trace on either side. Reporting the refusal instead makes the worker re-queue it, and the
     // PWA updates itself, so the next open collects it (issue #664).
-    if (!peerSupports(appProtocolVersion(), 'activeTab')) {
+    if (!appSupports('activeTab')) {
       sendResponse({ delivered: false });
       return false;
     }
@@ -270,7 +297,7 @@ function install(): void {
 
   // Tell the background worker this Gubbins tab is ready, so it can flush any active-tab
   // scrapes captured while no PWA tab was open (Path A2 "queue for the next open").
-  void chrome.runtime.sendMessage({ kind: 'PWA_READY' }).catch(() => undefined);
+  announceTabReady();
 }
 
 if (isGubbinsAppUrl(window.location.href)) install();

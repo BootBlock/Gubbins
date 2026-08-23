@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import { ScrapeBridgeProvider, useScrapeBridge } from './ScrapeBridgeContext';
-import { ASSUMED_PROTOCOL_VERSION, makeMessage, PROTOCOL_VERSION } from './protocol';
+import { makeMessage, PROTOCOL_VERSION } from './protocol';
 
 let bridge: ReturnType<typeof useScrapeBridge>;
 
@@ -64,17 +64,27 @@ describe('EXTENSION_READY carries a peer the app keeps', () => {
 
     expect(bridge.ready).toBe(true);
     expect(bridge.peer).toEqual({ version: '1.7.0', protocol: PROTOCOL_VERSION });
-    expect(bridge.peerOutdated).toBe(false);
+    expect(bridge.peerBehind).toBe(false);
   });
 
-  it('credits a hello with no generation at all with the pre-negotiation set', () => {
+  it('recovers the generation of a pre-negotiation build from its version', () => {
     mount();
-    // Every build before negotiation shipped the full generation-4 message set, so an installed
-    // one keeps all four capabilities rather than being demoted to scrape-only.
+    // 1.6.0 shipped the whole generation-4 message set, so it keeps all four capabilities.
     deliver(makeMessage('EXTENSION_READY', { version: '1.6.0' }));
 
-    expect(bridge.peer).toEqual({ version: '1.6.0', protocol: ASSUMED_PROTOCOL_VERSION });
+    expect(bridge.peer).toEqual({ version: '1.6.0', protocol: 4 });
     expect(bridge.supports('dataFetch')).toBe(true);
+    expect(bridge.peerBehind).toBe(true);
+  });
+
+  it('does not credit an older pre-negotiation build with capabilities it never had', () => {
+    mount();
+    // 1.2.0 predates the active-tab and data-lookup message sets entirely.
+    deliver(makeMessage('EXTENSION_READY', { version: '1.2.0' }));
+
+    expect(bridge.peer?.protocol).toBe(2);
+    expect(bridge.supports('productLookup')).toBe(true);
+    expect(bridge.supports('dataFetch')).toBe(false);
   });
 
   it('answers the hello with the app’s own, so the extension learns this generation', () => {
@@ -111,6 +121,6 @@ describe('capabilities are gated on the generation the peer speaks', () => {
     deliver(makeMessage('EXTENSION_READY', { version: '9.0.0', protocol: PROTOCOL_VERSION + 1 }));
 
     expect(bridge.supports('dataFetch')).toBe(true);
-    expect(bridge.peerOutdated).toBe(false);
+    expect(bridge.peerBehind).toBe(false);
   });
 });

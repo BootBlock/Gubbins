@@ -25,14 +25,19 @@ The app and this extension are updated independently, so they routinely run a ge
 `PROTOCOL_VERSION` in `protocol.ts` is the wire generation, and each peer announces the one it
 speaks — the extension in `EXTENSION_READY`, the app in its answering `APP_READY`. Each side then
 gates a capability on the *other's* number (`peerSupports`) instead of on "a peer exists", so a
-request that would be dropped in silence is never sent, and an unsolicited active-tab payload the
-app could not read is held in the queue rather than lost.
+request that would be dropped in silence is never sent.
+
+A build from before 1.7.0 announces no generation. Its version string is mapped back to one by
+`LEGACY_BUILD_PROTOCOL`, which records what each of those builds actually shipped (1.2.0 → 2,
+1.3.0 → 3, 1.4.0 → 4), so an old install is credited with exactly the capabilities it has. The
+app's build number carries no such meaning, so an app that announces nothing is given the benefit
+of the doubt instead: the content script holds an unsolicited active-tab payload back only when
+the app has *told* it that it would not understand it, and the worker then keeps that payload
+queued rather than clearing it.
 
 **When you add a message kind:** add its capability to `PROTOCOL_CAPABILITY_VERSIONS`, bump
 `PROTOCOL_VERSION` to that generation, and bump `manifest.json`'s `version` so a user can see
-which build they have (the app shows it under Settings → Product lookup). `MIN_PROTOCOL_VERSION`
-is a separate, deliberate decision: raise it only when an older peer genuinely cannot be worked
-with, because doing so replaces its capabilities with an "update the extension" message.
+which build they have (the app shows it under Settings → Product lookup).
 
 ### Where the content script runs (issue #493)
 

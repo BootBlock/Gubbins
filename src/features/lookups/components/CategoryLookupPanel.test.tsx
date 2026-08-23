@@ -137,6 +137,7 @@ beforeEach(() => {
     { match: 'query.wikidata.org', body: detailBody() },
   ];
   bridge.ready = false;
+  bridge.protocol = PROTOCOL_VERSION;
   bridge.fetchDataUrl.mockReset();
   bridge.fetchDataUrl.mockResolvedValue(null);
   prefState.lookupConsentHosts = [];
@@ -262,6 +263,19 @@ describe('CategoryLookupPanel — per-host consent gates the direct fetch', () =
     expect(bridge.fetchDataUrl).toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(prefState.lookupConsentHosts).toEqual([]);
+  });
+
+  it('asks for consent when the extension is too old to fetch for us (issue #664)', async () => {
+    // A pre-1.4.0 extension has no DATA_FETCH_REQUEST in its schema and drops the request in
+    // silence, so treating "an extension is present" as "it can fetch" spent the whole deadline
+    // to reach a NETWORK failure — when the app's own consented path works.
+    bridge.ready = true;
+    bridge.protocol = 3;
+    render(<CategoryLookupPanel item={item} runner={testRunner()} />);
+    fireEvent.click(screen.getByTestId('lookup-start-wikidata-film'));
+
+    expect(screen.getByTestId('lookup-consent-confirm')).toBeInTheDocument();
+    expect(bridge.fetchDataUrl).not.toHaveBeenCalled();
   });
 
   it('does not fall back to a direct fetch when a present extension fails to answer', async () => {

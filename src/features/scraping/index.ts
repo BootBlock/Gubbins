@@ -7,6 +7,7 @@
  */
 export {
   EXTENSION_SOURCE,
+  PROTOCOL_VERSION,
   parseExtensionMessage,
   makeMessage,
   extensionMessageSchema,

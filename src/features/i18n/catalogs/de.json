@@ -2121,12 +2121,11 @@
   "field.colour.format.name": "Farbname",
   "scraping.extension.label": "Begleit-Erweiterung",
   "scraping.extension.status.connected": "Verbunden",
-  "scraping.extension.status.outdated": "Update nötig",
   "scraping.extension.status.absent": "Nicht erkannt",
+  "scraping.extension.status.behind": "Update verfügbar",
   "scraping.extension.description.connected": "Version {version}, spricht Protokollgeneration {protocol}.",
   "scraping.extension.description.absent": "Auf dieser Seite hat sich keine Begleit-Erweiterung gemeldet.",
+  "scraping.extension.description.behind": "Version {version} spricht Protokollgeneration {protocol}, diese App spricht {current}. Bauen Sie die Erweiterung neu und laden Sie sie neu, um die neueren Fähigkeiten zu erhalten.",
   "scraping.extension.unknownVersion": "unbekannt",
-  "scraping.extension.hint": "Die **Begleit-Erweiterung für den Browser** ruft Lieferantenseiten, Barcodes und Einträge offener Datenbanken im Auftrag der App ab.\n\nApp und Erweiterung werden getrennt aktualisiert und können daher eine Generation auseinanderliegen. Beide geben die **Protokollgeneration** an, die sie sprechen, und eine Fähigkeit wird nur angeboten, wenn die Erweiterung sie auch versteht — deshalb weicht eine Barcode-Suche auf den Online-Weg aus, statt auf eine Erweiterung zu warten, die sie ignorieren würde.\n\nNennen Sie die hier angezeigte Version, wenn Sie ein Problem mit dem Auslesen oder mit Suchen melden.",
-  "scraping.extension.outdated.heading": "Begleit-Erweiterung aktualisieren",
-  "scraping.extension.outdated.body": "Die installierte Erweiterung spricht eine Protokollgeneration, mit der diese Gubbins-Version nicht mehr arbeiten kann. Bauen Sie sie neu und laden Sie sie auf der Erweiterungsseite Ihres Browsers neu."
+  "scraping.extension.hint": "Die **Begleit-Erweiterung für den Browser** ruft Lieferantenseiten, Barcodes und Einträge offener Datenbanken im Auftrag der App ab.\n\nApp und Erweiterung werden getrennt aktualisiert und können daher eine Generation auseinanderliegen. Beide geben die **Protokollgeneration** an, die sie sprechen, und eine Fähigkeit wird nur angeboten, wenn die Erweiterung sie auch versteht — eine Barcode-Suche nutzt daher die eigene Online-Suche der App (nach vorheriger Rückfrage), statt auf eine Erweiterung zu warten, die sie ignorieren würde.\n\nNennen Sie die hier angezeigte Version, wenn Sie ein Problem mit dem Auslesen oder mit Suchen melden."
 }

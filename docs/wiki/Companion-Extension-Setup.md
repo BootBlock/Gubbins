@@ -41,12 +41,14 @@ The two now tell each other which version of their shared language they speak, s
 work out what your extension can actually do:
 
 - **Settings → Product lookup → Companion extension** names the extension it is connected to,
-  with its version number. Quote that line if you ever report a problem with scraping or lookups.
-- A feature the extension is too old to understand is **not offered**. A barcode lookup goes
-  straight to the online database instead of waiting on an extension that would ignore it, and a
+  with its version number, and says whether an update is available. Quote that line if you ever
+  report a problem with scraping or lookups.
+- A feature the extension is too old to understand is **not offered**. A barcode lookup uses the
+  app's own online lookup instead — asking your permission the first time, exactly as it does
+  when no extension is installed — rather than waiting on an extension that would ignore it. A
   **Scrape** control simply stays hidden rather than appearing and then doing nothing.
-- If the extension is too old to work with at all, that same settings row says so and asks you
-  to update it.
+- Nothing you already had stops working. An older extension keeps every feature it came with;
+  it is only the newer ones that wait for you to update it.
 
 > **💡 Tip**
 > After rebuilding the extension, open your browser's extensions page and press **Reload** on

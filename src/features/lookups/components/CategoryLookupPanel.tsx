@@ -225,8 +225,8 @@ export function CategoryLookupPanel({
   /**
    * The extension's privileged fetch, or undefined to fetch directly.
    *
-   * Offered only when the peer speaks the data-fetch capability (issue #664) — an older build
-   * would drop the request in silence, and the consent flow below is the honest way to reach the
+   * Offered only when the peer speaks the data-fetch capability (issue #664): an older build
+   * drops the request in silence, and the consent flow below is the honest way to reach the
    * database without it.
    *
    * A `null` outcome means a peer that claims the capability still did not answer: reported as a

@@ -314,6 +314,9 @@ const AMAZON_MENU_PATTERNS = [
 
 const QUEUE_KEY = 'gubbins:activeTabQueue';
 
+/** How many undelivered active-tab scrapes the worker will hold for the next PWA tab. */
+const MAX_QUEUED_SCRAPES = 20;
+
 interface QueuedScrape {
   requestId: string;
   outcome: ActiveTabOutcome;
@@ -331,7 +334,12 @@ async function readQueue(): Promise<QueuedScrape[]> {
 
 async function writeQueue(queue: readonly QueuedScrape[]): Promise<void> {
   try {
-    await chrome.storage.session.set({ [QUEUE_KEY]: queue });
+    // Bounded: a payload can now be kept rather than cleared when the app would not understand
+    // it, and an app that never updates would otherwise grow this without limit for the whole
+    // browser session. The oldest go first — a scrape the user triggered minutes ago is the one
+    // they have given up on.
+    const capped = queue.length > MAX_QUEUED_SCRAPES ? queue.slice(-MAX_QUEUED_SCRAPES) : queue;
+    await chrome.storage.session.set({ [QUEUE_KEY]: capped });
   } catch {
     /* session storage unavailable — a queued payload is best-effort */
   }
@@ -340,13 +348,12 @@ async function writeQueue(queue: readonly QueuedScrape[]): Promise<void> {
 /**
  * Push one already-correlated scrape to a specific PWA tab; resolves false if it can't.
  *
- * "Can't" now covers two cases, not one. The send may fail outright (no content script in that
- * tab), and the content script may *refuse* — it answers `{ delivered: false }` when the app on
- * its page speaks a wire generation too old to understand an active-tab payload (issue #664).
- * Before that refusal existed, the send resolved, this returned true, and the caller cleared the
- * queue: the user's scrape was dropped into an app that discarded it, with no trace on either
- * side. Only an explicit `false` counts as a refusal, so a content script that answers nothing
- * (every build before 1.7.0) still reads as delivered.
+ * "Can't" covers two cases. The send may fail outright (no content script in that tab), or the
+ * content script may *refuse* — it answers `{ delivered: false }` when the app on its page speaks
+ * a wire generation that would not understand an active-tab payload (issue #664). Without the
+ * refusal a payload posted into an app that discards it still counts as delivered, and the caller
+ * then clears it from the queue: the user's scrape is lost with no trace on either side. Only an
+ * explicit `false` refuses, so a reply of any other shape still reads as delivered.
  */
 async function sendToTab(tabId: number, item: QueuedScrape): Promise<boolean> {
   try {
@@ -390,9 +397,10 @@ async function deliverToPwa(outcome: ActiveTabOutcome): Promise<void> {
 /**
  * Flush any queued scrapes to a freshly-ready PWA tab, keeping back anything it would not take.
  *
- * A tab that refuses a payload (an app too old to understand it — see {@link sendToTab}) must not
- * have it cleared out from under it: the PWA updates itself, so the *next* `PWA_READY` from that
- * same tab is the thing that finally delivers it (issue #664).
+ * A tab that refuses a payload (an app that would not understand it — see {@link sendToTab}) must
+ * not have it cleared out from under it: the PWA updates itself, so the *next* `PWA_READY` from
+ * that same tab is what finally delivers it (issue #664). The content script sends a second
+ * `PWA_READY` once the app has announced its generation, so this runs with the answer in hand.
  */
 async function flushQueueTo(tabId: number): Promise<void> {
   const queue = await readQueue();

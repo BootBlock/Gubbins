@@ -1208,9 +1208,8 @@ export default function SettingsDialog({
               a hidden capability leaves no orphaned setting behind. */}
           {scrapingOn ? (
             <SettingsSection icon={<PackageIcon />} title="Product lookup">
-              {/* Which extension the bridge is actually talking to (issue #664) — the app used to
-                  read its version off the wire and discard it, so a silent, out-of-date extension
-                  looked exactly like no extension at all. */}
+              {/* Which extension the bridge is actually talking to (issue #664): a silent,
+                  out-of-date extension is otherwise indistinguishable from no extension. */}
               <CompanionExtensionStatus />
               <SettingRow
                 label="Online product lookup"

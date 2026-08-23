@@ -36,7 +36,7 @@ import { APP_VERSION } from '@/lib/app-version';
 import { hostOf } from './parsers/types';
 import { OPEN_FOOD_FACTS_HOST } from './product-lookup';
 import {
-  isPeerTooOld,
+  isPeerBehind,
   makeMessage,
   parseExtensionMessage,
   peerProtocolVersion,
@@ -50,20 +50,22 @@ interface ScrapeBridgeValue {
   /**
    * True once *some* extension has announced itself (§9.3).
    *
-   * Deliberately **not** the gate for a capability any more (issue #664): an extension a
-   * generation behind is ready and silent at the same time, so a control gated on this alone
-   * would be offered and then go unanswered. Gate on {@link supports} instead, and keep this for
-   * "is the companion extension here at all" questions — the settings status row, and the
-   * feature-detection message that tells a user to install it.
+   * Deliberately **not** a capability gate (issue #664): an extension a generation behind is
+   * ready and silent at the same time, so a control gated on this alone is offered and then goes
+   * unanswered. Gate on {@link supports} instead. This answers only "is the companion extension
+   * here at all" — the settings status row, and the message telling a user to install it.
    */
   readonly ready: boolean;
   /** What the announcing extension said about itself, or null while none has announced. */
   readonly peer: BridgePeer | null;
   /**
-   * True when the peer speaks a generation this build can no longer work with — the one case the
-   * user must act on, so the UI says "update the companion extension" rather than going quiet.
+   * True when the peer speaks an older generation than this build.
+   *
+   * Nothing is broken — it keeps every capability it already had — but it is the one thing the
+   * user can act on, so the Settings row says the extension is behind instead of leaving the
+   * missing capabilities to be discovered as controls that are simply not there.
    */
-  readonly peerOutdated: boolean;
+  readonly peerBehind: boolean;
   /**
    * Does the connected extension speak `capability`? False when none is connected.
    *
@@ -280,7 +282,7 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
         case 'DATA_FETCH_ERROR':
           settleDataFetch(msg.requestId, () => ({ ok: false, error: msg.payload }));
           break;
-        // *_REQUEST kinds and our own APP_READY are outbound-only from the PWA — ignore the echo.
+        // *_REQUEST kinds and the PWA's own APP_READY are outbound-only — ignore our echo.
       }
     };
 
@@ -365,7 +367,7 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
     () => ({
       ready: state.ready,
       peer: state.peer,
-      peerOutdated: isPeerTooOld(state.peer?.protocol ?? null),
+      peerBehind: isPeerBehind(state.peer?.protocol ?? null),
       supports,
       requests: state.requests,
       lookups: state.lookups,
@@ -385,18 +387,18 @@ export function ScrapeBridgeProvider({ children }: { children: ReactNode }) {
 }
 
 /** What {@link useScrapeBridgeStatus} reports when no provider is mounted above it. */
-const NO_BRIDGE: BridgeStatus = { ready: false, peer: null, peerOutdated: false };
+const NO_BRIDGE: BridgeStatus = { ready: false, peer: null, peerBehind: false };
 
 /** The read-only slice of the bridge that describes the peer itself, rather than a request. */
-export type BridgeStatus = Pick<ScrapeBridgeValue, 'ready' | 'peer' | 'peerOutdated'>;
+export type BridgeStatus = Pick<ScrapeBridgeValue, 'ready' | 'peer' | 'peerBehind'>;
 
 /**
  * The connected extension's status, for a surface that only wants to *describe* the bridge
  * rather than use it — the Settings status row (issue #664).
  *
- * Unlike {@link useScrapeBridge} this does not throw without a provider: "no bridge is mounted"
- * and "no extension has announced itself" are the same answer to the only question being asked,
- * and a diagnostic row that crashed the screen it reports on would be worse than useless.
+ * Unlike {@link useScrapeBridge} this does not throw without a provider. The row is one line of
+ * a large dialog that is also rendered on its own in tests, and "no bridge is mounted" and "no
+ * extension has announced itself" are the same answer to the only question it asks.
  */
 export function useScrapeBridgeStatus(): BridgeStatus {
   return useContext(ScrapeBridgeContext) ?? NO_BRIDGE;

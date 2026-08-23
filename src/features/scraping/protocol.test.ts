@@ -6,12 +6,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ASSUMED_PROTOCOL_VERSION,
   EXTENSION_SOURCE,
   extensionMessageSchema,
-  isPeerTooOld,
+  isPeerBehind,
   makeMessage,
-  MIN_PROTOCOL_VERSION,
   parseExtensionMessage,
   peerProtocolVersion,
   peerSupports,
@@ -303,9 +301,27 @@ describe('wire-version negotiation (issue #664)', () => {
     }
   });
 
-  it('reads a missing generation as the pre-negotiation set, not as zero', () => {
-    expect(peerProtocolVersion(undefined)).toBe(ASSUMED_PROTOCOL_VERSION);
-    expect(peerProtocolVersion({})).toBe(ASSUMED_PROTOCOL_VERSION);
+  it('recovers a missing generation from the build version that shipped it', () => {
+    // The message set grew in step with the extension's own version, so a pre-negotiation build
+    // is placed exactly rather than guessed. Crediting every one of them with the newest set
+    // would hand a 1.2.0 install three capabilities it has never had.
+    expect(peerProtocolVersion({ version: '1.0.0' })).toBe(1);
+    expect(peerProtocolVersion({ version: '1.1.0' })).toBe(1);
+    expect(peerProtocolVersion({ version: '1.2.0' })).toBe(2);
+    expect(peerProtocolVersion({ version: '1.3.0' })).toBe(3);
+    expect(peerProtocolVersion({ version: '1.4.0' })).toBe(4);
+    expect(peerProtocolVersion({ version: '1.6.0' })).toBe(4);
+  });
+
+  it('falls back to generation 1 when the hello says nothing usable at all', () => {
+    // Guessing higher would hand the peer requests it cannot answer, each dropped in silence.
+    expect(peerProtocolVersion(undefined)).toBe(1);
+    expect(peerProtocolVersion({})).toBe(1);
+    expect(peerProtocolVersion({ version: 'nightly' })).toBe(1);
+  });
+
+  it('prefers a stated generation over anything the version implies', () => {
+    expect(peerProtocolVersion({ version: '1.0.0', protocol: 5 })).toBe(5);
     expect(peerProtocolVersion({ protocol: 2 })).toBe(2);
   });
 
@@ -321,12 +337,11 @@ describe('wire-version negotiation (issue #664)', () => {
     }
   });
 
-  it('offers a peer below the minimum nothing at all, and flags it as too old', () => {
-    const belowMinimum = MIN_PROTOCOL_VERSION - 1;
-    expect(isPeerTooOld(belowMinimum)).toBe(true);
-    expect(peerSupports(belowMinimum, 'scrape')).toBe(false);
-    expect(isPeerTooOld(MIN_PROTOCOL_VERSION)).toBe(false);
-    expect(isPeerTooOld(null)).toBe(false); // absent is not outdated — there is nothing to update
+  it('flags a peer that speaks an older generation than this build', () => {
+    expect(isPeerBehind(PROTOCOL_VERSION - 1)).toBe(true);
+    expect(isPeerBehind(PROTOCOL_VERSION)).toBe(false);
+    expect(isPeerBehind(PROTOCOL_VERSION + 1)).toBe(false); // ahead is not behind
+    expect(isPeerBehind(null)).toBe(false); // absent is not behind — there is nothing to update
   });
 
   it('this build speaks a generation at least as new as every capability it knows', () => {

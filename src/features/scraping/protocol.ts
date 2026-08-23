@@ -88,28 +88,6 @@ export type ExtensionMessageType = (typeof EXTENSION_MESSAGE_TYPES)[number];
 export const PROTOCOL_VERSION = 5;
 
 /**
- * The oldest peer generation this build can still work with.
- *
- * Below it, the peer is not merely missing a capability — it cannot be talked to usefully at all,
- * so the app says so plainly ("update the companion extension") instead of offering controls that
- * would go unanswered. Every generation so far is still workable (a gen-1 peer scrapes, and the
- * newer capabilities simply gate themselves off), so this sits at 1 until a change genuinely
- * breaks an older peer. Raising it is a deliberate, user-visible act, not a side effect of adding
- * a message kind — that is what {@link PROTOCOL_VERSION} is for.
- */
-export const MIN_PROTOCOL_VERSION = 1;
-
-/**
- * The generation assumed for a peer whose hello carries **no** `protocol` at all.
- *
- * Only a build older than generation 5 can do that, and every such build shipped the full
- * generation-4 message set — so assuming 4 is what an installed pre-negotiation extension
- * actually speaks, and gating on it changes nothing for a user who has one. Assuming 1 instead
- * would switch off three working capabilities to describe a build that never existed.
- */
-export const ASSUMED_PROTOCOL_VERSION = 4;
-
-/**
  * The generation each bridge capability arrived in — the table {@link peerSupports} reads.
  *
  * A capability is a *group* of message kinds that stand or fall together (a request and its two
@@ -129,32 +107,80 @@ export const PROTOCOL_CAPABILITY_VERSIONS = {
 export type ProtocolCapability = keyof typeof PROTOCOL_CAPABILITY_VERSIONS;
 
 /**
- * Does a peer speaking `peerVersion` understand `capability`?
+ * Which generation each **pre-negotiation** extension build actually spoke, newest first.
  *
- * `null` means no peer has announced itself yet, which supports nothing. A peer below
- * {@link MIN_PROTOCOL_VERSION} supports nothing either, whatever its number implies: the app has
- * already decided it cannot work with such a peer, so offering it one capability would contradict
- * the message telling the user to update it.
+ * Those builds announce a `version` but no `protocol`, so the generation has to be recovered from
+ * the version string — and it can be, exactly: the message set grew in step with the extension's
+ * own version, so the mapping is a record of what shipped rather than a guess. Assuming the
+ * newest instead would credit a 1.2.0 install with three capabilities it has never had, which is
+ * the silent-drop failure this whole mechanism exists to remove, aimed at the users most likely
+ * to hit it — a `Load unpacked` build is exactly the kind that sits un-rebuilt for a year.
+ *
+ * Nothing needs adding here again: every build from 1.7.0 on states its generation outright.
  */
-export function peerSupports(peerVersion: number | null, capability: ProtocolCapability): boolean {
-  if (peerVersion === null || isPeerTooOld(peerVersion)) return false;
-  return peerVersion >= PROTOCOL_CAPABILITY_VERSIONS[capability];
+const LEGACY_BUILD_PROTOCOL: readonly (readonly [
+  version: readonly [number, number, number],
+  protocol: number,
+])[] = [
+  [[1, 4, 0], 4], // DATA_FETCH_* — category data lookup (issue #616)
+  [[1, 3, 0], 3], // ACTIVE_TAB_* — Amazon active-tab enrichment (Path A2)
+  [[1, 2, 0], 2], // PRODUCT_LOOKUP_* — keyless barcode lookup
+  [[1, 0, 0], 1], // the original SCRAPE_* trio
+];
+
+/** Parse a `major.minor.patch` build string, or null if it is not one. */
+function parseBuildVersion(version: string | undefined): [number, number, number] | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version ?? '');
+  if (match === null) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
-/** Is this peer too old to work with at all — i.e. below {@link MIN_PROTOCOL_VERSION}? */
-export function isPeerTooOld(peerVersion: number | null): boolean {
-  return peerVersion !== null && peerVersion < MIN_PROTOCOL_VERSION;
+/** Is `a` at least `b`, comparing major, then minor, then patch? */
+function atLeast(a: readonly [number, number, number], b: readonly [number, number, number]): boolean {
+  for (let i = 0; i < 3; i += 1) {
+    if (a[i]! !== b[i]!) return a[i]! > b[i]!;
+  }
+  return true;
 }
 
 /**
- * The generation a hello announces, defaulting a **missing** number to
- * {@link ASSUMED_PROTOCOL_VERSION} rather than to zero.
+ * The generation a hello announces.
  *
  * A hello is the one message whose payload is optional in both directions, so "said nothing" has
- * to mean something definite — see {@link ASSUMED_PROTOCOL_VERSION} for why it means 4.
+ * to resolve to something definite. The order of preference is: the number the peer stated; the
+ * generation its build version is known to have spoken ({@link LEGACY_BUILD_PROTOCOL}); and
+ * failing both, generation 1 — the least a peer can be and still be worth talking to. Guessing
+ * higher would hand it requests it cannot answer, and every one of those is dropped in silence.
  */
-export function peerProtocolVersion(payload: { readonly protocol?: number } | undefined): number {
-  return payload?.protocol ?? ASSUMED_PROTOCOL_VERSION;
+export function peerProtocolVersion(
+  payload: { readonly protocol?: number; readonly version?: string } | undefined,
+): number {
+  if (payload?.protocol !== undefined) return payload.protocol;
+  const build = parseBuildVersion(payload?.version);
+  if (build !== null) {
+    for (const [from, protocol] of LEGACY_BUILD_PROTOCOL) if (atLeast(build, from)) return protocol;
+  }
+  return 1;
+}
+
+/**
+ * Does a peer speaking `peerVersion` understand `capability`? `null` — no peer has announced
+ * itself yet — supports nothing, which is the answer a control needs before one arrives.
+ */
+export function peerSupports(peerVersion: number | null, capability: ProtocolCapability): boolean {
+  if (peerVersion === null) return false;
+  return peerVersion >= PROTOCOL_CAPABILITY_VERSIONS[capability];
+}
+
+/**
+ * Is this peer a generation behind the build it is talking to?
+ *
+ * Not an error — a peer one generation back keeps every capability it already had, and the app
+ * simply offers it nothing newer. It is worth saying out loud all the same, because the silence
+ * is otherwise total: this is what turns "the button does nothing" into "your extension is old".
+ */
+export function isPeerBehind(peerVersion: number | null): boolean {
+  return peerVersion !== null && peerVersion < PROTOCOL_VERSION;
 }
 
 /**
@@ -295,7 +321,7 @@ const requestIdSchema = z.string().min(1);
  * Every field stays optional, and the payload itself stays optional, so a hello from a peer that
  * predates negotiation still validates rather than being dropped as malformed — which would turn
  * an out-of-date peer into an invisible one, the exact failure this is here to remove. A missing
- * `protocol` is read as {@link ASSUMED_PROTOCOL_VERSION} by {@link peerProtocolVersion}.
+ * `protocol` is recovered from the build `version` by {@link peerProtocolVersion}.
  */
 const helloPayloadSchema = z
   .object({ version: z.string(), protocol: z.number().int().positive() })

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import type { Item, SupplierPart } from '@/db/repositories';
-import { peerSupports, type ProtocolCapability } from '@/features/scraping/protocol';
+import { peerSupports, PROTOCOL_VERSION, type ProtocolCapability } from '@/features/scraping/protocol';
 import { RefreshPricesButton } from './RefreshPricesButton';
 
 const spies = vi.hoisted(() => ({
@@ -9,7 +9,7 @@ const spies = vi.hoisted(() => ({
   show: vi.fn(),
   requestScrape: vi.fn(() => 'req-1'),
   clear: vi.fn(),
-  bridge: { ready: true, protocol: 5 } as { ready: boolean; protocol: number },
+  bridge: { ready: true, protocol: 0 } as { ready: boolean; protocol: number },
 }));
 
 // The item's supplier lookup module is on.
@@ -62,6 +62,8 @@ function supplier(over: Partial<SupplierPart> = {}): SupplierPart {
 
 beforeEach(() => {
   spies.bridge.ready = true;
+  // Set here rather than in the hoisted factory, which runs before the import that defines it.
+  spies.bridge.protocol = PROTOCOL_VERSION;
 });
 
 afterEach(() => {

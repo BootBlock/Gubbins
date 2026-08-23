@@ -55,9 +55,8 @@ export interface ProductLookupState {
  * What the extension told us about itself in its `EXTENSION_READY` (issue #664).
  *
  * Kept so a capability can be gated on the generation the peer actually speaks rather than on
- * "a peer exists", and so a support report has something to name: before this, the app read the
- * version off the wire and discarded it, leaving "the lookup button does nothing" with no way
- * to reach its cause.
+ * "a peer exists", and so a support report has something to name — otherwise "the lookup button
+ * does nothing" has no way to reach its cause.
  */
 export interface BridgePeer {
   /** The extension's own build version, when it announced one (diagnostics only). */
