@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { Autocomplete, AutocompleteField } from './autocomplete';
-import { filterSuggestions } from './autocomplete-filter';
+import { filterSuggestions, indexOfValue } from './autocomplete-filter';
 
 afterEach(cleanup);
 
@@ -38,6 +38,17 @@ describe('filterSuggestions — type-ahead ranking (pure)', () => {
   it('returns the whole list (capped) for an empty query', () => {
     expect(filterSuggestions(MAKERS, '')).toEqual(MAKERS);
     expect(filterSuggestions(MAKERS, '   ', 2)).toEqual(MAKERS.slice(0, 2));
+  });
+});
+
+describe('indexOfValue — where a browse starts (pure)', () => {
+  it('finds the held value case-insensitively, ignoring surrounding space', () => {
+    expect(indexOfValue(MAKERS, '  tdk ')).toBe(1);
+  });
+
+  it('reports -1 for a value that is not in the list, and for an empty field', () => {
+    expect(indexOfValue(MAKERS, 'Acme Widgets')).toBe(-1);
+    expect(indexOfValue(MAKERS, '   ')).toBe(-1);
   });
 });
 
@@ -104,6 +115,67 @@ describe('Autocomplete — editable combobox (WAI-ARIA APG)', () => {
     fireEvent.mouseDown(chevron);
     expect(input.getAttribute('aria-expanded')).toBe('true');
     expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+  });
+
+  it('browses the whole list from the chevron even when the field already holds a value (#414)', () => {
+    // The reported bug: a field holding an exact match filtered down to nothing — the one
+    // suggestion left is dropped as having nothing to complete — so the chevron looked dead.
+    render(<Harness initial="TDK" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.mouseDown(document.querySelector('button')!);
+
+    expect(input.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(MAKERS);
+    // The browse starts on the value already held, so a long list opens showing it.
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe('TDK');
+  });
+
+  it('browses past maxOptions, which caps the type-ahead only', () => {
+    render(
+      <AutocompleteField
+        label="Manufacturer"
+        value=""
+        onChange={() => {}}
+        suggestions={MAKERS}
+        maxOptions={2}
+      />,
+    );
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+  });
+
+  it('starts filtering only once the user types into an open browse', () => {
+    render(<Harness initial="T" />);
+    const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
+    fireEvent.mouseDown(document.querySelector('button')!);
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+
+    // Typing narrows against everything the field then holds, not just the new character.
+    fireEvent.change(input, { target: { value: 'TD' } });
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['TDK']);
+  });
+
+  it('browses on ArrowDown from a closed list, landing on the held value', () => {
+    render(<Harness initial="Yageo" />);
+    const input = screen.getByRole('combobox', { name: 'Manufacturer' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+    expect(screen.getByRole('option', { selected: true }).textContent).toBe('Yageo');
+  });
+
+  it('browses again after a chevron close, rather than staying filtered', () => {
+    render(<Harness initial="" />);
+    const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Manufacturer' });
+    fireEvent.change(input, { target: { value: 'TD' } });
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+
+    const chevron = document.querySelector('button')!;
+    fireEvent.mouseDown(chevron); // close the filtered list
+    expect(screen.queryByRole('listbox')).toBeNull();
+    fireEvent.mouseDown(chevron); // reopen — browsing, not filtering
+    expect(screen.getAllByRole('option')).toHaveLength(MAKERS.length);
+    expect(input.value).toBe('TD');
   });
 
   it('offers a prefiltered list verbatim, however little it looks like the typed text', () => {

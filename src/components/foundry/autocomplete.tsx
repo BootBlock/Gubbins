@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon } from '@/components/icons';
 import { fieldAria } from './field-aria';
-import { filterSuggestions } from './autocomplete-filter';
+import { filterSuggestions, indexOfValue } from './autocomplete-filter';
 import { InfoHint } from './info-hint';
 import { TextLimitReport, useTextLimit, useTextLimitSlot } from './text-limit';
 import { useAnchoredPopover } from './use-anchored-popover';
@@ -18,7 +18,12 @@ export interface AutocompleteProps {
   readonly placeholder?: string;
   readonly disabled?: boolean;
   readonly className?: string;
-  /** Max suggestions shown at once (the popup scrolls beyond this). */
+  /**
+   * Max suggestions the **type-ahead** offers as the user types. Browsing the list (the
+   * chevron, or ArrowDown on a closed list) is not a type-ahead and shows the whole
+   * catalogue, scrolling; only a {@link AutocompleteProps.prefiltered} list keeps the cap
+   * there, because it is all its supplier search returned in the first place.
+   */
   readonly maxOptions?: number;
   /**
    * The suggestions have **already** been narrowed against the typed text by whoever supplied
@@ -62,6 +67,11 @@ export interface AutocompleteProps {
  * fields like Manufacturer or Supplier where the user should be able to type anything but
  * usually wants one of the values already in the catalogue.
  *
+ * Opening the list and completing against it are separate acts. The chevron (and ArrowDown on
+ * a closed list) *browses*: it shows the whole catalogue, starting on the value the field
+ * already holds, exactly as a `<select>` would. Only typing narrows the list, and it narrows
+ * against everything the field then contains.
+ *
  * The input is the single tab stop and keeps DOM focus throughout; the highlighted option is
  * tracked with `aria-activedescendant`, never by moving focus into the list. Down/Up move the
  * active option (opening the list first if closed), Enter accepts the highlighted option (and
@@ -101,6 +111,11 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
   const optionId = (index: number) => `${baseId}-opt-${index}`;
 
   const [open, setOpen] = useState(false);
+  // Opened to *browse* rather than to complete: the whole list stands until the user types.
+  // Filtering an already-filled field on open is what made the chevron look dead — a field
+  // holding `Asus` filtered down to the one exact match, which `filterSuggestions` then drops
+  // as having nothing left to complete, leaving an empty popup that never rendered (#414).
+  const [browsing, setBrowsing] = useState(false);
   // -1 = "no option highlighted": the typed text stands, and Enter falls through to submit.
   const [activeIndex, setActiveIndex] = useState(-1);
 
@@ -114,9 +129,10 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
   const inputRef = useRef<HTMLInputElement | null>(null);
   const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const matches = prefiltered
-    ? suggestions.slice(0, maxOptions)
-    : filterSuggestions(suggestions, value, maxOptions);
+  // What browsing offers: everything, bar a prefiltered list's server-side cap.
+  const browseList = prefiltered ? suggestions.slice(0, maxOptions) : suggestions;
+  const matches: readonly string[] =
+    browsing || prefiltered ? browseList : filterSuggestions(suggestions, value, maxOptions);
   const isOpen = open && matches.length > 0;
   // The listbox is portalled out of the (clipping) dialog scroll box and positioned
   // against the field — see {@link useAnchoredPopover}.
@@ -128,7 +144,10 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (!rootRef.current?.contains(target) && !popoverRef.current?.contains(target)) setOpen(false);
+      if (!rootRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
+        setOpen(false);
+        setBrowsing(false);
+      }
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
@@ -146,13 +165,31 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
     else if (forwardedRef) forwardedRef.current = el;
   };
 
+  /**
+   * Open the list to browse the whole catalogue, starting on the value the field already
+   * holds. `fallbackIndex` is where to start when that value is not in the list — `0` for
+   * ArrowDown, which must always land on an option, and `-1` for a pointer open, which
+   * highlights nothing.
+   */
+  const openBrowsing = (fallbackIndex = -1) => {
+    setOpen(true);
+    setBrowsing(true);
+    const current = indexOfValue(browseList, value);
+    setActiveIndex(current >= 0 ? current : fallbackIndex);
+  };
+
+  const close = () => {
+    setOpen(false);
+    setBrowsing(false);
+    setActiveIndex(-1);
+  };
+
   const choose = (index: number) => {
     const match = matches[index];
     // In creatable mode the caller consumes the accepted value (and typically clears the
     // field); otherwise the value simply becomes the field's contents.
     if (match !== undefined) (onCommit ?? onChange)(match);
-    setOpen(false);
-    setActiveIndex(-1);
+    close();
     inputRef.current?.focus();
   };
 
@@ -160,8 +197,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
   const commitTyped = () => {
     const typed = value.trim();
     if (typed.length > 0) onCommit?.(typed);
-    setOpen(false);
-    setActiveIndex(-1);
+    close();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -170,10 +206,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
       case 'ArrowDown':
         event.preventDefault();
         if (isOpen) setActiveIndex((i) => Math.min(matches.length - 1, i + 1));
-        else {
-          setOpen(true);
-          setActiveIndex(0);
-        }
+        else openBrowsing(0);
         break;
       case 'ArrowUp':
         if (!isOpen) break;
@@ -209,12 +242,11 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
           // Close the list — not the enclosing Modal — and keep the typed value.
           event.preventDefault();
           event.stopPropagation();
-          setOpen(false);
-          setActiveIndex(-1);
+          close();
         }
         break;
       case 'Tab':
-        setOpen(false);
+        close();
         break;
     }
   };
@@ -244,12 +276,16 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         data-testid={testId}
         onChange={(event) => {
           onChange(event.target.value);
+          // Typing turns the browse back into a type-ahead — this is the only thing that does.
           setOpen(true);
+          setBrowsing(false);
           setActiveIndex(-1);
         }}
         // Open on click/tap (not merely on focus — Tabbing *through* a field shouldn't pop a
-        // list); typing and ArrowDown open it too.
-        onClick={() => setOpen(true)}
+        // list); typing and ArrowDown open it too. A click browses; it never filters.
+        onClick={() => {
+          if (!open) openBrowsing();
+        }}
         onBlur={onBlur}
         onKeyDown={onKeyDown}
         className={cn(
@@ -269,8 +305,8 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
         onMouseDown={(event) => {
           if (disabled) return;
           event.preventDefault();
-          setOpen((wasOpen) => !wasOpen);
-          setActiveIndex(-1);
+          if (open) close();
+          else openBrowsing();
           inputRef.current?.focus();
         }}
         className="absolute right-0 top-0 flex h-10 w-9 items-center justify-center text-muted-foreground disabled:opacity-50"

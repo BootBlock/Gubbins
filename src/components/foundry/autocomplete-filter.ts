@@ -28,3 +28,17 @@ export function filterSuggestions(suggestions: readonly string[], query: string,
   }
   return [...prefix, ...substring].slice(0, limit);
 }
+
+/**
+ * Where a list being browsed already holds the field's current value, or `-1` when it does not.
+ *
+ * Opening the list to browse (the chevron, or ArrowDown on a closed list) starts on the value
+ * the field already holds, so a long catalogue opens showing it rather than at "A". The
+ * comparison is trimmed and case-insensitive, matching {@link filterSuggestions}; an empty
+ * value matches nothing, so an untouched field opens with no option highlighted.
+ */
+export function indexOfValue(suggestions: readonly string[], value: string): number {
+  const v = value.trim().toLowerCase();
+  if (v.length === 0) return -1;
+  return suggestions.findIndex((suggestion) => suggestion.toLowerCase() === v);
+}
