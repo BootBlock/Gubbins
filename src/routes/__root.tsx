@@ -6,6 +6,7 @@ import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { CommandPalette } from '@/features/command-palette/CommandPalette';
 import { FirstRunModules } from '@/features/modules/FirstRunModules';
 import { SettingsDialogHost } from '@/features/settings/SettingsDialogHost';
+import { RoutePermissionGuard } from '@/features/users/PermissionGuard';
 import { useGlobalHotkeys } from '@/features/hotkeys/useGlobalHotkeys';
 import { ShortcutsOverlayHost } from '@/features/hotkeys/ShortcutsOverlayHost';
 import { cn } from '@/lib/utils';
@@ -19,7 +20,8 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
  * each screen carries the `#main-content` landmark it targets (spec §3 — WCAG 2.4.1).
  * Settings lives here (rather than a screen) so it can open over any route while still
  * resolving its links to Modules / About. The global keyboard shortcuts (issue #32) are bound
- * here for the same reason: this is the one component mounted on every route.
+ * here for the same reason: this is the one component mounted on every route — and so is the
+ * per-screen read-permission gate, {@link RoutePermissionGuard} (issue #522).
  *
  * The PWA "new version ready" update prompt is NOT here — this layout only mounts once
  * <BootGate> reaches `ready`, but service-worker registration must happen regardless of
@@ -63,7 +65,12 @@ function RootLayout() {
       >
         <StorageBanners />
       </div>
-      <Outlet />
+      {/* One mount point gates every route whose nav-registry row names a read permission
+          (issue #522), so a restricted account cannot open a screen its role withholds by typing
+          the URL. Transparent in single-user mode, where the authority is unrestricted. */}
+      <RoutePermissionGuard>
+        <Outlet />
+      </RoutePermissionGuard>
       <OfflineIndicator />
       <CommandPalette />
       <ShortcutsOverlayHost />

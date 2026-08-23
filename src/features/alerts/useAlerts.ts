@@ -19,6 +19,7 @@ import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/feature
 import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
 import { readAllPages } from '@/lib/read-all-pages';
 import {
@@ -69,15 +70,24 @@ export function useAlerts(): {
   // Modular UI (Phase 7): the expiry, maintenance and warranty lanes each gate on their
   // capability. When one is off we skip its source fetch (`enabled: false`) AND feed an empty
   // array into the pure `buildAlerts` seam below, so a disabled lane simply produces nothing —
-  // even if a stale cache entry from when it was on still holds rows. Low stock is core
-  // inventory and never gated. The feature set is read once (unconditionally — rules of hooks).
+  // even if a stale cache entry from when it was on still holds rows. The feature set is read
+  // once (unconditionally — rules of hooks).
+  //
+  // Each lane is *also* gated on the read permission of whatever it draws from (issue #522).
+  // Alerts is one of two screens that aggregate several subjects rather than showing one, so it
+  // carries no read gate of its own — the gate has to be per lane, or a role that cannot open
+  // Maintenance would still read its due schedules here. Folding the permission into the same
+  // boolean keeps the fetch, the source array and the completeness grading in step.
   const enabled = useEnabledFeatures();
-  const perishablesOn = enabled.has('perishables');
-  const maintenanceOn = enabled.has('maintenance');
-  const warrantyOn = enabled.has('warranty');
-  const customFieldsOn = enabled.has('custom-fields');
+  const allows = usePermissionCheck();
+  const itemsReadable = allows('items:read');
+  const lowStockOn = itemsReadable;
+  const perishablesOn = enabled.has('perishables') && itemsReadable;
+  const maintenanceOn = enabled.has('maintenance') && allows('maintenance:read');
+  const warrantyOn = enabled.has('warranty') && itemsReadable;
+  const customFieldsOn = enabled.has('custom-fields') && itemsReadable;
 
-  const lowStockQuery = useLowStockItems({ qtyThreshold, gaugePercent });
+  const lowStockQuery = useLowStockItems({ qtyThreshold, gaugePercent }, { enabled: lowStockOn });
   const expiringQuery = useExpiringItems(expirySoonWindowDays, { enabled: perishablesOn });
   const maintenanceDueQuery = useDueMaintenance({ enabled: maintenanceOn });
 
@@ -120,10 +130,12 @@ export function useAlerts(): {
   // --- Build alert sources from query data ---
 
   const sources: AlertSources = {
-    lowStock: (lowStockQuery.data?.rows ?? []).map((item) => ({
-      id: item.id,
-      name: item.name,
-    })),
+    lowStock: lowStockOn
+      ? (lowStockQuery.data?.rows ?? []).map((item) => ({
+          id: item.id,
+          name: item.name,
+        }))
+      : [],
 
     expiring: perishablesOn
       ? (expiringQuery.data?.rows ?? []).map((item) => ({
@@ -188,7 +200,7 @@ export function useAlerts(): {
     laneOn && query.data?.hasMore === false;
 
   const completeKinds = new Set<AlertKind>();
-  if (complete(lowStockQuery)) completeKinds.add('low-stock');
+  if (complete(lowStockQuery, lowStockOn)) completeKinds.add('low-stock');
   if (complete(expiringQuery, perishablesOn)) completeKinds.add('expiry');
   if (complete(maintenanceDueQuery, maintenanceOn)) completeKinds.add('maintenance-due');
   if (complete(warrantyQuery, warrantyOn)) completeKinds.add('warranty-due');

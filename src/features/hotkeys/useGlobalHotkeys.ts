@@ -32,6 +32,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { openModalCount } from '@/components/foundry';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useCommandPaletteStore } from '@/features/command-palette/useCommandPaletteStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
@@ -46,6 +47,8 @@ import {
   normaliseHotkeyBindings,
   stepHotkeySequence,
   type HotkeyAction,
+  hotkeyPermission,
+  COMMAND_DESTINATIONS,
 } from './hotkeys';
 
 /** Mac keyboards fold Command into the primary modifier — settled once, not per key press. */
@@ -64,6 +67,7 @@ export function useGlobalHotkeys(): void {
   const bindings = usePreferencesStore((s) => s.hotkeyBindings);
   const paletteEnabled = usePreferencesStore((s) => s.dashboardCommandPalette);
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
   // The armed sequence prefix, in a ref rather than state: it changes on a key press and must not
   // re-render the whole app (nor tear down and re-add the listener) to do so.
   const pending = useRef<string | null>(null);
@@ -75,6 +79,10 @@ export function useGlobalHotkeys(): void {
     const resolved = normaliseHotkeyBindings(bindings);
     const isEnabled = (action: HotkeyAction): boolean => {
       if (action.feature !== undefined && !enabledFeatures.has(action.feature)) return false;
+      // A shortcut into a screen this role cannot read does not fire (issue #522) — the guard
+      // would refuse the landing anyway, and a keypress that navigates to a refusal page is a
+      // worse answer than one that does nothing.
+      if (!allows(hotkeyPermission(action))) return false;
       if (action.requiresPref === 'dashboardCommandPalette' && !paletteEnabled) return false;
       return true;
     };
@@ -112,19 +120,19 @@ export function useGlobalHotkeys(): void {
           // The Add dialog is Inventory's local state with no route of its own, so arriving with
           // an intent is how every other entry point (palette, dashboard hero) opens it too.
           useInventoryEntry.getState().requestIntent('add');
-          void navigate({ to: '/inventory' });
+          void navigate({ to: COMMAND_DESTINATIONS['add-item'] });
           return true;
         case 'start-scan':
           useInventoryEntry.getState().requestIntent('scan');
-          void navigate({ to: '/inventory' });
+          void navigate({ to: COMMAND_DESTINATIONS['start-scan'] });
           return true;
         case 'new-project':
           useHotkeyIntent.getState().request('new-project');
-          void navigate({ to: '/projects' });
+          void navigate({ to: COMMAND_DESTINATIONS['new-project'] });
           return true;
         case 'new-purchase-order':
           useHotkeyIntent.getState().request('new-purchase-order');
-          void navigate({ to: '/purchase-orders' });
+          void navigate({ to: COMMAND_DESTINATIONS['new-purchase-order'] });
           return true;
         case 'toggle-full-width': {
           const state = usePreferencesStore.getState();
@@ -182,5 +190,5 @@ export function useGlobalHotkeys(): void {
       document.removeEventListener('keydown', onKey);
       disarm();
     };
-  }, [enabled, bindings, paletteEnabled, enabledFeatures, navigate]);
+  }, [enabled, bindings, paletteEnabled, enabledFeatures, allows, navigate]);
 }

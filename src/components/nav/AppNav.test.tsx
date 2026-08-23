@@ -27,6 +27,8 @@ import { NAV_DESTINATIONS } from './nav-destinations';
 import { getFeature } from '@/features/modules/feature-registry';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
+import { BUILTIN_ROLES, VIEWER_ROLE_ID } from '@/features/users/builtin-roles';
 
 /**
  * The destinations visible under the pristine default intent. An **opt-in** feature
@@ -42,12 +44,12 @@ beforeEach(() => {
   signOutMock.mockClear();
   // Start every test from the default everything-on intent, signed out.
   useModulesStore.setState({ intent: {} });
-  useSessionStore.setState({ session: null });
+  useSessionStore.setState({ session: null, authority: UNRESTRICTED_AUTHORITY });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
-  useSessionStore.setState({ session: null });
+  useSessionStore.setState({ session: null, authority: UNRESTRICTED_AUTHORITY });
 });
 
 function openNav() {
@@ -191,6 +193,28 @@ describe('AppNav — feature gating (Phase 2)', () => {
 
     fireEvent.click(row);
     expect(signOutMock).toHaveBeenCalled();
+  });
+
+  /**
+   * Issue #522: the built-in Viewer is *described* as someone who cannot see the activity
+   * history, and the menu offered the row anyway. Driven from the shipped role's own grants
+   * rather than a hand-written set, so retuning Viewer cannot leave this passing while the
+   * description it checks has moved on.
+   */
+  it('hides a destination whose read permission the signed-in role withholds', () => {
+    const viewer = BUILTIN_ROLES.find((r) => r.id === VIEWER_ROLE_ID);
+    expect(viewer).toBeDefined();
+    useSessionStore.setState({
+      authority: { mode: 'granted', grants: new Set(viewer!.grants) },
+    });
+
+    render(<AppNav />);
+    openNav();
+
+    // Viewer holds no `audit:view`, so Activity is not offered…
+    expect(screen.queryByRole('menuitem', { name: /Activity/ })).toBeNull();
+    // …while everything it can read stays exactly where it was.
+    expect(screen.getByRole('menuitem', { name: /Inventory/ })).toBeTruthy();
   });
 
   it('hides an opt-in feature’s destination until it is switched on', () => {

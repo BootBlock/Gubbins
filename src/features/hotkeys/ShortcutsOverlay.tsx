@@ -16,6 +16,7 @@ import { useMemo } from 'react';
 import { Button, Kbd, Modal } from '@/components/foundry';
 import { useT } from '@/features/i18n';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useHotkeyScopeStore } from './useHotkeyScope';
@@ -25,6 +26,7 @@ import {
   isMacKeyboard,
   normaliseHotkeyBindings,
   type HotkeyAction,
+  hotkeyPermission,
 } from './hotkeys';
 
 /** Spell modifiers the macOS way (`⌘⇧K`) rather than `Ctrl+Shift+K`; settled once at load. */
@@ -52,6 +54,7 @@ export default function ShortcutsOverlayBody({ onClose }: { readonly onClose: ()
   const stored = usePreferencesStore((s) => s.hotkeyBindings);
   const paletteEnabled = usePreferencesStore((s) => s.dashboardCommandPalette);
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
   const openSettings = useSettingsDialog((s) => s.openSettings);
   // Subscribed, not read imperatively: the contextual rows must re-render when the user navigates
   // to a screen that offers a different "new".
@@ -70,6 +73,7 @@ export default function ShortcutsOverlayBody({ onClose }: { readonly onClose: ()
     return HOTKEY_ACTIONS.filter((action) => {
       if (bindings[action.id] === '') return false;
       if (action.feature !== undefined && !enabledFeatures.has(action.feature)) return false;
+      if (!allows(hotkeyPermission(action))) return false;
       if (action.requiresPref === 'dashboardCommandPalette' && !paletteEnabled) return false;
       // A contextual row with nobody to handle it would be a shortcut that does nothing.
       if (action.effect.kind === 'command' && action.scoped === true) {
@@ -80,7 +84,7 @@ export default function ShortcutsOverlayBody({ onClose }: { readonly onClose: ()
       }
       return true;
     });
-  }, [bindings, enabledFeatures, paletteEnabled, scopeEntries]);
+  }, [bindings, enabledFeatures, allows, paletteEnabled, scopeEntries]);
 
   return (
     <Modal

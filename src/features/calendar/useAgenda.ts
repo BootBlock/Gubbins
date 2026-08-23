@@ -19,6 +19,7 @@ import {
 import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
 import { maintenanceStatus } from '@/features/lifecycle/maintenance';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { buildAgenda, maintenanceDueAtMs, type AgendaEvent, type AgendaSources } from './agenda';
 import { agendaKeys } from './keys';
 import { nowMs } from '@/lib/clock';
@@ -68,15 +69,24 @@ export function useAgenda(): {
   // Modular UI (Phase 7): each date-driven lane gates on its owning feature. A disabled lane
   // skips its source fetch (`enabled: false`) AND feeds an empty array into the pure
   // `buildAgenda` seam below, so it produces no events even if a stale cache entry still holds
-  // rows. Reorder is core inventory and never gated. The feature set is read once,
-  // unconditionally (rules of hooks).
+  // rows. The feature set is read once, unconditionally (rules of hooks).
+  //
+  // Each lane is *also* gated on the read permission of whatever it draws from (issue #522).
+  // Upcoming is one of two screens that aggregate several subjects rather than showing one, so
+  // it carries no read gate of its own — the gate has to be per lane, or a role that cannot open
+  // Bookings would still read them here. Folding the permission into the same boolean keeps the
+  // fetch and the source array in step.
   const enabled = useEnabledFeatures();
-  const maintenanceOn = enabled.has('maintenance');
-  const warrantyOn = enabled.has('warranty');
-  const perishablesOn = enabled.has('perishables');
-  const contactsOn = enabled.has('contacts');
-  const bookingsOn = enabled.has('bookings');
-  const customFieldsOn = enabled.has('custom-fields');
+  const allows = usePermissionCheck();
+  const itemsReadable = allows('items:read');
+  const maintenanceOn = enabled.has('maintenance') && allows('maintenance:read');
+  const warrantyOn = enabled.has('warranty') && itemsReadable;
+  const perishablesOn = enabled.has('perishables') && itemsReadable;
+  const contactsOn = enabled.has('contacts') && allows('checkouts:read');
+  const bookingsOn = enabled.has('bookings') && allows('bookings:read');
+  const customFieldsOn = enabled.has('custom-fields') && itemsReadable;
+  // Reorder shortfalls are item stock, so they follow the items gate rather than a module one.
+  const reorderOn = itemsReadable;
 
   const maintenanceQuery = useQuery({
     queryKey: agendaKeys.maintenance(),
@@ -107,6 +117,7 @@ export function useAgenda(): {
   const reorderQuery = useQuery({
     queryKey: agendaKeys.reorder(),
     queryFn: () => getReportRepository().listReorderShortfall(),
+    enabled: reorderOn,
   });
 
   const bookingsQuery = useQuery({
@@ -206,11 +217,13 @@ export function useAgenda(): {
         }))
       : [],
 
-    reorder: (reorderQuery.data ?? []).map((r) => ({
-      itemId: r.itemId,
-      itemName: r.itemName,
-      shortfall: r.shortfall,
-    })),
+    reorder: reorderOn
+      ? (reorderQuery.data ?? []).map((r) => ({
+          itemId: r.itemId,
+          itemName: r.itemName,
+          shortfall: r.shortfall,
+        }))
+      : [],
 
     bookings: bookingsOn
       ? (bookingsQuery.data?.rows ?? []).map((b) => ({

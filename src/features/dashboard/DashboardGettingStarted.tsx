@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils';
 import { Surface, buttonVariants } from '@/components/foundry';
 import { AddIcon, ImportIcon, ScanIcon, PackageIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { ROUTE_PERMISSIONS } from '@/components/nav/nav-destinations';
+import { usePermission } from '@/features/users/usePermission';
 import { useItemCount } from '@/features/inventory/queries';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { useT } from '@/features/i18n';
@@ -25,8 +27,14 @@ export function DashboardGettingStarted() {
   // database, not when the last item has merely been archived.
   const count = useItemCount({ includeInactive: true });
 
-  // Don't render while loading (no count yet), once there's data, or when switched off.
+  // Every button here lands on Inventory, so a role that cannot open it is not invited to
+  // start there — the panel would be three routes to the refusal page (issue #522).
+  const mayReachInventory = usePermission(ROUTE_PERMISSIONS.get('/inventory'));
+
+  // Don't render while loading (no count yet), once there's data, when switched off, or when
+  // this role cannot reach the screen every action points at.
   if (!enabled || count.isPending || (count.data ?? 0) > 0) return null;
+  if (!mayReachInventory) return null;
 
   return (
     <Surface className="flex flex-col gap-4 p-5" data-testid="dashboard-getting-started">

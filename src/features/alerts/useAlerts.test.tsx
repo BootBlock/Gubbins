@@ -6,8 +6,9 @@
  * feature is off,
  * the hook (a) passes `enabled: false` to that lane's source query — skipping the fetch — and
  * (b) feeds an empty array into the seam, so the lane produces no alerts even though the mocked
- * source still returns rows (simulating a stale cache from when the feature was on). Low stock is
- * core inventory and is never gated.
+ * source still returns rows (simulating a stale cache from when the feature was on). Every lane
+ * *also* gates on the read permission of what it draws from (issue #522) — low stock, which has
+ * no module of its own, gates on `items:read` alone.
  *
  * The source hooks and TanStack Query's `useQuery` are mocked so the hook never touches the
  * SQLite worker; the modules store is the real Zustand store, driven per-test.
@@ -38,6 +39,8 @@ import { useAlerts } from './useAlerts';
 import type { AlertKind } from './alerts';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EXPIRED_AT = Date.now() - DAY_MS; // an expired perishable → emits an alert
@@ -76,8 +79,14 @@ function laneOf(options: { queryKey?: readonly unknown[] } | undefined): string 
   return String(options?.queryKey?.[1] ?? '');
 }
 
+/** Put the session on a `granted` authority holding exactly `grants`. */
+function grant(...grants: readonly string[]) {
+  useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(grants) } });
+}
+
 beforeEach(() => {
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
   useDismissedAlertsStore.setState({ dismissals: new Map() });
 
   // Every source returns rows regardless of `enabled`, so a gated-off lane that still produces
@@ -110,6 +119,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 
 /** Kinds present in the hook's produced alerts. */
@@ -124,12 +134,41 @@ function laneEnabled(lane: 'warranty-expiring' | 'field-due-dates'): boolean | u
   return calls.filter(([o]) => laneOf(o) === lane).at(-1)?.[0]?.enabled;
 }
 
+/**
+ * Issue #522: Alerts aggregates several subjects and so carries no read gate of its own. A role
+ * that cannot open Maintenance could still read its due schedules here until each lane gated on
+ * the permission of what it draws from.
+ */
+describe('useAlerts — per-lane read permissions', () => {
+  it('drops the maintenance lane for a role without maintenance:read, and skips its fetch', () => {
+    grant('items:read');
+    const present = kinds();
+    expect(present.has('maintenance-due')).toBe(false);
+    expect(h.useDueMaintenance).toHaveBeenCalledWith({ enabled: false });
+    // Everything drawn from items is untouched.
+    expect(present.has('low-stock')).toBe(true);
+    expect(present.has('expiry')).toBe(true);
+  });
+
+  it('drops every item-derived lane, low stock included, without items:read', () => {
+    grant('maintenance:read');
+    const present = kinds();
+    for (const kind of ['low-stock', 'expiry', 'warranty-due', 'field-due'] as const) {
+      expect(present.has(kind)).toBe(false);
+    }
+    expect(h.useLowStockItems).toHaveBeenCalledWith(expect.anything(), { enabled: false });
+    expect(laneEnabled('warranty-expiring')).toBe(false);
+    expect(present.has('maintenance-due')).toBe(true);
+  });
+});
+
 describe('useAlerts — all features on (default)', () => {
   it('produces every lane and enables every source query', () => {
     const present = kinds();
     expect(present).toEqual(
       new Set<AlertKind>(['low-stock', 'expiry', 'maintenance-due', 'warranty-due', 'field-due']),
     );
+    expect(h.useLowStockItems).toHaveBeenCalledWith(expect.anything(), { enabled: true });
     expect(h.useExpiringItems).toHaveBeenCalledWith(expect.anything(), { enabled: true });
     expect(h.useDueMaintenance).toHaveBeenCalledWith({ enabled: true });
     expect(laneEnabled('warranty-expiring')).toBe(true);

@@ -97,7 +97,14 @@ describe('repository permission enforcement', () => {
       expect(remaining?.count).toBe(0);
     });
 
-    it('leaves reads alone — phase 2 gates writes only', async () => {
+    /**
+     * The repository layer gates writes and lets reads through, deliberately: gating every list
+     * and search query would put a permission check in the hot path of every screen. Read access
+     * is decided one level up, at the screen boundary — see `PermissionGuard` (issue #522) — and
+     * on the bridge, which checks the read key on every request. Anything reading straight from
+     * a repository (sync, restore, the importer) is unrestricted here by design.
+     */
+    it('leaves reads alone — the repository layer gates writes only', async () => {
       const seed = new ItemRepository(driver);
       const item = await seed.create({ name: 'Readable', locationId: UNASSIGNED_LOCATION_ID });
 

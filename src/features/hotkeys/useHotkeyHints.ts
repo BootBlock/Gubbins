@@ -14,6 +14,7 @@
 import { useMemo } from 'react';
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import {
   HOTKEY_ACTIONS,
@@ -21,6 +22,7 @@ import {
   isMacKeyboard,
   normaliseHotkeyBindings,
   type HotkeyCommand,
+  hotkeyPermission,
 } from './hotkeys';
 
 /** Spell modifiers the macOS way (`⌘⇧K`) rather than `Ctrl+Shift+K`; settled once at load. */
@@ -38,6 +40,7 @@ export function useHotkeyHints(): HotkeyHints {
   const stored = usePreferencesStore((s) => s.hotkeyBindings);
   const paletteEnabled = usePreferencesStore((s) => s.dashboardCommandPalette);
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
 
   return useMemo(() => {
     const byRoute = new Map<AppRoutePath, string>();
@@ -48,6 +51,7 @@ export function useHotkeyHints(): HotkeyHints {
         const binding = bindings[action.id];
         if (binding === '') continue;
         if (action.feature !== undefined && !enabledFeatures.has(action.feature)) continue;
+        if (!allows(hotkeyPermission(action))) continue;
         if (action.requiresPref === 'dashboardCommandPalette' && !paletteEnabled) continue;
         const shown = displayBinding(binding, IS_MAC);
         if (shown === '') continue;
@@ -59,5 +63,5 @@ export function useHotkeyHints(): HotkeyHints {
       forRoute: (to) => byRoute.get(to),
       forCommand: (command) => byCommand.get(command),
     };
-  }, [enabled, stored, paletteEnabled, enabledFeatures]);
+  }, [enabled, stored, paletteEnabled, enabledFeatures, allows]);
 }

@@ -13,6 +13,8 @@ import {
   parseBinding,
   rejectBinding,
   resolveHotkeyAction,
+  hotkeyPermission,
+  COMMAND_DESTINATIONS,
   type HotkeyAction,
   type HotkeyActionId,
 } from './hotkeys';
@@ -316,5 +318,54 @@ describe('the settings list and the shortcut list agree', () => {
   it('gives every action a distinct id used as its binding-map key', () => {
     const ids: HotkeyActionId[] = HOTKEY_ACTIONS.map((a) => a.id);
     expect(ids).toEqual(HOTKEY_ACTION_IDS);
+  });
+});
+
+/**
+ * Issue #522: a shortcut into a screen the role cannot read is not offered and does not fire.
+ *
+ * The trap this guards is that four actions *navigate* while declaring `kind: 'command'` — they
+ * carry an intent to the screen they land on. A check that looked only at `kind === 'navigate'`
+ * waved all four through, so "New project" stayed in the shortcuts overlay for a role refused
+ * Projects and dropped it on the refusal page when pressed.
+ */
+describe('hotkeyPermission', () => {
+  it('gates a plain navigate action on its destination', () => {
+    const activity = HOTKEY_ACTIONS.find((a) => a.id === 'nav.activity');
+    expect(activity).toBeDefined();
+    expect(hotkeyPermission(activity!)).toEqual(['audit:view']);
+  });
+
+  it('gates the commands that navigate, not just the ones that say they do', () => {
+    for (const [command, to] of Object.entries(COMMAND_DESTINATIONS)) {
+      const action = HOTKEY_ACTIONS.find((a) => a.effect.kind === 'command' && a.effect.command === command);
+      expect(action, `no action dispatches ${command}`).toBeDefined();
+      expect(hotkeyPermission(action!), `${command} → ${to}`).not.toEqual([]);
+    }
+  });
+
+  it('leaves a shortcut that goes nowhere ungated, so it never stops working', () => {
+    // Named explicitly rather than skipped when absent: a typo'd id that quietly `continue`d
+    // would make this assert nothing at all.
+    for (const id of [
+      'command.palette',
+      'command.settings',
+      'command.hotkeys',
+      'command.shortcutsOverlay',
+      'action.toggleFullWidth',
+      'action.toggleTheme',
+    ] as const) {
+      const action = HOTKEY_ACTIONS.find((a) => a.id === id);
+      expect(action, `no action with id ${id}`).toBeDefined();
+      expect(hotkeyPermission(action!), id).toEqual([]);
+    }
+  });
+
+  it('sends every navigating command somewhere the route registry knows about', () => {
+    // The map is what `useGlobalHotkeys` navigates through, so a destination it does not
+    // recognise would be a shortcut gated on nothing and landing anywhere.
+    for (const to of Object.values(COMMAND_DESTINATIONS)) {
+      expect(HOTKEY_ACTIONS.some((a) => a.effect.kind === 'navigate' && a.effect.to === to)).toBe(true);
+    }
   });
 });

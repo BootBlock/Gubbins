@@ -27,6 +27,7 @@ import type { Item, ItemSectionPresence } from '@/db/repositories';
 import { NO_SECTION_PRESENCE } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermission } from '@/features/users/usePermission';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { hidesAnyCapability, isCapabilityVisible, toHiddenCapabilitySet } from '../category-capabilities';
 import { useCategories } from '../categories';
@@ -94,6 +95,7 @@ export function ItemDetailDialog({
   // way in disappears. Passing the resolved set into the pure `buildTabs` keeps the hook out
   // of the tab-building logic.
   const enabledFeatures = useEnabledFeatures();
+  const mayViewAudit = usePermission('audit:view');
 
   // Second axis (issue #618): the item's category can declare capabilities its items simply
   // don't have — a Movie has no maintenance schedule — narrowing the device's set further.
@@ -136,6 +138,7 @@ export function ItemDetailDialog({
     presence.data ?? NO_SECTION_PRESENCE,
     prominence,
     offersLookup,
+    mayViewAudit,
   );
 
   // Collector-card rarity (Appearance flair): a decorative gem in the dialog's top-right for the
@@ -461,6 +464,10 @@ const SECTION_HINT_ACTIVITY =
  * editor say "nothing yet"; that one renders nothing at all, and an empty card promising a feature
  * the category hasn't got would be worse than no card. It moves with the custom fields under
  * `prominence`, since those are the fields it fills.
+ *
+ * `mayViewAudit` (issue #522) is the one gate that is a *permission* rather than a capability: the
+ * per-item ledger is the same audit trail the Activity screen shows, so a role without `audit:view`
+ * must not reach it through this rail either. It defaults to `true` — single-user mode's answer.
  */
 export function buildTabs(
   item: Item,
@@ -469,6 +476,7 @@ export function buildTabs(
   presence: ItemSectionPresence = NO_SECTION_PRESENCE,
   prominence: FieldProminence = DEFAULT_PROMINENCE,
   offersLookup = false,
+  mayViewAudit = true,
 ): readonly TabDef[] {
   // The variants block lives inside LifecycleEditor and is gated there by both axes, so the
   // section heading has to ask the same question rather than only the device's.
@@ -741,18 +749,24 @@ export function buildTabs(
         ...(prominenceMode === 'own-tab' ? [] : [customFieldsSection, ...lookupSections]),
       ],
     },
+    // The per-item ledger is the same audit trail the Activity screen shows, so it answers to the
+    // same permission (issue #522). Without this the tab is a second, unguarded door to exactly
+    // what `audit:view` is defined to withhold — and the one the built-in Viewer role is described
+    // as not having. An empty `sections` array drops the tab in the filter below.
     {
       id: 'activity',
       label: 'Activity',
       icon: <HistoryIcon />,
-      sections: [
-        {
-          title: 'Activity log',
-          icon: <HistoryIcon />,
-          content: <ActivityLog itemId={item.id} itemName={item.name} />,
-          hint: SECTION_HINT_ACTIVITY,
-        },
-      ],
+      sections: mayViewAudit
+        ? [
+            {
+              title: 'Activity log',
+              icon: <HistoryIcon />,
+              content: <ActivityLog itemId={item.id} itemName={item.name} />,
+              hint: SECTION_HINT_ACTIVITY,
+            },
+          ]
+        : [],
     },
   ];
 

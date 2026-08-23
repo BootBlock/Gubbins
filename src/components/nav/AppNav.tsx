@@ -4,6 +4,7 @@ import { Kbd, Menu, MenuLink, MenuAction, MenuExternalLink, MenuSeparator } from
 import { MenuIcon, WikiIcon, ExternalLinkIcon, SignOutIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
+import { usePermissionCheck } from '@/features/users/usePermission';
 import { useSignOut } from '@/features/users/useSignOut';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
@@ -48,15 +49,19 @@ export function AppNav() {
   const { alerts } = useAlerts();
   const alertCount = alerts.length;
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
   const openSettings = useSettingsDialog((s) => s.openSettings);
   const hints = useHotkeyHints();
 
-  // Drop rows whose feature is switched off, then discard any group left with no rows so no
-  // empty section — or the separator that would precede it — is rendered (§3, Phase 2). Core
-  // destinations are `alwaysOn`, so they always survive the filter.
+  // Drop rows whose feature is switched off or whose read permission this session lacks
+  // (issue #522), then discard any group left with no rows so no empty section — or the
+  // separator that would precede it — is rendered (§3, Phase 2). Core destinations are
+  // `alwaysOn` and mostly ungated, so they survive both filters.
   const visibleGroups = NAV_GROUP_ORDER.map((group) => ({
     group,
-    destinations: NAV_DESTINATIONS.filter((d) => d.group === group && enabledFeatures.has(d.feature)),
+    destinations: NAV_DESTINATIONS.filter(
+      (d) => d.group === group && enabledFeatures.has(d.feature) && allows(d.permission),
+    ),
   })).filter((g) => g.destinations.length > 0);
 
   return (

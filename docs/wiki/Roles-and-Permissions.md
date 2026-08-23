@@ -18,8 +18,8 @@ people are assigned to them.
 | --- | --- |
 | **Administrator** | Everything, including managing users and roles |
 | **Manager** | Everything across inventory, projects and settings, but can't manage users |
-| **Stocker** | Add and edit items, move stock and run counts — but no deleting and no activity history |
-| **Viewer** | Look at everything except the activity history and user accounts; change nothing |
+| **Stocker** | Add and edit items, move stock and run counts. No deleting, and no activity history, projects, contacts, suppliers, purchase orders, bookings, user accounts, sync or bridge setup |
+| **Viewer** | Look at inventory, projects, contacts, suppliers, purchase orders, bookings and reports; change nothing. No activity history, user accounts, sync or bridge setup |
 
 Add your own with **Add role** whenever none of these quite fits. Role names are matched **ignoring
 case, in any language**, so `Workshop Lead` and `WORKSHOP LEAD` are one role rather than two that
@@ -48,6 +48,53 @@ Permissions are a grid: a **row for each area** of Gubbins and a **column for ea
 > **Change** covers an entity's own details *and* the things attached to it — an item's attachments,
 > photos, capabilities and BOM lines are all part of changing the item. **Delete** means deleting
 > the item itself.
+
+## What **View** actually does
+
+Most areas have a screen of their own, and for those, **View** decides whether it opens. Take
+**View** away and the screen disappears from the navigation menu, from the Dashboard's tile grid,
+from the keyboard shortcuts and from the [[command palette|Command-Palette-and-Shortcuts]] — and
+typing the address by hand lands on a short "your role doesn't allow this" page instead. Any
+[[dashboard|Dashboard-and-Widgets]] card summarising that area drops off the board too, so nothing
+quietly reports what the screen won't show.
+
+**View** does more than open a screen, and for some areas it is all it does. Where each one bites:
+
+- **Activity history → View** covers the [[activity log|Activity-Log]] screen *and* the per-item
+  and per-location history tabs, which are the same record seen from a different angle.
+- **Backups → View** allows creating a [[backup|Backup-and-Restore]], because a backup file is a
+  copy of the whole database rather than a page to look at. Backup & restore shares the
+  [[Sync|Cloud-Sync]] screen, so that screen opens for a role granted backups even without
+  **Sync → View** — and shows only the backup half to it.
+- **Loans → View** and **Maintenance → View** govern the [[Upcoming|Upcoming-Agenda]] and
+  [[Alerts|Alerts]] entries drawn from them, since neither has a screen of its own.
+- **Settings** is the exception that stays open to everyone: it holds this device's own
+  preferences — [[appearance|Appearance-and-Theming]], [[language|Language-and-Region]] — rather
+  than your inventory, so **Settings → Change** is the permission that bites there, not View.
+
+> **ℹ️ Note**
+> Four areas — **Stock levels**, **Locations**, **Categories** and **Wishlist** — currently show a
+> **View** box the app itself never checks. Their records are read wherever an item shows them,
+> and Gubbins does not hide an item's own page field by field. **Locations → View** and
+> **Categories → View** do take effect for the [[bridge|Bridge-Overview]], which serves those two
+> as endpoints of their own; **Stock levels → View** and **Wishlist → View** take effect nowhere
+> yet. Their **Change** boxes, and the **Delete** boxes they have, work as described.
+
+Those two aggregating screens, Upcoming and Alerts, stay available to everyone and simply leave out
+the entries a role can't view.
+
+Withholding **View** is not the same as hiding individual records:
+
+- A screen someone *can* open shows **everything on it**. There is no per-item or per-location
+  visibility — Gubbins has no concept of "this item is hidden from Sam".
+- Some information travels between areas by design. An item's own page names the project it's
+  committed to and the supplier it came from, whether or not that person can open the Projects or
+  Suppliers screen.
+
+> **⚠️ Heads-up**
+> If a piece of information genuinely must not be seen by someone, don't rely on **View** to keep it
+> out of sight — keep it out of that vault. Permissions decide which screens and actions a person
+> gets, not which rows exist.
 
 ## What the destructive actions are held to
 
@@ -136,8 +183,10 @@ to take. If the account was disabled or deleted, that device is returned to the
 > [[backup|Backup-and-Restore]] applies the accounts and roles in the file the same way.
 
 A role also governs what an outside tool can do. An [[API token|Bridge-API-Tokens]] minted against
-an account is held to that account's role, so a role that can't see suppliers in the app can't read
-them through the [[bridge|Bridge-Overview]] either.
+an account is held to that account's role, so the same limits follow it out of the app. The bridge
+checks the permission on **every request**, against the data rather than a screen: a role without
+**Activity history → View** is refused the activity feed itself, and one without **Items → View**
+is refused the item endpoints, the search and the OData service alike.
 
 > **⚠️ Heads-up**
 > Permissions decide what Gubbins *lets someone do in the app*. They are not a lock on the data

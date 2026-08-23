@@ -44,6 +44,7 @@ import { PALETTE_DESTINATIONS, type PaletteDestination } from '@/components/nav/
 import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
+import { usePermission, usePermissionCheck } from '@/features/users/usePermission';
 import { useErrorMessage } from '@/features/errors';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryItems, useItem, useLocations } from '@/features/inventory/queries';
@@ -96,6 +97,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const navigate = useNavigate();
   const openSettings = useSettingsDialog((s) => s.openSettings);
   const enabledFeatures = useEnabledFeatures();
+  const allows = usePermissionCheck();
   const hints = useHotkeyHints();
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -129,18 +131,23 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     setActing(null);
   }, [query]);
 
-  const itemSearch = isScreenMode ? '' : debounced;
+  // Item search answers only for a session that may read items (issue #522). The palette is
+  // reachable from every screen, including the ones a restricted role *can* open, so leaving it
+  // ungated would hand back the item records the guard just refused at `/inventory` — a
+  // different case from "a screen you can open shows everything on it".
+  const mayReadItems = usePermission('items:read');
+  const itemSearch = isScreenMode || !mayReadItems ? '' : debounced;
   const hasItemQuery = itemSearch.length > 0;
   const itemsQuery = useInventoryItems(hasItemQuery ? { search: itemSearch } : {});
   const loading = hasItemQuery && itemsQuery.isPending;
 
   const entries = useMemo<readonly PaletteEntry[]>(() => {
     if (isScreenMode) {
-      // Screen-jump only offers destinations whose feature is enabled (an entry with no feature —
-      // the Modules manager — is always kept); item search itself is core inventory and is never
-      // gated (§3, Phase 2).
+      // Screen-jump only offers destinations whose feature is enabled *and* whose read
+      // permission this session holds (an entry with neither — the Modules manager — is always
+      // kept); item search itself is core inventory and is never gated (§3, Phase 2, issue #522).
       const screens = PALETTE_DESTINATIONS.filter(
-        (d) => d.feature === undefined || enabledFeatures.has(d.feature),
+        (d) => (d.feature === undefined || enabledFeatures.has(d.feature)) && allows(d.permission),
       );
       return rankFuzzy(screens, screenQuery, (d) => d.label).map(({ item, match }) => ({
         kind: 'screen' as const,
@@ -161,7 +168,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     return [...ranked.map((r) => ({ item: r.item, positions: r.match.positions })), ...rest]
       .slice(0, MAX_RESULTS)
       .map(({ item, positions }) => ({ kind: 'item' as const, item, positions }));
-  }, [isScreenMode, screenQuery, hasItemQuery, itemSearch, itemsQuery.data, enabledFeatures]);
+  }, [isScreenMode, screenQuery, hasItemQuery, itemSearch, itemsQuery.data, enabledFeatures, allows]);
 
   // Keep the active row in range as results change.
   useEffect(() => {

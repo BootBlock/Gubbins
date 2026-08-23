@@ -4,10 +4,11 @@
  * The pure `buildAgenda` seam is covered in `agenda.test.ts`; here we verify the hook's
  * deep-cascade wiring: each date-driven lane gates on its owning feature (bookings→bookings,
  * checkouts→contacts, maintenance→maintenance, warranty→warranty, expiry→perishables,
- * field-due→custom-fields), while
- * reorder stays (core inventory). A gated-off lane passes `enabled: false` to its feed query
- * and feeds an empty array into the seam, so it produces no events even though the mocked feed
- * still returns rows (a stale-cache stand-in).
+ * field-due→custom-fields), and every lane *also* gates on the read permission of what it draws
+ * from (issue #522) — reorder, which has no module of its own, gates on `items:read` alone. A
+ * gated-off lane passes `enabled: false` to its feed query and feeds an empty array into the
+ * seam, so it produces no events even though the mocked feed still returns rows (a stale-cache
+ * stand-in).
  *
  * `useQuery` is mocked and keyed off the query key so each of the seven feeds returns its own
  * rows and records the `enabled` flag it was called with; the modules store is the real store.
@@ -21,6 +22,8 @@ vi.mock('@tanstack/react-query', () => ({ useQuery: h.useQuery }));
 import { useAgenda } from './useAgenda';
 import type { AgendaKind } from './agenda';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PAST = Date.now() - DAY_MS;
@@ -84,8 +87,14 @@ const LANE_DATA: Record<string, unknown> = {
 /** `enabled` flag captured per lane during the last render. */
 let enabledByLane: Record<string, boolean | undefined> = {};
 
+/** Put the session on a `granted` authority holding exactly `grants`. */
+function grant(...grants: readonly string[]) {
+  useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(grants) } });
+}
+
 beforeEach(() => {
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
   enabledByLane = {};
   h.useQuery.mockImplementation((opts: { queryKey: readonly unknown[]; enabled?: boolean }) => {
     const lane = String(opts.queryKey[1]);
@@ -97,6 +106,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 
 function kinds(): Set<AgendaKind> {
@@ -105,7 +115,7 @@ function kinds(): Set<AgendaKind> {
 }
 
 describe('useAgenda — all features on (default)', () => {
-  it('produces every lane and enables every gated feed; reorder is ungated', () => {
+  it('produces every lane and enables every feed', () => {
     const present = kinds();
     expect(present).toEqual(
       new Set<AgendaKind>([
@@ -124,8 +134,8 @@ describe('useAgenda — all features on (default)', () => {
     expect(enabledByLane.checkouts).toBe(true);
     expect(enabledByLane.bookings).toBe(true);
     expect(enabledByLane['field-due']).toBe(true);
-    // Reorder is core inventory — never passed an `enabled` flag (always fetches).
-    expect(enabledByLane.reorder).toBeUndefined();
+    // Reorder has no module of its own, but it is item stock, so it follows `items:read`.
+    expect(enabledByLane.reorder).toBe(true);
   });
 });
 
@@ -173,6 +183,40 @@ describe('useAgenda — per-lane gating', () => {
     expect(present.has('field-due')).toBe(false);
     expect(present.has('reorder')).toBe(true);
     expect(enabledByLane['field-due']).toBe(false);
+  });
+});
+
+/**
+ * Issue #522: a role that cannot open Bookings could still read its rows here, because Upcoming
+ * aggregates several subjects and so carries no read gate of its own. The gate is per lane.
+ */
+describe('useAgenda — per-lane read permissions', () => {
+  it('drops the booking lane for a role without bookings:read, and disables its feed', () => {
+    grant('items:read', 'maintenance:read', 'checkouts:read');
+    const present = kinds();
+    expect(present.has('booking')).toBe(false);
+    expect(enabledByLane.bookings).toBe(false);
+    // The lanes the role *can* read are untouched.
+    expect(present.has('maintenance')).toBe(true);
+    expect(present.has('checkout-due')).toBe(true);
+  });
+
+  it('drops the maintenance lane for a role without maintenance:read', () => {
+    grant('items:read', 'bookings:read', 'checkouts:read');
+    const present = kinds();
+    expect(present.has('maintenance')).toBe(false);
+    expect(enabledByLane.maintenance).toBe(false);
+  });
+
+  it('drops every item-derived lane, reorder included, without items:read', () => {
+    grant('bookings:read');
+    const present = kinds();
+    for (const kind of ['warranty', 'expiry', 'reorder', 'field-due'] as const) {
+      expect(present.has(kind)).toBe(false);
+    }
+    expect(enabledByLane.reorder).toBe(false);
+    // Bookings is not item data, so it survives.
+    expect(present.has('booking')).toBe(true);
   });
 });
 

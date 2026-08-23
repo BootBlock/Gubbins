@@ -27,6 +27,7 @@ import {
 import type { LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
+import { usePermission } from '@/features/users/usePermission';
 import { LocationPhotoManager } from './LocationPhotoManager';
 import type { DeadStockMode } from '@/db/repositories/constants';
 import { DEAD_STOCK_DAYS_BOUNDS } from '@/features/settings/settings';
@@ -112,6 +113,7 @@ export function EditLocationDialog({
   // metric, cubic feet for imperial) — deterministic, unlike the per-value display unit.
   const volumeEntryUnit = volumeSystemForDimensionUnit(dimensionUnit) === 'imperial' ? 'ft3' : 'l';
   const enabledFeatures = useEnabledFeatures();
+  const mayViewAudit = usePermission('audit:view');
   const parentLabelId = useId();
   const colorLabelId = useId();
   const iconFieldId = useId();
@@ -525,14 +527,21 @@ export function EditLocationDialog({
       // user opens this tab — a rename of a shelf pays nothing for it.
       content: <LocationStats location={location} hasChildren={childCount > 0} />,
     },
-    {
-      id: 'history',
-      label: t('inventory.locationActivity.tab'),
-      icon: <HistoryIcon />,
-      // Like Stats above, the rail mounts only the active panel — so a rename pays nothing for
-      // the activity read, and the record is only paged in when somebody asks to see it.
-      content: <LocationActivityLog locationId={location.id} />,
-    },
+    // The per-location ledger is the same audit trail the Activity screen shows, so it answers to
+    // the same permission (issue #522) — otherwise it is a second, unguarded door to exactly what
+    // `audit:view` is defined to withhold.
+    ...(mayViewAudit
+      ? [
+          {
+            id: 'history',
+            label: t('inventory.locationActivity.tab'),
+            icon: <HistoryIcon />,
+            // Like Stats above, the rail mounts only the active panel — so a rename pays nothing
+            // for the activity read, and the record is only paged in when somebody asks to see it.
+            content: <LocationActivityLog locationId={location.id} />,
+          },
+        ]
+      : []),
     ...(enabledFeatures.has('location-photos')
       ? [
           {
