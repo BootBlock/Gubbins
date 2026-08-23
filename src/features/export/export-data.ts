@@ -446,9 +446,10 @@ function extOf(path: string): string {
  * Build the Markdown vault (§4.5): one `.md` per item under a `Location/Item.md`
  * hierarchy with strictly-typed YAML frontmatter (Obsidian Dataview), the description,
  * an `## Images` section embedding each image by Obsidian wiki-link, a `##
- * Datasheets` section of pointer links, and the Activity Ledger table. Full-resolution
- * images **and** thumbnails are extracted into `/assets` (§4.5). Returns the `path → text`
- * map plus the {@link VaultAsset} entries the zip is built from.
+ * Datasheets` section of pointer links, and the Activity Ledger table. An image's
+ * full-resolution bytes **and** its thumbnail are both extracted into `/assets` (§4.5), whichever
+ * of them this device holds. Returns the `path → text` map plus the {@link VaultAsset} entries
+ * the zip is built from.
  *
  * An image whose full-resolution bytes this device does not hold embeds its **thumbnail**
  * instead (issue #635) — the note only ever links a file the same call staged.

@@ -118,7 +118,7 @@ const emptyLocationFields = {
   isDefault: false,
   archivedAt: null,
   lastCountedAt: null,
-  deadStockMode: null,
+  deadStockMode: 'inherit',
   deadStockDays: null,
   color: null,
 };
@@ -336,10 +336,11 @@ describe('VAULT export — the note embeds a file the zip really carries (issue 
     const { files, assets } = zipped[0]!;
     expect(noteFor(files)).toContain('![[NE555 Timer-i1-1.thumb.webp]]');
     expect(noteFor(files)).not.toContain('![[NE555 Timer-i1-1.webp]]');
-    // Every embed resolves: nothing is linked that the zip does not hold.
-    for (const [, name] of noteFor(files).matchAll(/![[(.+?)]]/g)) {
-      expect(Object.keys(assets)).toContain(`assets/${name}`);
-    }
+    // Every embed resolves: nothing is linked that the zip does not hold. Asserted on the
+    // extracted list rather than from inside a loop, so an empty match set cannot pass vacuously.
+    const embedded = [...noteFor(files).matchAll(/!\[\[(.+?)\]\]/g)].map(([, name]) => name);
+    expect(embedded).toEqual(['NE555 Timer-i1-1.thumb.webp']);
+    expect(Object.keys(assets)).toEqual(expect.arrayContaining(embedded.map((n) => `assets/${n}`)));
     expect(Object.keys(assets)).not.toContain('assets/NE555 Timer-i1-1.webp');
   });
 });
