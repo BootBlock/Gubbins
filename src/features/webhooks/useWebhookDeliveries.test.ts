@@ -285,6 +285,79 @@ describe('useWebhookDeliveries', () => {
       expect(urls).toHaveLength(2);
     });
 
+    /**
+     * The companion to the check above, on the *second* request: the re-read of the restarted log
+     * lands after the user has pointed the screen at a different bridge. Those rows belong to a
+     * bridge that is no longer on screen, so they must not be shown as this one's.
+     */
+    it('discards a re-read that lands after the bridge has changed', async () => {
+      let release: (() => void) | undefined;
+      let calls = 0;
+      const first: BridgeConnection = {
+        baseUrl: 'http://bridge.test:8787',
+        token: 'placeholder-token-a',
+        fetchImpl: () => {
+          calls += 1;
+          // 1: the mount's read. 2: the cursor'd poll, answered by a log that has restarted.
+          if (calls === 1) {
+            return Promise.resolve({
+              status: 200,
+              json: () => Promise.resolve({ deliveries: [delivery(5)], latestSeq: 5, logId: 'log-a' }),
+            });
+          }
+          if (calls === 2) {
+            return Promise.resolve({
+              status: 200,
+              json: () => Promise.resolve({ deliveries: [], latestSeq: 1, logId: 'log-b' }),
+            });
+          }
+          // 3: the re-read of the new log, held open until the screen has moved on.
+          return new Promise((resolve) => {
+            release = () =>
+              resolve({
+                status: 200,
+                json: () => Promise.resolve({ deliveries: [delivery(9)], latestSeq: 9, logId: 'log-b' }),
+              });
+          });
+        },
+      };
+      // The bridge the user switches to never answers, so anything reaching the screen after the
+      // switch could only have come from the first one.
+      let secondCalls = 0;
+      const second: BridgeConnection = {
+        baseUrl: 'http://other.test:8787',
+        token: 'placeholder-token-b',
+        fetchImpl: () => {
+          secondCalls += 1;
+          return new Promise(() => {});
+        },
+      };
+
+      const { result, rerender } = renderHook(
+        ({ connection }: { connection: BridgeConnection }) => useWebhookDeliveries(connection),
+        { initialProps: { connection: first } },
+      );
+      await settle();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WEBHOOK_POLL_INTERVAL_MS);
+      });
+      expect(calls).toBe(3);
+
+      rerender({ connection: second });
+      await settle();
+      // The new bridge is read at once. A request still in flight for the old one must not hold
+      // the slot, or the screen would sit on "loading" until the next tick ten seconds later.
+      expect(secondCalls).toBe(1);
+      await act(async () => {
+        release?.();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      // Still waiting on the new bridge — the old bridge's re-read was thrown away.
+      expect(result.current.state.status).toBe('loading');
+    });
+
     it('reports the failure when the re-read itself fails', async () => {
       let logId = 'log-a';
       let failRead = false;

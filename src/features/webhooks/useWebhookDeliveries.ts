@@ -95,7 +95,14 @@ export function useWebhookDeliveries(connection: BridgeConnection | null): {
   // the identity of the callback that scheduled it.
   const cursorRef = useRef<number | undefined>(undefined);
   const deliveriesRef = useRef<readonly KeyedWebhookDelivery[]>([]);
-  const inFlightRef = useRef(false);
+  /**
+   * Which arming owns the request currently in flight, or `null` when none is.
+   *
+   * A generation rather than a flag: a re-armed effect must be able to poll at once, and it cannot
+   * if a request belonging to the arming just torn down still holds the slot. Its own poll would be
+   * skipped and the screen would sit on "loading" until the next tick, ten seconds later.
+   */
+  const inFlightRef = useRef<number | null>(null);
   /** Which log instance the cursor belongs to; `null` from a bridge that reports none. */
   const logIdRef = useRef<string | null>(null);
   const restartedRef = useRef(false);
@@ -117,14 +124,15 @@ export function useWebhookDeliveries(connection: BridgeConnection | null): {
 
   const poll = useCallback(async (): Promise<void> => {
     if (baseUrl === null || token === null || fetchImpl === null) return;
-    // A slow bridge must not let polls pile up on top of each other.
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+    const generation = generationRef.current;
+    // A slow bridge must not let polls pile up on top of each other. Only *this* arming's polls
+    // count — a request left over from a previous one is already being discarded.
+    if (inFlightRef.current === generation) return;
+    inFlightRef.current = generation;
 
     // Named to avoid shadowing the hook's own `connection` argument; these three are its parts,
     // already narrowed to non-null above.
     const bridge = { baseUrl, token, fetchImpl };
-    const generation = generationRef.current;
     try {
       let result = await fetchWebhookDeliveries(bridge, cursorRef.current);
       if (generationRef.current !== generation) return;
@@ -168,7 +176,8 @@ export function useWebhookDeliveries(connection: BridgeConnection | null): {
         restarted: restartedRef.current,
       });
     } finally {
-      inFlightRef.current = false;
+      // Release the slot only if a newer arming has not already claimed it.
+      if (inFlightRef.current === generation) inFlightRef.current = null;
     }
   }, [baseUrl, token, fetchImpl]);
 
