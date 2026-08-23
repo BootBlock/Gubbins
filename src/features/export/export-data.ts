@@ -161,8 +161,15 @@ export function buildItemsExport(
  * Catalog CSV column spec for the Phase 67 round-trip import format.
  * Headers match the synonym map in `catalog-import.ts` so a file exported here
  * can be imported back without a manual column-mapping step.
+ *
+ * That match is asserted in `catalog-roundtrip.test.ts` (issue #249) rather than left to
+ * prose: a header with no synonym infers as `null` in `inferColumnMapping`, and an unmapped
+ * column is dropped **without an error**, so the user loses that field on every round-trip
+ * and is never told. Add a column here and its synonym there in the same change.
+ *
+ * @internal Exported for unit tests only.
  */
-const CATALOG_CSV_COLUMNS = [
+export const CATALOG_CSV_COLUMNS = [
   'name',
   'description',
   'notes',
