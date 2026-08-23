@@ -6,9 +6,11 @@
  * handshake and then sends nothing back leaves the promise pending for as long as the socket
  * survives, which is the ordinary mobile failure rather than an exotic one: a handset moving from
  * Wi-Fi to cellular orphans the socket, and a bridge on a host that has gone to sleep answers the
- * connect and nothing else. Every one of the app's transports guards its call with an in-flight
- * flag cleared only when the promise settles, so a request that never settles does not merely
- * spin — the control stays disabled, with nothing on screen to explain it.
+ * connect and nothing else. Most of the app's transports guard the call with an in-flight flag
+ * cleared only when the promise settles, so a request that never settles does not merely spin —
+ * the control stays disabled, with nothing on screen to explain it. Where there is no such flag
+ * the silence takes another shape: an unanswered `version.json` read leaves the deployed build
+ * unknown, which suppresses the "a new version is ready" banner outright.
  *
  * The remedy is one deadline per request, chosen from {@link FETCH_TIMEOUT_MS} and merged into the
  * request's init by {@link withTimeout}. An expiry rejects the `fetch`, which lands in the

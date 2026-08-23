@@ -95,39 +95,64 @@ describe('FETCH_TIMEOUT_MS', () => {
 });
 
 describe('a transport reports a timeout in the vocabulary its screen already speaks', () => {
-  it('the scale reads it as an unreachable bridge', async () => {
-    const fetchImpl: ScaleFetchLike = (_url, init) => {
-      expect(init.signal).toBeInstanceOf(AbortSignal);
-      return Promise.reject(timedOut());
+  /**
+   * Records the init a transport built, and rejects the way an expired `AbortSignal.timeout` does.
+   *
+   * The `signal` is captured and asserted *after* the call rather than inside this callback on
+   * purpose: every transport wraps its `fetch` in a `catch`, so an assertion that threw in here
+   * would be swallowed and reported as the very transport failure the test then asserts — a test
+   * that passes whether or not the deadline was attached.
+   */
+  function timingOut<T>(): { readonly impl: (url: string, init: T) => Promise<never>; seen: () => T } {
+    let captured: T | undefined;
+    return {
+      impl: (_url, init) => {
+        captured = init;
+        return Promise.reject(timedOut());
+      },
+      seen: () => {
+        if (captured === undefined) throw new Error('the transport never issued a request');
+        return captured;
+      },
     };
-    const result = await fetchScaleEntities({ baseUrl: 'http://127.0.0.1:8787', token: 't', fetchImpl });
+  }
+
+  it('the scale reads it as an unreachable bridge', async () => {
+    const fetch = timingOut<Parameters<ScaleFetchLike>[1]>();
+    const result = await fetchScaleEntities({
+      baseUrl: 'http://127.0.0.1:8787',
+      token: 't',
+      fetchImpl: fetch.impl,
+    });
+    expect(fetch.seen().signal).toBeInstanceOf(AbortSignal);
     expect(result).toEqual({ ok: false, failure: 'bridge-unreachable' });
   });
 
   it('the webhook delivery log reads it as an unreachable bridge', async () => {
-    const fetchImpl: WebhookFetchLike = (_url, init) => {
-      expect(init.signal).toBeInstanceOf(AbortSignal);
-      return Promise.reject(timedOut());
-    };
-    const result = await fetchWebhookDeliveries({ baseUrl: 'http://127.0.0.1:8787', token: 't', fetchImpl });
+    const fetch = timingOut<Parameters<WebhookFetchLike>[1]>();
+    const result = await fetchWebhookDeliveries({
+      baseUrl: 'http://127.0.0.1:8787',
+      token: 't',
+      fetchImpl: fetch.impl,
+    });
+    expect(fetch.seen().signal).toBeInstanceOf(AbortSignal);
     expect(result).toEqual({ ok: false, failure: 'bridge-unreachable' });
   });
 
   it('the bridge build check offers no opinion', async () => {
-    const fetchImpl: BuildCheckFetchLike = (_url, init) => {
-      expect(init.signal).toBeInstanceOf(AbortSignal);
-      return Promise.reject(timedOut());
-    };
-    const result = await checkBridgeBuild('http://127.0.0.1:8787', 't', fetchImpl);
+    const fetch = timingOut<Parameters<BuildCheckFetchLike>[1]>();
+    const result = await checkBridgeBuild('http://127.0.0.1:8787', 't', fetch.impl);
+    expect(fetch.seen().signal).toBeInstanceOf(AbortSignal);
     expect(result).toEqual({ ok: false });
   });
 
   it('the product lookup reads it as an unreachable database', async () => {
-    const fetchImpl = ((_url: string, init?: RequestInit) => {
-      expect(init?.signal).toBeInstanceOf(AbortSignal);
-      return Promise.reject(timedOut());
-    }) as unknown as typeof fetch;
-    const result = await lookupProductOnline('5000112548167', fetchImpl);
+    const fetch = timingOut<RequestInit | undefined>();
+    const result = await lookupProductOnline(
+      '5000112548167',
+      fetch.impl as unknown as typeof globalThis.fetch,
+    );
+    expect(fetch.seen()?.signal).toBeInstanceOf(AbortSignal);
     expect(result).toEqual({
       ok: false,
       reason: expect.stringContaining('Couldn’t reach the product database'),
@@ -135,11 +160,14 @@ describe('a transport reports a timeout in the vocabulary its screen already spe
   });
 
   it('the sync time source falls back to the local clock', async () => {
-    const fetchImpl = ((_url: string, init?: RequestInit) => {
-      expect(init?.signal).toBeInstanceOf(AbortSignal);
-      return Promise.reject(timedOut());
-    }) as unknown as typeof fetch;
-    await expect(httpTimeSource({ url: 'http://localhost/', fetchImpl })).resolves.toBeNull();
+    const fetch = timingOut<RequestInit | undefined>();
+    await expect(
+      httpTimeSource({
+        url: 'http://localhost/',
+        fetchImpl: fetch.impl as unknown as typeof globalThis.fetch,
+      }),
+    ).resolves.toBeNull();
+    expect(fetch.seen()?.signal).toBeInstanceOf(AbortSignal);
   });
 });
 
