@@ -169,6 +169,9 @@ describe('GET /api/v1/webhooks/deliveries', () => {
       const first = (await (await fetch(`${baseUrl}${PATH}`, { headers: auth() })).json()) as {
         logId: string;
       };
+      // `expect.any(String)`, not `not.toBe('')`: the response is cast rather than parsed, so an
+      // absent field would arrive as `undefined` and slip past a comparison with the empty string.
+      expect(first.logId).toEqual(expect.any(String));
       expect(first.logId).not.toBe('');
 
       // Same log, same id — a second read must not look like a restart.

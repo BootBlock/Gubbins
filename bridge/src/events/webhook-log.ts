@@ -27,7 +27,8 @@
  * hard: a receiver's error body is useful for debugging ("invalid channel id"), but an unbounded one
  * would be both a memory risk and a way to pull arbitrary third-party content into the app's UI.
  *
- * Pure and I/O-free apart from the injected clock and log id, so it tests directly.
+ * Pure and I/O-free apart from the injected clock and the id each instance mints for itself, so it
+ * tests directly.
  *
  * Imported by the bridge, so it must survive Node's **strip-only** loader: no `enum`, no
  * `namespace`, no TS parameter properties.
@@ -108,8 +109,6 @@ export interface WebhookDeliveryLogOptions {
   readonly size?: number;
   /** Injectable clock (defaults to `Date.now`). */
   readonly now?: () => number;
-  /** Injectable log-instance id (defaults to a fresh `crypto.randomUUID()`). */
-  readonly id?: string;
 }
 
 /** Truncate a diagnostic string, marking it so a reader knows it was cut rather than empty. */
@@ -132,7 +131,10 @@ function truncateDetail(detail: string | null): string | null {
 export function createWebhookDeliveryLog(options: WebhookDeliveryLogOptions = {}): WebhookDeliveryLog {
   const size = Math.max(1, options.size ?? DEFAULT_DELIVERY_LOG_SIZE);
   const now = options.now ?? Date.now;
-  const id = options.id ?? randomUUID();
+  // Minted here rather than taken as an option: the id's only job is to differ between instances,
+  // and an injected one could be passed the same value twice — which is precisely the state it
+  // exists to make visible.
+  const id = randomUUID();
   const records: WebhookDeliveryRecord[] = [];
   let seq = 0;
 

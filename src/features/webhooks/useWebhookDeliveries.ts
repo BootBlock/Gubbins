@@ -101,6 +101,15 @@ export function useWebhookDeliveries(connection: BridgeConnection | null): {
   const restartedRef = useRef(false);
   /** Monotonic source of row keys. Never reset, so a key is never reused. */
   const nextKeyRef = useRef(0);
+  /**
+   * Which arming of the effect a poll belongs to, bumped on every teardown.
+   *
+   * A poll now spans two awaits and can issue a second request, so "the screen is still open" has
+   * to be re-checked after each one. Without that, an unmount mid-poll would let the restart branch
+   * fire a *fresh* request at a screen nobody is looking at, and a bridge change mid-poll would let
+   * the old bridge's rows and cursor land on top of the reset the effect just performed.
+   */
+  const generationRef = useRef(0);
 
   const baseUrl = connection?.baseUrl ?? null;
   const token = connection?.token ?? null;
@@ -115,8 +124,10 @@ export function useWebhookDeliveries(connection: BridgeConnection | null): {
     // Named to avoid shadowing the hook's own `connection` argument; these three are its parts,
     // already narrowed to non-null above.
     const bridge = { baseUrl, token, fetchImpl };
+    const generation = generationRef.current;
     try {
       let result = await fetchWebhookDeliveries(bridge, cursorRef.current);
+      if (generationRef.current !== generation) return;
       if (!result.ok) {
         setState({ status: 'failed', failure: result.failure });
         return;
@@ -129,7 +140,11 @@ export function useWebhookDeliveries(connection: BridgeConnection | null): {
         restartedRef.current = true;
         cursorRef.current = undefined;
         deliveriesRef.current = [];
+        // Adopted before the re-read, not after it: were the re-read to fail, a cursor-free retry
+        // against the same log must not be mistaken for a *second* restart.
+        logIdRef.current = result.logId;
         result = await fetchWebhookDeliveries(bridge, undefined);
+        if (generationRef.current !== generation) return;
         if (!result.ok) {
           setState({ status: 'failed', failure: result.failure });
           return;
@@ -180,6 +195,9 @@ export function useWebhookDeliveries(connection: BridgeConnection | null): {
     const timer = setInterval(tick, WEBHOOK_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
+      // Anything still in flight belongs to the arming being torn down, and must neither write
+      // state nor start a follow-up request.
+      generationRef.current += 1;
       clearInterval(timer);
     };
   }, [baseUrl, token, fetchImpl, poll]);

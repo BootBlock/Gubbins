@@ -238,6 +238,53 @@ describe('useWebhookDeliveries', () => {
       expect(state.restarted).toBe(false);
     });
 
+    /**
+     * "The screen being open is the subscription" (the module's own rule) has to survive the second
+     * request the restart branch makes. Without a check after each await, a poll that resolves
+     * after the screen closed would fire a fresh one at a bridge nobody is watching.
+     */
+    it('starts no follow-up request once the screen has closed', async () => {
+      const urls: string[] = [];
+      let release: (() => void) | undefined;
+      const conn: BridgeConnection & { readonly urls: string[] } = {
+        baseUrl: 'http://bridge.test:8787',
+        token: 'placeholder-token',
+        urls,
+        fetchImpl: (url: string) => {
+          urls.push(url);
+          if (urls.length === 1) {
+            return Promise.resolve({
+              status: 200,
+              json: () => Promise.resolve({ deliveries: [delivery(5)], latestSeq: 5, logId: 'log-a' }),
+            });
+          }
+          // Held open until the screen has gone, so the restart is detected too late to act on.
+          return new Promise((resolve) => {
+            release = () =>
+              resolve({
+                status: 200,
+                json: () => Promise.resolve({ deliveries: [], latestSeq: 1, logId: 'log-b' }),
+              });
+          });
+        },
+      };
+      const { unmount } = renderHook(() => useWebhookDeliveries(conn));
+      await settle();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WEBHOOK_POLL_INTERVAL_MS);
+      });
+      expect(urls).toHaveLength(2);
+
+      unmount();
+      await act(async () => {
+        release?.();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(urls).toHaveLength(2);
+    });
+
     it('reports the failure when the re-read itself fails', async () => {
       let logId = 'log-a';
       let failRead = false;
