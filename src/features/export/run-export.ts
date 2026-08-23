@@ -62,7 +62,6 @@ import {
   buildProjectVault,
   buildVault,
   type CatalogCustomFieldColumn,
-  type VaultAsset,
   type VaultBuild,
   type VaultItem,
   type VaultLocation,
@@ -455,11 +454,19 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
       history: history.rows,
       locationName: locationNames.get(item.locationId) ?? 'Unfiled',
       categoryName: item.categoryId ? (categoryNames.get(item.categoryId) ?? null) : null,
-      images: images.map((img) => ({
-        id: img.id,
-        opfsPath: img.fullResOpfsPath,
-        thumbnail: img.thumbnailBlob,
-      })),
+      // The full-resolution bytes are resolved *here*, before the note is written, so the note
+      // and the zip are decided by one fact (issue #635). A row can point at a file this device
+      // does not hold — a photo synced from a peer, one Storage Triage downgraded, or one added
+      // while storage was critical — and the builder then embeds the thumbnail instead of a
+      // wiki-link to a file the zip never carried.
+      images: await Promise.all(
+        images.map(async (img) => ({
+          id: img.id,
+          opfsPath: img.fullResOpfsPath,
+          thumbnail: img.thumbnailBlob,
+          fullRes: await readFullResBytes(img.fullResOpfsPath),
+        })),
+      ),
       attachments: attachments.map((a) => ({ kind: a.kind, value: a.value, label: a.label })),
     });
   }
@@ -499,7 +506,8 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   }
   const { files, assets } = build;
 
-  const assetBytes = await resolveAssets(assets);
+  const assetBytes: Record<string, Uint8Array> = {};
+  for (const asset of assets) assetBytes[asset.path] = asset.bytes;
   const zip = await zipInVaultWorker(files, assetBytes);
   const name = `gubbins-vault${suffix}-${stamp()}.zip`;
   download(new Blob([zip as BlobPart], { type: 'application/zip' }), name);
@@ -507,21 +515,13 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
 }
 
 /**
- * Resolve each {@link VaultAsset} to bytes: read full-res files from OPFS, pass through
- * already-held thumbnail bytes. A full-res file missing locally (synced from another
- * device whose bytes never travelled — §4 strict isolation) is skipped, never failing the
- * whole export.
+ * Read one full-resolution image back from OPFS as bytes, or `null` when this device holds no
+ * such file — synced from another device whose bytes never travelled (§4 strict isolation),
+ * downgraded by Storage Triage, or never written because storage was critical when it was added.
+ * Missing bytes are never an export failure; they decide which file the note embeds instead
+ * (issue #635).
  */
-async function resolveAssets(assets: readonly VaultAsset[]): Promise<Record<string, Uint8Array>> {
-  const out: Record<string, Uint8Array> = {};
-  for (const asset of assets) {
-    if (asset.bytes) {
-      out[asset.path] = asset.bytes;
-      continue;
-    }
-    if (!asset.opfsPath) continue;
-    const blob = await readImageBlob(asset.opfsPath);
-    if (blob) out[asset.path] = new Uint8Array(await blob.arrayBuffer());
-  }
-  return out;
+async function readFullResBytes(opfsPath: string): Promise<Uint8Array | null> {
+  const blob = await readImageBlob(opfsPath);
+  return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
 }

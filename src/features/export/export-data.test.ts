@@ -331,13 +331,14 @@ describe('buildCatalogCsv — custom-field columns (Phase 72)', () => {
 describe('buildVault — §4.5 asset extraction (Phase 14)', () => {
   it('embeds a full-res image wiki-link and lists both bytes as /assets', () => {
     const thumb = new Uint8Array([1, 2, 3]);
+    const full = new Uint8Array([9, 9, 9, 9]);
     const vaultItems: VaultItem[] = [
       {
         item: makeItem({ id: '3f2c9a1b-aaaa', name: 'NE555 Timer' }),
         history: [],
         locationName: 'Box',
         categoryName: null,
-        images: [{ id: 'img1', opfsPath: 'images/abc.webp', thumbnail: thumb }],
+        images: [{ id: 'img1', opfsPath: 'images/abc.webp', thumbnail: thumb, fullRes: full }],
       },
     ];
     const { files, assets } = buildVault(vaultItems);
@@ -345,11 +346,49 @@ describe('buildVault — §4.5 asset extraction (Phase 14)', () => {
     // Obsidian-style embed by bare filename (resolves anywhere in the vault).
     expect(md).toContain('## Images');
     expect(md).toContain('![[NE555 Timer-3f2c9a1b-1.webp]]');
-    // Full-res (read from OPFS later) and the thumbnail bytes are both staged under /assets.
+    // Full-res and the thumbnail bytes are both staged under /assets.
     const fullRes = assets.find((a) => a.path === 'assets/NE555 Timer-3f2c9a1b-1.webp');
-    expect(fullRes?.opfsPath).toBe('images/abc.webp');
+    expect(fullRes?.bytes).toBe(full);
     const thumbAsset = assets.find((a) => a.path === 'assets/NE555 Timer-3f2c9a1b-1.thumb.webp');
     expect(thumbAsset?.bytes).toBe(thumb);
+  });
+
+  it('embeds the thumbnail when this device holds no full-resolution file (issue #635)', () => {
+    // A photo synced from a peer device, downgraded by Storage Triage, or added while storage
+    // was critical: the row points at an OPFS file that is not here. Embedding the full-res
+    // name wrote a dead link, because the zip only ever carried the thumbnail.
+    const thumb = new Uint8Array([1, 2, 3]);
+    const vaultItems: VaultItem[] = [
+      {
+        item: makeItem({ id: '3f2c9a1b-aaaa', name: 'NE555 Timer' }),
+        history: [],
+        locationName: 'Box',
+        categoryName: null,
+        images: [{ id: 'img1', opfsPath: 'images/abc.webp', thumbnail: thumb, fullRes: null }],
+      },
+    ];
+    const { files, assets } = buildVault(vaultItems);
+    const md = files['Box/NE555 Timer.md']!;
+    expect(md).toContain('![[NE555 Timer-3f2c9a1b-1.thumb.webp]]');
+    expect(md).not.toContain('![[NE555 Timer-3f2c9a1b-1.webp]]');
+    // Every staged asset is a file the zip will really contain, and the full-res is not one.
+    expect(assets.map((a) => a.path)).toEqual(['assets/NE555 Timer-3f2c9a1b-1.thumb.webp']);
+  });
+
+  it('embeds nothing for an image with neither full-resolution bytes nor a thumbnail (issue #635)', () => {
+    const vaultItems: VaultItem[] = [
+      {
+        item: makeItem({ id: '3f2c9a1b-aaaa', name: 'NE555 Timer' }),
+        history: [],
+        locationName: 'Box',
+        categoryName: null,
+        images: [{ id: 'img1', opfsPath: 'images/abc.webp', thumbnail: null, fullRes: null }],
+      },
+    ];
+    const { files, assets } = buildVault(vaultItems);
+    // No file to link, so no section at all — a wiki-link to nothing is a broken embed.
+    expect(files['Box/NE555 Timer.md']!).not.toContain('## Images');
+    expect(assets).toEqual([]);
   });
 
   it('renders a Datasheets section linking URLs and local pointers (no bytes exist)', () => {
@@ -529,7 +568,7 @@ describe('buildVault rootFolder — §4.5 project sub-folders (Phase 19)', () =>
         history: [],
         locationName: 'Workshop',
         categoryName: null,
-        images: [{ id: 'img1', opfsPath: 'images/abc.webp', thumbnail: thumb }],
+        images: [{ id: 'img1', opfsPath: 'images/abc.webp', thumbnail: thumb, fullRes: new Uint8Array([9]) }],
       },
     ];
     const { files, assets } = buildVault(vaultItems, { rootFolder: 'Robot Arm' });

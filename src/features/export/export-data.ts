@@ -325,13 +325,26 @@ export function buildCatalogCsv(
 
 // --- Markdown / Obsidian vault (§4.5) ------------------------------------------
 
-/** A full-resolution image to extract into the vault's `/assets` (§4.5). */
+/** An image to extract into the vault's `/assets` (§4.5). */
 export interface VaultImage {
   readonly id: string;
-  /** OPFS path of the full-resolution file (read by the orchestrator). */
+  /**
+   * OPFS path of the full-resolution file. Kept for the file extension the vault's asset names
+   * take; the bytes themselves arrive in {@link fullRes}, already resolved by the orchestrator.
+   */
   readonly opfsPath: string;
   /** Thumbnail bytes already held in the DB blob, extracted alongside the full-res. */
   readonly thumbnail?: Uint8Array | null;
+  /**
+   * Full-resolution bytes, or `null`/absent when this device holds no such file (issue #635).
+   *
+   * Resolved by the orchestrator *before* the note is written, because the note and the zip have
+   * to be decided by the same fact: three ordinary states leave a row pointing at a file that is
+   * not here — a photo synced from a peer device (only the thumbnail travels), one Storage Triage
+   * has downgraded, and one added while storage was critical. Embedding the full-res name in
+   * those cases wrote a link to a file the zip never contained.
+   */
+  readonly fullRes?: Uint8Array | null;
 }
 
 /** A datasheet pointer (§4 strict isolation — only the link/path, never bytes). */
@@ -351,15 +364,15 @@ export interface VaultItem {
 }
 
 /**
- * A binary asset the vault references. The pure builder names the asset and decides its
- * source; the orchestrator fills the bytes (reading `opfsPath` from OPFS, or using the
- * already-resolved `bytes`). Full-res files synced from another device whose local bytes
- * are missing are simply skipped by the orchestrator.
+ * A binary asset the vault references: the name it takes in the zip, and its bytes.
+ *
+ * The builder only ever stages an asset it has bytes for, so every entry here is a file the zip
+ * will really contain — which is what lets the note it wrote link something that resolves
+ * (issue #635).
  */
 export interface VaultAsset {
   readonly path: string;
-  readonly opfsPath?: string;
-  readonly bytes?: Uint8Array | null;
+  readonly bytes: Uint8Array;
 }
 
 export interface VaultBuild {
@@ -412,6 +425,17 @@ export interface VaultOptions {
 /** Fallback name for a project folder whose name sanitises to nothing. */
 const PROJECT_FOLDER_FALLBACK = 'Project';
 
+/**
+ * Whether a staged asset would really be a file worth linking.
+ *
+ * Length, not truthiness: an empty `Uint8Array` is a truthy object, so a zero-byte read would
+ * otherwise stage an empty file and have the note embed it — the same broken embed issue #635
+ * set out to remove, just with a file behind it.
+ */
+function hasBytes(bytes: Uint8Array | null | undefined): bytes is Uint8Array {
+  return !!bytes && bytes.length > 0;
+}
+
 /** Extension of an OPFS image path, defaulting to `webp` (§4.2 pipeline writes WebP). */
 function extOf(path: string): string {
   const ext = path.split('.').pop();
@@ -421,10 +445,14 @@ function extOf(path: string): string {
 /**
  * Build the Markdown vault (§4.5): one `.md` per item under a `Location/Item.md`
  * hierarchy with strictly-typed YAML frontmatter (Obsidian Dataview), the description,
- * an `## Images` section embedding full-res images by Obsidian wiki-link, a `##
- * Datasheets` section of pointer links, and the Activity Ledger table. Full-resolution
- * images **and** thumbnails are extracted into `/assets` (§4.5). Returns the `path → text`
- * map plus the {@link VaultAsset} descriptors the orchestrator fills with bytes.
+ * an `## Images` section embedding each image by Obsidian wiki-link, a `##
+ * Datasheets` section of pointer links, and the Activity Ledger table. An image's
+ * full-resolution bytes **and** its thumbnail are both extracted into `/assets` (§4.5), whichever
+ * of them this device holds. Returns the `path → text` map plus the {@link VaultAsset} entries
+ * the zip is built from.
+ *
+ * An image whose full-resolution bytes this device does not hold embeds its **thumbnail**
+ * instead (issue #635) — the note only ever links a file the same call staged.
  *
  * With `options.locations` (issue #617, `N7`) each location also gets an Obsidian **folder note**
  * at `Folder/Folder.md`, carrying what the vault previously threw away: the description, icon,
@@ -469,14 +497,24 @@ export function buildVault(vaultItems: readonly VaultItem[], options: VaultOptio
 
     // Stable, vault-unique asset filenames (id-suffixed so two items can share a name).
     const assetBase = `${sanitiseSegment(entry.item.name) || 'item'}-${entry.item.id.slice(0, 8)}`;
-    const imageNames = (entry.images ?? []).map((image, i) => {
+    // The note embeds whichever file the zip actually carries (issue #635): the full-resolution
+    // image when this device holds it, otherwise the thumbnail — which is stored in the database
+    // and so travels everywhere the row does. An image with neither is embedded not at all,
+    // because a wiki-link to an absent file renders as a broken embed in Obsidian.
+    const imageNames = (entry.images ?? []).flatMap((image, i) => {
       const ext = extOf(image.opfsPath);
-      const fullName = `${assetBase}-${i + 1}.${ext}`;
-      assets.push({ path: `${prefix}assets/${fullName}`, opfsPath: image.opfsPath });
-      if (image.thumbnail) {
-        assets.push({ path: `${prefix}assets/${assetBase}-${i + 1}.thumb.${ext}`, bytes: image.thumbnail });
+      const stem = `${assetBase}-${i + 1}`;
+      const thumbName = `${stem}.thumb.${ext}`;
+      const thumbnail = hasBytes(image.thumbnail) ? image.thumbnail : null;
+      if (thumbnail) {
+        assets.push({ path: `${prefix}assets/${thumbName}`, bytes: thumbnail });
       }
-      return fullName;
+      if (hasBytes(image.fullRes)) {
+        const fullName = `${stem}.${ext}`;
+        assets.push({ path: `${prefix}assets/${fullName}`, bytes: image.fullRes });
+        return [fullName];
+      }
+      return thumbnail ? [thumbName] : [];
     });
 
     files[path] = renderItemMarkdown(entry, imageNames);
