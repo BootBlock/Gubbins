@@ -166,25 +166,30 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
   };
 
   /**
-   * Open the list to browse the whole catalogue, highlighting `startIndex` (`-1` for nothing).
-   *
-   * Which index that is belongs to the gesture. Asking for the list — the chevron, ArrowDown —
-   * starts on the value the field already holds, so a long catalogue opens showing it; a click
-   * that merely places the caret in the input starts on nothing, because a highlighted option
-   * makes Enter *pick* it instead of submitting the enclosing form.
-   */
-  /**
-   * Where a browse opened with the *pointer* starts. In creatable mode only the field's own
+   * Where a browse opened from the **chevron** starts. In creatable mode only the field's own
    * value may be pre-armed: the typed text is itself a candidate there, and Enter accepts
    * whatever is highlighted — so arming a merely *near* option would have `cap` create the
    * `capacitor` that already exists. Elsewhere the nearest option is what the user meant.
    *
-   * ArrowDown is the exception: it is a request to move *into* the list, so it takes the
-   * nearest option (and the top of the list when nothing is near) whatever the mode.
+   * A click into the input arms nothing at all (see the handler), and ArrowDown has its own
+   * rule: it is a request to move *into* the list.
    */
-  const browseStart = () =>
+  const chevronStart = () =>
     onCommit ? indexOfValue(browseList, value) : browseStartIndex(browseList, value);
 
+  /**
+   * Where a browse opened with **ArrowDown** starts. The nearest option, and the top of the
+   * list when nothing is near — an arrow press must land somewhere. The exception is a
+   * creatable field with nothing near: the typed text is the candidate there, so arming the
+   * first entry of the catalogue would have Enter commit something unrelated to it.
+   */
+  const arrowDownStart = () => {
+    const nearest = browseStartIndex(browseList, value);
+    if (nearest >= 0) return nearest;
+    return onCommit ? -1 : 0;
+  };
+
+  /** Open the list to browse the whole catalogue, highlighting `startIndex` (`-1` for none). */
   const openBrowsing = (startIndex: number) => {
     setOpen(true);
     setBrowsing(true);
@@ -219,10 +224,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
       case 'ArrowDown':
         event.preventDefault();
         if (isOpen) setActiveIndex((i) => Math.min(matches.length - 1, i + 1));
-        // ArrowDown must always land on an option, so the top of the list stands in when
-        // nothing in it is near what the field holds. See {@link browseStart} for why this
-        // takes the nearest option even where a pointer open would not.
-        else openBrowsing(Math.max(0, browseStartIndex(browseList, value)));
+        else openBrowsing(arrowDownStart());
         break;
       case 'ArrowUp':
         if (!isOpen) break;
@@ -327,7 +329,7 @@ export const Autocomplete = forwardRef<HTMLInputElement, AutocompleteProps>(func
           event.preventDefault();
           // Toggles what the user can see — see the input's onClick for why not `open`.
           if (isOpen) close();
-          else openBrowsing(browseStart());
+          else openBrowsing(chevronStart());
           inputRef.current?.focus();
         }}
         className="absolute right-0 top-0 flex h-10 w-9 items-center justify-center text-muted-foreground disabled:opacity-50"

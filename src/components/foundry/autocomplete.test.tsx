@@ -422,6 +422,21 @@ describe('Autocomplete — creatable mode (onCommit, issue #84)', () => {
     expect(committed).toEqual(['Yageo']);
   });
 
+  it('arms nothing when ArrowDown finds no option near the typed text', () => {
+    // The value the user is typing is the candidate: arming the top of the catalogue instead
+    // would have Enter commit a tag that has nothing to do with what they wrote.
+    const committed: string[] = [];
+    render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
+    const input = screen.getByRole('combobox', { name: 'Add a tag' });
+
+    fireEvent.change(input, { target: { value: 'brand-new-tag' } });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.queryByRole('option', { selected: true })).toBeNull();
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(committed).toEqual(['brand-new-tag']);
+  });
+
   it('ignores Enter on an empty field', () => {
     const committed: string[] = [];
     render(<CreatableHarness onCommit={(v) => committed.push(v)} />);
