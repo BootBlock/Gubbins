@@ -226,7 +226,11 @@ export function CategoryPresetPickerDialog({
               viewport (grid-item min-width:auto), and wrapped chips need no hidden pan. */}
           <ul
             aria-label={t('inventory.presets.sections.label')}
-            className="flex flex-wrap gap-1 sm:min-h-0 sm:flex-1 sm:flex-col sm:flex-nowrap sm:overflow-y-auto"
+            // The bleed is scoped to `sm:` with the scrolling: only there does this become a
+            // scroll container, and only a scroll container clips the outline off a section
+            // button sitting flush against its edge. Wrapped chips below `sm` clip nothing, and
+            // bleeding them would just pull the row out of the panel.
+            className="flex flex-wrap gap-1 sm:min-h-0 sm:flex-1 sm:flex-col sm:flex-nowrap sm:overflow-y-auto sm:ring-bleed-x"
           >
             <li>
               <SectionButton

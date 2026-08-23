@@ -221,7 +221,10 @@ function CategoryManagerBody() {
             </span>
           </Tooltip>
         </div>
-        <ul className="max-h-64 space-y-1 overflow-y-auto">
+        {/* Bounded height, so it scrolls — and a scroller clips on both axes, which would take
+            the focus outline off rows that run its full width. `ring-bleed-x` cancels out, so no
+            row moves; it only gives that outline somewhere to paint (issue #417). */}
+        <ul className="max-h-64 space-y-1 overflow-y-auto ring-bleed-x">
           {rows.length === 0 ? (
             <li className="px-1 py-2 text-xs text-muted-foreground">No categories yet.</li>
           ) : (

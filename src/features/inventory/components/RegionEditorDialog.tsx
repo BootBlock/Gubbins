@@ -283,7 +283,11 @@ export function RegionEditorDialog({
               so it is left in flow: there the dialog is already scrolling at full height, and
               growth extends that scroll rather than re-staging the layout. */}
           <div className="relative min-w-0 lg:h-[26rem]">
-            <div className="space-y-4 lg:absolute lg:inset-0 lg:overflow-y-auto lg:pr-1">
+            {/* `ring-bleed-x` in place of a bare right padding: the column clips on both axes
+                once it scrolls, and it holds the colour swatch picker, whose selected swatch
+                draws its ring outside its own box. The bleed clears the scrollbar on the right
+                exactly as the padding did, and gives that ring room on the left (issue #417). */}
+            <div className="space-y-4 lg:absolute lg:inset-0 lg:overflow-y-auto lg:ring-bleed-x">
               <RegionList
                 rows={rows}
                 selectedId={selectedId}

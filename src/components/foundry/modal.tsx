@@ -260,17 +260,17 @@ export function Modal({
             dialog's scroll area (`dialog-scroll`), which bleeds its scrollbar sideways into the
             Surface's own padding — so the bar (classic OR floating overlay) sits over that padding,
             never over the content, and content still aligns with the header. Because this region is
-            a direct child of the padded Surface, that bleed has nowhere to leak. A dialog that owns
-            its own inner scroller passes `scrollBody={false}`, leaving this region at `overflow:
-            visible` so the inner bleed can reach the Surface padding too.
+            a direct child of the padded Surface, that bleed has nowhere to leak. A dialog whose
+            inner scroller bleeds its *scrollbar* too passes `scrollBody={false}`, leaving this
+            region at `overflow: visible` so that bleed can reach the Surface padding as well. A
+            dialog whose inner scroller only bleeds a *ring* (`ring-bleed-x`) needs no such thing:
+            that overhang is the same width as this region's own left bleed, so it lands exactly
+            on this box's clip edge.
 
-            `-ml-2 pl-2` bleeds the *left* edge the same way, but for a different reason: because
-            `dialog-scroll` clips overflow (`overflow-x: hidden`), it would otherwise shave the
-            focus/selection ring off a control sitting flush against the left edge — e.g. the
-            leading "No colour"/"No type" swatch in the Add/Edit location dialog, whose selection
-            ring is always drawn. The negative margin is cancelled by the equal padding, so no
-            content shifts; it just gives an outward ring room to paint into the Surface's own
-            padding. Paired with `dialog-scroll` so it only applies to the scroll-owning body. */}
+            `dialog-scroll` bleeds the *left* edge too, so the ring on a control sitting flush
+            against that edge is not shaved off by the same `overflow-x: hidden` (issue #417).
+            That lives in the utility rather than here, so every dialog scroll area gets it —
+            including the ones the Modal does not own (a RailModal panel, a Drawer body). */}
           {/* `flex flex-col` (the `!scrollBody` case) is what lets a self-scrolling body *shrink*.
             Each such dialog sizes its own frame in viewport units — RailModal asks for `74dvh`,
             the preset picker `65vh` — and on a short viewport (a small laptop, or any display
@@ -278,7 +278,7 @@ export function Modal({
             viewport-capped Surface can give it. As a plain block child it would simply spill out
             past the Surface with no way to reach the bottom of it; as a flex item it shrinks to
             the room actually left over and scrolls internally instead. */}
-          <div className={cn('mt-5 min-h-0', scrollBody ? 'dialog-scroll -ml-2 pl-2' : 'flex flex-col')}>
+          <div className={cn('mt-5 min-h-0', scrollBody ? 'dialog-scroll' : 'flex flex-col')}>
             <UnsavedChangesContext.Provider value={report}>
               <DialogBusyContext.Provider value={reportBusy}>
                 <DialogBusyStateContext.Provider value={blocked}>{children}</DialogBusyStateContext.Provider>

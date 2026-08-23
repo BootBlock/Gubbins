@@ -1055,6 +1055,20 @@
   --spacing-field-gap-compact: 0.5rem; /* 8px */
 
   /*
+   * Room an outward focus/selection ring needs to paint, for a scroll container that clips
+   * it away (issue #417). A scroller sets `overflow`, so its box clips at its padding edge —
+   * and a control flush against that edge loses its ring entirely. Bleed the container by
+   * this much and cancel it with equal padding: the box grows outwards into whatever padding
+   * the Surface already has, the content does not move, and the ring has somewhere to go.
+   *
+   * 0.5rem clears the widest ring the Foundry draws — a `ring-[3px] ring-offset-2` on a
+   * control that also scales up on selection. Read by the `dialog-scroll` and `ring-bleed-x`
+   * utilities below: the first for a dialog's own body, the second for every other clipping
+   * scroller that holds controls.
+   */
+  --spacing-ring-bleed: 0.5rem; /* 8px */
+
+  /*
    * Safe-area insets (issue #655).
    *
    * `index.html` opts the app into `viewport-fit=cover`, so the layout viewport is the
@@ -1449,15 +1463,53 @@
  * vertical bar off-screen). `Modal` guarantees that path: its body region carries this bleed
  * directly (a direct child of the padded Surface), and a dialog with its own inner scroller
  * passes `scrollBody={false}` so the body stays `overflow: visible`. So there is exactly one
- * bleed-scroller per dialog — never one nested inside another. `overflow-x: hidden` on the
- * element itself stops a stray-wide child from adding a horizontal bar. Centralised so every
- * dialog scroll area shares the behaviour and it tunes in one place.
+ * *scrollbar*-bleeding scroller per dialog — never one nested inside another. (A `ring-bleed-x`
+ * scroller below may be nested inside this one, and several are: its bleed is the same
+ * `--spacing-ring-bleed` as the left bleed here, so the inner overhang lands exactly on this
+ * box's clip edge and never past it.) `overflow-x: hidden` on the element itself stops a
+ * stray-wide child from adding a horizontal bar. Centralised so every dialog scroll area
+ * shares the behaviour and it tunes in one place.
  */
 @utility dialog-scroll {
   overflow-x: hidden;
   overflow-y: auto;
   margin-right: -1rem;
   padding-right: 1rem;
+  /*
+   * The matching *left* bleed, for a different reason: `overflow-x: hidden` above clips the
+   * box, so it would otherwise shave the ring off a control sitting flush against the left
+   * edge — e.g. the leading "No colour" swatch in the location dialogs, whose selection ring
+   * (`ring-2 ring-offset-2`, and a `scale-110` on top of it) is always drawn. As on the
+   * right, the negative margin and equal padding cancel, so nothing shifts — it only gives
+   * an outward ring room to paint into the Surface's own padding. The right bleed above is
+   * wider because it is sized for a scrollbar, not a ring.
+   */
+  margin-left: calc(var(--spacing-ring-bleed) * -1);
+  padding-left: var(--spacing-ring-bleed);
+}
+
+/*
+ * The ring bleed on its own, for a scroll container that is not a dialog's body — a tab rail
+ * scrolling its own stack, a bounded list, a panel taken out of flow. `overflow` on either axis
+ * makes the box clip on *both*, so a control flush against an edge loses whatever it paints
+ * outside its border box. One utility rather than a margin and a padding written side by side:
+ * the two only work as a pair, and a pair is exactly what gets half-applied — or applied at one
+ * breakpoint and not the other.
+ *
+ * Two limits, both of which have a call site:
+ *
+ * 1. **A declared width has to carry the bleed in its own sum.** Widths are border boxes here,
+ *    so the padding comes out of the width rather than adding to it — see the two rails, whose
+ *    `w-*` reads `calc(var(--spacing)*N + 2*var(--spacing-ring-bleed))`.
+ * 2. **A bleed reaches only as far as the nearest clipping ancestor**, and that ancestor cannot
+ *    always be bled in turn: the emoji picker's frame is measured by a `ResizeObserver` that
+ *    reads the *content* box, so padding there would feed a shrink loop. Where the outer clip
+ *    has to stay put, draw the ring inside the control (`ring-inset`) instead — the gauge's
+ *    segmented picker does the same, for a frame that clips to round its corners.
+ */
+@utility ring-bleed-x {
+  margin-inline: calc(var(--spacing-ring-bleed) * -1);
+  padding-inline: var(--spacing-ring-bleed);
 }
 
 @utility animate-fade-in {
