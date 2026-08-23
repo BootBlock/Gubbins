@@ -15,8 +15,9 @@ import { foldName } from '@/lib/name-fold';
  * `mergeSuggestions`, so equal-rank matches stay alphabetical. A suggestion identical to the
  * current input is dropped (there is nothing left to complete), so a field already holding an
  * exact match shows no redundant one-item list. An empty query returns the whole list
- * (capped), which is what an untouched field's type-ahead offers. Browsing the list does not
- * come through here at all — the chevron shows the whole catalogue, uncapped.
+ * (capped), which is what an untouched field's type-ahead offers. Browsing the list is not a
+ * type-ahead and does not narrow through here — {@link browseStartIndex} borrows this ranking
+ * only to decide which option a browse should start on.
  */
 export function filterSuggestions(suggestions: readonly string[], query: string, limit = 10): string[] {
   const q = query.trim().toLowerCase();
@@ -45,13 +46,13 @@ export function indexOfValue(suggestions: readonly string[], value: string): num
 
 /**
  * Where a browse of the whole list should start: the field's own value, or failing that the
- * option the type-ahead would have ranked first.
+ * option the type-ahead would have ranked first. `-1` when neither exists.
  *
  * The second branch is for a field whose text is a *prefix* of its option rather than the
- * whole of it — a currency field holding `USD` against a `USD — US Dollar` list. Without it
- * that browse starts at the top of the catalogue, which for a keyboard user is one Enter away
- * from replacing the value with an unrelated one. Where a near match is not good enough —
- * creatable fields, where the typed text is itself a candidate — use {@link indexOfValue}.
+ * whole of it — a currency field holding `USD` against a `USD — US Dollar` list. Matching
+ * only the whole string would start that browse at the top of the catalogue, on an option
+ * with nothing to do with the value the field holds. Where a near match is not good enough —
+ * a creatable field, where the typed text is itself a candidate — use {@link indexOfValue}.
  */
 export function browseStartIndex(suggestions: readonly string[], value: string): number {
   const exact = indexOfValue(suggestions, value);

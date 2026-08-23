@@ -67,10 +67,11 @@ export interface AutocompleteProps {
  * fields like Manufacturer or Supplier where the user should be able to type anything but
  * usually wants one of the values already in the catalogue.
  *
- * Opening the list and completing against it are separate acts. The chevron (and ArrowDown on
- * a closed list) *browses*: it shows the whole catalogue, starting on the value the field
- * already holds, exactly as a `<select>` would. Only typing narrows the list, and it narrows
- * against everything the field then contains.
+ * Opening the list and completing against it are separate acts. The chevron, a click on the
+ * input and ArrowDown on a closed list all *browse*: they show the whole catalogue, as a
+ * `<select>` would. Only typing narrows it, and it narrows against everything the field then
+ * contains. Where each gesture starts in that list is its own rule — see `chevronStart` and
+ * `arrowDownStart`, and the input's own handler, which starts on no option at all.
  *
  * The input is the single tab stop and keeps DOM focus throughout; the highlighted option is
  * tracked with `aria-activedescendant`, never by moving focus into the list. Down/Up move the
