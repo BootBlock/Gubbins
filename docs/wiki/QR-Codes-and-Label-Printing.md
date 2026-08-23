@@ -65,9 +65,27 @@ Beside it sits **Print cut guides**. Leave it on for plain paper, where the outl
 thing telling you where one label ends and the next begins; turn it off for a pre-cut sheet, where
 it would just print a grey box inside every sticker. Choosing a named sheet turns it off for you.
 
+### Print at 100%, or the labels miss the die-cuts
+
+A named sheet is laid out to that stock's published geometry down to a hundredth of a millimetre,
+so the one thing that decides whether each label lands on its sticker is your browser's own print
+dialog. Two of its settings undo the layout:
+
+- **Scale** — set it to **100%** (some browsers call it *Actual size*). Anything else, including
+  *Fit to page*, shrinks or grows the whole grid. A fraction of a percent is invisible on the first
+  row and half a sticker out by the last.
+- **Margins** — leave them as the document sets them (**Default**, or whatever your browser calls
+  the option that does not override the page). *Minimum* or *None* moves the grid on the page.
+
+The same goes for a **Custom…** grid: stock the list does not carry needs the settings to be right
+just as much, with no preset to fall back on. Gubbins cannot see or set either one — the browser
+applies them to the finished page — so it says so in the print dialog whenever you choose anything
+other than plain paper.
+
 > **💡 Tip**
 > Run one sheet on **ordinary paper** first and hold it against a sheet of the real labels up to
-> the light. It costs one sheet of paper instead of a sheet of stickers.
+> the light. It costs one sheet of paper instead of a sheet of stickers — and it is the only way to
+> see the scale is right before you spend the stock.
 
 > **ℹ️ Note**
 > Every label on the sheet is given the same fixed size, so a long name on one label can never
