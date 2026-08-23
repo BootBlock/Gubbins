@@ -34,6 +34,7 @@ import { useAuthStore } from '@/state/stores/useAuthStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { BackupDialog } from '@/features/backup/BackupDialog';
 import { canAny } from '@/features/users/permissions';
+import { adoptAuthorityChange } from '@/features/users/authority-refresh';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { consumeRestoreNotice, type RestoreNotice } from '@/features/backup/restore-backup';
 import { SettingsGroupPicker } from '@/features/backup/SettingsGroupPicker';
@@ -291,7 +292,11 @@ export function SyncScreen() {
     } catch (settingsError) {
       console.error('[gubbins] could not apply shared settings', settingsError);
     }
-    await client.invalidateQueries();
+    // Issue #631: the merge may have brought a role change, a disabled account or a deletion
+    // from another device, and `users`/`roles` are synced tables like any other. Re-resolve the
+    // session's permissions before the refetches, or this device keeps writing under the ones it
+    // signed in with until it is reloaded.
+    await adoptAuthorityChange(client);
   }
 
   /**
@@ -816,7 +821,9 @@ export function SyncScreen() {
         open={backupOpen}
         onClose={() => setBackupOpen(false)}
         onRestored={(restored) => {
-          void client.invalidateQueries();
+          // A reload-free restore replaces `users` and `roles` along with everything else, so the
+          // session's permissions are re-resolved with the rest of the refresh (issue #631).
+          void adoptAuthorityChange(client);
           setNotice(restored);
         }}
       />
@@ -825,7 +832,9 @@ export function SyncScreen() {
         open={conflictsOpen}
         onClose={() => setConflictsOpen(false)}
         onRestored={() => {
-          void client.invalidateQueries();
+          // The restored version can be a `users` or `roles` row, so the same re-resolve applies
+          // here as on the merge and restore paths (issue #631).
+          void adoptAuthorityChange(client);
           showInfo('Your version was restored. It will sync to your other devices on the next sync.');
         }}
       />
