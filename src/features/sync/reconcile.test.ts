@@ -21,7 +21,17 @@ const DICTIONARY = {
   item_aliases: ['id', 'item_id', 'alias', 'updated_at'],
   capabilities: ['id', 'item_id', 'key', 'updated_at'],
   contacts: ['id', 'name', 'updated_at'],
-  checkouts: ['id', 'item_id', 'contact_id', 'checked_out_at', 'returned_at', 'updated_at'],
+  checkouts: [
+    'id',
+    'item_id',
+    'contact_id',
+    'project_id',
+    'location_id',
+    'source_location_id',
+    'checked_out_at',
+    'returned_at',
+    'updated_at',
+  ],
   asset_bookings: [
     'id',
     'item_id',
@@ -894,6 +904,72 @@ describe('reconcile (§7.3 / §7.5)', () => {
       const plan = reconcile(local, remote, opts);
       expect(plan.localDeletes.some((d) => d.tableName === 'contacts' && d.id === 'c1')).toBe(true);
       expect(plan.localUpserts.some((u) => u.table === 'checkouts')).toBe(false);
+    });
+
+    it('drops a remote checkout whose project borrower was deleted on the peer (issue #404)', () => {
+      // The project arm of the tagged-union borrower, and the exact twin of the contact case
+      // above: `checkouts.project_id` is ON DELETE CASCADE, so the loan is meant to die with
+      // the project. Nulling it instead is not available — the XOR CHECK forbids a checkout
+      // with no borrower — so the upsert must be dropped or the whole merge aborts.
+      const local = snapshot({
+        tables: { projects: [{ id: 'p1', name: 'Henderson job', updated_at: 1 }] },
+      });
+      const remote = snapshot({
+        tombstones: [{ tableName: 'projects', id: 'p1', deletedAt: 99 }],
+        tables: { checkouts: [{ id: 'co1', item_id: 'i1', project_id: 'p1', updated_at: 5 }] },
+      });
+      const plan = reconcile(local, remote, opts);
+      expect(plan.localDeletes.some((d) => d.tableName === 'projects' && d.id === 'p1')).toBe(true);
+      expect(plan.localUpserts.some((u) => u.table === 'checkouts')).toBe(false);
+    });
+
+    it('drops a remote checkout whose location borrower was deleted on the peer (issue #404)', () => {
+      // The location arm. Distinct from `source_location_id` (the provenance, nullable), which
+      // the next test pins: the borrower location cascades, the lend-from pointer clears.
+      const local = snapshot({
+        tables: { locations: [{ id: 'l1', name: 'Van', updated_at: 1 }] },
+      });
+      const remote = snapshot({
+        tombstones: [{ tableName: 'locations', id: 'l1', deletedAt: 99 }],
+        tables: { checkouts: [{ id: 'co1', item_id: 'i1', location_id: 'l1', updated_at: 5 }] },
+      });
+      const plan = reconcile(local, remote, opts);
+      expect(plan.localDeletes.some((d) => d.tableName === 'locations' && d.id === 'l1')).toBe(true);
+      expect(plan.localUpserts.some((u) => u.table === 'checkouts')).toBe(false);
+    });
+
+    it('clears only the lend-from pointer when the removed location is not the borrower', () => {
+      const local = snapshot({
+        tables: {
+          locations: [{ id: 'l1', name: 'Van', updated_at: 1 }],
+          contacts: [{ id: 'c1', name: 'Alex', updated_at: 1 }],
+        },
+      });
+      const remote = snapshot({
+        tombstones: [{ tableName: 'locations', id: 'l1', deletedAt: 99 }],
+        tables: {
+          contacts: [{ id: 'c1', name: 'Alex', updated_at: 1 }],
+          checkouts: [
+            { id: 'co1', item_id: 'i1', contact_id: 'c1', source_location_id: 'l1', updated_at: 5 },
+          ],
+        },
+      });
+      const plan = reconcile(local, remote, opts);
+      const checkout = plan.localUpserts.find((u) => u.table === 'checkouts');
+      expect(checkout).toBeDefined();
+      expect(checkout!.row.source_location_id).toBeNull(); // loan kept, provenance cleared
+    });
+
+    it('keeps a checkout whose project borrower survives the merge', () => {
+      const local = snapshot({ tables: { projects: [{ id: 'p1', name: 'Henderson job', updated_at: 1 }] } });
+      const remote = snapshot({
+        tables: {
+          projects: [{ id: 'p1', name: 'Henderson job', updated_at: 1 }],
+          checkouts: [{ id: 'co1', item_id: 'i1', project_id: 'p1', updated_at: 5 }],
+        },
+      });
+      const plan = reconcile(local, remote, opts);
+      expect(plan.localUpserts.some((u) => u.table === 'checkouts' && u.row.id === 'co1')).toBe(true);
     });
 
     it('keeps a checkout whose contact survives the merge', () => {

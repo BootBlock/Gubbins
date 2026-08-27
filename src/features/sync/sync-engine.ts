@@ -178,6 +178,14 @@ export interface RunSyncOptions {
  * `POST /api/v1/snapshot` to `sync:write` (see `bridge/src/identity.ts`), and the destructive
  * local paths that used to reach the driver unchecked — the Danger-Zone erase and the backup
  * restore — now assert their own keys.
+ *
+ * That covers this module's own two direct writes as well (issue #429): the `sync_meta` stamp
+ * and the §7.2 TTL tombstone prune. Neither is an edit to the vault — one records when this
+ * device last replicated and how far its clock is out, the other discards deletion records the
+ * whole network has long since seen. Refusing them while still letting the pass merge would
+ * leave the device replicating from a stale watermark for ever and never reclaiming the space,
+ * which is a worse outcome than either check was meant to buy. What a *user* chooses to overturn
+ * after a merge is a different act, and `./conflict-restore` does assert `sync:write` for it.
  */
 export async function runSync(
   driver: IDatabaseDriver,

@@ -14,14 +14,23 @@ few that account for most of the value), **B** (the middle), and **C** (the triv
 the classic "80/20" lens: a small number of items usually dominate, and they deserve the most
 careful stock control.
 
+An item's ranking comes from how much of it is **consumed** over the past year — used up, sold,
+written off or adjusted away — priced at what it costs you. Lending something out is not consuming
+it, so a tool that goes out every week and comes back every week does not climb the ranking: it
+would read as a thing to buy more of when you already have enough of it.
+
 > **💡 Tip**
 > Tighten [[reorder points|Reorder-and-Shopping-List]] and [[cycle counts|Cycle-Counts-and-Audit-Day]]
 > on your **A** items, and relax them on **C** items — that's where the effort pays off.
 
 ## Inventory turnover
 
-**Turnover** measures how fast stock moves — how often it's used and replaced. High turnover is
-healthy; very low turnover points at overstocking or things you don't really need.
+**Turnover** measures how fast stock is used up and replaced. High turnover is healthy; very low
+turnover points at overstocking or things you don't really need.
+
+It counts the same thing ABC does, so the two panels always agree: stock consumed, not stock lent.
+A frequently-borrowed tool shows no turnover, which is the honest answer — it is the same tool
+coming back each time, not stock flowing through.
 
 The table opens on the fastest movers and says how many items there are altogether; **Show more**
 works down towards the slowest. The portfolio figures beside it cover your whole inventory either

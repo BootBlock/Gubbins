@@ -50,6 +50,7 @@ import { SUPPLIER_PART_FLAG_COLUMNS, flagWinner, type FlagRanked } from './suppl
 import { planKeyParks, resolveUniqueKeyCollisions } from './unique-keys';
 import type {
   BookingOverlapCancellation,
+  CollisionResolution,
   FlagRepair,
   GaugeHistoryDelta,
   GaugeResolution,
@@ -73,6 +74,7 @@ import type {
   SyncTable,
   TableRow,
   Tombstone,
+  TombstoneClear,
 } from './types';
 
 export interface ReconcileOptions {
@@ -111,6 +113,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   loanReturnsPreserved: [],
   collisions: [],
   keyParks: [],
+  tombstoneClears: [],
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],
@@ -355,7 +358,18 @@ export function reconcile(
   // Issue #81: item-to-region placements. Filtered to the regions that survive the merge for
   // the same FK-safety reason as the tag joins above — a placement in a region whose photo
   // was deleted elsewhere must not be re-inserted.
-  const finalRegionIds = survivingIds('location_regions', local, localUpserts, localDeletes);
+  //
+  // Issue #536: that filter has to fold in the photo cascade, not just the region's own
+  // tombstone. Deleting a photo sweeps its regions away without tombstoning them (§7.2 records
+  // the parent only), so a plain surviving-ids set reads a cascade-deleted region as alive and
+  // re-inserts the edge against a row the same transaction deletes.
+  const finalRegionIds = survivingCascadeIds(
+    'location_regions',
+    [{ col: 'photo_id', removed: removedParents.location_photos }],
+    local,
+    localUpserts,
+    localDeletes,
+  );
   const { itemRegionUpserts, itemRegionDeletes } = reconcileItemRegions(
     local,
     remote,
@@ -368,6 +382,10 @@ export function reconcile(
   // Last of the upsert-facing passes on purpose. A parked row is restored only by its own
   // upsert, so this must see the set every earlier pass has finished dropping from.
   const keyParks = planKeyParks(local, localUpserts);
+
+  // --- Issue #537: stop republishing a deletion this merge has just undone -------
+  // Read-only, and last, so it sees the upsert set every pass above has finished dropping from.
+  const tombstoneClears = planTombstoneClears(local, localUpserts, localDeletes, collisions);
 
   return {
     localUpserts,
@@ -382,6 +400,7 @@ export function reconcile(
     loanReturnsPreserved,
     collisions,
     keyParks,
+    tombstoneClears,
     flagRepairs,
     defaultLocationWinnerId,
     historyInserts,
@@ -398,9 +417,65 @@ export function reconcile(
 }
 
 /**
+ * Issue #537: the local tombstones this merge contradicts, to delete alongside the upserts.
+ *
+ * A row this device deleted, that a peer then edited, is downloaded again by the LWW pass — but
+ * nothing clears the tombstone recording our deletion, and `buildLocalSnapshot` reads that table
+ * wholesale. The device would go on publishing the row and a tombstone for it under one id, so a
+ * peer holding neither refuses the row for the tombstone's whole 180-day TTL. Every id the merge
+ * writes a row for is therefore paired with a DELETE of any tombstone this device still holds for
+ * it, which is what `restoreSnapshot` and the manual conflict restore already do on their paths.
+ *
+ * Two id sets are deliberately left alone:
+ *
+ *  - an id this same merge is also **deleting** — the delete records its own tombstone moments
+ *    later, and clearing it would be a contradiction whichever order the statements ran in;
+ *  - a **collision loser** (issue #187), whose tombstone this merge recorded on purpose to retire
+ *    the id. Clearing it would undo the retirement and re-publish the losing id to every peer —
+ *    the hazard issue #538 already fixed on the restore path.
+ */
+function planTombstoneClears(
+  local: SyncSnapshot,
+  localUpserts: readonly TableRow[],
+  localDeletes: readonly Tombstone[],
+  collisions: readonly CollisionResolution[],
+): TombstoneClear[] {
+  if (local.tombstones.length === 0 || localUpserts.length === 0) return [];
+  // Membership is nested per table rather than flattened onto a composite key: an id is only
+  // unique within its own table, and `item_relations` keys a row by the `from|to|kind` triple.
+  const perTable = (entries: Iterable<readonly [string, string]>) => {
+    const map = new Map<string, Set<string>>();
+    for (const [table, id] of entries) {
+      let set = map.get(table);
+      if (set === undefined) map.set(table, (set = new Set<string>()));
+      set.add(id);
+    }
+    return map;
+  };
+  const held = perTable(local.tombstones.map((t) => [t.tableName, t.id] as const));
+  const excluded = perTable([
+    ...localDeletes.map((d) => [d.tableName, d.id] as const),
+    ...collisions.map((c) => [c.table, c.loserId] as const),
+  ]);
+
+  // One entry per surviving upsert. `localUpserts` holds at most one row per (table, id) —
+  // `resolveTableMerges` walks a per-table id set, and every later pass replaces an entry in
+  // place rather than appending a second — so the list needs no de-duplication of its own.
+  const clears: TombstoneClear[] = [];
+  for (const { table, row } of localUpserts) {
+    const id = String(row.id);
+    if (held.get(table)?.has(id) !== true) continue;
+    if (excluded.get(table)?.has(id) === true) continue;
+    clears.push({ tableName: table, id });
+  }
+  return clears;
+}
+
+/**
  * Per-table LWW + tombstone resolution (§7.3). For every synced table, diff the local
  * and remote snapshots id-by-id: a remote tombstone deletes the local row unless a
- * strictly-newer local row resurrects it; otherwise the newer of two concurrent rows
+ * strictly-newer row resurrects it — which either side's snapshot can carry, the remote's
+ * own row included (issue #537); otherwise the newer of two concurrent rows
  * wins (remote rows are sanitised against the schema dictionary before download), and a
  * row new on the remote is downloaded unless our own (offset-adjusted) tombstone is at
  * least as new. Local-only rows are left for the push half. Returns the initial upsert
@@ -441,8 +516,16 @@ function resolveTableMerges(
       // A local edit made *after* the last sync that now loses is a genuine collision (#72).
       const localEditedSinceSync = reportable && lUpd !== undefined && lUpd > conflictSince!;
 
+      // Issue #537: the remote's *own* row can outlive the tombstone beside it — a peer
+      // resurrected the id, and the snapshot carries both records because nothing cleared the
+      // tombstone when the row came back. That pair is resolved by the same strictly-newer rule
+      // already applied to the local pair below, rather than letting the tombstone win by
+      // position: otherwise a device holding no copy of the row falls through both conditions of
+      // the branch and never downloads it, permanently, while its peers keep the row.
+      const remoteResurrects = rTomb !== undefined && rUpd !== undefined && rUpd > rTomb;
+
       // Remote deleted this row.
-      if (rTomb !== undefined) {
+      if (rTomb !== undefined && !remoteResurrects) {
         // Local has a strictly-newer row → resurrect (keep local, drop tombstone).
         if (lUpd !== undefined && lUpd > rTomb) continue;
         // Otherwise the remote tombstone wins: delete locally + record it.
@@ -849,6 +932,37 @@ function resolveBookingOverlapConflicts(
 }
 
 /**
+ * The parent tables {@link computeRemovedParents} builds a removed-id set for — the merge's half
+ * of the FK_REFS contract.
+ *
+ * `enforceForeignKeys` reads a *missing* key as "parent intact", so an FK_REFS entry whose
+ * parent has no set here is inert: the guard never fires and the merge re-inserts an orphan that
+ * aborts the whole atomic apply (issue #536, which is how `location_photos` and
+ * `project_budget_categories` were dead entries). Two things keep the halves in step. The return
+ * type is keyed by this list, so `computeRemovedParents` fails to compile if it stops producing
+ * one of them; and `fk-refs.test.ts` asserts every FK_REFS parent appears here, so adding a
+ * reference to a new parent fails the build rather than silently doing nothing.
+ */
+export const REMOVED_PARENT_TABLES = [
+  'items',
+  'locations',
+  'categories',
+  'contacts',
+  'projects',
+  'field_defs',
+  'suppliers',
+  'supplier_parts',
+  'purchase_orders',
+  'roles',
+  'users',
+  'location_photos',
+  'project_budget_categories',
+] as const satisfies readonly SyncTable[];
+
+/** A parent table {@link computeRemovedParents} is required to produce a removed-id set for. */
+type RemovedParentTable = (typeof REMOVED_PARENT_TABLES)[number];
+
+/**
  * §7.5 relational integrity: compute the parents that will not survive the merge, so an
  * upsert that references a *known and removed* parent can be dropped (or null-cleared).
  *
@@ -866,18 +980,32 @@ function computeRemovedParents(
   localDeletes: readonly Tombstone[],
   finalItemIds: ReadonlySet<string>,
   activeLocationIds: ReadonlySet<string>,
-): Partial<Record<SyncTable, Set<string>>> {
+): Record<RemovedParentTable, Set<string>> {
   const removedCategories = removedIds(
     'categories',
     local,
     remote,
     survivingIds('categories', local, localUpserts, localDeletes),
   );
+  const removedLocations = removedIds('locations', local, remote, activeLocationIds);
+  const removedProjects = removedIds(
+    'projects',
+    local,
+    remote,
+    survivingIds('projects', local, localUpserts, localDeletes),
+  );
+  const removedItems = removedIds('items', local, remote, finalItemIds);
+  const removedSuppliers = removedIds(
+    'suppliers',
+    local,
+    remote,
+    survivingIds('suppliers', local, localUpserts, localDeletes),
+  );
   return {
-    items: removedIds('items', local, remote, finalItemIds),
+    items: removedItems,
     // A placement at a removed location must not be resurrected — its location's RESTRICT
     // FK would reject it (Phase 25). The active set already drives the §7.5.2 item re-parent.
-    locations: removedIds('locations', local, remote, activeLocationIds),
+    locations: removedLocations,
     categories: removedCategories,
     contacts: removedIds(
       'contacts',
@@ -885,12 +1013,7 @@ function computeRemovedParents(
       remote,
       survivingIds('contacts', local, localUpserts, localDeletes),
     ),
-    projects: removedIds(
-      'projects',
-      local,
-      remote,
-      survivingIds('projects', local, localUpserts, localDeletes),
-    ),
+    projects: removedProjects,
     // The global custom-field dictionary (issue #97). Every field-value table now hangs off
     // a *definition* rather than off a category's use of one, so the definitions are the
     // parent to guard: a value row referencing a deleted definition would trip its FK.
@@ -910,17 +1033,24 @@ function computeRemovedParents(
     // routes in FK_REFS below — a supplier part cannot outlive its supplier (CASCADE), while a
     // purchase order keeps its row and merely loses the link (SET NULL), because an order is a
     // record of money spent and must survive the other device tidying its supplier list.
-    suppliers: removedIds(
-      'suppliers',
-      local,
-      remote,
-      survivingIds('suppliers', local, localUpserts, localDeletes),
-    ),
+    suppliers: removedSuppliers,
+    // A part is a cascade child of *both* its item and its supplier (issue #536), so its removed
+    // set folds in each — otherwise a part swept away by a local item/supplier delete reads as
+    // surviving and its own children (a price point, a PO line) are let through the guard.
     supplier_parts: removedIds(
       'supplier_parts',
       local,
       remote,
-      survivingIds('supplier_parts', local, localUpserts, localDeletes),
+      survivingCascadeIds(
+        'supplier_parts',
+        [
+          { col: 'item_id', removed: removedItems },
+          { col: 'supplier_id', removed: removedSuppliers },
+        ],
+        local,
+        localUpserts,
+        localDeletes,
+      ),
     ),
     purchase_orders: removedIds(
       'purchase_orders',
@@ -934,6 +1064,37 @@ function computeRemovedParents(
     // usual local rows − deletes + upserts.
     roles: removedIds('roles', local, remote, survivingIds('roles', local, localUpserts, localDeletes)),
     users: removedIds('users', local, remote, survivingIds('users', local, localUpserts, localDeletes)),
+    // Issue #536: the two parents that had no set at all. Both are themselves cascade *children*
+    // (as `supplier_parts` above is), so their removed set has to fold in the cascade the
+    // tombstone does not record — §7.2 tombstones the parent only. A photo of a removed location
+    // is gone, because the location tombstone's DELETE cascades to it, so every region drawn on
+    // it must be dropped too or the merge re-inserts a region against a photo the same
+    // transaction is deleting. A budget category of a removed project is the same shape one level
+    // over, and clears the nullable `project_expenses.category_id` rather than dropping the spend.
+    location_photos: removedIds(
+      'location_photos',
+      local,
+      remote,
+      survivingCascadeIds(
+        'location_photos',
+        [{ col: 'location_id', removed: removedLocations }],
+        local,
+        localUpserts,
+        localDeletes,
+      ),
+    ),
+    project_budget_categories: removedIds(
+      'project_budget_categories',
+      local,
+      remote,
+      survivingCascadeIds(
+        'project_budget_categories',
+        [{ col: 'project_id', removed: removedProjects }],
+        local,
+        localUpserts,
+        localDeletes,
+      ),
+    ),
   };
 }
 
@@ -1183,6 +1344,56 @@ function survivingIds(
   for (const u of localUpserts) if (u.table === table) ids.add(String(u.row.id));
   for (const d of localDeletes) if (d.tableName === table) ids.delete(d.id);
   return ids;
+}
+
+/** One `ON DELETE CASCADE` reference a table is on the receiving end of, and its removed parents. */
+interface CascadeParent {
+  /** The child column holding the parent id. */
+  readonly col: string;
+  /** The parent ids that will not survive this merge. */
+  readonly removed: ReadonlySet<string>;
+}
+
+/**
+ * The surviving ids of a child table whose own parent's removal cascades to it (issue #536).
+ *
+ * {@link survivingIds} answers "was this row deleted or upserted", which is the whole story for a
+ * top-level dictionary. It is not for a table like `location_photos`, whose rows are swept away by
+ * their location's `ON DELETE CASCADE` without a tombstone of their own (§7.2 records the parent
+ * only). Such a row is *not* deleted and *not* upserted, so it reads as surviving — and its own
+ * children are then let through the guard to trip the foreign key. Removing every row whose parent
+ * did not survive gives the set the cascade will actually leave behind.
+ *
+ * A table can sit under more than one cascade — `supplier_parts` dies with either its item or its
+ * supplier — so every reference is folded in, and one removed parent is enough to take the row.
+ *
+ * The parent id is read from the merged row (a pending upsert overrides the stored one), so a row
+ * being re-parented *out of* a removed parent by this same merge is correctly kept. Ids present
+ * only on the remote need no lookup: they are absent from `surviving` already, so {@link removedIds}
+ * has them covered.
+ */
+function survivingCascadeIds(
+  table: SyncTable,
+  parents: readonly CascadeParent[],
+  local: SyncSnapshot,
+  localUpserts: readonly TableRow[],
+  localDeletes: readonly Tombstone[],
+): Set<string> {
+  const surviving = survivingIds(table, local, localUpserts, localDeletes);
+  const live = parents.filter((p) => p.removed.size > 0);
+  if (live.length === 0) return surviving;
+
+  // The merged row of every id still in `surviving`: stored rows overlaid with pending upserts.
+  const rowOf = new Map<string, SqlRow>();
+  for (const row of local.tables[table] ?? []) rowOf.set(String(row.id), row);
+  for (const u of localUpserts) if (u.table === table) rowOf.set(String(u.row.id), u.row);
+
+  for (const id of surviving) {
+    const row = rowOf.get(id);
+    if (row === undefined) continue;
+    if (live.some(({ col, removed }) => removed.has(String(row[col])))) surviving.delete(id);
+  }
+  return surviving;
 }
 
 /**

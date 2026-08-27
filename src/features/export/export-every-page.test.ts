@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
+import { ADMIN_USER_ID } from '@/db/repositories/constants';
 import { exportEveryPage, isoCalendarDay, isoTimestamp, listExportFilename } from './export-every-page';
 import type { TabularExportResult } from './tabular-export';
 
@@ -95,5 +98,32 @@ describe('isoCalendarDay', () => {
 
   it('leaves an absent day blank', () => {
     expect(isoCalendarDay(null)).toBeNull();
+  });
+});
+
+describe('exportEveryPage is the bulk-export boundary (issue #429)', () => {
+  afterEach(() => {
+    useSessionStore.getState().setResolved(UNRESTRICTED_AUTHORITY, ADMIN_USER_ID);
+  });
+
+  it('refuses a session without `export:run`, before a single page is read', async () => {
+    // Being allowed to see the list on screen is not being allowed to take all of it to a file.
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(['items:read']) }, 'user-1');
+    const read = vi.fn(pagedRead(250));
+
+    await expect(exportEveryPage(read, collect({ rows: [] }), 'cut short')).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('allows a role that holds `export:run`', async () => {
+    useSessionStore
+      .getState()
+      .setResolved({ mode: 'granted', grants: new Set(['items:read', 'export:run']) }, 'user-1');
+
+    const seen = { rows: [] as readonly number[] };
+    await expect(exportEveryPage(pagedRead(5), collect(seen), 'cut short')).resolves.toBeDefined();
+    expect(seen.rows).toHaveLength(5);
   });
 });

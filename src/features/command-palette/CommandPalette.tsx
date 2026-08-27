@@ -144,8 +144,8 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const entries = useMemo<readonly PaletteEntry[]>(() => {
     if (isScreenMode) {
       // Screen-jump only offers destinations whose feature is enabled *and* whose read
-      // permission this session holds (an entry with neither — the Modules manager — is always
-      // kept); item search itself is core inventory and is never gated (§3, Phase 2, issue #522).
+      // permission this session holds (an entry declaring neither is always kept); item search
+      // itself is core inventory and is never gated (§3, Phase 2, issue #522).
       const screens = PALETTE_DESTINATIONS.filter(
         (d) => (d.feature === undefined || enabledFeatures.has(d.feature)) && allows(d.permission),
       );

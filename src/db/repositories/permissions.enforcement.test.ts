@@ -23,6 +23,9 @@ import { CheckoutRepository } from './CheckoutRepository';
 import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
+import { DiagnosticsRepository } from './DiagnosticsRepository';
+import { StorageRepository } from './StorageRepository';
+import { TombstoneRepository } from './tombstone';
 import { UNASSIGNED_LOCATION_ID } from './constants';
 import type { RepositoryOptions } from './base';
 import { UserRepository } from './UserRepository';
@@ -205,6 +208,74 @@ describe('repository permission enforcement', () => {
 
       const stocker = new ItemRepository(driver, withAuthority(asRole('Stocker')));
       await expect(stocker.adjustQuantity(item.id, 5)).resolves.toMatchObject({ quantity: 15 });
+    });
+  });
+  describe('device data housekeeping answers to `storage`, not `settings` (issue #429)', () => {
+    it('refuses a Viewer every storage-triage read, naming `storage:read`', async () => {
+      const storage = new StorageRepository(driver, withAuthority(asRole('Viewer')));
+      // A Viewer can read the vault; the triage dashboard is a different question, and the
+      // built-in role deliberately does not answer it.
+      expect(can(asRole('Viewer'), 'storage:read')).toBe(false);
+
+      await expectDenied(() => storage.rowCounts(), 'storage:read');
+      await expectDenied(() => storage.countHistoryBefore(0), 'storage:read');
+      await expectDenied(() => storage.listHistoryBefore(0), 'storage:read');
+      await expectDenied(() => storage.countDowngradableBefore(0), 'storage:read');
+      await expectDenied(() => storage.listDowngradableBefore(0), 'storage:read');
+    });
+
+    it('refuses the image downgrade on `storage:write`, not `settings:write`', async () => {
+      // The distinction is the point of the key: this is not one of the device's preferences,
+      // and a role that may change those should not thereby be able to re-encode every photo.
+      const authority: Authority = { mode: 'granted', grants: new Set(['settings:write']) };
+      const storage = new StorageRepository(driver, withAuthority(authority));
+      await expectDenied(() => storage.markImageDowngraded('img-1', 'item_images'), 'storage:write');
+    });
+
+    it('still gates the history prune on `audit:delete` — what it destroys is the trail', async () => {
+      const authority: Authority = { mode: 'granted', grants: new Set(['storage:write', 'storage:read']) };
+      const storage = new StorageRepository(driver, withAuthority(authority));
+      await expectDenied(() => storage.pruneHistoryBefore(0), 'audit:delete');
+    });
+
+    it('refuses the About screen’s diagnostics snapshot to a session without `storage:read`', async () => {
+      // Aggregate and non-identifying, but still a count of every entity in the vault.
+      const diagnostics = new DiagnosticsRepository(driver, withAuthority(DENIED));
+      await expectDenied(() => diagnostics.snapshot(), 'storage:read');
+    });
+
+    it('lets an Administrator read both', async () => {
+      const authority = withAuthority(asRole('Administrator'));
+      await expect(new StorageRepository(driver, authority).rowCounts()).resolves.toBeDefined();
+      await expect(new DiagnosticsRepository(driver, authority).snapshot()).resolves.toBeDefined();
+    });
+  });
+
+  describe('the deletion ledger (issue #429)', () => {
+    it('gates the TTL prune on `sync:write` — dropping a tombstone unpublishes a deletion', async () => {
+      // A role that may delete rows is not thereby entitled to discard the record that tells
+      // every peer they were deleted: a peer that has not synced since simply never learns.
+      const authority: Authority = { mode: 'granted', grants: new Set(['items:delete']) };
+      const tombstones = new TombstoneRepository(driver, withAuthority(authority));
+      await expectDenied(() => tombstones.pruneOlderThan(Date.now()), 'sync:write');
+    });
+
+    it('lets a session holding `sync:write` prune', async () => {
+      const authority: Authority = { mode: 'granted', grants: new Set(['sync:write']) };
+      const tombstones = new TombstoneRepository(driver, withAuthority(authority));
+      await expect(tombstones.pruneOlderThan(Date.now())).resolves.toBe(0);
+    });
+
+    it('records a deletion with no permission of its own, but under the Hard Stop', async () => {
+      // Deliberately ungated: `record` is the bookkeeping half of a delete whose own key the
+      // calling repository already asserted, so demanding one here would make every gated
+      // delete in the app secretly require `sync:write` as well.
+      const denied = new TombstoneRepository(driver, withAuthority(DENIED));
+      await expect(denied.record('items', 'gone-1')).resolves.not.toThrow();
+
+      // It writes a row, though, so it observes the storage Hard Stop like any other insert.
+      const locked = new TombstoneRepository(driver, { isWriteSuspended: () => true });
+      await expect(locked.record('items', 'gone-2')).rejects.toMatchObject({ code: 'WRITE_SUSPENDED' });
     });
   });
 });

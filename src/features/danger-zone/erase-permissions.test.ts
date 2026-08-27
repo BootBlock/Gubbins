@@ -101,7 +101,7 @@ describe('the erase catalog declares what it needs', () => {
     const keys = eraseTargetPermissions('items');
     expect(keys).toContain('items:delete');
     expect(keys).toContain('audit:delete'); // item-history
-    expect(keys).toContain('checkouts:write'); // checkouts
+    expect(keys).toContain('checkouts:delete'); // checkouts
     expect(keys).toContain('maintenance:delete'); // maintenance
     expect(keys).toContain('suppliers:delete'); // supplier-parts
   });
@@ -143,7 +143,7 @@ describe('eraseTargets refuses what the repositories refuse', () => {
     // the standalone Activity-history entry gates exactly that on `audit:delete`.
     const authority: Authority = {
       mode: 'granted',
-      grants: new Set(['items:delete', 'checkouts:write', 'maintenance:delete', 'suppliers:delete']),
+      grants: new Set(['items:delete', 'checkouts:delete', 'maintenance:delete', 'suppliers:delete']),
     };
     expect(mayEraseTarget(authority, 'items')).toBe(false);
     expect(() => assertMayErase(authority, ['items'])).toThrow(DbError);
@@ -193,5 +193,30 @@ describe('the factory reset asks for more than any single target', () => {
 
   it('permits an unrestricted session', () => {
     expect(() => assertMayEraseEverything(UNRESTRICTED_AUTHORITY)).not.toThrow();
+  });
+});
+
+describe('the danger zone is not a way around the module gate (issue #429)', () => {
+  it('refuses a Manager the "Enabled features" reset, which would lift the sign-in gate', () => {
+    // Resetting enabled features switches the Users module back off, and that takes the sign-in
+    // gate with it. Manager holds `settings:*` and deliberately not `modules:write`, so holding
+    // this entry at `settings:write` alone would have made the Danger Zone the way around the one
+    // permission that guards every other.
+    const manager = builtinAuthority(MANAGER_ROLE_ID);
+    expect(mayEraseTarget(manager, 'enabled-features')).toBe(false);
+    expect(() => assertMayErase(manager, ['enabled-features'])).toThrow(DbError);
+  });
+
+  it('permits it to a role holding both keys', () => {
+    const authority: Authority = {
+      mode: 'granted',
+      grants: new Set(['settings:write', 'modules:write']),
+    };
+    expect(() => assertMayErase(authority, ['enabled-features'])).not.toThrow();
+  });
+
+  it('refuses it to a role holding only the module half', () => {
+    const authority: Authority = { mode: 'granted', grants: new Set(['modules:write']) };
+    expect(() => assertMayErase(authority, ['enabled-features'])).toThrow(DbError);
   });
 });

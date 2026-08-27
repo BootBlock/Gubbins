@@ -26,8 +26,16 @@ export interface DiagnosticsSnapshot {
 }
 
 export class DiagnosticsRepository extends BaseRepository {
-  /** Gather the database size and every entity count in one round of parallel reads. */
+  /**
+   * Gather the database size and every entity count in one round of parallel reads.
+   *
+   * Gated on `storage:read` (issue #429). The figures are aggregate and non-identifying, but
+   * they are still a count of every entity in the vault — enough to tell a session that may read
+   * none of them how much there is — and they are exactly what the `storage` subject covers:
+   * this device's data housekeeping, not the records themselves.
+   */
   async snapshot(): Promise<DiagnosticsSnapshot> {
+    this.assertPermission('storage:read');
     const [databaseBytes, items, locations, projects, contacts, categories, tags] = await Promise.all([
       this.databaseBytes(),
       this.count('items'),

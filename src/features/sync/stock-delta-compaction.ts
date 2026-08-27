@@ -281,6 +281,12 @@ function compactStatements(
  *
  * `cutoff` is in **this device's clock frame** — see `stockDeltaCompactionCutoff` in
  * `./retention` for why that distinction matters.
+ *
+ * **Deliberately ungated** (issue #429). This is System-actor housekeeping over a convergence
+ * ledger, not a user action: it summarises expired eras into checkpoints so the ledger stops
+ * growing, and it is called only from `runSnapshotMerge` — inside the database worker, where
+ * there is no session to resolve an authority from. Refusing it would leave the ledger to grow
+ * without bound for exactly the sessions least able to do anything about it.
  */
 export async function sweepStockDeltas(
   driver: IDatabaseDriver,

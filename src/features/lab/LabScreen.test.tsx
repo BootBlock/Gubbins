@@ -51,6 +51,8 @@ import { useLabStore } from '@/state/stores/useLabStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { setClockOffsetMs } from '@/lib/clock';
 import { startLabClock } from './lab-clock';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 const CLEAN = { dateOverride: null, occasionModes: {}, weatherMode: 'auto', flags: {} } as const;
 
@@ -58,10 +60,13 @@ beforeEach(() => {
   createMany.mockClear();
   useLabStore.setState(CLEAN);
   usePreferencesStore.setState({ backgroundEffect: 'snow' });
+  // Every test but the permission suite below runs as single-user mode does — unrestricted.
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 afterEach(() => {
   cleanup();
   useLabStore.setState(CLEAN);
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 
 /** Open a combobox by accessible name and click one of its options. */
@@ -252,5 +257,45 @@ describe('LabScreen', () => {
         expect(screen.getByTestId('lab-seed-status')).toHaveTextContent('Could not add the items.'),
       );
     });
+  });
+});
+
+describe('LabScreen — without storage:write', () => {
+  /** A signed-in session that holds no storage permission at all. */
+  function signInWithoutStorageWrite() {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['storage:read']) } });
+  }
+
+  it('hides the controls that write to the database or shift the clock', () => {
+    useLabStore.setState({ dateOverride: '2026-12-24' });
+    signInWithoutStorageWrite();
+    render(<LabScreen />);
+    expect(screen.queryByTestId('lab-reset')).toBeNull();
+    expect(screen.queryByTestId('lab-date-input')).toBeNull();
+    expect(screen.queryByTestId('lab-date-clear')).toBeNull();
+    expect(screen.queryByTestId('lab-seed-start')).toBeNull();
+    expect(screen.queryByTestId('lab-seed-count')).toBeNull();
+  });
+
+  it('leaves the device-local display switches alone', () => {
+    signInWithoutStorageWrite();
+    render(<LabScreen />);
+    expect(screen.getByTestId('lab-occasion-christmas')).toBeInTheDocument();
+    expect(screen.getByTestId('lab-weather-mode')).toBeInTheDocument();
+    expect(screen.getByTestId('lab-flag-seasonal-dense')).toBeInTheDocument();
+    expect(screen.getByTestId('lab-burst-fire')).toBeInTheDocument();
+
+    choose('Dense seasonal garnish', 'On');
+    expect(useLabStore.getState().flags['seasonal-dense']).toBe(true);
+  });
+
+  it('keeps them for a session that does hold storage:write', () => {
+    useSessionStore.setState({
+      authority: { mode: 'granted', grants: new Set(['storage:read', 'storage:write']) },
+    });
+    render(<LabScreen />);
+    expect(screen.getByTestId('lab-reset')).toBeInTheDocument();
+    expect(screen.getByTestId('lab-date-input')).toBeInTheDocument();
+    expect(screen.getByTestId('lab-seed-start')).toBeInTheDocument();
   });
 });

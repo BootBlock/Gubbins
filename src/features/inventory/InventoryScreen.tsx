@@ -65,6 +65,7 @@ import { ITEM_STATUS_FILTERS, type Item, type ItemStatusFilter } from '@/db/repo
 import { SORT_DIRECTIONS, useLayoutStore } from '@/state/stores/useLayoutStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFeature } from '@/features/modules/useFeature';
+import { usePermission } from '@/features/users/usePermission';
 import { useT } from '@/features/i18n';
 import { SearchBuilderProvider, useSearchBuilder } from '@/features/search/SearchBuilderContext';
 import { VisualBuilder } from '@/features/search/components/VisualBuilder';
@@ -186,6 +187,19 @@ function InventoryWorkspace() {
   // in this menu — the single-location Cycle count and the guided audit day — disappear, along
   // with the "Last counted" stat on the location card. Counts already authorised are untouched.
   const cycleCountsEnabled = useFeature('cycle-counts');
+  // The permission gate (issue #429). Each of these covers a *bulk* act over data the session can
+  // already read one row at a time — pulling the whole vault into a spreadsheet, writing over a
+  // hundred items at once, spending a roll of label stock — which is why they are grantable
+  // separately from `items:read`, and why this screen, the app's densest collection of them, has
+  // to ask. A refused capability takes its entry point off screen entirely rather than disabling
+  // it: a greyed-out button still advertises a door the gate will not open. The handlers behind
+  // them are guarded too, because select mode, the intent store and the dashboard's quick actions
+  // can each reach a control the pointer can no longer see.
+  const mayWriteItems = usePermission('items:write');
+  const mayImport = usePermission('import:run');
+  const mayExport = usePermission('export:run');
+  const mayPrintLabels = usePermission('labels:print');
+  const mayReadReports = usePermission('reports:read');
   const navigate = useNavigate();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   // Compact viewport (issue #147): below the tablet floor the fixed 256px location pane would
@@ -327,9 +341,13 @@ function InventoryWorkspace() {
     if (pendingIntent === null) return;
     if (pendingIntent === 'add') setAddOpen(true);
     else if (pendingIntent === 'scan') setScannerOpen(true);
-    else if (pendingIntent === 'import') setImportOpen(true);
+    // An import intent is raised elsewhere (the dashboard hero, the command palette) and consumed
+    // here, so it is a second route to the very dialog the menu no longer offers. Refusing it here
+    // is what stops a hidden control from staying drivable; the intent is still cleared either
+    // way, or it would re-fire on the next visit to this screen.
+    else if (pendingIntent === 'import' && mayImport) setImportOpen(true);
     useInventoryEntry.getState().clearIntent();
-  }, [pendingIntent]);
+  }, [pendingIntent, mayImport]);
 
   // The contextual shortcuts (issue #127): on this screen `N` adds an item and `/` jumps to the
   // quick-search box. Both reuse the very controls the buttons drive, so the keyboard route and
@@ -674,7 +692,7 @@ function InventoryWorkspace() {
   // appears in the list on invalidation; the selection is cleared and the outcome announced.
   const duplicateSelected = async () => {
     const sourceId = selectedItemIds[0];
-    if (selected.size !== 1 || !sourceId) return;
+    if (!mayWriteItems || selected.size !== 1 || !sourceId) return;
     try {
       await cloneItem.mutateAsync({ sourceId });
       setSelected(new Map());
@@ -767,14 +785,19 @@ function InventoryWorkspace() {
               data-testid="inventory-add-item"
               menuLabel="More add-item actions"
               menuTriggerProps={{ 'data-testid': 'inventory-add-menu' }}
+              // Import is the chevron's only entry, so a session refused it gets no chevron at
+              // all — an undefined `menu` collapses the split button back to a plain one rather
+              // than leaving an empty panel hanging off it.
               menu={
-                <MenuAction
-                  icon={<ImportIcon />}
-                  onSelect={() => setImportOpen(true)}
-                  data-testid="open-catalog-import"
-                >
-                  Import…
-                </MenuAction>
+                mayImport ? (
+                  <MenuAction
+                    icon={<ImportIcon />}
+                    onSelect={() => setImportOpen(true)}
+                    data-testid="open-catalog-import"
+                  >
+                    Import…
+                  </MenuAction>
+                ) : undefined
               }
             >
               <AddIcon />
@@ -943,10 +966,18 @@ function InventoryWorkspace() {
                   </MenuAction>
                 </>
               ) : null}
-              <MenuSeparator />
-              <MenuAction icon={<ExportIcon />} onSelect={() => setExportOpen(true)}>
-                Export
-              </MenuAction>
+              {mayExport ? (
+                <>
+                  <MenuSeparator />
+                  <MenuAction
+                    icon={<ExportIcon />}
+                    onSelect={() => setExportOpen(true)}
+                    data-testid="open-export-wizard"
+                  >
+                    Export
+                  </MenuAction>
+                </>
+              ) : null}
               <MenuSeparator />
               <MenuAction
                 icon={<SelectIcon />}
@@ -1193,34 +1224,38 @@ function InventoryWorkspace() {
                   >
                     Clear
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setBulkEditOpen(true)}
-                    disabled={selected.size === 0}
-                    data-testid="bulk-edit"
-                  >
-                    <EditIcon />
-                    Bulk edit
-                  </Button>
-                  <Tooltip
-                    content="Seed a new item from this one (item-as-template). Select exactly one item."
-                    triggerTabIndex={-1}
-                  >
-                    <span>
+                  {mayWriteItems ? (
+                    <>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={duplicateSelected}
-                        disabled={selected.size !== 1 || cloneItem.isPending}
-                        data-testid="duplicate-item"
+                        onClick={() => setBulkEditOpen(true)}
+                        disabled={selected.size === 0}
+                        data-testid="bulk-edit"
                       >
-                        <DuplicateTabIcon />
-                        {cloneItem.isPending ? 'Duplicating…' : 'Duplicate'}
+                        <EditIcon />
+                        Bulk edit
                       </Button>
-                    </span>
-                  </Tooltip>
-                  {reportsEnabled ? (
+                      <Tooltip
+                        content="Seed a new item from this one (item-as-template). Select exactly one item."
+                        triggerTabIndex={-1}
+                      >
+                        <span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={duplicateSelected}
+                            disabled={selected.size !== 1 || cloneItem.isPending}
+                            data-testid="duplicate-item"
+                          >
+                            <DuplicateTabIcon />
+                            {cloneItem.isPending ? 'Duplicating…' : 'Duplicate'}
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    </>
+                  ) : null}
+                  {reportsEnabled && mayReadReports ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1235,7 +1270,7 @@ function InventoryWorkspace() {
                       Catalogue
                     </Button>
                   ) : null}
-                  {labelsEnabled ? (
+                  {labelsEnabled && mayPrintLabels ? (
                     <Button
                       size="sm"
                       onClick={() => setPrintOpen(true)}
@@ -1490,32 +1525,41 @@ function InventoryWorkspace() {
           requestHighlight(item.id);
         }}
       />
-      <ExportWizard
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        initialLocationId={selectedLocationId}
-      />
-      <ImportDataDialog open={importOpen} onClose={() => setImportOpen(false)} />
+      {/* The dialogs answer to the same keys as the controls that open them, so a capability
+          revoked mid-session takes down what is already on screen rather than leaving a live
+          wizard behind a button that has gone. */}
+      {mayExport ? (
+        <ExportWizard
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          initialLocationId={selectedLocationId}
+        />
+      ) : null}
+      {mayImport ? <ImportDataDialog open={importOpen} onClose={() => setImportOpen(false)} /> : null}
       {/* Deep-linked item detail (e.g. from a Reports data-hygiene row): open the card directly
           so the user lands on the item rather than hunting for it. Rendered only once the record
           has loaded; closing clears the id so the query goes idle again. */}
       {detailItem.data ? (
         <ItemDetailDialog item={detailItem.data} open onClose={() => setDetailItemId(null)} />
       ) : null}
-      <PrintLabelsDialog open={printOpen} onClose={() => setPrintOpen(false)} items={selectedLabels} />
-      <BulkEditDialog
-        open={bulkEditOpen}
-        onClose={() => setBulkEditOpen(false)}
-        itemIds={selectedItemIds}
-        locations={flatLocations}
-        onApplied={({ message, undo, hadFailures }) => {
-          setSelected(new Map());
-          // Announced by the toast (its viewport is aria-live), not the live region below — a
-          // bulk edit is reversible, and the Undo has to be reachable from the same surface
-          // that reports the outcome. Pushing the sentence into both would announce it twice.
-          undoToast(message, undo, hadFailures ? 'warning' : 'success');
-        }}
-      />
+      {mayPrintLabels ? (
+        <PrintLabelsDialog open={printOpen} onClose={() => setPrintOpen(false)} items={selectedLabels} />
+      ) : null}
+      {mayWriteItems ? (
+        <BulkEditDialog
+          open={bulkEditOpen}
+          onClose={() => setBulkEditOpen(false)}
+          itemIds={selectedItemIds}
+          locations={flatLocations}
+          onApplied={({ message, undo, hadFailures }) => {
+            setSelected(new Map());
+            // Announced by the toast (its viewport is aria-live), not the live region below — a
+            // bulk edit is reversible, and the Undo has to be reachable from the same surface
+            // that reports the outcome. Pushing the sentence into both would announce it twice.
+            undoToast(message, undo, hadFailures ? 'warning' : 'success');
+          }}
+        />
+      ) : null}
 
       {/* Announce duplicate + saved-search outcomes (WCAG 4.1.3). Bulk edit announces
           through its own toast instead, so the Undo it carries is reachable from there. */}

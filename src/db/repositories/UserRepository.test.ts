@@ -44,10 +44,14 @@ describe('users, roles and attribution', () => {
   });
 
   describe('the built-in roles (phase 2)', () => {
-    it('seeds the four shipped roles, marked built-in', async () => {
+    it('seeds every shipped role, marked built-in', async () => {
       const page = await roles.list();
-      expect(page.rows.map((r) => r.name)).toEqual(BUILTIN_ROLES.map((r) => r.name));
-      expect(page.rows.map((r) => r.id)).toEqual(BUILTIN_ROLES.map((r) => r.id));
+      // Compared as sets: `list()` orders by name, which is not the registry's own order (that
+      // runs most to least privileged). The first four happened to coincide alphabetically, so
+      // an ordered assertion passed by luck until a fifth role was added.
+      expect(new Set(page.rows.map((r) => r.name))).toEqual(new Set(BUILTIN_ROLES.map((r) => r.name)));
+      expect(new Set(page.rows.map((r) => r.id))).toEqual(new Set(BUILTIN_ROLES.map((r) => r.id)));
+      expect(page.rows).toHaveLength(BUILTIN_ROLES.length);
       expect(page.rows.every((r) => r.isBuiltin)).toBe(true);
     });
 
@@ -60,7 +64,9 @@ describe('users, roles and attribution', () => {
     });
 
     it('refuses to delete a built-in role, so no user is stranded on a missing one', async () => {
-      const administrator = (await roles.list()).rows[0];
+      // Named rather than taken by position: `list()` orders by name, so `rows[0]` only
+      // happened to be Administrator.
+      const administrator = (await roles.findByName('Administrator'))!;
       await expect(roles.delete(administrator.id)).rejects.toThrow(/cannot be deleted/i);
     });
 

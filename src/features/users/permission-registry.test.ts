@@ -84,6 +84,28 @@ describe('permission registry', () => {
     expect(PERMISSION_SUBJECTS.users.actions).toEqual(['read', 'manage']);
     // Stock is written down or written off, never deleted.
     expect(PERMISSION_SUBJECTS.stock.actions).toEqual(['read', 'write']);
+    // A bulk capability is named for what it does; "change" describes none of these.
+    expect(PERMISSION_SUBJECTS.import.actions).toEqual(['run']);
+    expect(PERMISSION_SUBJECTS.export.actions).toEqual(['run']);
+    expect(PERMISSION_SUBJECTS.labels.actions).toEqual(['print']);
+  });
+
+  it('lets a loan raised in error be deleted, not merely checked back in', () => {
+    // Before issue #429 `checkouts` had no delete, and the danger zone erased every loan on
+    // `checkouts:write` — so a role trusted to hand equipment out could also wipe the record
+    // of every loan ever made.
+    expect(PERMISSION_SUBJECTS.checkouts.actions).toEqual(['read', 'write', 'delete']);
+  });
+
+  it('keeps the capabilities that gate the app itself distinct from the records inside it', () => {
+    // `modules` is the permission that protects the permission system: switching the Users
+    // module off takes the sign-in gate with it.
+    expect(PERMISSION_SUBJECTS.modules.actions).toEqual(['read', 'write']);
+    // `storage` is housekeeping the database; `maintenance` is servicing an asset. Two very
+    // different jobs that a single word would have merged.
+    expect(PERMISSION_SUBJECTS.storage.actions).toEqual(['read', 'write']);
+    expect(PERMISSION_SUBJECTS.storage.kind).toBe('capability');
+    expect(PERMISSION_SUBJECTS.maintenance.kind).toBe('entity');
   });
 
   it('keeps stock separate from items, which is what makes a Stocker role possible', () => {

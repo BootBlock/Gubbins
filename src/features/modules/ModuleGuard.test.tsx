@@ -48,13 +48,17 @@ vi.mock('@/components/icons', async (importOriginal) => {
 
 import { ModuleGuard } from './ModuleGuard';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 beforeEach(() => {
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 
 /** The real screen the guard wraps, tagged so we can assert whether it rendered. */
@@ -176,5 +180,53 @@ describe('route wiring — only optional pages are guarded', () => {
 
   it.each(unguarded)('never guards the %s route', (route) => {
     expect(routeSource(`${route}.tsx`)).not.toContain('ModuleGuard');
+  });
+});
+
+/**
+ * Issue #429. This interstitial is a *second* door onto the module list — the Modules screen is
+ * not the only way to switch a feature back on — so an ungated **Show this module** would have
+ * left the whole `modules:write` gate decorative for anyone who could reach a hidden page.
+ */
+describe('ModuleGuard — module write permission', () => {
+  function renderHidden() {
+    useModulesStore.setState({ intent: { projects: false } });
+    render(
+      <ModuleGuard feature="projects">
+        <Screen />
+      </ModuleGuard>,
+    );
+  }
+
+  it('withholds Show this module from a role that may not write the module list', () => {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['modules:read']) } });
+    renderHidden();
+
+    expect(screen.queryByTestId('module-guard-show')).toBeNull();
+    // Continue anyway stays: it changes nothing, and it is the only way this role sees the screen.
+    expect(screen.getByTestId('module-guard-continue')).toBeTruthy();
+  });
+
+  it('keeps Show this module for a role that holds the write', () => {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['modules:write']) } });
+    renderHidden();
+
+    fireEvent.click(screen.getByTestId('module-guard-show'));
+    expect(useModulesStore.getState().intent.projects).toBe(true);
+  });
+
+  it('drops the shortcut into the manager for a role that cannot open it', () => {
+    // Without `modules:read` the footer link would land on the refusal page, so it is not offered.
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['items:read']) } });
+    renderHidden();
+
+    expect(screen.queryByRole('link', { name: /manage modules/i })).toBeNull();
+  });
+
+  it('keeps the shortcut for a role that can open the manager', () => {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['modules:read']) } });
+    renderHidden();
+
+    expect(screen.getByRole('link', { name: /manage modules/i }).getAttribute('href')).toBe('/modules');
   });
 });

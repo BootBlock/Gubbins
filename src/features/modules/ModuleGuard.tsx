@@ -9,7 +9,9 @@
  *  - **Show this module** flips the feature's stored intent back on (and, if the feature has
  *    dependencies that are themselves off, first confirms the knock-on switches via the same
  *    `ConfirmCascadeModal` the Modules screen uses). Re-enabling immediately reveals the
- *    screen because `useFeature` re-resolves to on.
+ *    screen because `useFeature` re-resolves to on. That is a write to the module list, and this
+ *    interstitial is a second door onto it, so it is offered only to a role holding
+ *    `modules:write` (issue #429).
  *  - **Continue anyway** renders the real screen just this once via a local override, without
  *    touching intent — the module stays hidden everywhere else.
  *
@@ -24,6 +26,8 @@ import { HideIcon, ModulesIcon, ShowIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/foundry/button';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { ROUTE_PERMISSIONS } from '@/components/nav/nav-destinations';
+import { usePermission } from '@/features/users/usePermission';
 import { ConfirmCascadeModal, type PendingCascade } from './ConfirmCascadeModal';
 import { FEATURE_REGISTRY, getFeature, type FeatureId } from './feature-registry';
 import { closureToEnable } from './modules-graph';
@@ -60,6 +64,14 @@ function ModuleHiddenInterstitial({
   const intent = useModulesStore((state) => state.intent);
   const setFeatureIntent = useModulesStore((state) => state.setFeatureIntent);
   const [pending, setPending] = useState<PendingCascade | null>(null);
+  /**
+   * Switching a module back on is a write to the module list, and this interstitial is a second
+   * door onto it — the Modules screen is not the only way in (issue #429). A role that may not
+   * edit the list is offered "Continue anyway" instead, which changes nothing.
+   */
+  const mayWriteModules = usePermission('modules:write');
+  /** Whether the footer's shortcut into the manager leads anywhere for this role. */
+  const mayReachModules = usePermission(ROUTE_PERMISSIONS.get('/modules'));
 
   const def = getFeature(feature);
   // Defensive: an unregistered id can't reach here (the prop is a FeatureId), but never crash.
@@ -70,6 +82,7 @@ function ModuleHiddenInterstitial({
    * pulled-in switches first (matching the Modules screen); otherwise flip it on directly.
    */
   const showModule = () => {
+    if (!mayWriteModules) return;
     const closure = [...closureToEnable(feature, intent, FEATURE_REGISTRY)];
     if (closure.some((id) => id !== feature)) {
       setPending({ action: 'enable', id: feature, closure });
@@ -79,7 +92,7 @@ function ModuleHiddenInterstitial({
   };
 
   const confirmEnable = () => {
-    if (!pending) return;
+    if (!pending || !mayWriteModules) return;
     // Enabling must switch every pulled-in dependency on, or the feature still resolves off.
     for (const id of pending.closure) setFeatureIntent(id, true);
     setPending(null);
@@ -94,24 +107,33 @@ function ModuleHiddenInterstitial({
         heading={`${def.label} is hidden`}
         body={[
           def.description,
-          'You’ve switched this module off for a leaner app. Your data is untouched — switch it back on whenever you like.',
+          // The second line promises an action, so it has to match who is reading it: a role
+          // without `modules:write` is offered no "Show this module" button, and telling it to
+          // switch the module back on whenever it likes describes a control it cannot see.
+          mayWriteModules
+            ? 'You’ve switched this module off for a leaner app. Your data is untouched — switch it back on whenever you like.'
+            : 'This module is switched off for a leaner app. Your data is untouched, but your role doesn’t allow changing which modules are on — ask whoever looks after this device.',
         ]}
         actions={
           <>
-            <Button data-testid="module-guard-show" onClick={showModule}>
-              <ShowIcon aria-hidden />
-              Show this module
-            </Button>
+            {mayWriteModules ? (
+              <Button data-testid="module-guard-show" onClick={showModule}>
+                <ShowIcon aria-hidden />
+                Show this module
+              </Button>
+            ) : null}
             <Button variant="outline" data-testid="module-guard-continue" onClick={onContinue}>
               Continue anyway
             </Button>
           </>
         }
         footer={
-          <Link to="/modules" className={cn(buttonVariants({ variant: 'link' }), 'h-auto px-0')}>
-            <ModulesIcon aria-hidden />
-            Manage modules
-          </Link>
+          mayReachModules ? (
+            <Link to="/modules" className={cn(buttonVariants({ variant: 'link' }), 'h-auto px-0')}>
+              <ModulesIcon aria-hidden />
+              Manage modules
+            </Link>
+          ) : null
         }
       />
 

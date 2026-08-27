@@ -122,12 +122,12 @@ item on two devices — the more recent entry is kept, by the same last-write-wi
 
 > **ℹ️ Note**
 > A [[built-in role|Roles-and-Permissions]] is the one exception to "the more recent record is
-> kept". Gubbins ships with Administrator, Manager, Stocker and Viewer, and those four are
-> permanent — you can rename and retune them, but you cannot delete them. So if a role you created
-> ends up sharing a name with one of them, the built-in role is the one that survives, whichever
-> was edited last, and everyone assigned to your role is moved onto it.
+> kept". Every role Gubbins ships with is permanent — you can rename and retune them, but you
+> cannot delete them. So if a role you created ends up sharing a name with one of them, the
+> built-in role is the one that survives, whichever was edited last, and everyone assigned to your
+> role is moved onto it.
 >
-> Because none of the four can be removed, two *built-in* roles given the same name on two devices
+> Because none of them can be removed, two *built-in* roles given the same name on two devices
 > cannot be merged at all. Nothing is lost and syncing carries on, but each device keeps its own
 > name for one of them, and any other change made to that role on the other device waits with it.
 > Rename one of the two and both devices agree again.
@@ -167,6 +167,22 @@ before syncing — the unit comes home once, so the count goes up by one.
 If one device also *returned* the loan before syncing, the return stands — an asset that has come
 back cannot be put back out by the other device's later hand-over. The unit reads as on hand again,
 and nothing is left claiming to hold it.
+
+### When a borrower is deleted on another device
+
+A [[loan|Loans-Check-Out-and-In]] is always taken out against a borrower — a [[contact|Contacts]],
+a [[project|Projects-and-BOM]] or a [[location|Locations-and-Stock]]. Deleting any of the three
+returns its open loans first, so the stock goes back where it came from, and then takes the loan
+records with it: a loan needs a borrower to point at.
+
+Sync follows the same rule. If one device deletes a project while another still has a loan out to
+it, that loan goes when the two devices meet — just as it would have done had both changes been
+made on one device. The returned stock arrives with the deletion, the item itself is untouched, and
+its [[Activity log|Activity-Log]] still records that it went out and came back.
+
+> **💡 Tip**
+> If you want to keep the loan history, mark the [[project|Projects-and-BOM]] **Completed** or
+> **Archived** rather than deleting it. A project you keep keeps every record attached to it.
 
 ### Reviewing overwritten edits
 

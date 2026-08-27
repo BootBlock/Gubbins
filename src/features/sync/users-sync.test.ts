@@ -35,6 +35,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   loanReturnsPreserved: [],
   collisions: [],
   keyParks: [],
+  tombstoneClears: [],
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],

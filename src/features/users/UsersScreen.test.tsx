@@ -11,7 +11,7 @@
  *    being enforced or entirely ignored.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { act, render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Role, User } from '@/db/repositories/types';
 import {
@@ -75,6 +75,11 @@ vi.mock('./mutations', () => {
 
 import { UsersScreen } from './UsersScreen';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from './permissions';
+
+/** A session that may read the screen but holds none of the manage rights (issue #429). */
+const READ_ONLY_AUTHORITY = { mode: 'granted', grants: new Set(['users:read']) } as const;
 
 function user(overrides: Partial<User> = {}): User {
   return {
@@ -118,11 +123,15 @@ beforeEach(() => {
   usersResult.isPending = usersResult.isError = false;
   rolesResult.isPending = rolesResult.isError = false;
   useModulesStore.setState({ intent: {} });
+  // Every other test here runs as the default unrestricted authority; reset it in both hooks so a
+  // permission test cannot leak its narrower authority into the next file or the next case.
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
   deleteUserMutate.mockReset();
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 
 describe('UsersScreen — accounts', () => {
@@ -320,5 +329,83 @@ describe('UsersScreen — roles', () => {
     render(<UsersScreen />);
 
     expect(within(rowFor('Stocker')).getByText('2 people have this role')).toBeInTheDocument();
+  });
+});
+
+describe('UsersScreen — a read-only session is offered no mutating control (issue #429)', () => {
+  // The screen opens on `users:read`, but the repository enforces `users:manage` on every change
+  // it can make. Rendering those controls on read alone offers doors the gate refuses, so each of
+  // them is hidden rather than disabled — the project's established answer.
+
+  it('still lists the accounts and roles, which is the legitimate read', () => {
+    usersResult.data = { rows: [user({ roleId: 'r1' })] };
+    rolesResult.data = { rows: [role()] };
+    useSessionStore.setState({ authority: READ_ONLY_AUTHORITY });
+    render(<UsersScreen />);
+
+    expect(screen.getByText('Sam Okafor')).toBeInTheDocument();
+    expect(screen.getByText('Stocker')).toBeInTheDocument();
+  });
+
+  it('offers neither "Add user" nor "Add role"', () => {
+    rolesResult.data = { rows: [role()] };
+    useSessionStore.setState({ authority: READ_ONLY_AUTHORITY });
+    render(<UsersScreen />);
+
+    expect(screen.queryByRole('button', { name: 'Add user' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add role' })).toBeNull();
+  });
+
+  it('offers no password, API-token, edit or delete control on an account row', () => {
+    usersResult.data = { rows: [user()] };
+    useSessionStore.setState({ authority: READ_ONLY_AUTHORITY });
+    render(<UsersScreen />);
+
+    const row = within(rowFor('Sam Okafor'));
+    expect(row.queryByRole('button', { name: 'Password' })).toBeNull();
+    expect(row.queryByRole('button', { name: 'API tokens' })).toBeNull();
+    expect(row.queryByRole('button', { name: 'Edit account' })).toBeNull();
+    expect(row.queryByRole('button', { name: 'Delete account' })).toBeNull();
+  });
+
+  it('offers no edit or delete control on a role row', () => {
+    rolesResult.data = { rows: [role()] };
+    useSessionStore.setState({ authority: READ_ONLY_AUTHORITY });
+    render(<UsersScreen />);
+
+    const row = within(rowFor('Stocker'));
+    expect(row.queryByRole('button', { name: 'Edit role' })).toBeNull();
+    expect(row.queryByRole('button', { name: 'Delete role' })).toBeNull();
+  });
+
+  it('keeps every one of those controls for a session that may manage', () => {
+    // The other half of the assertion: the guard must hide these *only* when it should, or the
+    // screen is useless to the operator it exists for.
+    usersResult.data = { rows: [user()] };
+    rolesResult.data = { rows: [role()] };
+    render(<UsersScreen />);
+
+    expect(screen.getByRole('button', { name: 'Add user' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add role' })).toBeInTheDocument();
+    const account = within(rowFor('Sam Okafor'));
+    expect(account.getByRole('button', { name: 'Password' })).toBeInTheDocument();
+    expect(account.getByRole('button', { name: 'API tokens' })).toBeInTheDocument();
+    expect(account.getByRole('button', { name: 'Edit account' })).toBeInTheDocument();
+    expect(account.getByRole('button', { name: 'Delete account' })).toBeInTheDocument();
+    const role_ = within(rowFor('Stocker'));
+    expect(role_.getByRole('button', { name: 'Edit role' })).toBeInTheDocument();
+    expect(role_.getByRole('button', { name: 'Delete role' })).toBeInTheDocument();
+  });
+
+  it('closes a dialog left open when the authority narrows mid-session', async () => {
+    // Hiding a button is not enough on its own: a dialog opened while the session could manage
+    // must not survive the permission going away.
+    usersResult.data = { rows: [user()] };
+    render(<UsersScreen />);
+    await userEvent.click(within(rowFor('Sam Okafor')).getByRole('button', { name: 'Delete account' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    act(() => useSessionStore.setState({ authority: READ_ONLY_AUTHORITY }));
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

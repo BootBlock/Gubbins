@@ -4,6 +4,8 @@ import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { ToastProvider } from '@/components/foundry';
 import { ItemDragProvider, useItemDragSource } from '../item-drag';
 import { LocationSidebar } from './LocationSidebar';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { useLocationExpansionStore } from '../useLocationExpansionStore';
 
 // Keep the test free of the Web Worker / QueryClient: the sidebar (and the
@@ -79,7 +81,10 @@ vi.mock('../queries', async (importOriginal) => ({
 }));
 vi.mock('@/features/export/download', () => ({ download: exportSpies.download }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+});
 beforeEach(() => {
   spies.update.mockClear();
   spies.del.mockClear();
@@ -98,6 +103,7 @@ beforeEach(() => {
   useLocationExpansionStore.getState().reset();
   exportSpies.readPage.mockClear();
   exportSpies.download.mockClear();
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 
 function node(
@@ -305,6 +311,29 @@ describe('LocationSidebar — accessible APG tree', () => {
     expect(edit.compareDocumentPosition(print) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const unassigned = screen.getByRole('treeitem', { name: 'Unassigned' });
     expect(within(unassigned).getByRole('button', { name: 'Print label for Unassigned' })).toBeTruthy();
+  });
+
+  /**
+   * Issue #429. Printing a location's label is the same bulk capability the Inventory screen's
+   * label actions are held to, reached from a different corner — so gating it only there would
+   * have left this sidebar as the way around the gate.
+   */
+  it('withholds Print label from a role without labels:print', () => {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['items:read']) } });
+    renderSidebar();
+
+    expect(screen.queryByRole('button', { name: 'Print label for Workshop' })).toBeNull();
+    // The other row actions are untouched — this gate is about printing, not about editing.
+    const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
+    expect(within(workshop).getByRole('button', { name: 'Edit Workshop' })).toBeTruthy();
+  });
+
+  it('keeps Print label for a role that holds labels:print', () => {
+    useSessionStore.setState({
+      authority: { mode: 'granted', grants: new Set(['items:read', 'labels:print']) },
+    });
+    renderSidebar();
+    expect(screen.getByRole('button', { name: 'Print label for Workshop' })).toBeTruthy();
   });
 
   it('deletes an empty location immediately, with no confirmation prompt', () => {

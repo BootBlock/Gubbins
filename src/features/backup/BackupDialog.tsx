@@ -151,6 +151,16 @@ function BackupTabs({
   const mayRestore = can(authority, 'backup:write');
 
   const [tab, setTab] = useState<Tab>(() => (mayCreate ? 'create' : 'restore'));
+  // Issue #429: the initialiser above runs once, but the authority can narrow while the dialog is
+  // open — a role change from another device lands on a sync, and this screen re-resolves it. A
+  // `tab` left pointing at a half that is no longer rendered would show an empty dialog, so the
+  // rendered tab falls back to whichever half the role still holds.
+  const activeTab: Tab =
+    (tab === 'create' && !mayCreate) || (tab === 'restore' && !mayRestore)
+      ? mayCreate
+        ? 'create'
+        : 'restore'
+      : tab;
   // Switching tab unmounts the panel behind it, so while a backup or a restore is running the
   // rail is a third way to lose the outcome — exactly what closing the dialog would do. It is
   // held with the same answer the frame gives Escape, the backdrop and the ✕ (issue #654).
@@ -164,19 +174,19 @@ function BackupTabs({
         className="flex gap-1 rounded-lg bg-secondary/40 p-1"
       >
         {mayCreate ? (
-          <TabButton active={tab === 'create'} onClick={() => setTab('create')} disabled={busy}>
+          <TabButton active={activeTab === 'create'} onClick={() => setTab('create')} disabled={busy}>
             <DownloadIcon /> Create backup
           </TabButton>
         ) : null}
         {mayRestore ? (
-          <TabButton active={tab === 'restore'} onClick={() => setTab('restore')} disabled={busy}>
+          <TabButton active={activeTab === 'restore'} onClick={() => setTab('restore')} disabled={busy}>
             <UploadIcon /> Restore
           </TabButton>
         ) : null}
       </div>
 
-      {tab === 'create' && mayCreate ? <CreatePanel /> : null}
-      {tab === 'restore' && mayRestore ? (
+      {activeTab === 'create' && mayCreate ? <CreatePanel /> : null}
+      {activeTab === 'restore' && mayRestore ? (
         <RestorePanel onClose={onClose} onRestored={onRestored} mayReplace={mayCreate} />
       ) : null}
       {!mayCreate && !mayRestore ? (
@@ -237,6 +247,12 @@ function CreatePanel() {
   const toggle = (key: BackupToggleKey) => setSelection((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const run = async () => {
+    // Issue #429: the render gate above unmounts this panel for a role without `backup:read`, but
+    // the authority can narrow between the render that offered the button and the click that
+    // reaches here (a role change arrives on a sync). Re-read it at the moment of the action so an
+    // export can never be driven by a control that outlived its gate. `createBackup` refuses the
+    // same session anyway (issue #519) — this is the courtesy that stops the refusal being a throw.
+    if (!can(useSessionStore.getState().authority, 'backup:read')) return;
     setBusy(true);
     setError(null);
     setResult(null);
@@ -389,6 +405,11 @@ function RestorePanel({
   const onFileChosen = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const chosen = event.target.files?.[0] ?? null;
     event.target.value = '';
+    // Issue #429: the file picker is the only way to stage a restore, so it is guarded on the same
+    // key as the restore itself. Hiding the panel already takes the input off the page; this stops
+    // a pick that was already in the OS dialog when the authority narrowed from staging a backup
+    // this session may no longer apply.
+    if (!can(useSessionStore.getState().authority, 'backup:write')) return;
     setFile(chosen);
     setParsed(null);
     setConfirming(false);
@@ -422,6 +443,14 @@ function RestorePanel({
 
   const confirmRestore = async () => {
     if (!parsed) return;
+    // Issue #429: the last check before anything is overwritten, against the authority as it stands
+    // *now* rather than as it stood when this panel rendered. Replace needs `backup:read` on top,
+    // because it exports a restore point first — refusing here leaves the current data untouched,
+    // whereas discovering it inside the export would have already walked the user through a save
+    // dialog. `restoreBackup` refuses the same session too (issue #519); this keeps it from throwing.
+    const authorityNow = useSessionStore.getState().authority;
+    if (!can(authorityNow, 'backup:write')) return;
+    if (mode === 'replace' && !can(authorityNow, 'backup:read')) return;
     if (mode === 'replace' && !isReplaceConfirmed(replaceText)) return; // type-to-confirm guard
     setBusy(true);
     // Raised for exactly as long as this runs, and lowered in the `finally` below so every way

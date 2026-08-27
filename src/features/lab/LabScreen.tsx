@@ -36,6 +36,7 @@ import { OCCASIONS, resolveOccasion, type OccasionMode } from '@/components/back
 import type { SnowWeatherMode } from '@/components/background/precip-engine';
 import type { MessageKey } from '@/features/i18n/messages';
 import { useT } from '@/features/i18n';
+import { usePermission } from '@/features/users/usePermission';
 import { nowDate } from '@/lib/clock';
 import { getItemRepository } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -48,6 +49,15 @@ type SeedState = { status: 'idle' | 'working' | 'done' | 'failed'; count: number
 
 export function LabScreen() {
   const t = useT();
+  // Issue #429. The lab is a mix of two kinds of switch, and only one of them is gated. The
+  // garnish gates, lab flags, snow weather and effect bursts are device-local display toys that
+  // write nothing and are visible to nobody else. The date override shifts the clock the whole
+  // app reads, the seed action writes rows into the real database, and the reset clears the
+  // override again — so those three ride on `storage:write`, the same key the route itself is
+  // gated on. That makes this defence in depth rather than the only gate: a session without the
+  // key cannot reach `/lab` at all, but the screen must not offer the controls even if it is
+  // rendered by some other path.
+  const mayWrite = usePermission('storage:write');
   const dateOverride = useLabStore((s) => s.dateOverride);
   const occasionModes = useLabStore((s) => s.occasionModes);
   const flags = useLabStore((s) => s.flags);
@@ -95,13 +105,15 @@ export function LabScreen() {
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <p className="max-w-2xl text-sm text-muted-foreground">{t('lab.intro')}</p>
-          <Button variant="outline" size="sm" data-testid="lab-reset" onClick={resetLab}>
-            <ResetIcon aria-hidden />
-            {t('lab.reset')}
-          </Button>
+          {mayWrite ? (
+            <Button variant="outline" size="sm" data-testid="lab-reset" onClick={resetLab}>
+              <ResetIcon aria-hidden />
+              {t('lab.reset')}
+            </Button>
+          ) : null}
         </div>
 
-        <DateOverrideSection value={dateOverride} onChange={setDateOverride} />
+        {mayWrite ? <DateOverrideSection value={dateOverride} onChange={setDateOverride} /> : null}
 
         <SnowWeatherSection />
 
@@ -193,7 +205,7 @@ export function LabScreen() {
 
         <BurstSection />
 
-        <SeedSection />
+        {mayWrite ? <SeedSection /> : null}
       </main>
     </PageContainer>
   );

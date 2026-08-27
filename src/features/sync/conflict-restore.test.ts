@@ -5,6 +5,9 @@ import { migrations, SQL_NOW_MS } from '@/db/migrations';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories';
 import { restoreConflictVersion } from './conflict-restore';
 import { buildConflict } from './conflict-detect';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
+import { ADMIN_USER_ID } from '@/db/repositories/constants';
 
 async function makeDriver(): Promise<MemoryDriver> {
   const driver = createMemoryDriver();
@@ -190,6 +193,48 @@ describe('restoreConflictVersion (#72)', () => {
     );
     await restoreConflictVersion(driver, conflict);
     const row = await driver.queryOne<{ name: string }>("SELECT name FROM items WHERE id = 'i1';");
+    expect(row?.name).toBe('Mine');
+  });
+});
+
+describe('restoreConflictVersion is inside the permission boundary (issue #429)', () => {
+  let driver: MemoryDriver;
+
+  beforeEach(async () => {
+    driver = await makeDriver();
+    await driver.execute("INSERT INTO contacts (id, name, updated_at) VALUES ('c1', 'Theirs', 1000);");
+  });
+
+  afterEach(async () => {
+    useSessionStore.getState().setResolved(UNRESTRICTED_AUTHORITY, ADMIN_USER_ID);
+    await driver.close();
+  });
+
+  const conflict = () =>
+    buildConflict(
+      'contacts',
+      { id: 'c1', name: 'Mine', updated_at: 500 },
+      { id: 'c1', name: 'Theirs', updated_at: 1000 },
+      999,
+    );
+
+  it('refuses a session without `sync:write`, leaving the merged row alone', async () => {
+    // Reading the conflict list is one thing; overturning what every device agreed on — and
+    // pushing that decision to all of them — is `sync:write`.
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(['sync:read']) }, 'user-1');
+
+    await expect(restoreConflictVersion(driver, conflict())).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    });
+    const row = await driver.queryOne<{ name: string }>("SELECT name FROM contacts WHERE id = 'c1';");
+    expect(row?.name).toBe('Theirs');
+  });
+
+  it('allows a role that holds `sync:write`', async () => {
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(['sync:write']) }, 'user-1');
+
+    await expect(restoreConflictVersion(driver, conflict())).resolves.toBeUndefined();
+    const row = await driver.queryOne<{ name: string }>("SELECT name FROM contacts WHERE id = 'c1';");
     expect(row?.name).toBe('Mine');
   });
 });

@@ -58,6 +58,11 @@ import {
   type MovementReport,
   type ValueGroupTotals,
 } from '@/features/reports/reports';
+import {
+  actionInSql,
+  CONSUMPTION_MATERIAL_ACTIONS,
+  CONSUMPTION_UNIT_ACTIONS,
+} from '@/features/reports/consumption-actions';
 import { classifyAbc, type AbcInput, type AbcReport } from '@/features/reports/abc-analysis';
 import { summariseTurnover, type TurnoverInput, type TurnoverReport } from '@/features/reports/turnover';
 import {
@@ -110,6 +115,17 @@ import { nowMs } from '@/lib/clock';
  * {@link ReportRepository.stockAging} into ones that match nothing.
  */
 const HISTORY_CLEARED: HistoryAction = 'HISTORY_CLEARED';
+
+/**
+ * The `action IN (…)` predicates the three consumption reports share, built once from the
+ * {@link CONSUMPTION_UNIT_ACTIONS} / {@link CONSUMPTION_MATERIAL_ACTIONS} vocabulary. Without them
+ * these queries read a *sign* and call it consumption, which counts a tool lent out as consumed
+ * and its return as a restock (issue #571).
+ *
+ * `h` is the `item_history` alias every one of the three uses.
+ */
+const CONSUMED_UNITS_FILTER = actionInSql('h.action', CONSUMPTION_UNIT_ACTIONS);
+const CONSUMED_MATERIAL_FILTER = actionInSql('h.action', CONSUMPTION_MATERIAL_ACTIONS);
 
 /** Default number of time buckets for the movement report (a fortnight of days fits well). */
 const DEFAULT_MOVEMENT_BUCKETS = 14;
@@ -1096,6 +1112,16 @@ export class ReportRepository extends BaseRepository {
    * millilitres, metres and screws all reduce a stock. Adding them produced a number of nothing,
    * so each row carries its item's unit and {@link summariseConsumption} groups on it.
    *
+   * Both arms are filtered by the shared consumption vocabulary
+   * (`@/features/reports/consumption-actions`, issue #571), so what is counted is stock that left
+   * for good rather than every negative delta. A tool checked out is stock off the shelf, not stock
+   * used up, and counting it here made this figure disagree with the movement chart beside it in
+   * one direction and with nothing at all in the other. The material arm carries the filter for a
+   * second reason, and holds it as an invariant rather than a repair: `net_value_delta` on a `SOLD`
+   * row is the sale *proceeds*, money in the column material is measured in. `sell` only ever
+   * writes that positive, so `net_value_delta < 0` excludes it today by luck of sign — naming the
+   * gauge-bearing actions is what keeps a future money row out of a total measured in grams.
+   *
    * The `UNION ALL` emits a row per *delta*, not per ledger entry, so an entry that carried both
    * changes contributes each magnitude on its own row rather than having them added together
    * before anything knows what they measure.
@@ -1121,10 +1147,12 @@ export class ReportRepository extends BaseRepository {
               -h.quantity_delta AS consumed
          FROM item_history h JOIN items i ON i.id = h.item_id
         WHERE h.created_at >= ? AND h.created_at < ? AND h.quantity_delta < 0
+          AND ${CONSUMED_UNITS_FILTER}
         UNION ALL
        SELECT h.created_at, i.unit_of_measure, -h.net_value_delta
          FROM item_history h JOIN items i ON i.id = h.item_id
-        WHERE h.created_at >= ? AND h.created_at < ? AND h.net_value_delta < 0;`,
+        WHERE h.created_at >= ? AND h.created_at < ? AND h.net_value_delta < 0
+          AND ${CONSUMED_MATERIAL_FILTER};`,
       [windowStart, now, windowStart, now],
     );
     return summariseConsumption(
@@ -1487,7 +1515,10 @@ export class ReportRepository extends BaseRepository {
   /**
    * ABC (Pareto) classification (§3 advanced analytics): each active, non-parent item's
    * **annual consumption value** = units consumed over the trailing `windowDays` (the positive
-   * magnitude of `item_history` stock-out deltas) × its {@link effectiveUnitCost}. The pure
+   * magnitude of the `item_history` deltas the shared consumption vocabulary counts —
+   * `@/features/reports/consumption-actions`) × its {@link effectiveUnitCost}. A loan is **not**
+   * consumption: reading every negative delta ranked the most-lent tool as the most-consumed item,
+   * i.e. as a thing to buy more of, when it comes back every time (issue #571). The pure
    * {@link classifyAbc} helper owns the cumulative-value split into A/B/C tiers; the repository
    * only fetches the per-item consumed-units + cost rows. `windowDays` defaults to a calendar
    * year (the annual definition); `now` defaults to the wall clock.
@@ -1502,13 +1533,15 @@ export class ReportRepository extends BaseRepository {
       preferred_supplier_cost: number | null;
       consumed: number;
     }>(
-      // `-SUM(quantity_delta)` over the negative (stock-out) deltas is the positive consumed
-      // magnitude; COALESCE keeps an item that never moved at 0 rather than NULL.
+      // `-SUM(quantity_delta)` over the negative deltas of the *consuming* actions is the positive
+      // consumed magnitude; COALESCE keeps an item that never moved at 0 rather than NULL. The
+      // action list narrows rows the per-item index already found (`action` is not in it), so it
+      // costs a comparison per walked row and no extra lookup.
       `SELECT i.id AS id, i.name AS name, i.unit_cost AS unit_cost,
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               COALESCE((SELECT -SUM(h.quantity_delta) FROM item_history h
                          WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
-                           AND h.quantity_delta < 0), 0) AS consumed
+                           AND h.quantity_delta < 0 AND ${CONSUMED_UNITS_FILTER}), 0) AS consumed
          FROM items i
         WHERE i.is_active = 1 AND ${notAVariantParent('i.id')};`,
       [windowStart, now],
@@ -1526,8 +1559,13 @@ export class ReportRepository extends BaseRepository {
 
   /**
    * Inventory turnover (§3 advanced analytics) over the trailing `windowDays`: per active,
-   * non-parent item the cost of goods consumed (`-SUM(MIN(quantity_delta, 0))` × cost) divided
-   * by the **average** on-hand value. Because no historical value snapshots exist, the pure
+   * non-parent item the cost of goods consumed (the negative `quantity_delta` magnitude of the
+   * actions the shared consumption vocabulary counts — `@/features/reports/consumption-actions` —
+   * × cost) divided by the **average** on-hand value. Excluding a loan there is what stops a
+   * weekly-lent tool reporting a brisk turn and a short days-on-hand for stock that never left
+   * (issue #571); `netQtyDelta` below deliberately keeps reading **every** delta, loans included,
+   * because it reconstructs what was physically on hand at the window start rather than demand.
+   * Because no historical value snapshots exist, the pure
    * {@link summariseTurnover} helper reconstructs the window-start quantity by reversing the net
    * ledger movement (`netQtyDelta = SUM(quantity_delta)`); the repository supplies the current
    * quantity, the consumed magnitude and that net delta. `now` defaults to the wall clock.
@@ -1548,7 +1586,7 @@ export class ReportRepository extends BaseRepository {
               ${preferredSupplierCostSql('i.id', base)} AS preferred_supplier_cost,
               COALESCE((SELECT -SUM(h.quantity_delta) FROM item_history h
                          WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
-                           AND h.quantity_delta < 0), 0) AS consumed,
+                           AND h.quantity_delta < 0 AND ${CONSUMED_UNITS_FILTER}), 0) AS consumed,
               COALESCE((SELECT SUM(h.quantity_delta) FROM item_history h
                          WHERE h.item_id = i.id AND h.created_at >= ? AND h.created_at < ?
                            AND h.quantity_delta IS NOT NULL), 0) AS net_delta

@@ -31,8 +31,13 @@ export class StorageRepository extends BaseRepository {
    * Row counts for the OPFS-dominant tables (§7.6.2). Photos are counted across *both*
    * owning tables: item images and location photos share the OPFS `images/` directory and
    * the same row shape, so counting only one would under-report consumption (issue #81).
+   *
+   * Gated on `storage:read` (issue #429), like every read on this repository: the triage
+   * dashboard these feed is the storage screen, and a role that may not see this device's
+   * housekeeping should not be handed its shape one `COUNT(*)` at a time.
    */
   async rowCounts(): Promise<StorageRowCounts> {
+    this.assertPermission('storage:read');
     const [items, itemHistory, itemImages, locationPhotos] = await Promise.all([
       this.count('items'),
       this.count('item_history'),
@@ -49,8 +54,9 @@ export class StorageRepository extends BaseRepository {
 
   // --- Workflow A: Action History Pruning (§7.6.3) ------------------------------
 
-  /** How many history rows are older than `cutoff` (strictly before). */
+  /** How many history rows are older than `cutoff` (strictly before). Gated on `storage:read`. */
   async countHistoryBefore(cutoff: number): Promise<number> {
+    this.assertPermission('storage:read');
     const row = await this.driver.queryOne<{ n: number }>(
       'SELECT COUNT(*) AS n FROM item_history WHERE created_at < ?;',
       [cutoff],
@@ -62,8 +68,14 @@ export class StorageRepository extends BaseRepository {
    * A page of the history rows that would be pruned, oldest first — looped to
    * completion by the caller to build the cold-storage JSON archive *before* the
    * delete (the §7.6.3 audit-trail safeguard).
+   *
+   * Gated on `storage:read` (issue #429) — the same key as the counts it walks. `audit:view`
+   * would be the obvious alternative, but this is not the audit-trail reader (that is
+   * `ItemRepository.history`); it is the storage screen assembling the archive it must write
+   * before the prune, and the caller then asserts `audit:delete` to perform it.
    */
   async listHistoryBefore(cutoff: number, params: PageParams = {}): Promise<Page<ItemHistoryEntry>> {
+    this.assertPermission('storage:read');
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<ItemHistoryRow>(
       `SELECT * FROM item_history WHERE created_at < ?
@@ -97,8 +109,12 @@ export class StorageRepository extends BaseRepository {
 
   // --- Workflow B: Image Downgrading (§7.6.3) -----------------------------------
 
-  /** How many photos created before `cutoff` still hold a full-resolution file. */
+  /**
+   * How many photos created before `cutoff` still hold a full-resolution file.
+   * Gated on `storage:read`, like every read here (issue #429).
+   */
   async countDowngradableBefore(cutoff: number): Promise<number> {
+    this.assertPermission('storage:read');
     const row = await this.driver.queryOne<{ n: number }>(
       `SELECT (SELECT COUNT(*) FROM item_images
                 WHERE created_at < ?1 AND full_res_downgraded_at IS NULL)
@@ -116,8 +132,11 @@ export class StorageRepository extends BaseRepository {
    *
    * Spans both owning tables so triage frees the largest files first regardless of whether
    * they belong to an item or a location — ordering by age across the union, not per table.
+   *
+   * Gated on `storage:read`, like every read here (issue #429).
    */
   async listDowngradableBefore(cutoff: number, params: PageParams = {}): Promise<Page<DowngradableImage>> {
+    this.assertPermission('storage:read');
     const { limit, offset } = this.resolvePage(params);
     const rows = await this.driver.query<{
       id: string;
@@ -151,13 +170,15 @@ export class StorageRepository extends BaseRepository {
    * blocking it would trap the very locked-out user §7.6 exists to rescue. Local-only:
    * never propagated to cloud sync (§7.6.3 B).
    *
-   * Permission-gated as `settings:write` (issue #79, §2.3): despite the housekeeping framing,
-   * the only caller is the user-chosen "downgrade images" storage-triage action, and the
-   * re-encode it records is irreversible. Its sibling triage action (`pruneHistoryBefore`)
-   * is gated for the same reason.
+   * Permission-gated as `storage:write` (issue #429). The only caller is the user-chosen
+   * "downgrade images" storage-triage action, and the re-encode it records is irreversible, so
+   * it needs a key of its own; it asked for `settings:write` until this device's data
+   * housekeeping got one. `storage` is that key — vacuuming, sweeping and downgrading are not
+   * this device's *preferences*, which is what `settings` means. Its sibling triage action
+   * (`pruneHistoryBefore`) keeps `audit:delete`, because what it destroys is the audit trail.
    */
   async markImageDowngraded(id: string, owner: DowngradableOwner, at: number = Date.now()): Promise<void> {
-    this.assertPermission('settings:write');
+    this.assertPermission('storage:write');
     // `owner` comes from the closed DowngradableOwner union, never from user input, so it is
     // safe to interpolate as a table name — the driver cannot bind an identifier.
     await this.driver.execute(`UPDATE ${owner} SET full_res_downgraded_at = ? WHERE id = ?;`, [at, id]);

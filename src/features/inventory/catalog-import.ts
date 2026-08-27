@@ -19,6 +19,8 @@ import { TEXT_LIMITS, withinTextLimit } from '@/lib/text-limits';
 import { parseCsv } from '@/features/import/tabular';
 import { parseAmountCell, leadingIntegerCount } from '@/features/import/columns';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
+import { assertPermissions } from '@/features/users/assert-permission';
+import { currentAuthority } from '@/features/users/current-authority';
 import { fromDateInputValue, toDateInputValue } from '@/lib/date-input';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
@@ -1431,6 +1433,14 @@ export interface CatalogApplyResult {
  * recorded against the row's `error` without rolling back the item itself, and the item
  * create/update still counts.
  *
+ * Gated on `import:run` (issue #429), asserted here — the single point at which a previewed plan
+ * stops being a preview and becomes thousands of rows — and **in addition to** the `items:write`
+ * every `create`/`update` below still asserts for itself. The two say different things: editing
+ * one record and merging a supplier's catalogue into the whole inventory are different acts with
+ * different consequences, which is why `import` is a subject of its own rather than an action on
+ * `items`. The dry-run plan builder is deliberately left ungated — building a preview writes
+ * nothing, and refusing it would leave the user unable to see why the import was refused.
+ *
  * @param plan       - The validated dry-run plan from {@link buildCatalogImportPlan}.
  * @param repo       - The item repository (production: `getItemRepository()`).
  * @param categories - Optional custom-field writer (production:
@@ -1446,6 +1456,7 @@ export async function applyCatalogImportPlan(
   categories?: CatalogCategoryRepository,
   tags?: CatalogTagRepository,
 ): Promise<CatalogApplyResult> {
+  assertPermissions(currentAuthority(), ['import:run']);
   await ensureStorageWritable();
   const rows: ApplyRowResult[] = [];
 

@@ -13,11 +13,21 @@
  * the result so the user is *told* the file stops short. Nothing is cut short in silence.
  */
 import { readAllPages, type PagedChunk } from '@/lib/read-all-pages';
+import { assertPermissions } from '@/features/users/assert-permission';
+import { currentAuthority } from '@/features/users/current-authority';
 import type { TabularExportResult } from './tabular-export';
 
 /**
  * Read every page of `read`, serialise the lot with `build`, and attach `truncatedNotice` when
  * the walk hit its ceiling with rows still unread.
+ *
+ * Gated on `export:run` (issue #429), and gated **here** rather than at each screen's export
+ * button. This is the seam where a bulk export actually happens — the moment a list stops being
+ * the page on screen and becomes every row of it, bound for a file. Every list export in the app
+ * funnels through it, so one check covers them all and none can be added later that forgets one;
+ * a check on a button is a courtesy, not a boundary. The per-row reads it walks still assert
+ * their own subject keys, so `export:run` is required *in addition to* being allowed to read the
+ * list at all, never instead of it.
  *
  * @param read One page of the list — any repository method taking `{ limit, offset }`.
  * @param build Serialise the complete row set (a feature's pure `build*Export`, format bound).
@@ -30,6 +40,7 @@ export async function exportEveryPage<T>(
   build: (rows: readonly T[]) => Promise<TabularExportResult>,
   truncatedNotice: string,
 ): Promise<TabularExportResult> {
+  assertPermissions(currentAuthority(), ['export:run']);
   const { rows, truncated } = await readAllPages(read);
   const result = await build(rows);
   return truncated ? { ...result, notice: truncatedNotice } : result;
