@@ -281,15 +281,20 @@ listening. So a call that reports a timeout has very likely **already been appli
 it again is exactly the wrong response.
 
 ```yaml
-# A scale reports what was used. The key is minted once, then reused by the retry below.
+# A scale reports what was used. The key is minted ONCE, as a variable...
 - variables:
     attempt_key: "filament-{{ now().timestamp() | int }}"
 - action: gubbins.adjust_gauge
   data:
     item_id: "item-pla-filament"
     delta: -45
-    idempotency_key: "{{ attempt_key }}"
+    idempotency_key: "{{ attempt_key }}"    # ...and the same variable is used here...
   continue_on_error: true
+- action: gubbins.adjust_gauge              # ...and again here, by the retry.
+  data:
+    item_id: "item-pla-filament"
+    delta: -45
+    idempotency_key: "{{ attempt_key }}"
 ```
 
 Give a **fresh** value for each intended change and reuse that same value only when repeating that

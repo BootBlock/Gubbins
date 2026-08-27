@@ -166,6 +166,21 @@ describe('the idempotency store', () => {
     expect(await store.run(request('d'), async () => ++runs)).toEqual({ value: 4, replayed: true });
   });
 
+  it('evicts in-flight entries once they pile up far past the cap, rather than growing forever', async () => {
+    const store = createIdempotencyStore({ maxEntries: 2 }); // hard ceiling = 2 x 4 = 8
+    const gate = deferred<string>();
+    // Nine concurrent, distinct keys, none of which can settle: preferring settled entries has
+    // nothing to drop, so the ceiling is the only thing standing between this and unbounded growth.
+    const inFlight = Array.from({ length: 9 }, (_, i) =>
+      store.run(request(`key-${i}`, { delta: i }), () => gate.promise),
+    );
+    // The oldest key was evicted, so repeating it runs afresh instead of joining.
+    const repeatOldest = store.run(request('key-0', { delta: 0 }), async () => 'ran again');
+    gate.resolve('original');
+    await Promise.all(inFlight);
+    expect(await repeatOldest).toEqual({ value: 'ran again', replayed: false });
+  });
+
   it('never evicts an in-flight entry, however small the cap', async () => {
     const store = createIdempotencyStore({ maxEntries: 1 });
     const gate = deferred<string>();

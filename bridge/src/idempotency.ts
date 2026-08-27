@@ -39,6 +39,12 @@ export const DEFAULT_MAX_IDEMPOTENCY_ENTRIES = 128;
  */
 export const DEFAULT_IDEMPOTENCY_TTL_MS = 15 * 60_000;
 
+/**
+ * How far past the entry cap the map may grow while every entry is still in flight, before the
+ * oldest are evicted regardless. See {@link createIdempotencyStore}'s `prune`.
+ */
+const OVERFLOW_CEILING_FACTOR = 4;
+
 /** The longest key accepted. Generous for a UUID or a composite id, short of anything abusive. */
 export const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 
@@ -120,6 +126,16 @@ export function createIdempotencyStore(options: IdempotencyStoreOptions = {}): I
   // Insertion-ordered, which is what makes the size cap an oldest-first eviction for free.
   const entries = new Map<string, Entry>();
 
+  // The size cap prefers to evict only *settled* entries, because dropping an in-flight one would
+  // let its duplicate apply a second time — the very thing the store exists to prevent. That
+  // preference cannot be absolute, though: a caller firing thousands of concurrent keyed writes
+  // would otherwise grow the map without bound, since every one of them is unsettled. So a hard
+  // ceiling above the cap evicts the oldest regardless, trading the guarantee for an ancient
+  // in-flight key against unbounded growth. Reaching it means the map is already carrying this
+  // multiple of the cap in genuinely concurrent writes, which the snapshot mutex makes an
+  // extraordinary state rather than a routine one.
+  const hardCeiling = maxEntries * OVERFLOW_CEILING_FACTOR;
+
   function prune(): void {
     const cutoff = now() - ttlMs;
     for (const [id, entry] of entries) {
@@ -129,6 +145,11 @@ export function createIdempotencyStore(options: IdempotencyStoreOptions = {}): I
     for (const [id, entry] of entries) {
       if (entries.size < maxEntries) break;
       if (entry.settled) entries.delete(id);
+    }
+    // Nothing settled was left to drop, and the map is still growing: evict oldest-first.
+    for (const id of entries.keys()) {
+      if (entries.size < hardCeiling) break;
+      entries.delete(id);
     }
   }
 

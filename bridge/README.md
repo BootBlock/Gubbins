@@ -1349,8 +1349,12 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/jso
   genuinely re-runs.
 - Reusing one key for a **different** body is a `422` — that is a caller mistake, not a retry, and
   answering it with the earlier result would be worse than refusing it.
-- Keys are held **in memory**, scoped to the token's owner, capped at 128 and forgotten after about
-  15 minutes or at restart. They absorb a retry that follows a timeout; they are not a durable log.
+- Keys are held **in memory**, scoped to the token's owner, and forgotten after about 15 minutes or
+  at restart. They absorb a retry that follows a timeout; they are not a durable log. The store
+  keeps 128 of them, dropping the oldest **settled** key first, so a write still in flight is never
+  forgotten out from under its own retry — until an outright flood of concurrent keyed writes
+  reaches four times that, at which point the oldest go regardless rather than the store growing
+  without bound.
 - A key must be 1–200 characters of `A–Z a–z 0–9 . _ : + = / -`. Anything else is a `400`, rather
   than being ignored and leaving the caller believing a retry is protected when it is not.
 
