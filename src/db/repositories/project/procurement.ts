@@ -27,6 +27,13 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
      * Set a BOM line's reservation. TENTATIVE is a soft hold; ACTUAL commits stock
      * and is recorded in the matched item's Activity Log (§4). The reserved quantity
      * defaults to the full requirement and is clamped to it. NONE clears the hold.
+     *
+     * The ledger entry carries the quantity in its `metadata` and note, and leaves
+     * `quantity_delta` null (issue #652): a reservation is an *intent*, and no stock
+     * has moved. Every report that reads the ledger — `movement`, `turnover`,
+     * `valuationTrend` — sums `quantity_delta` without filtering on `action`, so a
+     * delta here would be counted as a real arrival that never happened, and the
+     * `RESERVATION_CLEARED` entry (which has nothing to reverse) would never undo it.
      */
     async setReservation(lineId: string, status: ReservationStatus, qty?: number): Promise<ProjectBomLine> {
       this.assertPermission('projects:write');
@@ -49,13 +56,14 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
         if (enteringActual) {
           statements.push(
             historyStatement(line.itemId, 'RESERVED', this.actorId(), {
-              quantityDelta: reservedQty,
+              metadata: { quantity: reservedQty },
               note: `Reserved ${reservedQty} for a project.`,
             }),
           );
         } else if (leavingActual) {
           statements.push(
             historyStatement(line.itemId, 'RESERVATION_CLEARED', this.actorId(), {
+              metadata: { quantity: line.reservedQty },
               note: 'Project reservation released.',
             }),
           );
@@ -72,6 +80,10 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
      * Move a BOM line through the procurement lifecycle (Ordered → In-Transit →
      * Received). Entering IN_TRANSIT logs a PROCURED entry against a matched item,
      * marking incoming stock as arriving (the "In Transit" liminal state, §4).
+     *
+     * Like a reservation, that entry records its quantity in `metadata` and the note
+     * only, never as a `quantity_delta` (issue #652): the units are still in transit,
+     * and {@link receiveLine} logs the one real movement when they actually land.
      */
     async setProcurement(lineId: string, status: ProcurementStatus): Promise<ProjectBomLine> {
       this.assertPermission('projects:write');
@@ -87,7 +99,7 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
       if (line.itemId && status === 'IN_TRANSIT' && line.procurementStatus !== 'IN_TRANSIT') {
         statements.push(
           historyStatement(line.itemId, 'PROCURED', this.actorId(), {
-            quantityDelta: line.requiredQty,
+            metadata: { quantity: line.requiredQty },
             note: `${line.requiredQty} in transit for a project.`,
           }),
         );

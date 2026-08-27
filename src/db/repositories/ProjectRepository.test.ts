@@ -9,6 +9,7 @@ import { IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from './constants';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { ProjectRepository } from './ProjectRepository';
+import { ReportRepository } from './ReportRepository';
 import { assemblyId } from './project/assembly';
 
 describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
@@ -335,6 +336,55 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
 
     const history = await items.getHistory(item.id);
     expect(history.rows.some((h) => h.action === 'PROCURED')).toBe(true);
+  });
+
+  it('records a reservation and an in-transit mark as intent, not movement (issue #652)', async () => {
+    const reports = new ReportRepository(driver);
+    const p = await projects.create({ name: 'Rig' });
+    const item = await items.create({ name: 'Regulator', quantity: 10, unitCost: 10 });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 6 });
+
+    // Order six, then receive them: one physical arrival, however many statements of
+    // intent preceded it.
+    await projects.setReservation(line.id, 'ACTUAL', 6);
+    await projects.setProcurement(line.id, 'ORDERED');
+    await projects.setProcurement(line.id, 'IN_TRANSIT');
+    await projects.receiveLine(line.id);
+    expect((await items.getById(item.id))!.quantity).toBe(16);
+
+    // Both intent entries keep the quantity where the Activity Log can show it, and
+    // leave `quantity_delta` null — no report filters on `action`, so a delta here is
+    // indistinguishable from stock actually arriving.
+    const history = await items.getHistory(item.id);
+    const byAction = new Map(history.rows.map((h) => [h.action, h]));
+    expect(byAction.get('RESERVED')?.quantityDelta).toBeNull();
+    expect(byAction.get('RESERVED')?.metadata).toEqual({ quantity: 6 });
+    expect(byAction.get('PROCURED')?.quantityDelta).toBeNull();
+    expect(byAction.get('PROCURED')?.metadata).toEqual({ quantity: 6 });
+    expect(byAction.get('RECEIVED')?.quantityDelta).toBe(6);
+
+    // So the three ledger-reading reports each count the order once, not three times.
+    const now = Date.now() + 1000;
+    expect((await reports.movement(7, 7, now)).totalIn).toBe(6);
+    const trend = await reports.valuationTrend(30, 4, now);
+    expect(trend.startValue).toBe(100); // 10 on hand × £10, before the receipt
+    expect(trend.endValue).toBe(160);
+    // startQty = 16 − 6 = 10, so the window's average holding is 13 × £10.
+    const turnover = await reports.turnover(30, now);
+    expect(turnover.lines.find((l) => l.id === item.id)!.avgValue).toBe(130);
+  });
+
+  it('records what a cleared reservation released (issue #652)', async () => {
+    const p = await projects.create({ name: 'Rig' });
+    const item = await items.create({ name: 'Regulator', quantity: 10 });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 6 });
+
+    await projects.setReservation(line.id, 'ACTUAL', 4);
+    await projects.setReservation(line.id, 'NONE');
+
+    const cleared = (await items.getHistory(item.id)).rows.find((h) => h.action === 'RESERVATION_CLEARED')!;
+    expect(cleared.quantityDelta).toBeNull();
+    expect(cleared.metadata).toEqual({ quantity: 4 });
   });
 
   it('lists In-Transit BOM lines across projects with project + label (Phase 9)', async () => {
