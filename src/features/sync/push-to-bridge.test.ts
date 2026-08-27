@@ -58,9 +58,11 @@ describe('mapPushResponse', () => {
     expect(result.message).toMatch(/format 3/);
   });
 
-  it('maps 401/404/413/422/429 to distinct, token-free guidance', () => {
+  it('maps 401/404/409/413/422/429 to distinct, token-free guidance', () => {
     expect(mapPushResponse(401, undefined, 'u').message).toMatch(/token/i);
     expect(mapPushResponse(404, undefined, 'u').message).toMatch(/GUBBINS_BRIDGE_ALLOW_PUSH/);
+    // A lost race is retryable and nothing was overwritten, so the guidance says to try again.
+    expect(mapPushResponse(409, undefined, 'u').message).toMatch(/try again/i);
     expect(
       mapPushResponse(413, { error: { code: 'payload_too_large', message: 'too big' } }, 'u').message,
     ).toBe('too big');

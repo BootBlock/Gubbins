@@ -165,6 +165,15 @@ export function mapPushResponse(status: number, payload: unknown, url: string): 
           bridgeMessage ??
           'The snapshot is larger than the bridge allows. Raise GUBBINS_BRIDGE_MAX_PUSH_BYTES on the bridge.',
       };
+    case 409:
+      // The bridge kept losing a race with another writer (its own MCP process, or this folder's
+      // sync) and refused to overwrite their change. Nothing was applied, so retrying is safe.
+      return {
+        ok: false,
+        message:
+          bridgeMessage ??
+          'The bridge could not apply this snapshot because the inventory kept changing underneath it. Try again.',
+      };
     case 422:
       return {
         ok: false,
