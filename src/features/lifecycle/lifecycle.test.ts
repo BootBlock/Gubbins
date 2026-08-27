@@ -11,6 +11,7 @@ import {
   effectiveUsage,
 } from './maintenance';
 import {
+  countCoverage,
   variances,
   varianceCount,
   lineVariance,
@@ -317,6 +318,50 @@ describe('cycle-count variance (§4.4)', () => {
       'Cycle count of Drawer A2: counted 8, expected 10 (adjustment -2).',
     );
     expect(reconciliationNote(drift[1], 'Drawer A2')).toContain('adjustment +2');
+  });
+});
+
+describe('count coverage (§4.4, issue #637)', () => {
+  const keys = ['a', 'b', 'c'];
+
+  it('reports a sheet with nothing typed as fully uncovered', () => {
+    expect(countCoverage(keys, {})).toEqual({ total: 3, counted: 0, blank: 3, isComplete: false });
+  });
+
+  it('reports a fully-typed sheet as complete', () => {
+    expect(countCoverage(keys, { a: '1', b: '0', c: '12' })).toEqual({
+      total: 3,
+      counted: 3,
+      blank: 0,
+      isComplete: true,
+    });
+  });
+
+  it('counts a typed zero — the honest "there are none here" — as covered', () => {
+    // The whole point of the blank/zero distinction: 0 is a real count, "" is not one.
+    expect(countCoverage(keys, { a: '0' }).counted).toBe(1);
+  });
+
+  it('treats whitespace as blank, matching the variance path exactly', () => {
+    // `variances()` filters on the same `.trim().length` test, so a sheet holding "   " must
+    // not be reported as covered by a line that will contribute no variance.
+    expect(countCoverage(keys, { a: '  ', b: '	' })).toEqual({
+      total: 3,
+      counted: 0,
+      blank: 3,
+      isComplete: false,
+    });
+  });
+
+  it('is complete for a sheet with no discrete lines at all', () => {
+    // A location holding only serialised instances (or nothing) has no lines to leave blank,
+    // so it must still be finishable as "counted".
+    expect(countCoverage([], {})).toEqual({ total: 0, counted: 0, blank: 0, isComplete: true });
+  });
+
+  it('ignores stored counts whose line is no longer on the sheet', () => {
+    // A restored draft can carry a key for a lot since consumed; it must not inflate coverage.
+    expect(countCoverage(keys, { a: '1', gone: '99' })).toMatchObject({ counted: 1, blank: 2 });
   });
 });
 

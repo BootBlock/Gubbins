@@ -249,6 +249,12 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
      * audit, and that durable timestamp is what the audit-day picker and `LocationInfoCard`
      * read to show how long it has been since a location was verified.
      *
+     * A count that did *not* cover every line is the exception (issue #637). Passing
+     * `markCounted: false` applies the adjustments for the lines that were counted but omits
+     * the stamp, so a shelf where half the lines were left blank does not read as verified.
+     * A false last-counted date is worse than none: it is what tells the auditor which shelves
+     * are stale, so a partial count must not clear the location off that list.
+     *
      * The one exception is a **system** location (Unassigned): the schema's
      * `trg_locations_protect_system_update` trigger aborts any UPDATE on one, so the stamp is
      * simply omitted rather than failing the count. Counting the loose stock in Unassigned is a
@@ -260,6 +266,11 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       readonly quantityAdjustments: readonly ReconciliationAdjustment[];
       readonly serialisedAdjustments: readonly SerialisedReconciliation[];
       readonly countedAt?: number;
+      /**
+       * Stamp the location as counted (default `true`). Pass `false` for a count that did
+       * not cover the whole sheet — see the note above.
+       */
+      readonly markCounted?: boolean;
     }): Promise<AuthorisedCount> {
       this.assertPermission('stock:write');
       this.assertWritable();
@@ -275,7 +286,9 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       await runStockDraw(this.driver, [
         ...discrete.statements,
         ...serialised.statements,
-        ...(isSystem ? [] : [markCountedStatement(input.locationId, input.countedAt ?? Date.now())]),
+        ...(isSystem || input.markCounted === false
+          ? []
+          : [markCountedStatement(input.locationId, input.countedAt ?? Date.now())]),
       ]);
       return {
         discrete: await this.loadTouched(discrete.touched),

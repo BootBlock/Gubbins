@@ -19,7 +19,14 @@ import {
   type SerialisedReconciliation,
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
-import { variances, missingInstances, serialisedAuditNote, type CycleCountLine } from './cycle-count';
+import {
+  countCoverage,
+  missingInstances,
+  serialisedAuditNote,
+  variances,
+  type CountCoverage,
+  type CycleCountLine,
+} from './cycle-count';
 import { useCycleCount } from './CycleCountContext';
 import { useAuthoriseCount } from './hooks';
 
@@ -63,6 +70,12 @@ export interface AuthoriseResult {
   readonly variancesFound: number;
   /** Reconciliation adjustments actually written to the ledger. */
   readonly adjustmentsMade: number;
+  /**
+   * Every discrete line carried an entered quantity, so the location was stamped as
+   * counted. False for a partial sheet: the adjustments were still applied, but the
+   * durable last-counted date was deliberately left alone (issue #637).
+   */
+  readonly coverageComplete: boolean;
 }
 
 export interface LocationCycleCount {
@@ -86,6 +99,8 @@ export interface LocationCycleCount {
   readonly missing: ReturnType<typeof missingInstances>;
   /** Total adjustments awaiting authorisation (drift + missing). */
   readonly totalToApply: number;
+  /** How much of the discrete sheet has an entered quantity (issue #637). */
+  readonly coverage: CountCoverage;
   /** A reconcile mutation is in flight. */
   readonly pending: boolean;
   /** Persist the variances; resolves with the totals for the session roll-up. */
@@ -144,6 +159,16 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
   const drift = useMemo(() => variances(countedLines), [countedLines]);
   const missing = useMemo(() => missingInstances(serialised, presence), [serialised, presence]);
   const totalToApply = drift.length + missing.length;
+  // Derived from the same line set the count inputs render, so what the footer reports and
+  // what the sheet shows can never drift apart.
+  const coverage = useMemo(
+    () =>
+      countCoverage(
+        lines.map((l) => l.key),
+        counts,
+      ),
+    [lines, counts],
+  );
   const pending = authoriseCount.isPending;
   const isEmpty = !isLoading && lines.length === 0 && serialised.length === 0;
 
@@ -174,10 +199,15 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     // is written regardless of whether any variance was found — a clean count is still a
     // completed audit, and that durable timestamp is what lets the audit-day picker and
     // LocationInfoCard show how long it's been since a location was verified.
+    // A sheet with lines left blank applies its adjustments but does NOT stamp the location
+    // as counted (issue #637). The lines that *were* counted are real evidence and worth
+    // writing; the stamp is a claim about the whole location, and making it on a part-counted
+    // shelf is what let a location nobody counted read as verified.
     const { discrete, serialised: retired } = await authoriseCount.mutateAsync({
       locationId: location.id,
       quantityAdjustments,
       serialisedAdjustments,
+      markCounted: coverage.isComplete,
     });
     // The sheet has been committed, so the saved copy that let a paused count resume (issue
     // #587) has done its job — drop it, or reopening this location would offer to restore a
@@ -190,6 +220,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     return {
       variancesFound: totalToApply,
       adjustmentsMade: discrete.length + retired.length,
+      coverageComplete: coverage.isComplete,
     };
   };
 
@@ -207,6 +238,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     drift,
     missing,
     totalToApply,
+    coverage,
     pending,
     authorise,
   };

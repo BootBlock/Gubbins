@@ -17,6 +17,7 @@ import { plural } from '@/lib/plural';
 import { Button, LiveRegion, Modal, Tooltip, useBurst, useReportDialogBusy } from '@/components/foundry';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
+import { CountCoverageNotice, coverageSummary } from './CountCoverageNotice';
 import { CountDraftNotice } from './CountDraftNotice';
 import { CycleCountLines } from './CycleCountLines';
 
@@ -52,8 +53,12 @@ function CycleCountBody({
   onClose: () => void;
 }) {
   const count = useLocationCycleCount(location);
-  const { isLoading, isEmpty, drift, missing, totalToApply, pending, restored, clearSheet } = count;
+  const { isLoading, isEmpty, drift, missing, totalToApply, coverage, pending, restored, clearSheet } = count;
   const [applied, setApplied] = useState<number | null>(null);
+  // The coverage the finished count actually achieved, captured at authorisation. `coverage`
+  // itself is reset by the `clearSheet()` inside `authorise()`, so the result view has to read
+  // this rather than the live value, or a partial count would report itself as complete.
+  const [appliedCoverage, setAppliedCoverage] = useState<string | null>(null);
 
   // Authorising writes the adjustments, the presence audit and the location's counted-at stamp in
   // one transaction, and the count of what it applied is reported here and nowhere else. A
@@ -89,13 +94,19 @@ function CycleCountBody({
   const resultMessage =
     applied === null
       ? null
-      : applied > 0
-        ? `Reconciliation complete — ${applied} ${plural(applied, 'adjustment')} applied to the ledger.`
-        : 'No variances found — recorded as counted.';
+      : appliedCoverage !== null
+        ? // A partial count says so, and says what it did *not* do. Reporting it as "recorded as
+          // counted" is the untruth this whole path exists to avoid (issue #637).
+          `Partial count recorded — ${appliedCoverage}${applied > 0 ? `, ${applied} ${plural(applied, 'adjustment')} applied` : ''}. This location has not been marked as counted.`
+        : applied > 0
+          ? `Reconciliation complete — ${applied} ${plural(applied, 'adjustment')} applied to the ledger.`
+          : 'No variances found — recorded as counted.';
 
   // Always callable, even with nothing to apply: a clean count is still a completed audit.
   const authorise = async () => {
+    const covered = coverageSummary(coverage);
     const result = await count.authorise();
+    setAppliedCoverage(result.coverageComplete ? null : covered);
     setApplied(result.adjustmentsMade);
   };
 
@@ -168,8 +179,21 @@ function CycleCountBody({
           <div className="space-y-4">
             <CycleCountLines count={count} />
 
+            <CountCoverageNotice coverage={coverage} />
+
             <div className="flex items-center justify-between pt-1">
               <p className="text-xs text-muted-foreground">
+                {/*
+                  Coverage first: with nothing typed the adjustment count is 0, which reads
+                  exactly like a shelf counted and found perfect. The line above it is what
+                  tells the two apart (issue #637). Omitted when there is no discrete sheet to
+                  cover, where "0 of 0 lines counted" would be noise.
+                */}
+                {coverage.total > 0 ? (
+                  <span className="block" data-testid="cycle-count-coverage">
+                    {coverageSummary(coverage)}
+                  </span>
+                ) : null}
                 {drift.length + missing.length} {plural(drift.length + missing.length, 'adjustment')} to
                 authorise
                 {missing.length > 0 ? ` (${missing.length} missing)` : ''}
@@ -202,19 +226,31 @@ function CycleCountBody({
                 </Tooltip>
                 <Tooltip
                   content={
-                    totalToApply > 0
-                      ? 'Commit the counted variances: each drifted line writes a Reconciliation Adjustment (new quantity + a `RECONCILED` history entry), and each missing instance is soft-deleted.'
-                      : 'Confirm this count. With nothing drifted, this just records the location as counted.'
+                    !coverage.isComplete
+                      ? 'Commit the lines you did count and leave the rest alone. The location keeps its old last-counted date, so it stays on the list of places still to check.'
+                      : totalToApply > 0
+                        ? 'Commit the counted variances: each drifted line writes a Reconciliation Adjustment (new quantity + a `RECONCILED` history entry), and each missing instance is soft-deleted.'
+                        : 'Confirm this count. With nothing drifted, this just records the location as counted.'
                   }
                   triggerTabIndex={-1}
                 >
                   <span>
+                    {/*
+                      Three labels for three genuinely different outcomes. "Mark counted" is a
+                      claim about the whole location, so a sheet with blank lines must not offer
+                      it — it says "partial" instead, and the count in brackets is coverage
+                      rather than adjustments (issue #637).
+                    */}
                     <Button
                       onClick={() => void authorise()}
                       disabled={pending}
                       data-testid="authorise-reconciliation"
                     >
-                      {totalToApply > 0 ? `Authorise (${totalToApply})` : 'Mark counted'}
+                      {!coverage.isComplete
+                        ? `Record partial count (${coverage.counted}/${coverage.total})`
+                        : totalToApply > 0
+                          ? `Authorise (${totalToApply})`
+                          : 'Mark counted'}
                     </Button>
                   </span>
                 </Tooltip>
