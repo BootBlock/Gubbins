@@ -37,8 +37,8 @@ export interface ResolvedSession {
 /**
  * Resolve the current session against the database and store the result.
  *
- * With the module off this short-circuits to unrestricted/Admin without touching the database
- * — the overwhelmingly common case, and the one that must stay free.
+ * With the module off *and nobody signed in* this short-circuits to unrestricted/Admin without
+ * touching the database — the overwhelmingly common case, and the one that must stay free.
  */
 export async function refreshAuthority(): Promise<ResolvedSession> {
   const resolved = await computeAuthority().catch(() => {
@@ -77,11 +77,25 @@ export async function adoptAuthorityChange(client: QueryClient): Promise<void> {
 const DENIED_AUTHORITY: Authority = { mode: 'denied', reason: 'signed-out' };
 
 async function computeAuthority(): Promise<ResolvedSession> {
+  const session = useSessionStore.getState().session;
+
   if (!usersModuleEnabled()) {
-    return { authority: UNRESTRICTED_AUTHORITY, actorId: ADMIN_USER_ID };
+    // Unrestricted, certainly — that is what single-user mode means. But not necessarily *Admin*:
+    // a device still holding a session was signed in when the module went off, and the person
+    // sitting at it has not changed. Attributing their writes to the built-in Admin would put one
+    // account's name on another person's changes, in the very ledger the feature exists to keep
+    // honest (issue #630). Authority and attribution are separate questions here.
+    if (!session) return { authority: UNRESTRICTED_AUTHORITY, actorId: ADMIN_USER_ID };
+    // Caught locally rather than left to `refreshAuthority`: a failed read says nothing about
+    // whether the module is on, and denying every action because attribution could not be
+    // established would break the single-user mode this path exists to serve. Fall back to Admin
+    // — the answer this returned before the session was consulted at all.
+    const signedIn = await getUserRepository()
+      .getById(session.userId)
+      .catch(() => undefined);
+    return { authority: UNRESTRICTED_AUTHORITY, actorId: signedIn?.id ?? ADMIN_USER_ID };
   }
 
-  const session = useSessionStore.getState().session;
   if (!session) {
     return { authority: resolveAuthority({ moduleEnabled: true }), actorId: ADMIN_USER_ID };
   }

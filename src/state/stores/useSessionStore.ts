@@ -31,7 +31,11 @@ interface SessionStore {
    * where the users module is off and every action is permitted (plan §3).
    */
   readonly authority: Authority;
-  /** The user every write is attributed to. Admin while the module is off, as it always was. */
+  /**
+   * The user every write is attributed to. Admin in single-user mode — except on a device that is
+   * still holding a session, where attribution stays with the person who is signed in even once
+   * the module goes off (issue #630).
+   */
   readonly actorId: string;
   signIn: (session: Session) => void;
   signOut: () => void;

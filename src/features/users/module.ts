@@ -3,7 +3,9 @@
  *
  * One function, in one file, because it is the switch the whole feature hangs off: with it
  * **off** Gubbins behaves exactly as it always has — no sign-in, no permission ever refused,
- * every action attributed to the built-in Admin — and the user never meets the concept.
+ * every action attributed to the built-in Admin — and the user never meets the concept. (On a
+ * device that switched it off while somebody was signed in, attribution stays with that person
+ * rather than reverting to Admin — see `authority-refresh.ts`, issue #630.)
  *
  * It reads the Modular UI store, so the module is switched on and off from the Modules manager
  * like any other feature and the state lives in exactly one place. `users` is declared

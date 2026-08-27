@@ -83,8 +83,11 @@ instead, so the record of what happened to your inventory stays complete.
 
 Switching the Users module back off in [[Modules|Modular-UI]] **loses nothing**. Every account, every
 role and every record of who changed what is kept exactly as it is — Gubbins simply stops asking
-anyone to sign in and goes back to acting as **Admin**. Switch it on again and everyone's account and
-role are exactly as they were.
+anyone to sign in. Switch it on again and everyone's account and role are exactly as they were.
+
+If you're still signed in when the module goes off, your changes keep **your** name in the
+[[activity log|Activity-Log]] rather than switching to **Admin**. Sign out, and later changes are
+recorded against **Admin** as they always were on a device with no accounts.
 
 > **💡 Tip**
 > You can still reach the Users screen with the module off, to read and tidy accounts before

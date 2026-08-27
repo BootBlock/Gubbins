@@ -17,3 +17,14 @@ import type { Authority } from './permissions';
 export function currentAuthority(): Authority {
   return useSessionStore.getState().authority;
 }
+
+/**
+ * Whether anybody is signed in on this device right now.
+ *
+ * Separate from the authority because "nobody is signed in" and "somebody is signed in and their
+ * role grants nothing" both resolve to a denied authority, and one of them is the lockout escape
+ * hatch while the other is the account the hatch must not be handed to (issue #630).
+ */
+export function currentlySignedIn(): boolean {
+  return useSessionStore.getState().session !== null;
+}

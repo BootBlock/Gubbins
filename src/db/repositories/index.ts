@@ -161,9 +161,10 @@ let apiTokenRepository: ApiTokenRepository | null = null;
  * signature and no call site changed to make this happen.
  *
  * The store's defaults are `Admin` and unrestricted, and `authority-refresh.ts` returns them
- * unchanged while the users module is off. So with the module off — the state Gubbins ships in
- * — this resolves exactly as it did before sessions existed: every action attributed to Admin,
- * every guard inert.
+ * unchanged while the users module is off and nobody is signed in. So in the state Gubbins ships
+ * in, this resolves exactly as it did before sessions existed: every action attributed to Admin,
+ * every guard inert. (Switch the module off with somebody still signed in and the guards stay
+ * inert, but the actor stays that person rather than reverting to Admin — issue #630.)
  *
  * Read per call, never captured: signing in or out must take effect immediately, without
  * rebuilding the repository graph or reloading the page.
