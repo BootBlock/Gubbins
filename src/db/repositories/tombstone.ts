@@ -366,8 +366,17 @@ export function tombstoneStatement(tableName: SyncTable, id: string): SqlStateme
 }
 
 export class TombstoneRepository extends BaseRepository {
-  /** Record a hard deletion on its own (when not already batched with the DELETE). */
+  /**
+   * Record a hard deletion on its own (when not already batched with the DELETE).
+   *
+   * Storage-guarded but **not** permission-gated (issue #429). This writes a row, so it observes
+   * the Hard Stop like any other insert. It carries no permission of its own because it records
+   * *someone else's* deletion: it is the bookkeeping half of a delete whose own key was already
+   * asserted by the repository performing it, so demanding `sync:write` here would silently make
+   * every gated delete in the app require a sync permission as well.
+   */
   async record(tableName: SyncTable, id: string): Promise<void> {
+    this.assertWritable();
     await this.driver.execute(tombstoneStatement(tableName, id).sql, [tableName, id]);
   }
 
@@ -407,8 +416,16 @@ export class TombstoneRepository extends BaseRepository {
   /**
    * §7.2 TTL prune: delete tombstones older than `cutoff` (e.g. now − 180 days).
    * Returns how many were removed. A DELETE, so it bypasses the storage Hard Stop.
+   *
+   * Gated on `sync:write` (issue #429). A tombstone is how this device tells its peers that a
+   * row was deleted; dropping one early is a sync-visible act — every peer that has not synced
+   * since simply never learns of the deletion and re-publishes the row. This is the deletion
+   * *ledger*, not the rows themselves, which is why the key is `sync:write` rather than the
+   * deleted subject's own. The orchestrator's equivalent prune inside a sync pass stays ungated
+   * for the reason documented on `runSync` in `features/sync/sync-engine.ts`.
    */
   async pruneOlderThan(cutoff: number): Promise<number> {
+    this.assertPermission('sync:write');
     const result = await this.driver.execute('DELETE FROM tombstones WHERE deleted_at < ?;', [cutoff]);
     return result.rowsModified;
   }

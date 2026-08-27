@@ -95,13 +95,12 @@ export interface EraseTarget {
    * **Which key a target names.** The Danger Zone destroys wholesale, so a target names the
    * *delete-strength* key of the subject it is presented as erasing — `items:delete`, not
    * `items:write`, because the roles that stop at `write` (Stocker) are defined as the ones
-   * that cannot delete. Where a subject has no `delete` action its `write` key is the strongest
-   * thing there is, so that is what the target names: `checkouts:write` for the checkout ledger.
-   * That is a limit of the registry rather than a judgement about the data — the subject has no
-   * delete key to ask for — and it does mean a role holding `checkouts:write` can clear the whole
-   * ledger. The two targets naming more than one key delete rows belonging to a subject they are
-   * not named for: `categories` and `field-dictionary` both clear stored custom-field values
-   * outright.
+   * that cannot delete. `checkouts` used to be the exception — the subject had no `delete` action,
+   * so the target named `checkouts:write` and a role that could lend an item could also clear the
+   * whole loan ledger. The registry now declares `checkouts:delete` (issue #429) and the target
+   * asks for it, so that gap is closed rather than documented. The two targets naming more than
+   * one key delete rows belonging to a subject they are not named for: `categories` and
+   * `field-dictionary` both clear stored custom-field values outright.
    *
    * Local-scope targets are gated on `settings:write`, except where a more specific capability
    * owns the value (`sync:write` for the sync links and the cloud sign-in, `bridge:write` for
@@ -311,7 +310,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'checkouts',
-    permissions: ['checkouts:write'],
+    permissions: ['checkouts:delete'],
     section: 'inventory',
     label: 'Checkout & loan records',
     tooltip: 'Removes every checkout/loan record. Items and contacts are kept.',

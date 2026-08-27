@@ -6,7 +6,7 @@
  * reaches the `ReportRepository` call — asserting only on the CSV text would pass even if the
  * export silently fell back to the default, because the repository is mocked either way.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ANALYTICS_WINDOW } from '@/features/reports/analytics-windows';
 import { ABC_WINDOW_DAYS, DATA_HYGIENE_STALE_DAYS } from '@/features/reports/queries';
 // Imported from the constants module directly — `@/db/repositories` is mocked below.
@@ -162,6 +162,9 @@ vi.mock('./zip-in-worker', () => ({
 }));
 
 const { runExport } = await import('./run-export');
+const { useSessionStore } = await import('@/state/stores/useSessionStore');
+const { UNRESTRICTED_AUTHORITY } = await import('@/features/users/permissions');
+const { ADMIN_USER_ID } = await import('@/db/repositories/constants');
 
 /** A window that is valid but never the default, so a fallback can't masquerade as a pass. */
 const PICKED = 365;
@@ -342,5 +345,33 @@ describe('VAULT export — the note embeds a file the zip really carries (issue 
     expect(embedded).toEqual(['NE555 Timer-i1-1.thumb.webp']);
     expect(Object.keys(assets)).toEqual(expect.arrayContaining(embedded.map((n) => `assets/${n}`)));
     expect(Object.keys(assets)).not.toContain('assets/NE555 Timer-i1-1.webp');
+  });
+});
+
+describe('runExport is inside the permission boundary (issue #429)', () => {
+  afterEach(() => {
+    useSessionStore.getState().setResolved(UNRESTRICTED_AUTHORITY, ADMIN_USER_ID);
+  });
+
+  it('refuses a session without `export:run`, before any data is read', async () => {
+    // Reading one item at a time and extracting the whole vault to a file are different acts,
+    // which is why `export` is a subject of its own rather than an action on `items`.
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(['items:read']) }, 'user-1');
+    reportRepo.spendAnalytics.mockClear();
+
+    await expect(runExport('REPORTS', { includeInactive: false, reportKind: 'SPEND' })).rejects.toMatchObject(
+      { code: 'PERMISSION_DENIED' },
+    );
+    expect(reportRepo.spendAnalytics).not.toHaveBeenCalled();
+  });
+
+  it('allows a role that holds `export:run`', async () => {
+    useSessionStore
+      .getState()
+      .setResolved({ mode: 'granted', grants: new Set(['reports:read', 'export:run']) }, 'user-1');
+
+    await expect(runExport('REPORTS', { includeInactive: false, reportKind: 'SPEND' })).resolves.toContain(
+      'gubbins-report-',
+    );
   });
 });

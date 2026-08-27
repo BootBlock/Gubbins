@@ -12,7 +12,9 @@ import { migrations } from '@/db/migrations';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository';
 import { TagRepository } from '@/db/repositories/TagRepository';
-import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import { ADMIN_USER_ID, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import type { CategoryField, Item } from '@/db/repositories/types';
 import {
   inferColumnMapping,
@@ -1378,5 +1380,58 @@ describe('applyCatalogImportPlan — tags land through the tag repository (:memo
 
     expect(result.created).toBe(1);
     expect(result.rows[0]!.error).toMatch(/tags were ignored/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyCatalogImportPlan — the bulk-import permission boundary (issue #429)
+// ---------------------------------------------------------------------------
+
+describe('applyCatalogImportPlan is inside the permission boundary', () => {
+  afterEach(() => {
+    useSessionStore.getState().setResolved(UNRESTRICTED_AUTHORITY, ADMIN_USER_ID);
+  });
+
+  /** A stub that fails loudly if the gate lets a write through. */
+  function refusingStub(): CatalogItemRepository {
+    return {
+      create: async () => {
+        throw new Error('no row may be written once the import is refused');
+      },
+      update: async () => {
+        throw new Error('no row may be written once the import is refused');
+      },
+      createMany: async () => {
+        throw new Error('no row may be written once the import is refused');
+      },
+    };
+  }
+
+  it('refuses `items:write` alone — merging thousands of rows is its own act', async () => {
+    // The per-row `items:write` the repository asserts is necessary but not sufficient:
+    // editing one record and merging a supplier catalogue are different consequences.
+    useSessionStore.getState().setResolved({ mode: 'granted', grants: new Set(['items:write']) }, 'u1');
+    const plan = buildCatalogImportPlan('name,quantity\r\nA,1\r\n', null, []);
+
+    await expect(applyCatalogImportPlan(plan, refusingStub())).rejects.toMatchObject({
+      code: 'PERMISSION_DENIED',
+    });
+  });
+
+  it('allows a role holding `import:run` alongside the item writes', async () => {
+    useSessionStore
+      .getState()
+      .setResolved({ mode: 'granted', grants: new Set(['items:write', 'import:run']) }, 'u1');
+    const plan = buildCatalogImportPlan('name,quantity\r\nA,1\r\n', null, []);
+    let n = 0;
+    const stub: CatalogItemRepository = {
+      create: async (input) => stubItem(`gen-${n++}`, input.name),
+      update: async () => {
+        throw new Error('no updates');
+      },
+    };
+
+    const result = await applyCatalogImportPlan(plan, stub);
+    expect(result.created).toBe(1);
   });
 });

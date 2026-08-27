@@ -101,7 +101,7 @@ describe('the erase catalog declares what it needs', () => {
     const keys = eraseTargetPermissions('items');
     expect(keys).toContain('items:delete');
     expect(keys).toContain('audit:delete'); // item-history
-    expect(keys).toContain('checkouts:write'); // checkouts
+    expect(keys).toContain('checkouts:delete'); // checkouts
     expect(keys).toContain('maintenance:delete'); // maintenance
     expect(keys).toContain('suppliers:delete'); // supplier-parts
   });
@@ -143,7 +143,7 @@ describe('eraseTargets refuses what the repositories refuse', () => {
     // the standalone Activity-history entry gates exactly that on `audit:delete`.
     const authority: Authority = {
       mode: 'granted',
-      grants: new Set(['items:delete', 'checkouts:write', 'maintenance:delete', 'suppliers:delete']),
+      grants: new Set(['items:delete', 'checkouts:delete', 'maintenance:delete', 'suppliers:delete']),
     };
     expect(mayEraseTarget(authority, 'items')).toBe(false);
     expect(() => assertMayErase(authority, ['items'])).toThrow(DbError);
