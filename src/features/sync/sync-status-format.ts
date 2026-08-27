@@ -97,6 +97,13 @@ export function describeSyncOutcome(result: SyncResult): string {
       `${count(result.bookingsCancelled, 'overlapping booking')} cancelled (an asset was already booked for those dates elsewhere).`,
     );
   }
+  // Issue #539: two devices nested the same pair of kits inside each other; the merge kept the
+  // link made first and removed the one that closed the loop.
+  if (result.kitLinksBroken > 0) {
+    sentences.push(
+      `${count(result.kitLinksBroken, 'kit component link')} removed (it would have put a kit inside itself).`,
+    );
+  }
   // Issue #542: a loan returned here was still open on another device; the return is what stands.
   if (result.loanReturnsPreserved > 0) {
     sentences.push(

@@ -242,6 +242,27 @@ export interface BookingOverlapCancellation {
 }
 
 /**
+ * Issue #539 repair log: a kit component link removed because the merge closed the containment
+ * graph into a loop.
+ *
+ * A kit cannot contain itself, directly or transitively. `ItemRepository.addKitComponent` enforces
+ * that with a descendant walk before it writes, but that is a read-then-write check across sibling
+ * rows: two offline devices can each make a locally valid nesting move (A puts kit Y inside X, B
+ * puts X inside Y) whose merge closes the loop. The two edges are separate rows under separate ids
+ * and a different `(kit_item_id, component_item_id)` pair, so neither the UNIQUE index nor per-row
+ * LWW sees it. The merge re-admits the edges oldest-first and drops whichever ones close a loop,
+ * recording each here.
+ */
+export interface KitLinkBreak {
+  /** The `kit_components` row removed. */
+  readonly edgeId: string;
+  /** The kit end of the removed link. */
+  readonly kitItemId: string;
+  /** The component end of the removed link. */
+  readonly componentItemId: string;
+}
+
+/**
  * Issue #542 repair log: a loan the merge would have re-opened was kept closed.
  *
  * `checkouts.returned_at` is write-once — a loan goes out, comes back, and stays back. Whole-row
@@ -388,6 +409,8 @@ export interface ReconciliationPlan {
   readonly serialisedLoansClosed: readonly SerialisedLoanClosure[];
   /** Issue #194: bookings cancelled because they double-booked an asset (see {@link BookingOverlapCancellation}). */
   readonly bookingsCancelled: readonly BookingOverlapCancellation[];
+  /** Issue #539: kit component links removed because they closed a containment loop (see {@link KitLinkBreak}). */
+  readonly kitLinksBroken: readonly KitLinkBreak[];
   /** Issue #542: loans kept closed against a peer's newer still-open copy (see {@link LoanReturnRepair}). */
   readonly loanReturnsPreserved: readonly LoanReturnRepair[];
   /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */

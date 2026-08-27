@@ -38,6 +38,7 @@ import {
 } from '@/db/repositories/tombstone';
 import type { SqlRow } from '@/db/rpc/driver';
 import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings/booking-overlap';
+import { findKitCycleBreaks, type KitEdge } from '@/features/inventory/kits';
 import { applyOffset } from './clock';
 import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detect';
 import { reconcileGauge, reconcileStockQuantity, replayGaugeValue, replayStockQuantity } from './delta-crdt';
@@ -68,6 +69,7 @@ import type {
   ReparentLog,
   SchemaDictionary,
   LoanReturnRepair,
+  KitLinkBreak,
   SerialisedLoanClosure,
   SyncConflict,
   SyncSnapshot,
@@ -110,6 +112,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   rejectedCycles: [],
   serialisedLoansClosed: [],
   bookingsCancelled: [],
+  kitLinksBroken: [],
   loanReturnsPreserved: [],
   collisions: [],
   keyParks: [],
@@ -281,6 +284,14 @@ export function reconcile(
   // it must not be recorded as a loss. Nothing later touches the `items` upserts.
   const mergeOverwrites = planMergeOverwrites(conflicts, localUpserts, finalItemIds);
 
+  // --- Issue #539: kit containment cycles ---------------------------------------
+  // The kit graph is an edge table, so `rejectParentCycles` above structurally cannot see it: two
+  // devices each making a locally valid nesting move converge on a kit that contains itself. Runs
+  // after the FK guard so it judges the settled edge set — an edge whose item this merge removes is
+  // already gone from the upserts and cascades out of the stored rows, so it must not count towards
+  // a loop, nor be tombstoned as if it were the offender.
+  const kitLinksBroken = resolveKitComponentCycles(local, localUpserts, localDeletes, finalItemIds);
+
   // --- Issues #157 / #192: "one flag per item" cross-row repair ------------------
   // Runs after the FK guard so it sees the final upsert set, and mutates the losing upserts in
   // place. Per-row LWW cannot enforce a one-of-N flag, so two devices pinning different supplier
@@ -397,6 +408,7 @@ export function reconcile(
     rejectedCycles,
     serialisedLoansClosed,
     bookingsCancelled,
+    kitLinksBroken,
     loanReturnsPreserved,
     collisions,
     keyParks,
@@ -929,6 +941,74 @@ function resolveBookingOverlapConflicts(
     }
   }
   return cancellations;
+}
+
+/**
+ * Issue #539: the kit containment graph must stay **acyclic** — a kit cannot contain itself,
+ * directly or transitively. `ItemRepository.addKitComponent` enforces that by walking the proposed
+ * component's descendant set before it writes, but that is a read-then-write check across sibling
+ * rows, so it holds only within one device. Device A adds kit Y as a component of X (legal there),
+ * device B adds X as a component of Y (legal there), and the two edges are separate `kit_components`
+ * rows under separate ids with a *different* `(kit_item_id, component_item_id)` pair — so the UNIQUE
+ * index never fires and the id-keyed LWW union keeps both. The merged graph then holds X → Y → X.
+ *
+ * `rejectParentCycles` cannot help here: it reads a `parent_id` column and structurally cannot see
+ * a hierarchy expressed as edge rows. And the consequence is worse than a wrong number — every
+ * read of the kit walks the graph, so a persisted loop takes the database worker down rather than
+ * showing something odd. (`readKitGraph` now truncates a loop instead of recursing into it, but
+ * that is a backstop for a graph that arrives corrupt by some other route; the loop still has to
+ * *go*, or the kit silently under-reports what it contains for ever.)
+ *
+ * So this pass detects a loop in the merged edge set and removes whichever links close it, by a
+ * rule both devices compute identically: **oldest wins** — the edges are re-admitted in
+ * `created_at` order (ties broken by the smaller id) and any edge whose kit is already reachable
+ * below its component is dropped (see {@link findKitCycleBreaks}). `created_at` is byte-identical
+ * on every device because `shiftSnapshotTimestamps` shifts only `updated_at`, so both sides break
+ * the same edges without reference to which side is local, and an acyclic graph is left untouched.
+ *
+ * A broken link is **deleted**, not softened: an edge either exists or it does not, so there is no
+ * cancelled state to park it in as a serialised loan or a booking has. The removal is recorded as
+ * an ordinary tombstone stamped at the edge's own `updated_at + 1` — deterministic, frame-invariant
+ * under the linear push-shift, and strictly newer than the row it retires, so it wins LWW on a peer
+ * that has not run the repair itself and both devices converge with no churn. Any upsert restoring
+ * the same edge is dropped alongside it, or the apply would delete and re-insert the row in one
+ * transaction.
+ */
+function resolveKitComponentCycles(
+  local: SyncSnapshot,
+  localUpserts: TableRow[],
+  localDeletes: Tombstone[],
+  finalItemIds: ReadonlySet<string>,
+): KitLinkBreak[] {
+  // The edge rows that survive the merge: local rows overlaid with winning upserts, minus deletes.
+  const finalEdges = new Map<string, SqlRow>();
+  for (const row of local.tables.kit_components ?? []) finalEdges.set(String(row.id), row);
+  for (const u of localUpserts) if (u.table === 'kit_components') finalEdges.set(String(u.row.id), u.row);
+  for (const d of localDeletes) if (d.tableName === 'kit_components') finalEdges.delete(d.id);
+
+  const edges: KitEdge[] = [];
+  for (const row of finalEdges.values()) {
+    const kitId = String(row.kit_item_id);
+    const componentId = String(row.component_item_id);
+    // An edge either end of which the merge removes is cascade-deleted with its item; counting it
+    // could break an innocent link in its place.
+    if (!finalItemIds.has(kitId) || !finalItemIds.has(componentId)) continue;
+    edges.push({ id: String(row.id), kitId, componentId, createdAt: num(row.created_at) });
+  }
+
+  const breaks: KitLinkBreak[] = [];
+  for (const edge of findKitCycleBreaks(edges)) {
+    const row = finalEdges.get(edge.id)!;
+    const at = localUpserts.findIndex((u) => u.table === 'kit_components' && String(u.row.id) === edge.id);
+    if (at >= 0) localUpserts.splice(at, 1);
+    localDeletes.push({
+      tableName: 'kit_components',
+      id: edge.id,
+      deletedAt: num(row.updated_at) + 1,
+    });
+    breaks.push({ edgeId: edge.id, kitItemId: edge.kitId, componentItemId: edge.componentId });
+  }
+  return breaks;
 }
 
 /**

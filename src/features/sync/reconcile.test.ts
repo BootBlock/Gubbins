@@ -47,6 +47,7 @@ const DICTIONARY = {
   category_fields: ['id', 'category_id', 'def_id', 'updated_at'],
   location_field_values: ['id', 'location_id', 'def_id', 'value', 'is_inheritable', 'updated_at'],
   item_field_values: ['id', 'item_id', 'def_id', 'value', 'mode', 'updated_at'],
+  kit_components: ['id', 'kit_item_id', 'component_item_id', 'quantity', 'sort', 'created_at', 'updated_at'],
   tags: ['id', 'name', 'updated_at'],
   item_history: ['id', 'item_id', 'action', 'net_value_delta', 'note', 'created_at'],
   projects: ['id', 'name', 'updated_at'],
@@ -402,6 +403,118 @@ describe('reconcile (§7.3 / §7.5)', () => {
       const plan = reconcile(local, remote, opts);
 
       expect(plan.bookingsCancelled).toEqual([]);
+    });
+  });
+
+  describe('issue #539 — kit containment cycle closed by a merge', () => {
+    const kitItem = (id: string): SqlRow => ({
+      id,
+      name: id,
+      location_id: 'loc1',
+      tracking_mode: 'DISCRETE',
+      updated_at: 1,
+    });
+    const edge = (id: string, kitId: string, componentId: string, createdAt: number): SqlRow => ({
+      id,
+      kit_item_id: kitId,
+      component_item_id: componentId,
+      quantity: 1,
+      sort: 0,
+      created_at: createdAt,
+      updated_at: createdAt,
+    });
+
+    it('removes the later link of a two-edge loop and tombstones it deterministically', () => {
+      // Local put Y inside X first (created_at 100); the peer's X-inside-Y edge arrives as new.
+      const local = snapshot({
+        tables: { items: [kitItem('X'), kitItem('Y')], kit_components: [edge('kcA', 'X', 'Y', 100)] },
+      });
+      const remote = snapshot({ tables: { kit_components: [edge('kcB', 'Y', 'X', 200)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.kitLinksBroken).toEqual([{ edgeId: 'kcB', kitItemId: 'Y', componentItemId: 'X' }]);
+      // The incoming edge is not written at all, and its removal travels as a tombstone.
+      expect(plan.localUpserts.some((u) => u.table === 'kit_components' && u.row.id === 'kcB')).toBe(false);
+      expect(plan.localDeletes).toContainEqual({
+        tableName: 'kit_components',
+        id: 'kcB',
+        deletedAt: 201, // its own updated_at + 1 — deterministic and frame-invariant
+      });
+      // The older link stands, carried by the push half rather than an upsert.
+      expect(plan.localUpserts.some((u) => u.table === 'kit_components' && u.row.id === 'kcA')).toBe(false);
+    });
+
+    it('removes a purely-local later link when the peer holds the earlier one', () => {
+      // The mirror side: this device made the later nesting move, so its own edge is the one to go.
+      const local = snapshot({
+        tables: { items: [kitItem('X'), kitItem('Y')], kit_components: [edge('kcB', 'Y', 'X', 200)] },
+      });
+      const remote = snapshot({ tables: { kit_components: [edge('kcA', 'X', 'Y', 100)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.kitLinksBroken).toEqual([{ edgeId: 'kcB', kitItemId: 'Y', componentItemId: 'X' }]);
+      expect(plan.localDeletes).toContainEqual({
+        tableName: 'kit_components',
+        id: 'kcB',
+        deletedAt: 201,
+      });
+      // The peer's earlier edge is downloaded and kept.
+      expect(plan.localUpserts.some((u) => u.table === 'kit_components' && u.row.id === 'kcA')).toBe(true);
+    });
+
+    it('breaks a created_at tie by the smaller id, so both devices agree', () => {
+      const local = snapshot({
+        tables: { items: [kitItem('X'), kitItem('Y')], kit_components: [edge('kcA', 'X', 'Y', 100)] },
+      });
+      const remote = snapshot({ tables: { kit_components: [edge('kcB', 'Y', 'X', 100)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.kitLinksBroken).toEqual([{ edgeId: 'kcB', kitItemId: 'Y', componentItemId: 'X' }]);
+    });
+
+    it('removes only the newest link of a three-kit loop', () => {
+      const local = snapshot({
+        tables: {
+          items: [kitItem('X'), kitItem('Y'), kitItem('Z')],
+          kit_components: [edge('kcA', 'X', 'Y', 100), edge('kcB', 'Y', 'Z', 150)],
+        },
+      });
+      const remote = snapshot({ tables: { kit_components: [edge('kcC', 'Z', 'X', 200)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.kitLinksBroken).toEqual([{ edgeId: 'kcC', kitItemId: 'Z', componentItemId: 'X' }]);
+      expect(plan.localDeletes.some((d) => d.tableName === 'kit_components' && d.id === 'kcB')).toBe(false);
+    });
+
+    it('leaves a merged graph that only shares a component alone (a diamond is not a loop)', () => {
+      // X contains Y and Z locally; the peer adds Z as a component of Y — legal, and no loop.
+      const local = snapshot({
+        tables: {
+          items: [kitItem('X'), kitItem('Y'), kitItem('Z')],
+          kit_components: [edge('kcA', 'X', 'Y', 100), edge('kcB', 'X', 'Z', 110)],
+        },
+      });
+      const remote = snapshot({ tables: { kit_components: [edge('kcC', 'Y', 'Z', 200)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.kitLinksBroken).toEqual([]);
+      expect(plan.localDeletes.some((d) => d.tableName === 'kit_components')).toBe(false);
+      expect(plan.localUpserts.some((u) => u.table === 'kit_components' && u.row.id === 'kcC')).toBe(true);
+    });
+
+    it('ignores a loop edge whose item the merge deletes, since it goes with the item', () => {
+      // The peer deleted kit Y; its edges cascade away, so nothing is left to break.
+      const local = snapshot({
+        tables: {
+          items: [kitItem('X'), kitItem('Y')],
+          kit_components: [edge('kcA', 'X', 'Y', 100), edge('kcB', 'Y', 'X', 200)],
+        },
+      });
+      const remote = snapshot({ tombstones: [{ tableName: 'items', id: 'Y', deletedAt: 500 }] });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.kitLinksBroken).toEqual([]);
+      expect(plan.localDeletes.some((d) => d.tableName === 'kit_components')).toBe(false);
     });
   });
 
