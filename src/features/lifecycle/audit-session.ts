@@ -198,7 +198,7 @@ export function resumeAt(state: AuditSessionState): AuditSessionState {
 export interface AuditProgress {
   /** Total locations in scope. */
   readonly total: number;
-  /** Locations with a terminal status (counted / reconciled / skipped). */
+  /** Locations with a terminal status (counted / reconciled / partial / skipped). */
   readonly done: number;
   /** Locations still pending. */
   readonly remaining: number;

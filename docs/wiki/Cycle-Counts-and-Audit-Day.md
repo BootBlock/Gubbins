@@ -49,12 +49,12 @@ stock-take discards them for every location in the walk.
 Leaving a line blank is not the same as counting it and finding nothing wrong, so Gubbins never
 treats it as such. A blank line is left completely alone — its stock is not touched — and the
 count sheet tells you how much of it you have covered as you go: **"12 of 40 lines counted"** sits
-beside the number of adjustments waiting to be authorised.
+alongside the number of adjustments waiting to be authorised.
 
-Finish with lines still blank and the button says so — **Record partial count** rather than
-**Mark counted** — and the location keeps its existing **last counted** date rather than gaining
-a fresh one. The lines you *did* count are still applied; only the claim that the whole location
-has been checked is withheld.
+Finish with lines still blank and the button says so — **Record partial count** in a single-location
+count, **Record partial & continue** on audit day, rather than **Mark counted** — and the location
+keeps its existing **last counted** date rather than gaining a fresh one. The lines you *did*
+count are still applied; only the claim that the whole location has been checked is withheld.
 
 > **⚠️ Heads-up**
 > That last-counted date is what tells you which places are overdue. A shelf recorded as counted

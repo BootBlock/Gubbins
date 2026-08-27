@@ -339,10 +339,14 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
   const [announcement, setAnnouncement] = useState('');
   const stepMessage = `Now counting ${current.name}. Location ${prog.position} of ${prog.total}.`;
   // The outcome just recorded, waiting to be spoken alongside the step it caused. Finishing a
-  // location advances the walk in the same render, so the effect below would otherwise replace
-  // the outcome with the next step's message before any screen reader saw it — the outcome was
-  // announced only on the walk's very last location. It matters most for the outcome that says
-  // a shelf was left part-counted (issue #637), which is precisely the one worth hearing.
+  // location always advances the walk in the same commit, so announcing the outcome here and
+  // letting the step effect below announce again would mutate the region twice with the second
+  // text containing the first — the auditor hears the whole sentence, then hears it again. And
+  // when the finished location was the last pending one the stepper unmounts into the summary
+  // in that same commit, so an eager announcement is never painted at all. Handing the outcome
+  // to the effect covers both: one mutation, carrying outcome and step together, or none here
+  // and the summary's own region (which names part-counted locations) carrying the end of the
+  // walk. It matters most for the outcome saying a shelf was left part-counted (issue #637).
   const pendingOutcomeRef = useRef<string | null>(null);
   // Re-announce the step whenever the current location changes.
   const lastAnnouncedId = useRef<string | null>(null);
@@ -357,13 +361,11 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
 
   const finish = (status: AuditLocationStatus, totals: AuditTotals, outcomeMessage: string) => {
     pendingOutcomeRef.current = outcomeMessage;
-    setAnnouncement(outcomeMessage);
     recordCurrent(status, totals);
   };
 
   const skip = () => {
     pendingOutcomeRef.current = `Skipped ${current.name}.`;
-    setAnnouncement(`Skipped ${current.name}.`);
     // A skipped location is done with, so its unfinished sheet goes too — otherwise the walk
     // would offer to restore a count for somewhere the auditor decided not to count.
     clearDraft(current.id);
