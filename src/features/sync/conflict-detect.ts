@@ -32,12 +32,20 @@ import type { SyncConflict, SyncTable } from './types';
  * it is therefore a settled outcome too, and "Use my version" on a returned loan would write
  * `returned_at = NULL` only for the next sync to take the closed copy straight back — the silent
  * undo this set exists to prevent.
+ *
+ * `checked_out_at` joins it because the schema ties the two — `CHECK (returned_at IS NULL OR
+ * returned_at >= checked_out_at)` — so they can only be excused together. Excusing the return
+ * alone leaves a restore writing one half of the pair against the other's merged value, and a
+ * loan the user opened *later* on this device would restore a `checked_out_at` after the stored
+ * `returned_at`, failing that CHECK and throwing the restore. Nothing is lost by excusing it:
+ * `checked_out_at` is stamped once when the loan is created and no user edit ever changes it, so
+ * a difference in it was never a lost edit to begin with.
  */
 export const NON_LWW_COLUMNS: Partial<Record<SyncTable, ReadonlySet<string>>> = {
   items: new Set(['current_net_value', 'quantity']),
   item_stock: new Set(['quantity']),
   stock_batches: new Set(['quantity']),
-  checkouts: new Set(['returned_at']),
+  checkouts: new Set(['returned_at', 'checked_out_at']),
 };
 
 /** The non-LWW columns for a table (empty when none), for conflict detection/diff/restore. */
