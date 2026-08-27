@@ -77,7 +77,9 @@ docker build --build-arg GUBBINS_BASE_PATH=/gubbins/ -t gubbins .
 > **⚠️ Heads-up**
 > The path is also what an [[installed|Installing-Gubbins]] copy is identified by. If you rebuild
 > under a different path, install it again from the new address — an already-installed copy still
-> points at the old one, and your browser treats the two as separate apps.
+> points at the old one, and your browser treats the two as separate apps. The same applies if you
+> installed from an older image and the installed icon opened a "We couldn't find that page"
+> screen: rebuild, then remove that copy and install it again.
 
 ### Reaching it from other devices
 
