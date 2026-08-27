@@ -413,6 +413,15 @@ function errorResponsesIn(errorRef: string, codes: readonly number[]): JsonValue
       },
       content: jsonContent(errorRef),
     },
+    409: response(
+      'Another writer replaced the snapshot — or had it open — while this change was being ' +
+        'applied, and re-reading and re-applying kept losing the same race, so nothing was ' +
+        "changed rather than the other writer's change being overwritten. The bridge's own lock " +
+        'cannot reach the MCP server (a separate process) or the app writing the synced file ' +
+        'directly, so the publish is conditional on the file still being the one that was read. ' +
+        'Retry.',
+      errorRef,
+    ),
     413: response(
       'The pushed snapshot exceeded the configured maximum size (GUBBINS_BRIDGE_MAX_PUSH_BYTES).',
       errorRef,
@@ -1608,7 +1617,7 @@ export const openapiDocument: JsonValue = {
         requestBody: adjustRequestBody('Whole-number change; negative to take stock out.'),
         responses: {
           200: writeResponse('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 409, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1624,7 +1633,7 @@ export const openapiDocument: JsonValue = {
         requestBody: adjustRequestBody('Signed change to the net value (e.g. -45 for 45 consumed).'),
         responses: {
           200: writeResponse('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 415, 422, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 409, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },
@@ -1699,7 +1708,7 @@ export const openapiDocument: JsonValue = {
             'The updated item and the loan that was opened.',
             '#/components/schemas/LoanResult',
           ),
-          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 409, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },
     },
@@ -1744,7 +1753,7 @@ export const openapiDocument: JsonValue = {
             'The updated item and the loan that was closed.',
             '#/components/schemas/LoanResult',
           ),
-          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 409, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },
     },
@@ -1783,7 +1792,7 @@ export const openapiDocument: JsonValue = {
         },
         responses: {
           200: writeResponse('The updated item.', '#/components/schemas/ItemDetail'),
-          ...(errorResponses(400, 401, 404, 415, 422, 429, 503) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 409, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },
     },
@@ -1825,7 +1834,7 @@ export const openapiDocument: JsonValue = {
             formatVersion: 3,
             generatedAt: 1751004800000,
           }),
-          ...(errorResponses(400, 401, 404, 413, 415, 422, 429) as Record<string, JsonValue>),
+          ...(errorResponses(400, 401, 404, 409, 413, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
     },

@@ -10,6 +10,7 @@
  * Plus an end-to-end check that a push is what the unchanged {@link createSnapshotWatcher watcher}
  * then serves — proving the merged bytes flow through the normal re-hydrate path.
  */
+import { writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -23,7 +24,7 @@ import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { hydrateFromJson } from './hydrate.ts';
 import { ingestSnapshot, PushError, validateSnapshotText } from './push.ts';
 import { createWriteExecutor } from './write.ts';
-import { createSnapshotMutex } from './snapshot-io.ts';
+import { createSnapshotMutex, SNAPSHOT_PUBLISH_ATTEMPTS } from './snapshot-io.ts';
 import { createSnapshotWatcher } from './watcher.ts';
 
 const FIXTURE_URL = new URL('./fixtures/synthetic-snapshot.json', import.meta.url);
@@ -284,6 +285,68 @@ describe('ingestSnapshot', () => {
     const final = await readFile(snapshotPath, 'utf8');
     expect(await quantityIn(final, 'item-m3-bolt')).toBe(47); // the write survived the push
     expect(await quantityIn(final, 'item-esp32')).toBe(10); // the push survived the write
+  });
+
+  // The mutex above only binds writers inside ONE process. The MCP server is a second process and
+  // the PWA's folder sync writes the file itself, so the publish also carries a precondition and
+  // re-merges when it loses (issue #549). `now` is the hook: it fires mid-merge, which is exactly
+  // when such a writer would land.
+  it('re-merges when another process replaced the snapshot mid-merge', async () => {
+    await writeFile(snapshotPath, fixtureText, 'utf8');
+
+    // What the out-of-process writer publishes (item-m3-bolt 42 → 47).
+    const other = await hydrateFromJson(fixtureText);
+    await new ItemRepository(other.driver).adjustQuantity('item-m3-bolt', 5);
+    const theirs = await snapshotOf(other.driver);
+    await other.driver.close();
+
+    // What this device pushes (item-esp32 7 → 10) — a different item, so a loss would be plain.
+    const device = await hydrateFromJson(fixtureText);
+    await new ItemRepository(device.driver).adjustQuantity('item-esp32', 3);
+    const deviceJson = await snapshotOf(device.driver);
+    await device.driver.close();
+
+    let interfered = false;
+    await ingestSnapshot({
+      snapshotPath,
+      body: bodyOf(deviceJson),
+      maxBytes: 1_000_000,
+      now: () => {
+        if (!interfered) {
+          interfered = true;
+          writeFileSync(snapshotPath, theirs, 'utf8');
+        }
+        return Date.now();
+      },
+    });
+
+    const final = await readFile(snapshotPath, 'utf8');
+    expect(await quantityIn(final, 'item-esp32')).toBe(10); // the push landed
+    expect(await quantityIn(final, 'item-m3-bolt')).toBe(47); // ...and their change survived
+    expect(await readdir(dir)).toEqual(['gubbins-sync.json']); // the retry left no temp behind
+  });
+
+  it('gives up with a 409 rather than overwrite when it keeps losing the race', async () => {
+    await writeFile(snapshotPath, fixtureText, 'utf8');
+
+    // A writer that republishes on every merge — the precondition can never hold. Each rewrite
+    // carries a distinct byte count so the stamp is guaranteed to move.
+    let round = 0;
+    await expect(
+      ingestSnapshot({
+        snapshotPath,
+        body: bodyOf(fixtureText),
+        maxBytes: 1_000_000,
+        now: () => {
+          round += 1;
+          writeFileSync(snapshotPath, `${fixtureText}${' '.repeat(round)}`, 'utf8');
+          return Date.now();
+        },
+      }),
+    ).rejects.toMatchObject({ status: 409, code: 'conflict' });
+
+    expect(round).toBe(SNAPSHOT_PUBLISH_ATTEMPTS);
+    expect(await readdir(dir)).toEqual(['gubbins-sync.json']); // no stray temp from the retries
   });
 });
 

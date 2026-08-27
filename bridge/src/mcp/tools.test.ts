@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { createWriteExecutor, MAX_NOTE_LENGTH } from '../write.ts';
+import { createVirtualSnapshot } from '../fixtures/virtual-snapshot.ts';
 import { SYSTEM_USER_ID } from '@/db/repositories/constants';
 import { ALL_TOOLS, createWriteTools, findTool, ToolInputError, type McpTool } from './tools.ts';
 
@@ -229,17 +230,12 @@ describe('the write tools', () => {
     tools: readonly McpTool[];
     stored: () => string;
   } {
-    let stored = initial;
+    const file = createVirtualSnapshot(initial);
     // MCP has no credential and therefore no identity, so its writes are System's — the same
     // binding `mcp/serve.ts` makes at the composition root (issue #79).
-    const execute = createWriteExecutor('/virtual/gubbins-sync.json', {
-      readSnapshot: async () => stored,
-      writeSnapshotAtomic: async (_p, text) => {
-        stored = text;
-      },
-    });
+    const execute = createWriteExecutor('/virtual/gubbins-sync.json', file.io);
     const tools = createWriteTools(async (op) => (await execute(op, SYSTEM_USER_ID)).result);
-    return { tools, stored: () => stored };
+    return { tools, stored: file.read };
   }
 
   /** Run one write tool by name against the in-memory snapshot. */

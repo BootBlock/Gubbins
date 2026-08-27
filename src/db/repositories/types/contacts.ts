@@ -65,6 +65,12 @@ export interface CheckoutRow {
   readonly return_note: string | null;
   readonly source_location_id: string | null;
   readonly source_batch_key: string | null;
+  /**
+   * The operation key the loan's stock draw was captured under (issue #711) — set only for a loan
+   * whose ids are derived from a one-shot operation, NULL for an ordinary loan. The merge reads it
+   * to find the draw's `stock_deltas` rows; see the column's note in the baseline.
+   */
+  readonly stock_operation_key: string | null;
   readonly updated_at: number;
 }
 

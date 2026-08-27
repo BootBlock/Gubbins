@@ -45,6 +45,11 @@ export const API_ERROR_CODES = [
   // A pushed snapshot exceeded the configured size cap — HTTP 413. Only reachable when the
   // opt-in snapshot-ingest endpoint (GUBBINS_BRIDGE_ALLOW_PUSH=on) is enabled.
   'payload_too_large',
+  // Another writer replaced the snapshot while this mutation was being applied, and re-reading
+  // and re-applying kept losing the same race — HTTP 409. The change was NOT made, and nothing
+  // was overwritten; retrying is the fix (issue #549). Only reachable on the opt-in write and
+  // push endpoints.
+  'conflict',
   // A genuine scale that could not be read — HTTP 409. Only reachable when the opt-in Home
   // Assistant read (GUBBINS_BRIDGE_HA=on) is enabled. Two distinct codes because they need
   // different words in front of the user: hardware/integration versus a sensor not reporting a

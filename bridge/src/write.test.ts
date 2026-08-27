@@ -28,6 +28,8 @@ import { snapshotToBackupJson } from '@/features/sync/backup';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { createNodeDriver } from './node-driver.ts';
 import { hydrateFromJson, type HydrateResult } from './hydrate.ts';
+import { createVirtualSnapshot } from './fixtures/virtual-snapshot.ts';
+import { SNAPSHOT_PUBLISH_ATTEMPTS } from './snapshot-io.ts';
 import {
   applyOperation,
   createWriteExecutor,
@@ -440,24 +442,19 @@ describe('applyOperation', () => {
 
 describe('executeWrite', () => {
   it('applies the mutation and writes the merged snapshot back atomically', async () => {
-    let stored = await fixtureJson();
+    const file = createVirtualSnapshot(await fixtureJson());
     const result = await executeWrite({
       actorUserId: ACTOR,
       snapshotPath: '/virtual/gubbins-sync.json',
       op: { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 5, note: 'restock' },
-      io: {
-        readSnapshot: async () => stored,
-        writeSnapshotAtomic: async (_p, text) => {
-          stored = text;
-        },
-      },
+      io: file.io,
     });
     expect(result.item.id).toBe('item-m3-bolt');
     expect(result.item.quantity).toBe(47);
     expect(result.checkout).toBeNull(); // a stock adjustment opens no loan
 
     // The written-back snapshot, re-hydrated, must carry the new quantity AND the ledger entry.
-    const after = await hydrateFromJson(stored);
+    const after = await hydrateFromJson(file.read());
     expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(47);
     const log = await after.driver.query(
       "SELECT 1 FROM item_history WHERE item_id = 'item-m3-bolt' AND action = 'QUANTITY_CHANGE';",
@@ -482,45 +479,108 @@ describe('executeWrite', () => {
   });
 
   it('serialises concurrent writes so neither is lost', async () => {
-    let stored = await fixtureJson();
-    const execute = createWriteExecutor('/virtual/gubbins-sync.json', {
-      readSnapshot: async () => stored,
-      writeSnapshotAtomic: async (_p, text) => {
-        stored = text;
-      },
-    });
+    const file = createVirtualSnapshot(await fixtureJson());
+    const execute = createWriteExecutor('/virtual/gubbins-sync.json', file.io);
     // Fire two +1 writes without awaiting between them; serialisation must apply both.
     await Promise.all([
       execute({ kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 }, ACTOR),
       execute({ kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 }, ACTOR),
     ]);
-    const after = await hydrateFromJson(stored);
+    const after = await hydrateFromJson(file.read());
     expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(44); // 42 + 1 + 1, none lost
     await after.driver.close();
+  });
+
+  // --- the cross-process precondition (issue #549) ---------------------------------
+
+  it('re-reads and re-applies when another process replaced the snapshot mid-write', async () => {
+    const file = createVirtualSnapshot(await fixtureJson());
+
+    // What the writer the mutex CANNOT reach publishes — the PWA's folder sync, or a second bridge
+    // process. Its change is on a different item, so losing it would be unambiguous. Built up
+    // front so the interference itself is a plain assignment and cannot perturb the timing.
+    const other = await hydrateFromJson(file.read());
+    await new ItemRepository(other.driver).adjustQuantity('item-m3-washer', 7, SYSTEM_USER_ID);
+    const theirs = snapshotToBackupJson(await buildLocalSnapshot(other.driver));
+    await other.driver.close();
+
+    // They publish exactly once, while our first attempt is hydrating.
+    let interfered = false;
+    const io = {
+      ...file.io,
+      readSnapshot: async (path: string) => {
+        const read = await file.io.readSnapshot!(path);
+        if (!interfered) {
+          interfered = true;
+          file.replace(theirs);
+        }
+        return read;
+      },
+    };
+
+    await executeWrite({
+      actorUserId: ACTOR,
+      snapshotPath: '/virtual/gubbins-sync.json',
+      op: { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 5 },
+      io,
+    });
+
+    expect(file.conflicts()).toBe(1); // the first publish was refused, not applied
+    const after = await hydrateFromJson(file.read());
+    expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(47); // our change landed
+    expect(await quantityOf(after.driver, 'item-m3-washer')).toBe(107); // ...and theirs survived
+    await after.driver.close();
+  });
+
+  it('gives up with a 409 rather than overwrite when it keeps losing the race', async () => {
+    const file = createVirtualSnapshot(await fixtureJson());
+    const before = file.read();
+    const io = {
+      ...file.io,
+      // A writer that republishes on every read — the precondition can never hold.
+      readSnapshot: async (path: string) => {
+        const snapshot = await file.io.readSnapshot!(path);
+        file.replace(file.read());
+        return snapshot;
+      },
+    };
+
+    await expect(
+      executeWrite({
+        actorUserId: ACTOR,
+        snapshotPath: '/virtual/gubbins-sync.json',
+        op: { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 5 },
+        io,
+      }),
+    ).rejects.toMatchObject({ status: 409, code: 'conflict' });
+    expect(file.conflicts()).toBe(SNAPSHOT_PUBLISH_ATTEMPTS);
+    expect(file.read()).toBe(before); // nothing was overwritten
   });
 });
 
 // --- idempotency keys: a retry after a timeout must not apply twice (issue #567) ---
 
 describe('idempotency keys', () => {
-  /** An executor over an in-memory snapshot, exposing the stored JSON and the hydrate count. */
+  /**
+   * An executor over the shared virtual snapshot, wrapped so the test can also count *reads* —
+   * the cheapest proof a replay never re-hydrated, since re-hydrating is the whole cost a key
+   * exists to skip.
+   */
   function inMemoryExecutor(initial: string): {
     execute: ReturnType<typeof createWriteExecutor>;
     stored: () => string;
     reads: () => number;
   } {
-    let stored = initial;
+    const file = createVirtualSnapshot(initial);
     let reads = 0;
     const execute = createWriteExecutor('/virtual/gubbins-sync.json', {
-      readSnapshot: async () => {
+      ...file.io,
+      readSnapshot: async (path) => {
         reads += 1;
-        return stored;
-      },
-      writeSnapshotAtomic: async (_p, text) => {
-        stored = text;
+        return await file.io.readSnapshot!(path);
       },
     });
-    return { execute, stored: () => stored, reads: () => reads };
+    return { execute, stored: file.read, reads: () => reads };
   }
 
   const bolt = { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 } as const;
@@ -605,14 +665,14 @@ describe('round-trip through the app’s §7.3 reconcile (no drift)', () => {
     onDiskJson: string,
     op: Parameters<typeof executeWrite>[0]['op'],
   ): Promise<{ json: string; bridge: HydrateResult }> {
-    let written = onDiskJson;
+    const file = createVirtualSnapshot(onDiskJson);
     await executeWrite({
       actorUserId: ACTOR,
       snapshotPath: '/virtual/gubbins-sync.json',
       op,
-      io: { readSnapshot: async () => onDiskJson, writeSnapshotAtomic: async (_p, t) => void (written = t) },
+      io: file.io,
     });
-    return { json: written, bridge: await hydrateFromJson(written) };
+    return { json: file.read(), bridge: await hydrateFromJson(file.read()) };
   }
 
   it('carries a discrete check-out to the PWA via LWW, idempotently', async () => {

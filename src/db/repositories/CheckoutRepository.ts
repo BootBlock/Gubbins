@@ -243,8 +243,8 @@ export class CheckoutRepository extends BaseRepository {
       {
         // The borrower lands in exactly one of the three FK columns per its target type; the
         // other two stay NULL (the XOR CHECK enforces this). `borrowerColumn` picks the column.
-        sql: `INSERT INTO checkouts (id, item_id, ${borrowerColumn(borrower.type)}, quantity, due_date, note, source_location_id, source_batch_key)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+        sql: `INSERT INTO checkouts (id, item_id, ${borrowerColumn(borrower.type)}, quantity, due_date, note, source_location_id, source_batch_key, stock_operation_key)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         params: [
           id,
           input.itemId,
@@ -254,6 +254,10 @@ export class CheckoutRepository extends BaseRepository {
           input.note?.trim() || null,
           fromLocationId,
           fromBatchKey,
+          // The key the draw below is bracketed with, recorded so the merge can find that draw's
+          // ledger rows again (issue #711). NULL for an ordinary loan, whose draw takes random
+          // delta ids and so has nothing to pair up.
+          derived?.operationKey ?? null,
         ],
       },
       historyStatement(input.itemId, 'CHECKED_OUT', this.actorId(), {
