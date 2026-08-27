@@ -10,6 +10,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { User } from '@/db/repositories/types';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { ADMIN_USER_ID } from '@/db/repositories/constants';
+import { UNRESTRICTED_AUTHORITY } from './permissions';
 import { SignInScreen } from './SignInScreen';
 
 function user(overrides: Partial<User> = {}): User {
@@ -170,9 +173,19 @@ describe('SignInScreen', () => {
 describe('SignInScreen — the locked-out escape hatch (plan §3)', () => {
   beforeEach(() => {
     useModulesStore.setState({ intent: { users: true } });
+    // The state this screen is *only* ever rendered in: the module is on and nobody is signed in,
+    // so the resolved authority denies everything. Switching the module off is gated (issues #429,
+    // #630) and this is the one caller that must never be refused — asserting it against the
+    // store's permissive default authority would prove nothing.
+    useSessionStore.setState({
+      session: null,
+      authority: { mode: 'denied', reason: 'signed-out' },
+      actorId: ADMIN_USER_ID,
+    });
   });
   afterEach(() => {
     useModulesStore.setState({ intent: {} });
+    useSessionStore.setState({ session: null, authority: UNRESTRICTED_AUTHORITY, actorId: ADMIN_USER_ID });
   });
 
   it('offers a way out, so a forgotten password cannot strand anyone', async () => {

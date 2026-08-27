@@ -42,8 +42,8 @@ export function SignInGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    // Runs for the module-**off** transition too, not just on. Turning the module off must
-    // return the app to acting as Admin immediately; skipping the refresh here would leave the
+    // Runs for the module-**off** transition too, not just on. Turning the module off must lift
+    // every restriction immediately; skipping the refresh here would leave the
     // previous restricted (or denied) authority resident, so a user who had just switched the
     // feature off would still be refused — a one-way door in the direction the plan (§3) says
     // must stay safe.

@@ -34,7 +34,8 @@ that account's role.
 Every copy of Gubbins starts with two accounts you can't delete:
 
 - **Admin** — full access to everything. This is who Gubbins acts as when the Users module is off,
-  which is why nothing changes for a single-person setup.
+  which is why nothing changes for a single-person setup. (The one exception is a device that was
+  still signed in when the module was switched off — see [below](#turning-it-all-off-again).)
 - **System** — not a person. It's the name Gubbins puts against things it does itself: tidy-up
   jobs, [[sync|Cloud-Sync]] reconciliation, scheduled imports. It never signs in and has no
   sign-in tile.
@@ -83,8 +84,13 @@ instead, so the record of what happened to your inventory stays complete.
 
 Switching the Users module back off in [[Modules|Modular-UI]] **loses nothing**. Every account, every
 role and every record of who changed what is kept exactly as it is — Gubbins simply stops asking
-anyone to sign in and goes back to acting as **Admin**. Switch it on again and everyone's account and
-role are exactly as they were.
+anyone to sign in. Switch it on again and everyone's account and role are exactly as they were.
+
+One thing does carry over. If you were signed in when the module went off, your changes keep
+**your** name in the [[activity log|Activity-Log]] rather than switching to **Admin** — the log
+shouldn't put somebody else's name on what you did. There's no **Sign out** while the module is
+off, so that holds until you switch sign-in back on. A device that wasn't signed in records against
+**Admin**, exactly as one that never had accounts does.
 
 > **💡 Tip**
 > You can still reach the Users screen with the module off, to read and tidy accounts before

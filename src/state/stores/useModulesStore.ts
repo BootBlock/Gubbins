@@ -18,6 +18,8 @@ import { persist } from 'zustand/middleware';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { OPTIONAL_FEATURE_IDS } from '@/features/modules/feature-registry';
 import { getPreset, type PresetId } from '@/features/modules/presets';
+import { guardUsersIntent } from '@/features/modules/users-module-guard';
+import { currentAuthority, currentlySignedIn } from '@/features/users/current-authority';
 import { adoptUnversioned } from '@/lib/persisted-state';
 
 interface ModulesStore {
@@ -38,6 +40,23 @@ interface ModulesStore {
   completeFirstRun: () => void;
 }
 
+/**
+ * Apply a proposed intent record, with the Users-module guard between the caller and the state.
+ *
+ * Every writer goes through this rather than `set({ intent })` directly. Switching the Users
+ * module off lifts the sign-in gate, and the three screens that can ask for it are each gated on
+ * `modules:write` (issue #429) — this states the same rule once more where the write lands, so a
+ * door added later is refused rather than quietly ungated (issue #630).
+ */
+function commit(current: Readonly<Record<string, boolean>>, next: Readonly<Record<string, boolean>>) {
+  return {
+    intent: guardUsersIntent(current, next, {
+      authority: currentAuthority(),
+      signedIn: currentlySignedIn(),
+    }),
+  };
+}
+
 /** Build an intent record turning the given optional features on and all others off. */
 function intentFromEnabled(enabled: readonly FeatureId[]): Record<string, boolean> {
   const on = new Set<FeatureId>(enabled);
@@ -54,14 +73,16 @@ export const useModulesStore = create<ModulesStore>()(
       // Default: no overrides — every feature reads as on until the user chooses.
       intent: {},
       firstRunComplete: false,
-      setFeatureIntent: (id, on) => set((state) => ({ intent: { ...state.intent, [id]: on } })),
+      setFeatureIntent: (id, on) => set((state) => commit(state.intent, { ...state.intent, [id]: on })),
       applyPreset: (presetId) => {
         const preset = getPreset(presetId);
         // Unknown preset id (e.g. a stale link): leave intent untouched rather than wipe it.
         if (!preset) return;
-        set({ intent: intentFromEnabled(preset.featureIds) });
+        set((state) => commit(state.intent, intentFromEnabled(preset.featureIds)));
       },
-      resetToEverything: () => set({ intent: {} }),
+      // Clearing every override returns `users` to its registry default, which is *off* — so this
+      // is a disable path too, and takes the same guard as the explicit toggle.
+      resetToEverything: () => set((state) => commit(state.intent, {})),
       completeFirstRun: () => set({ firstRunComplete: true }),
     }),
     {

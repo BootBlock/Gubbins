@@ -695,8 +695,10 @@ export const SYSTEM_USER_DESCRIPTION =
 
 /**
  * Fixed, well-known identifier for the seeded **Admin** user (issue #79, plan §2.2). Constant
- * for the same reason as {@link SYSTEM_USER_ID}: with the users module off, every action in
- * the app is attributed to this id, so it must resolve identically on every device.
+ * for the same reason as {@link SYSTEM_USER_ID}: with the users module off and nobody signed in,
+ * every action in the app is attributed to this id, so it must resolve identically on every
+ * device. (A device that switched the module off while somebody was signed in keeps attributing
+ * to that person — see `features/users/authority-refresh.ts`, issue #630.)
  */
 export const ADMIN_USER_ID = '00000000-0000-4000-8000-000000000011';
 

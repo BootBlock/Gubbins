@@ -65,13 +65,41 @@ function signedIn(userId = 'u1'): void {
 describe('refreshAuthority', () => {
   it('is unrestricted, as Admin, while the module is off — and reads no database at all', async () => {
     moduleEnabled.mockReturnValue(false);
-    signedIn();
 
     const resolved = await refreshAuthority();
     expect(resolved.authority).toEqual({ mode: 'unrestricted' });
     expect(resolved.actorId).toBe(ADMIN_USER_ID);
-    // The overwhelmingly common case must stay free.
+    // The overwhelmingly common case — module off, nobody signed in — must stay free.
     expect(getById).not.toHaveBeenCalled();
+  });
+
+  it('keeps attributing to the signed-in user once the module goes off (issue #630)', async () => {
+    // The device was signed in when the module was switched off, and the person at it has not
+    // changed. Reverting the actor to Admin would put the built-in account's name on their
+    // changes, in the ledger that claims to record who made them.
+    moduleEnabled.mockReturnValue(false);
+    signedIn();
+
+    const resolved = await refreshAuthority();
+    expect(resolved.authority).toEqual({ mode: 'unrestricted' });
+    expect(resolved.actorId).toBe('u1');
+  });
+
+  it('falls back to Admin, still unrestricted, when the session names nobody real', async () => {
+    // Deleted account, or a read that failed. Neither says anything about whether the module is
+    // on, so single-user mode must not be denied over it — only the attribution falls back.
+    moduleEnabled.mockReturnValue(false);
+    signedIn();
+    getById.mockResolvedValue(undefined);
+
+    let resolved = await refreshAuthority();
+    expect(resolved.authority).toEqual({ mode: 'unrestricted' });
+    expect(resolved.actorId).toBe(ADMIN_USER_ID);
+
+    getById.mockRejectedValue(new Error('database unavailable'));
+    resolved = await refreshAuthority();
+    expect(resolved.authority).toEqual({ mode: 'unrestricted' });
+    expect(resolved.actorId).toBe(ADMIN_USER_ID);
   });
 
   it('denies a signed-out device once the module is on', async () => {

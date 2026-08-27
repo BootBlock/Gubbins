@@ -62,8 +62,10 @@ export const UNRESTRICTED_AUTHORITY: Authority = { mode: 'unrestricted' };
 /** What {@link resolveAuthority} needs to decide. */
 export interface AuthorityInput {
   /**
-   * Whether the users module is switched on. With it **off** every caller is unrestricted
-   * and acts as Admin — the plan's single-user mode (§3), and the state Gubbins ships in.
+   * Whether the users module is switched on. With it **off** every caller is unrestricted —
+   * the plan's single-user mode (§3), and the state Gubbins ships in. Who those unrestricted
+   * writes are *attributed* to is a separate question this engine does not answer; see
+   * `authority-refresh.ts`.
    */
   readonly moduleEnabled: boolean;
   /** The signed-in principal, or `undefined` when nobody is signed in. */
