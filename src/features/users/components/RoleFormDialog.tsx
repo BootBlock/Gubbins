@@ -1,5 +1,6 @@
 /**
- * Create or edit a role — a named bundle of permissions (issue #79, plan §2.3, phase 4).
+ * Create or edit a role — a named bundle of permissions (issue #79, plan §2.3, phase 4;
+ * relaid out and documented for issue #429).
  *
  * The grid is generated from `PERMISSION_SUBJECTS`, never hand-listed, so a subject or action
  * added to the registry appears here with no edit to this file — the same SSOT discipline the
@@ -8,14 +9,38 @@
  * All of the grant semantics (the global wildcard, subject wildcards, and grants this build does
  * not recognise) live in the pure `role-grants.ts` seam. This component only renders the model
  * and reports clicks, which is what keeps the awkward cases testable without a DOM.
+ *
+ * **Why the grid is laid out in slots rather than in declaration order.** Subjects do not share
+ * an action set: the audit trail is `view`/`delete`, an account is `read`/`manage`, an import is
+ * `run`. Rendering each row's actions in order therefore put the audit trail's *Delete* box
+ * directly beneath Items' *Change* box — every column carried a different meaning at every row,
+ * which is the one mistake a permission grid must never invite. Each action is now placed in the
+ * fixed column `actionSlot` gives it, and a subject with nothing in a slot leaves that cell
+ * genuinely empty. Where a subject's action is not the column's own word — Manage, Run, Print —
+ * the cell captions itself, so the grid never claims an action is something it is not.
  */
 import { useId, useState } from 'react';
-import { Banner, Button, Checkbox, FormField, Input, Modal, Surface } from '@/components/foundry';
-import { useT } from '@/features/i18n';
+import { Banner, Button, Checkbox, FormField, InfoHint, Input, Modal, Surface } from '@/components/foundry';
+import { useT, type TypedTranslator } from '@/features/i18n';
 import type { Role } from '@/db/repositories/types';
-import { PERMISSION_SUBJECT_IDS, permissionKeysFor, splitGrant } from '../permission-registry';
+import {
+  PERMISSION_ACTION_SLOT_IDS,
+  PERMISSION_SUBJECT_IDS,
+  permissionKeyInSlot,
+  permissionKeysFor,
+  splitGrant,
+  type PermissionAction,
+  type PermissionActionSlot,
+  type PermissionSubject,
+} from '../permission-registry';
 import { builtinRoleDescription, builtinRoleName } from '../builtin-role-labels';
-import { actionLabelKey, subjectLabelKey } from '../permission-labels';
+import {
+  actionLabelKey,
+  slotHelpKey,
+  slotLabelKey,
+  subjectHelpKey,
+  subjectLabelKey,
+} from '../permission-labels';
 import {
   fromGrantModel,
   isKeyTicked,
@@ -40,6 +65,14 @@ export interface RoleFormDialogProps {
   readonly onSubmit: (values: RoleFormValues) => void;
   readonly onClose: () => void;
 }
+
+/**
+ * One row of the grid: the subject's own column, then one cell per slot.
+ *
+ * The template is shared by the header and every row, which is what makes the columns line up —
+ * a per-row `flex` layout cannot, because the rows hold different numbers of boxes.
+ */
+const GRID_TEMPLATE = 'grid grid-cols-[minmax(0,1fr)_repeat(3,4.5rem)] items-center gap-x-3';
 
 export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFormDialogProps) {
   const t = useT();
@@ -71,9 +104,13 @@ export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFor
       description={t('roles.form.description')}
       scrollBody
       busy={busy}
+      // Widened from the Modal's default `max-w-lg` (issue #429): the permission grid is four
+      // columns of its own, and at the default width the action columns crowded the subject
+      // names badly enough that a row read as one run-on line.
+      className="max-w-3xl"
     >
       <form
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
@@ -87,23 +124,26 @@ export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFor
 
         {role?.isBuiltin ? <Banner tone="info">{t('roles.form.builtinNote')}</Banner> : null}
 
-        <FormField label={t('roles.form.name.label')}>
-          <Input
-            value={name}
-            autoComplete="off"
-            disabled={busy}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </FormField>
+        {/* Name and description sit side by side at this width; they stack again below `sm`. */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField label={t('roles.form.name.label')} hint={t('roles.form.name.hint')}>
+            <Input
+              value={name}
+              autoComplete="off"
+              disabled={busy}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </FormField>
 
-        <FormField label={t('roles.form.description.label')}>
-          <Input
-            value={description}
-            autoComplete="off"
-            disabled={busy}
-            onChange={(event) => setDescription(event.target.value)}
-          />
-        </FormField>
+          <FormField label={t('roles.form.description.label')} hint={t('roles.form.description.hint')}>
+            <Input
+              value={description}
+              autoComplete="off"
+              disabled={busy}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </FormField>
+        </div>
 
         <Surface className="flex flex-col gap-field-gap-compact p-4">
           {/* The label wraps only the control and its name; the hint sits outside it and is
@@ -125,51 +165,17 @@ export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFor
 
         <fieldset
           disabled={busy || model.grantsEverything}
-          className="flex flex-col gap-2 disabled:opacity-50"
+          className="flex flex-col gap-3 disabled:opacity-50"
         >
           <legend className="text-sm font-semibold text-foreground">{t('roles.form.grid.legend')}</legend>
           <p className="text-xs text-muted-foreground">{t('roles.form.grid.hint')}</p>
 
-          <ul className="flex flex-col divide-y divide-border">
-            {PERMISSION_SUBJECT_IDS.map((subject) => {
-              const keys = permissionKeysFor(subject);
-              const row = model.subjects.get(subject);
-              const allTicked = keys.every((key) => isKeyTicked(model, key));
-              return (
-                <li key={subject} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5">
-                  <div className="flex min-w-40 flex-1 items-center gap-2">
-                    <Checkbox
-                      checked={allTicked}
-                      aria-label={t('roles.form.grid.allActions', {
-                        vars: { subject: t(subjectLabelKey(subject)) },
-                      })}
-                      onChange={(event) => setModel(toggleSubject(model, subject, event.target.checked))}
-                    />
-                    <span className="text-sm font-medium text-foreground">{t(subjectLabelKey(subject))}</span>
-                    {row?.mode === 'wildcard' && !model.grantsEverything ? (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                        {t('roles.form.grid.wildcard')}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    {keys.map((key) => {
-                      const [, action] = splitGrant(key);
-                      return (
-                        <label key={key} className="flex items-center gap-1.5 text-sm">
-                          <Checkbox
-                            checked={isKeyTicked(model, key)}
-                            data-testid={`role-permission-${key}`}
-                            onChange={(event) => setModel(toggleKey(model, key, event.target.checked))}
-                          />
-                          {t(actionLabelKey(action))}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </li>
-              );
-            })}
+          <SlotHeader t={t} />
+
+          <ul className="flex flex-col divide-y divide-border border-t border-border">
+            {PERMISSION_SUBJECT_IDS.map((subject) => (
+              <SubjectRow key={subject} subject={subject} model={model} onChange={setModel} t={t} />
+            ))}
           </ul>
         </fieldset>
 
@@ -189,5 +195,121 @@ export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFor
         </div>
       </form>
     </Modal>
+  );
+}
+
+/**
+ * The column headings, each carrying the help that explains what that action means app-wide.
+ *
+ * `aria-hidden` is deliberate: every checkbox below already names its own subject and action in
+ * full, so announcing these headings again would read each box twice. They orient the eye.
+ */
+function SlotHeader({ t }: { readonly t: TypedTranslator }) {
+  return (
+    <div className={`${GRID_TEMPLATE} pb-1`} aria-hidden>
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {t('roles.form.grid.subjectColumn')}
+      </span>
+      {PERMISSION_ACTION_SLOT_IDS.map((slot) => (
+        <span key={slot} className="flex items-center justify-center gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {t(slotLabelKey(slot))}
+          </span>
+          <InfoHint content={t(slotHelpKey(slot))} size="md" />
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** One subject's row: its select-all box and name, then one cell per slot. */
+function SubjectRow({
+  subject,
+  model,
+  onChange,
+  t,
+}: {
+  readonly subject: PermissionSubject;
+  readonly model: RoleGrantModel;
+  readonly onChange: (next: RoleGrantModel) => void;
+  readonly t: TypedTranslator;
+}) {
+  const keys = permissionKeysFor(subject);
+  const row = model.subjects.get(subject);
+  const allTicked = keys.every((key) => isKeyTicked(model, key));
+  const subjectLabel = t(subjectLabelKey(subject));
+
+  return (
+    <li className={`${GRID_TEMPLATE} py-2.5`}>
+      <div className="flex min-w-0 items-center gap-2">
+        <Checkbox
+          checked={allTicked}
+          aria-label={t('roles.form.grid.allActions', { vars: { subject: subjectLabel } })}
+          onChange={(event) => onChange(toggleSubject(model, subject, event.target.checked))}
+        />
+        <span className="truncate text-sm font-medium text-foreground">{subjectLabel}</span>
+        <InfoHint content={t(subjectHelpKey(subject))} size="lg" />
+        {row?.mode === 'wildcard' && !model.grantsEverything ? (
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {t('roles.form.grid.wildcard')}
+          </span>
+        ) : null}
+      </div>
+
+      {PERMISSION_ACTION_SLOT_IDS.map((slot) => (
+        <SlotCell
+          key={slot}
+          subject={subject}
+          subjectLabel={subjectLabel}
+          slot={slot}
+          model={model}
+          onChange={onChange}
+          t={t}
+        />
+      ))}
+    </li>
+  );
+}
+
+/**
+ * One cell of the grid — a checkbox, or nothing at all where the subject has no action in this
+ * column. An empty cell is what keeps a column meaning one thing all the way down.
+ */
+function SlotCell({
+  subject,
+  subjectLabel,
+  slot,
+  model,
+  onChange,
+  t,
+}: {
+  readonly subject: PermissionSubject;
+  readonly subjectLabel: string;
+  readonly slot: PermissionActionSlot;
+  readonly model: RoleGrantModel;
+  readonly onChange: (next: RoleGrantModel) => void;
+  readonly t: TypedTranslator;
+}) {
+  const key = permissionKeyInSlot(subject, slot);
+  if (!key) return <span />;
+
+  const [, action] = splitGrant(key);
+  const actionLabel = t(actionLabelKey(action as PermissionAction));
+  const slotLabel = t(slotLabelKey(slot));
+  // Most actions *are* their column — Items' `write` is simply "Change". The few that are not
+  // (Manage, Run, Print) caption themselves, so the grid never lets a column's heading stand in
+  // for an action that means something narrower.
+  const captioned = actionLabel !== slotLabel;
+
+  return (
+    <span className="flex flex-col items-center justify-center gap-0.5">
+      <Checkbox
+        checked={isKeyTicked(model, key)}
+        data-testid={`role-permission-${key}`}
+        aria-label={`${subjectLabel} — ${actionLabel}`}
+        onChange={(event) => onChange(toggleKey(model, key, event.target.checked))}
+      />
+      {captioned ? <span className="text-xs leading-none text-muted-foreground">{actionLabel}</span> : null}
+    </span>
   );
 }
