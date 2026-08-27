@@ -39,19 +39,16 @@
  * Every input is the id-union of the two snapshots, which both devices compute identically, and
  * every output is a pure function of it:
  *
- *  - **Which placement is kept** is the one with the most stock *before* the operation touched it
- *    — the replay of that placement's rows ordered strictly earlier than the operation's own first
- *    row there — with the smaller placement id breaking a tie. "Where the stock actually is" is
- *    not decoration: keep the draw at a placement the merged history has already emptied and the
- *    replay's floor-at-zero swallows the shortfall, which is the same lost unit in a different
- *    guise. Ordering the comparison strictly before the operation keeps the choice stable as later
- *    movements land, so a device that syncs again cannot flip it.
+ *  - **Which placement is kept** is pinned by any cancellation the ledger already carries, and
+ *    otherwise is the candidate that leaves no involved placement replaying below zero — see
+ *    {@link keptPlacement} for the rule and for why it is deliberately not decided by which copy
+ *    was written first.
  *  - **A cancellation's own row** is derived from the row it cancels: id `~<cancelled id>`, its
  *    placement, its `created_at`, and the negation of its `quantity_delta`. Two devices that both
  *    run the pass write the byte-identical row, so the union keeps one, and a device that runs it
- *    again re-derives the same row for the merge's `INSERT OR IGNORE` to skip. `~` sorts after
- *    every character the capture triggers mint an id from, so a cancellation always replays
- *    directly after its target, and an assertion that supersedes the one supersedes the other.
+ *    again re-derives the same row for the merge's `INSERT OR IGNORE` to skip. It shares its
+ *    target's `created_at` and carries no `asserted_quantity`, so the two rank together in the
+ *    replay's order and an assertion that supersedes the one supersedes the other.
  *
  * A cancellation is an ordinary movement row, so nothing downstream needs to know it is one — the
  * replay, the completeness guard and the compaction sweep all read it as the ledger entry it is.
@@ -80,7 +77,12 @@ import type { StockQuantityDelta, SyncSnapshot } from './types';
 /** The prefix marking a row that cancels another (see the module note). */
 const CANCELLATION_PREFIX = '~';
 
-/** The `\0`-joined placement id `byPlacement` in `./reconcile` also keys by, so the two align. */
+/**
+ * The stable placement id a `stock_deltas` or `stock_batches` row belongs to, so the same placement
+ * matches across two independently-built snapshots. `\0` cannot occur in a UUID or a batch key, so
+ * the composite never collides. Shared with `./reconcile`, whose own placement maps are compared
+ * against these by this very key — there can only be one definition of it.
+ */
 export function placementIdOf(row: SqlRow): string {
   return `${String(row.item_id)}\0${String(row.location_id)}\0${String(row.batch_key)}`;
 }
@@ -113,7 +115,8 @@ function toDelta(row: SqlRow): StockQuantityDelta {
  * Compare two rows by the total order {@link replayStockQuantity} replays in —
  * `(created_at, assertion-before-movement, code-unit id)`. Kept in step with it by hand because
  * the replay sorts projected deltas and this sorts raw rows; both must agree on what "earlier"
- * means, or the pre-operation baseline below would be measured over the wrong rows.
+ * means, or {@link firstLiveRow} would name a different row as the one that supersedes the
+ * ledger before it than the replay does.
  */
 function compareRows(a: SqlRow, b: SqlRow): number {
   const byTime = num(a.created_at) - num(b.created_at);
@@ -142,12 +145,20 @@ function groupByPlacement(rows: readonly SqlRow[] | undefined): Map<string, SqlR
 /**
  * The id-union of both sides' `stock_deltas`, one row per id.
  *
- * The copy kept is chosen from the rows' own content — earliest `created_at`, then smallest
- * movement — exactly as `unionById` in `./delta-crdt` does, and for the same reason: a derived id
+ * The copy kept is chosen from the rows' own content, never by which side is local: a derived id
  * genuinely exists twice, once per device, each stamped by its own clock, so "keep the local one"
  * would give the two devices different inputs and a pass that agrees with nobody.
+ *
+ * The three tiers — earliest `created_at`, then smallest movement, then a movement ahead of any
+ * assertion — are `reconcileStockQuantity`'s `prefer` callback, tier for tier. They have to be:
+ * this pass and the replay it feeds must pick the *same* copy, or a placement's newest assertion
+ * would be one row here and another there. It cannot simply call `unionById`, which unions the
+ * projected {@link StockQuantityDelta}s while the cancellation below needs the raw row's placement
+ * columns; keeping the rule in step by hand is the price of that.
  */
 function unionDeltas(local: SyncSnapshot, remote: SyncSnapshot): SqlRow[] {
+  // A movement's `null` sorts below every stated figure, exactly as `assertionRank` orders it.
+  const rank = (row: SqlRow): number => asserted(row) ?? Number.NEGATIVE_INFINITY;
   const merged = new Map<string, SqlRow>();
   for (const row of [...(local.stockDeltas ?? []), ...(remote.stockDeltas ?? [])]) {
     const id = String(row.id);
@@ -160,6 +171,8 @@ function unionDeltas(local: SyncSnapshot, remote: SyncSnapshot): SqlRow[] {
       merged.set(id, num(held.created_at) < num(row.created_at) ? held : row);
     } else if (num(held.quantity_delta) !== num(row.quantity_delta)) {
       merged.set(id, num(held.quantity_delta) < num(row.quantity_delta) ? held : row);
+    } else {
+      merged.set(id, rank(held) <= rank(row) ? held : row);
     }
   }
   return [...merged.values()];
@@ -196,7 +209,7 @@ function cancellationOf(row: SqlRow): SqlRow {
 export interface SplitLoanStockRepair {
   /** The cancelling `stock_deltas` rows to append to the ledger (union-by-id, INSERT OR IGNORE). */
   readonly cancellations: readonly SqlRow[];
-  /** The `\0`-joined placement ids the repair touches, for the quantity replay to cover. */
+  /** The placement ids the repair touches, for the quantity replay to cover. */
   readonly placements: ReadonlySet<string>;
 }
 
@@ -243,7 +256,7 @@ export function resolveSplitLoanStock(
   // is skipped, so a placement compacted on one device only cannot read as a split.
   const byKey = new Map<string, Map<string, SqlRow[]>>();
   for (const [id, rows] of mergedByPlacement) {
-    for (let i = newestAssertion(rows); i < rows.length; i += 1) {
+    for (let i = firstLiveRow(rows); i < rows.length; i += 1) {
       const row = rows[i]!;
       const key = operationKeyOf(String(row.id));
       if (key === null || !keys.has(key)) continue;
@@ -306,12 +319,17 @@ export function resolveSplitLoanStock(
 }
 
 /**
- * The index of the newest `asserted_quantity` row in a placement's ordered ledger, or 0 when it
- * has none — the point {@link replayStockQuantity} restarts its total from.
+ * The index a placement's ordered ledger becomes *live* from: one past its newest
+ * `asserted_quantity` row, or 0 when it has none.
+ *
+ * Exactly {@link replayStockQuantity}'s `from`. An assertion states the quantity outright, so its
+ * own `quantity_delta` is never summed and neither is anything before it — which means a row at or
+ * below this index reaches no replayed total, and cancelling one would move a placement by a delta
+ * the replay had never applied.
  */
-function newestAssertion(rows: readonly SqlRow[]): number {
+function firstLiveRow(rows: readonly SqlRow[]): number {
   for (let i = rows.length - 1; i >= 0; i -= 1) {
-    if (asserted(rows[i]!) !== null) return i;
+    if (asserted(rows[i]!) !== null) return i + 1;
   }
   return 0;
 }
@@ -359,8 +377,11 @@ function keptPlacement(
   return candidates[0]!;
 }
 
-/** One side's `stock_batches` quantities by placement id — the completeness guard's right-hand side. */
-function placementQuantities(rows: readonly SqlRow[] | undefined): Map<string, number> {
+/**
+ * One side's `stock_batches` quantities by placement id — the right-hand side of the
+ * ledger-completeness guard, here and in `reconcileStock`, which shares this.
+ */
+export function placementQuantities(rows: readonly SqlRow[] | undefined): Map<string, number> {
   const map = new Map<string, number>();
   for (const row of rows ?? []) map.set(placementIdOf(row), num(row.quantity));
   return map;
@@ -369,15 +390,22 @@ function placementQuantities(rows: readonly SqlRow[] | undefined): Map<string, n
 /**
  * Whether one side's own ledger for a placement reconstructs the quantity that side stored —
  * `reconcileStock`'s guard (2), asked of each side separately because that is the whole question:
- * whether *that* device's rows explain *that* device's figure. A side with no `stock_batches` row
- * for the placement is not asked; it has nothing the replay could contradict.
+ * whether *that* device's rows explain *that* device's figure.
+ *
+ * A side holding neither a `stock_batches` row nor a ledger row for the placement passes: it has
+ * recorded nothing the replay could contradict. A side with ledger rows but **no** row for them to
+ * explain does not, and agreeing with `reconcileStock` on that is load-bearing rather than
+ * fastidious — a cancellation this pass appends that the quantity pass then declines to settle
+ * leaves the placement's ledger permanently unable to explain its own row, and so on last-write-wins
+ * for good.
  */
 function sideExplainsItsOwnQuantity(
   id: string,
   byPlacement: ReadonlyMap<string, SqlRow[]>,
   quantities: ReadonlyMap<string, number>,
 ): boolean {
+  const rows = byPlacement.get(id) ?? [];
   const stored = quantities.get(id);
-  if (stored === undefined) return true;
-  return replayStockQuantity((byPlacement.get(id) ?? []).map(toDelta)) === stored;
+  if (stored === undefined) return rows.length === 0;
+  return replayStockQuantity(rows.map(toDelta)) === stored;
 }

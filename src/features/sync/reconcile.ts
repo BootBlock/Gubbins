@@ -41,7 +41,12 @@ import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings
 import { applyOffset } from './clock';
 import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detect';
 import { reconcileGauge, reconcileStockQuantity, replayGaugeValue, replayStockQuantity } from './delta-crdt';
-import { resolveSplitLoanStock, type SplitLoanStockRepair } from './loan-split-stock';
+import {
+  placementIdOf,
+  placementQuantities,
+  resolveSplitLoanStock,
+  type SplitLoanStockRepair,
+} from './loan-split-stock';
 import { enforceForeignKeys } from './fk-refs';
 import { resolveLww } from './lww';
 import { overwrittenFields } from './merge-audit';
@@ -2019,8 +2024,11 @@ function reconcileStock(
 
 /**
  * {@link reconcileStock}'s guard (2) for one side: its own ledger for the placement must replay to
- * the quantity it stored. A side with no `stock_batches` row there is vacuously complete — it has
- * recorded no figure the replay could contradict.
+ * the quantity it stored. A side holding neither a row nor a ledger for the placement passes — it
+ * has recorded nothing the replay could contradict — but a side with ledger rows and no row for
+ * them to explain does not, which is what the pre-#711 `replay(deltas) !== quantities.get(id)`
+ * comparison said when the right-hand side was `undefined`. `resolveSplitLoanStock` asks the same
+ * question the same way, so it never appends a cancellation this then refuses to settle.
  */
 function sideIsComplete(
   entry: { deltas: StockQuantityDelta[] } | undefined,
@@ -2028,19 +2036,6 @@ function sideIsComplete(
 ): boolean {
   if (stored === undefined) return entry === undefined || entry.deltas.length === 0;
   return replayStockQuantity(entry?.deltas ?? []) === stored;
-}
-
-/** Map each `stock_batches` row to its placement id → quantity, for the ledger-completeness check. */
-function placementQuantities(rows: readonly SqlRow[]): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const row of rows) {
-    // Same `\0`-joined placement id as {@link byPlacement}, so the two maps align by key.
-    map.set(
-      `${String(row.item_id)}\0${String(row.location_id)}\0${String(row.batch_key)}`,
-      num(row.quantity),
-    );
-  }
-  return map;
 }
 
 /** A `(item, location, batch)` placement key. */
@@ -2069,8 +2064,7 @@ function byPlacement(
       locationId: String(d.location_id),
       batchKey: String(d.batch_key),
     };
-    // `\0` cannot occur in a UUID or a batch key, so this composite id never collides.
-    const placementId = `${key.itemId}\0${key.locationId}\0${key.batchKey}`;
+    const placementId = placementIdOf(d);
     let entry = map.get(placementId);
     if (!entry) {
       entry = { key, deltas: [] };

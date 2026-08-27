@@ -148,8 +148,9 @@ describe('issue #711 — one loan drawn from two placements', () => {
   });
 
   it('gives the unit back when only one device returns the loan after merging', async () => {
-    // The same asymmetry, but the devices meet before the return, so the return is planned against
-    // the merged loan row rather than that device's own copy of it.
+    // A guard rather than a regression: with the devices meeting BEFORE the return, the return is
+    // planned against the merged loan row and the count already came out right without this pass.
+    // It is here so the cancellation cannot break the case it was not written for.
     await moveThenBothConvert();
     await settle();
 

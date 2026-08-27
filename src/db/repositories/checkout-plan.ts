@@ -47,7 +47,9 @@ const CHECKOUT_RETURN_NAMESPACE = '9b7c1f0a-1950-4e00-8b00-000000005420';
  * {@link CHECKOUT_RETURN_NAMESPACE}). A pure function of its inputs, which is the convergence
  * property: two devices returning the same loan offline derive the same ids.
  *
- * @internal Exported for unit tests only.
+ * Also read by the merge engine (`features/sync/merge.ts`), which precomputes a returned loan's
+ * key so the issue #711 split-stock pass can find that return's ledger rows without hashing inside
+ * its own synchronous pass. This is the one derivation of the value; nothing recomputes it.
  */
 export function checkInId(kind: string, checkoutId: string): Promise<string> {
   return uuidv5(`${kind}:${checkoutId}`, CHECKOUT_RETURN_NAMESPACE);

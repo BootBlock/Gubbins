@@ -1866,9 +1866,11 @@ const baselineStatements: SqlStatement[] = [
   // movement. `resolveSplitLoanStock` (`features/sync/loan-split-stock.ts`) uses this key to pair
   // them up and cancel the surplus.
   //
-  // The CHECK mirrors `stock_delta_capture.operation_key`'s: the same canonical-UUID shape the id
-  // derivation depends on, so a value that could not have produced those ids is refused here
-  // rather than left to make the merge silently match nothing.
+  // The CHECK is `stock_delta_capture.operation_key`'s, for the same reason: `|` is the
+  // derivation's own separator, and `%` and `_` are the wildcards its ordinal counts by, so a key
+  // carrying any of them mints ids that collide or miscount. The canonical-UUID shape the
+  // derivation actually relies on is checked in JS by `withOperationKey`, which is what wrote
+  // every value this column can hold.
   {
     sql: `ALTER TABLE checkouts ADD COLUMN stock_operation_key TEXT
             CHECK (stock_operation_key IS NULL OR stock_operation_key NOT GLOB '*[|%_]*');`,
