@@ -147,18 +147,63 @@ export function setWidgetVisible(layout: DashboardLayout, id: string, visible: b
 }
 
 /**
+ * Repair a layout in which two visible widgets claim the same cell, by re-homing every
+ * placement after the first claimant of a cell into the first genuinely free one
+ * (row-major). Returns the same reference when no cell is doubled up, which is the
+ * normal case — a well-formed layout is never rewritten.
+ *
+ * This is the read-side belt and braces for issue #627: the edit ops keep a collision
+ * from being *made*, but a board arranged by an older build (or synced in from another
+ * device) can already carry one, and two tiles stacked in one cell leave the underneath
+ * one unreadable and unclickable.
+ */
+function dedupeCells(layout: DashboardLayout): DashboardLayout {
+  const taken = new Set<string>();
+  const clashes = new Set<number>();
+  layout.forEach((p, i) => {
+    if (!p.visible) return;
+    const cell = `${p.x},${p.y}`;
+    if (taken.has(cell)) clashes.add(i);
+    else taken.add(cell);
+  });
+  if (clashes.size === 0) return layout;
+
+  // Row-major sweep for free cells, shared across the re-homed placements so two losers
+  // of the same cell can't be handed the same replacement.
+  let x = 0;
+  let y = 0;
+  const claimNextFree = (): { x: number; y: number } => {
+    for (;;) {
+      const cell = { x, y };
+      x += 1;
+      if (x >= DASHBOARD_COLUMNS) {
+        x = 0;
+        y += 1;
+      }
+      const key = `${cell.x},${cell.y}`;
+      if (!taken.has(key)) {
+        taken.add(key);
+        return cell;
+      }
+    }
+  };
+  return layout.map((p, i) => (clashes.has(i) ? { ...p, ...claimNextFree() } : p));
+}
+
+/**
  * Reconcile a stored layout against the live widget registry so the board survives the
  * registry changing across releases (a forward/backward-compatibility seam, mirroring
  * the Phase-39 "freshly-created locations" default and the §7.3 schema dictionary):
  * placements for unknown widgets are dropped, known placements keep their coords +
  * visibility, and newly-registered widgets are appended into the first free cell,
- * visible. An empty stored layout yields the row-major default.
+ * visible. An empty stored layout yields the row-major default. A stored layout that
+ * already stacks two widgets in one cell is repaired on read (see {@link dedupeCells}).
  */
 export function reconcileLayout(stored: DashboardLayout, registryIds: readonly string[]): DashboardLayout {
   if (stored.length === 0) return defaultLayout(registryIds);
 
   const known = new Set(registryIds);
-  let result: DashboardLayout = stored.filter((p) => known.has(p.id));
+  let result: DashboardLayout = dedupeCells(stored.filter((p) => known.has(p.id)));
 
   for (const id of registryIds) {
     if (result.some((p) => p.id === id)) continue;

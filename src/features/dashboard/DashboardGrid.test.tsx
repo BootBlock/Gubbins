@@ -235,6 +235,77 @@ describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
       visible: true,
     });
   });
+
+  /** Every cell claimed by a visible placement, as `x,y` keys — one entry per stacked tile. */
+  function visibleCells(): string[] {
+    return useLayoutStore
+      .getState()
+      .dashboardLayout.filter((p) => p.visible)
+      .map((p) => `${p.x},${p.y}`);
+  }
+
+  // Issue #627: the gated widget's cell used to look free to the coordinate ops, so an edit
+  // made while its module was off could put a second widget on it — and switching the module
+  // back on then drew the two tiles stacked, the underneath one unreadable and unclickable.
+  it('treats a gated widget’s cell as occupied when another tile is moved onto it', () => {
+    useLayoutStore.setState({ dashboardLayout: seeded });
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardGrid />);
+    enterCustomise();
+
+    // Gamma sits at (2,0); move it left onto (1,0), which the gated Beta holds.
+    fireEvent.click(screen.getByTestId('widget-move-gamma-left'));
+
+    const persisted = useLayoutStore.getState().dashboardLayout;
+    expect(persisted.find((p) => p.id === 'gamma')).toMatchObject({ x: 1, y: 0 });
+    // Beta is displaced into the cell Gamma vacated rather than buried underneath it.
+    expect(persisted.find((p) => p.id === 'beta')).toEqual({ id: 'beta', x: 2, y: 0, visible: true });
+    expect(new Set(visibleCells()).size).toBe(visibleCells().length);
+  });
+
+  it('never re-homes an added-back widget onto a gated widget’s cell', () => {
+    useLayoutStore.setState({
+      dashboardLayout: [
+        { id: 'beta', x: 0, y: 0, visible: true },
+        { id: 'alpha', x: 1, y: 0, visible: true },
+      ],
+    });
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardGrid />);
+    enterCustomise();
+
+    // Hide Alpha, then add it back. (0,0) looks free with Beta gated out — it is not.
+    fireEvent.click(screen.getByTestId('widget-hide-alpha'));
+    fireEvent.click(screen.getByTestId('widget-add-alpha'));
+
+    expect(useLayoutStore.getState().dashboardLayout).toContainEqual({
+      id: 'alpha',
+      x: 1,
+      y: 0,
+      visible: true,
+    });
+
+    // Turning Projects back on brings Beta back to its own cell, with nothing on top of it.
+    act(() => {
+      useModulesStore.getState().setFeatureIntent('projects', true);
+    });
+    expect(new Set(visibleCells()).size).toBe(visibleCells().length);
+  });
+
+  it('draws no empty drop cell over a gated widget’s cell', () => {
+    useLayoutStore.setState({ dashboardLayout: seeded });
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardGrid />);
+    enterCustomise();
+
+    // Beta is gated out of (1,0) — the 1-based CSS variables for that cell are (2,1).
+    const cells = screen.getAllByTestId('dashboard-drop-cell');
+    expect(cells.length).toBeGreaterThan(0);
+    const overBeta = cells.filter(
+      (el) => el.style.getPropertyValue('--gx') === '2' && el.style.getPropertyValue('--gy') === '1',
+    );
+    expect(overBeta).toHaveLength(0);
+  });
 });
 
 describe('DashboardGrid — shared Customise mode', () => {
