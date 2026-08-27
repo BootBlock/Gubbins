@@ -14,8 +14,21 @@
  *      a write and a push that both read the pre-change state would otherwise silently drop one
  *      of the two changes. One shared {@link SnapshotMutex}, created once at the composition root
  *      and handed to both, closes that gap.
+ *   3. **A precondition on the publish** — a mutex only binds writers *inside one process*, and
+ *      the snapshot has writers the bridge cannot enrol in one: the MCP stdio server is a separate
+ *      OS process, and in the folder-sync deployment the PWA writes the same file directly. So
+ *      every read records a {@link SnapshotStamp} of the file it read, and the publish
+ *      ({@link writeSnapshotAtomicIf} / {@link renameSnapshotIf}) refuses when the file no longer
+ *      carries that stamp. The caller re-reads and re-applies instead of overwriting a change it
+ *      never saw (issue #549).
+ *
+ * The precondition is a **narrowing**, not a true compare-and-swap: POSIX offers no atomic
+ * "rename only if unchanged", so the stat and the rename are still two calls. What it removes is
+ * the part of the window that actually matters — hydrating a real inventory runs the migration
+ * engine and a full restore, so the read→publish gap is *seconds*; the check→rename gap that
+ * remains is a single stat apart. A loser is turned into a retry rather than a silent loss.
  */
-import { rename, rm, writeFile } from 'node:fs/promises';
+import { open, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
@@ -64,18 +77,118 @@ export function tempSiblingPath(targetPath: string, tag: string): string {
 }
 
 /**
- * Write `text` to `snapshotPath` atomically: write a sibling temp file, then `rename` it over the
- * target (an atomic replace on the same filesystem). A reader therefore never observes a
- * half-written file, and the watcher ignores the differently-named temp and reacts only to the
- * final rename.
+ * The identity of one on-disk snapshot, captured when it was read, so a later publish can tell
+ * "still the file I read" from "someone replaced it while I worked".
+ *
+ * Three cheap fields rather than a content hash: hashing would mean re-reading the whole file at
+ * publish time, on the lock, to answer a question a `stat` already answers well. Each field closes
+ * a gap the others leave:
+ *
+ * - `mtimeMs` — the obvious signal, but its resolution is filesystem-dependent (one or two seconds
+ *   on some), so on its own two rapid publishes can look identical.
+ * - `size` — separates same-tick writes that changed the byte count, which most do.
+ * - `ino` — every publish is a `rename` of a *new* temp file over the target, so the inode changes
+ *   even when the bytes and the timestamp do not. Node reports `0` for it on some platforms; a
+ *   constant `0` compares equal and simply contributes nothing, so it can never cause a false
+ *   conflict.
  */
-export async function writeSnapshotAtomic(snapshotPath: string, text: string): Promise<void> {
-  const tmp = tempSiblingPath(snapshotPath, 'bridge');
-  await writeFile(tmp, text, 'utf8');
+export interface SnapshotStamp {
+  readonly mtimeMs: number;
+  readonly size: number;
+  readonly ino: number;
+}
+
+/**
+ * Thrown when a publish's precondition fails: the snapshot on disk is no longer the one the caller
+ * read, so writing would discard whatever replaced it. The caller retries from the read.
+ */
+export class SnapshotConflictError extends Error {
+  override readonly name = 'SnapshotConflictError';
+}
+
+/**
+ * Read the snapshot and stamp it in one shot, through a single file handle. The stamp comes from
+ * `fstat` on that handle, so it describes exactly the bytes that were read — a `stat` of the
+ * *path* either side of the read could describe a different file.
+ */
+export async function readSnapshotWithStamp(
+  snapshotPath: string,
+): Promise<{ text: string; stamp: SnapshotStamp }> {
+  const handle = await open(snapshotPath, 'r');
   try {
-    await rename(tmp, snapshotPath);
+    const text = await handle.readFile('utf8');
+    return { text, stamp: toStamp(await handle.stat()) };
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
+/**
+ * Stamp the snapshot without reading it. `null` means "no file there" — a legitimate state (the
+ * first push publishes into an empty folder), and one the precondition can require just as it
+ * requires a particular stamp.
+ */
+export async function statSnapshot(snapshotPath: string): Promise<SnapshotStamp | null> {
+  try {
+    return toStamp(await stat(snapshotPath));
+  } catch {
+    return null;
+  }
+}
+
+/** Whether two stamps describe the same file. Both `null` (still absent) counts as unchanged. */
+export function stampsMatch(a: SnapshotStamp | null, b: SnapshotStamp | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.mtimeMs === b.mtimeMs && a.size === b.size && a.ino === b.ino;
+}
+
+function toStamp(stats: { mtimeMs: number; size: number; ino: number }): SnapshotStamp {
+  return { mtimeMs: stats.mtimeMs, size: stats.size, ino: stats.ino };
+}
+
+/**
+ * Write `text` to `snapshotPath` atomically, but only while the file still carries `expected`.
+ * The temp file is written first (the slow part, off the precondition), then the check and the
+ * rename run back-to-back so as little as possible can happen between them.
+ *
+ * Throws {@link SnapshotConflictError} — leaving the target untouched — when the stamp has moved.
+ */
+export async function writeSnapshotAtomicIf(
+  snapshotPath: string,
+  text: string,
+  expected: SnapshotStamp | null,
+): Promise<void> {
+  const tmp = tempSiblingPath(snapshotPath, 'bridge');
+  try {
+    await writeFile(tmp, text, 'utf8');
+    await renameSnapshotIf(tmp, snapshotPath, expected);
   } catch (err) {
     await rm(tmp, { force: true }).catch(() => {});
     throw err;
   }
 }
+
+/**
+ * Publish an already-written temp file over `snapshotPath`, but only while the target still
+ * carries `expected`. Split from {@link writeSnapshotAtomicIf} because the push path streams the
+ * incoming body to its own temp and publishes *those* bytes verbatim; on a conflict the temp is
+ * deliberately left in place so the caller can retry without re-uploading.
+ */
+export async function renameSnapshotIf(
+  tempPath: string,
+  snapshotPath: string,
+  expected: SnapshotStamp | null,
+): Promise<void> {
+  if (!stampsMatch(await statSnapshot(snapshotPath), expected)) {
+    throw new SnapshotConflictError('The inventory snapshot changed while this change was being applied.');
+  }
+  await rename(tempPath, snapshotPath);
+}
+
+/**
+ * How many times a mutation re-reads and re-applies after losing a precondition before it gives
+ * up. Each attempt costs a full hydrate, so this is a handful of genuine collisions rather than a
+ * spin: a caller that loses three in a row is contending with a writer that is not going to stop,
+ * and a `409` telling it to try later is more honest than a fourth silent retry.
+ */
+export const SNAPSHOT_PUBLISH_ATTEMPTS = 3;

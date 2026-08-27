@@ -17,7 +17,11 @@
  *      `checkout` / `checkIn`) — firing the identical recompute + `updated_at` triggers and
  *      appending the same `item_history` ledger row the PWA writes on a local edit;
  *   4. serialise the whole merged state back via {@link buildLocalSnapshot} and write it
- *      **atomically** (temp file + rename) to the same `gubbins-sync.json`.
+ *      **atomically** (temp file + rename) to the same `gubbins-sync.json` — but only while that
+ *      file is still the one step 1 read. Hydration takes seconds on a real inventory, and the
+ *      PWA and a second bridge process both write the same file without sharing this process's
+ *      lock, so the publish carries a precondition and the write retries instead of replacing a
+ *      change it never saw (issue #549).
  *
  * The PWA then picks the change up on its next sync through the **identical** reconcile path it
  * uses for any peer: a bumped `updated_at` wins LWW (REMOTE_WINS), and a gauge change replays
@@ -29,7 +33,6 @@
  * directly over a hydrated fixture, while {@link executeWrite} is the thin file-IO orchestrator
  * with injectable IO for tests.
  */
-import { readFile } from 'node:fs/promises';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { CheckoutRepository } from '@/db/repositories/CheckoutRepository.ts';
 import { DbError } from '@/db/errors';
@@ -38,7 +41,15 @@ import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { buildLocalSnapshot } from '@/features/sync/snapshot';
 import { snapshotToBackupJson } from '@/features/sync/backup';
 import { fromDueDateInputValue, toDueDateInputValue } from '@/lib/date-input';
-import { createSnapshotMutex, writeSnapshotAtomic, type SnapshotMutex } from './snapshot-io.ts';
+import {
+  createSnapshotMutex,
+  readSnapshotWithStamp,
+  SnapshotConflictError,
+  SNAPSHOT_PUBLISH_ATTEMPTS,
+  writeSnapshotAtomicIf,
+  type SnapshotMutex,
+  type SnapshotStamp,
+} from './snapshot-io.ts';
 import { hydrateFromJson } from './hydrate.ts';
 import { loadItemDetail } from './item-detail.ts';
 import { toCheckout, type CheckoutDto, type ItemDetailDto } from './api/dto.ts';
@@ -368,16 +379,24 @@ function toWriteError(err: unknown): unknown {
   return err;
 }
 
-/** Injectable IO seam so {@link executeWrite} is testable without touching the real filesystem. */
+/**
+ * Injectable IO seam so {@link executeWrite} is testable without touching the real filesystem.
+ *
+ * `readSnapshot` hands back the file's {@link SnapshotStamp} alongside its text, and
+ * `writeSnapshotAtomic` takes that stamp back as a **precondition** — it must refuse (by throwing
+ * {@link SnapshotConflictError}) when the file no longer matches. The pair is what stops a write
+ * from replacing a change made by a writer outside this process's mutex (issue #549), so a fake
+ * that ignores the stamp is testing a weaker contract than the real one.
+ */
 export interface WriteIo {
-  readSnapshot(snapshotPath: string): Promise<string>;
-  writeSnapshotAtomic(snapshotPath: string, text: string): Promise<void>;
+  readSnapshot(snapshotPath: string): Promise<{ text: string; stamp: SnapshotStamp | null }>;
+  writeSnapshotAtomic(snapshotPath: string, text: string, expected: SnapshotStamp | null): Promise<void>;
   now(): number;
 }
 
 const defaultIo: WriteIo = {
-  readSnapshot: (p) => readFile(p, 'utf8'),
-  writeSnapshotAtomic,
+  readSnapshot: readSnapshotWithStamp,
+  writeSnapshotAtomic: writeSnapshotAtomicIf,
   now: () => Date.now(),
 };
 
@@ -403,15 +422,42 @@ export interface WriteResult {
 
 /**
  * Perform one write end-to-end: read the snapshot fresh, hydrate, apply the mutation, then
- * write the merged snapshot back atomically. A read/parse failure surfaces as a `503` (the
- * snapshot is briefly unavailable / mid-write) rather than leaking internals.
+ * write the merged snapshot back atomically **and only while the file is still the one that was
+ * read**. A read/parse failure surfaces as a `503` (the snapshot is briefly unavailable /
+ * mid-write) rather than leaking internals.
+ *
+ * The whole cycle is retried when the precondition fails, because that means another writer —
+ * the PWA's folder sync, or a bridge in a second process — published while this one was
+ * hydrating, and the mutation must be re-derived from *their* result rather than applied on top
+ * of a state that no longer exists (issue #549). Hydration is expensive, so the retries are
+ * bounded by {@link SNAPSHOT_PUBLISH_ATTEMPTS}; exhausting them is a `409` asking the caller to
+ * try again, never a silent overwrite.
  */
 export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteResult> {
   const io: WriteIo = { ...defaultIo, ...options.io };
 
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await attemptWrite(options, io);
+    } catch (err) {
+      if (!(err instanceof SnapshotConflictError)) throw err;
+      if (attempt >= SNAPSHOT_PUBLISH_ATTEMPTS) {
+        throw new WriteError(
+          409,
+          'conflict',
+          'The inventory changed while this change was being applied. Try again.',
+        );
+      }
+    }
+  }
+}
+
+/** One read → hydrate → apply → conditional-publish pass. Throws on a lost precondition. */
+async function attemptWrite(options: ExecuteWriteOptions, io: WriteIo): Promise<WriteResult> {
   let text: string;
+  let stamp: SnapshotStamp | null;
   try {
-    text = await io.readSnapshot(options.snapshotPath);
+    ({ text, stamp } = await io.readSnapshot(options.snapshotPath));
   } catch {
     throw new WriteError(503, 'snapshot_unavailable', 'The inventory snapshot is unavailable.');
   }
@@ -430,7 +476,7 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteR
     if (detail === null) throw new WriteError(404, 'not_found', 'No such item.');
 
     const snapshot = await buildLocalSnapshot(driver, io.now());
-    await io.writeSnapshotAtomic(options.snapshotPath, snapshotToBackupJson(snapshot));
+    await io.writeSnapshotAtomic(options.snapshotPath, snapshotToBackupJson(snapshot), stamp);
     return { item: detail, checkout: outcome.checkout === null ? null : toCheckout(outcome.checkout) };
   } finally {
     await safeClose(driver);
@@ -444,6 +490,11 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteR
  * other (a lost update). The mutex is shared with the push-ingest surface at the composition root,
  * so a write and a snapshot push likewise apply one-at-a-time rather than racing on the same file;
  * left to its own default each executor still serialises its own writes.
+ *
+ * A mutex reaches no further than its own process, and the snapshot has writers outside it — the
+ * MCP stdio server runs as a second process, and under folder sync the PWA writes the file
+ * directly. Those are covered instead by the publish precondition {@link executeWrite} carries,
+ * which needs no shared object and so holds across process boundaries.
  */
 export function createWriteExecutor(
   snapshotPath: string,

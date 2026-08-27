@@ -161,6 +161,14 @@ rather than replacing it wholesale. So a stock change an assistant made a moment
 wiped out by a slightly-older push from a device that hadn't seen it — both survive, by the same
 last-write-wins merge the rest of Gubbins uses.
 
+The same protection holds when the change comes from somewhere the bridge doesn't control — the
+app's own [[folder sync|Cloud-Sync]] saving to the shared file, or a separate
+[[assistant connection|AI-Assistant-Query-MCP]] running beside the web API. Before the bridge
+saves, it checks the file is still the one it read. If something else got there first, it re-reads
+and re-applies your change on top rather than replacing their work. Very occasionally it may report
+that the inventory kept changing underneath it and ask you to try again — that means nothing was
+changed, so simply repeating the action is safe.
+
 > **⚠️ Heads-up**
 > *Push* is a **separate** switch from write-back, but it isn't a milder one — it's **wider**.
 > Write-back makes one bounded change from that short list; a push merges a whole dataset in, which

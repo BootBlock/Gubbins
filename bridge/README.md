@@ -361,7 +361,7 @@ every endpoint is a **`GET`** (or [`HEAD`](#head-requests)) and strictly read-on
 - **Errors** use a structured, machine-readable envelope:
   `{ "error": { "code": "not_found", "message": "…" } }`. Codes: `bad_request`,
   `unauthorized`, `forbidden`, `not_found`, `method_not_allowed`, `unsupported_media_type`,
-  `too_many_requests`, `snapshot_unavailable`, `unprocessable`, `payload_too_large`,
+  `too_many_requests`, `conflict`, `snapshot_unavailable`, `unprocessable`, `payload_too_large`,
   `internal_error`, plus — on the opt-in Home Assistant reads only — `scale_unavailable`,
   `scale_not_a_number`, `home_assistant_unreachable`, `home_assistant_unauthorised` and
   `home_assistant_error`. The [spec](#openapi-spec) publishes the same list, generated from
@@ -1275,6 +1275,14 @@ enabled.
 > next sync through the **identical** merge path it uses for any peer — a bumped timestamp wins
 > LWW, a gauge change replays through the Delta-CRDT — so there is **no drift and no forked merge
 > logic**.
+>
+> **And under a second writer.** Reading and re-hydrating the snapshot takes seconds on a real
+> inventory, and the file has writers this process cannot lock — the MCP server runs separately,
+> and under folder sync the app writes it directly. So the publish is **conditional**: the bridge
+> records which file it read and refuses to replace anything else, re-reading and re-applying the
+> change instead. A change made by someone else in that window is never quietly discarded
+> ([#549](https://github.com/BootBlock/Gubbins/issues/549)). If the retries keep losing, the call
+> returns `409` (`conflict`) having changed nothing, rather than overwriting.
 
 ### Enabling it
 
@@ -1324,8 +1332,9 @@ Status codes: `200`, `400` (malformed body, or a field of the wrong JSON type), 
 `checkouts:write` for that endpoint), `404` (writes disabled, no such item, or a `checkoutId` that
 is not this item's), `422` (`unprocessable` — the change was rejected: quantity below zero, the
 wrong tracking mode, no borrower, not enough stock at the source, or an item with several open
-loans and no `checkoutId` naming which one is back), `429` (rate-limited), `503` (snapshot briefly
-unavailable). The `/api/v1` index reports `"writable": true|false` and lists the enabled write
+loans and no `checkoutId` naming which one is back), `409` (`conflict` — another writer kept
+replacing the snapshot mid-write; nothing was changed, so retry), `429` (rate-limited), `503`
+(snapshot briefly unavailable). The `/api/v1` index reports `"writable": true|false` and lists the enabled write
 paths.
 
 ### Example
@@ -1385,7 +1394,11 @@ above — but **not a lesser one**.
 > clobbered ([#154](https://github.com/BootBlock/Gubbins/issues/154)). The merged result is written
 > back **atomically** (temp file + rename) and the unchanged watcher re-hydrates it. Only when there
 > is nothing to merge into — a first push, or an unreadable served snapshot — is the pushed body
-> placed verbatim.
+> placed verbatim. As with a write, the publish is **conditional** on the served snapshot still
+> being the one that was merged into, so a writer outside this process — the MCP server, or the
+> app's own folder sync — cannot have its change replaced by the push
+> ([#549](https://github.com/BootBlock/Gubbins/issues/549)); a lost race re-merges, and a push that
+> keeps losing returns `409` (`conflict`) having changed nothing.
 
 ### Enabling it
 
@@ -1408,7 +1421,8 @@ the cap on a constrained host (a Pi/NAS on an SD card).
 
 Status codes: `200` (accepted), `400` (malformed/non-JSON body), `401` (missing/unknown/revoked
 token), `403` (the owner's role lacks `bridge:write` or `sync:write`),
-`404` (push disabled, or a `.sqlite` source), `413` (`payload_too_large` — body over the cap),
+`404` (push disabled, or a `.sqlite` source), `409` (`conflict` — another writer kept replacing the
+snapshot mid-merge; nothing was changed, so retry), `413` (`payload_too_large` — body over the cap),
 `422` (`unprocessable` — a snapshot from a newer Gubbins build), `429` (rate-limited). The
 `/api/v1` index reports `"pushable": true|false`.
 

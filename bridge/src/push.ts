@@ -22,7 +22,11 @@
  * This shares the merge machinery with the §7.3 limited writes (`write.ts`) and the same shared
  * single-flight ({@link import('./snapshot-io.ts').SnapshotMutex}), so a push and a write can never
  * read the same pre-change state and clobber one another. They remain independent opt-ins
- * (`GUBBINS_BRIDGE_ALLOW_PUSH` vs `GUBBINS_BRIDGE_ALLOW_WRITES`).
+ * (`GUBBINS_BRIDGE_ALLOW_PUSH` vs `GUBBINS_BRIDGE_ALLOW_WRITES`). Because that single-flight
+ * reaches no further than this process — the MCP server is a second one, and under folder sync the
+ * PWA writes the file itself — the publish additionally requires the snapshot to still be the one
+ * that was merged into, and a push that loses that race re-merges rather than overwriting
+ * (issue #549).
  *
  * **Read-only-by-construction still holds for the caller's data:** ingest never runs caller SQL —
  * it validates JSON and merges through the app's own reconcile/apply. The single `parseASTtoSQL`
@@ -34,7 +38,7 @@
  * lock-free — only the merge-and-publish step holds the shared lock, so a large upload does not
  * stall every write for its whole duration.
  */
-import { open, readFile, rename, rm } from 'node:fs/promises';
+import { open, readFile, rm } from 'node:fs/promises';
 import { parseBackupJson, snapshotToBackupJson } from '@/features/sync/backup';
 import { mergeSnapshot } from '@/features/sync/merge';
 import type { SyncSnapshot } from '@/features/sync/types';
@@ -43,9 +47,14 @@ import { errorMessage } from './errors.ts';
 import { hydrateFromJson } from './hydrate.ts';
 import {
   createSnapshotMutex,
+  readSnapshotWithStamp,
+  renameSnapshotIf,
+  SnapshotConflictError,
+  SNAPSHOT_PUBLISH_ATTEMPTS,
   tempSiblingPath,
-  writeSnapshotAtomic,
+  writeSnapshotAtomicIf,
   type SnapshotMutex,
+  type SnapshotStamp,
 } from './snapshot-io.ts';
 import type { ApiErrorCode } from './api/respond.ts';
 
@@ -150,8 +159,25 @@ export async function ingestSnapshot(options: IngestOptions): Promise<PushSummar
     const incoming = parseIncomingSnapshot(await readFile(tmp, 'utf8'));
 
     // Publish under the shared lock: merge into the served snapshot so a concurrent write is never
-    // silently discarded (issue #154).
-    return await mutex.runExclusive(() => publishIncoming(options.snapshotPath, tmp, incoming, now));
+    // silently discarded (issue #154). The lock binds only writers in this process, so the publish
+    // also carries a precondition on the file it merged into, and a lost race re-merges against
+    // whatever replaced it rather than overwriting it (issue #549).
+    return await mutex.runExclusive(async () => {
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await publishIncoming(options.snapshotPath, tmp, incoming, now);
+        } catch (err) {
+          if (!(err instanceof SnapshotConflictError)) throw err;
+          if (attempt >= SNAPSHOT_PUBLISH_ATTEMPTS) {
+            throw new PushError(
+              409,
+              'conflict',
+              'The inventory changed while this snapshot was being merged. Try again.',
+            );
+          }
+        }
+      }
+    });
   } finally {
     await rm(tmp, { force: true }).catch(() => {});
   }
@@ -202,12 +228,15 @@ async function publishIncoming(
   now: () => number,
 ): Promise<PushSummary> {
   let existing: string;
+  let stamp: SnapshotStamp | null;
   try {
-    existing = await readFile(snapshotPath, 'utf8');
+    ({ text: existing, stamp } = await readSnapshotWithStamp(snapshotPath));
   } catch {
     // No snapshot on disk yet (first push) — nothing to merge, so publish the pushed bytes verbatim
-    // (an atomic rename of the temp we already streamed).
-    await rename(tmp, snapshotPath);
+    // (an atomic rename of the temp we already streamed), but only while the folder is still empty.
+    // If a snapshot appeared in between there IS something to merge, and the retry does so. The
+    // temp survives a refused rename, so the retry never needs the body uploaded again.
+    await renameSnapshotIf(tmp, snapshotPath, null);
     return { formatVersion: incoming.formatVersion, generatedAt: incoming.generatedAt };
   }
 
@@ -217,12 +246,14 @@ async function publishIncoming(
   } catch (err) {
     // The served snapshot is unreadable/corrupt — there is nothing mergeable to preserve, so a
     // replace is the only option (and cannot lose a write it could never have read). Surface it so
-    // a genuine corruption is visible rather than silently overwritten.
+    // a genuine corruption is visible rather than silently overwritten. Still conditional: if the
+    // corrupt bytes were a half-written file that has since been republished intact, the retry
+    // merges into the good one instead of discarding it.
     console.warn(
       `Push: the existing snapshot could not be read to merge into (${errorMessage(err)}); ` +
         'replacing it with the pushed snapshot.',
     );
-    await rename(tmp, snapshotPath);
+    await renameSnapshotIf(tmp, snapshotPath, stamp);
     return { formatVersion: incoming.formatVersion, generatedAt: incoming.generatedAt };
   }
 
@@ -241,7 +272,7 @@ async function publishIncoming(
       historyPrunedBefore: 0,
       forceTies: false,
     });
-    await writeSnapshotAtomic(snapshotPath, snapshotToBackupJson(outcome.merged));
+    await writeSnapshotAtomicIf(snapshotPath, snapshotToBackupJson(outcome.merged), stamp);
     return { formatVersion: outcome.merged.formatVersion, generatedAt: outcome.merged.generatedAt };
   } finally {
     await safeClose(driver);

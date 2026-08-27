@@ -54,6 +54,12 @@ exactly as doing it in the app would. Every change is recorded in the
 happened, and the changes flow back through the same [[sync|Cloud-Sync]] as any other, so your other
 devices pick them up normally.
 
+An assistant connection and the bridge's web API can run side by side over the same data, and your
+devices may be syncing to that file at the same time. Each change checks the file is still the one
+it read before saving, so an assistant's adjustment can't quietly wipe out one made a moment
+earlier somewhere else. If it keeps losing that race the assistant is told the inventory kept
+changing and to try again — nothing was changed, so asking again is safe.
+
 > **⚠️ Heads-up**
 > This is off by default, and worth a moment's thought before switching on. Unlike the bridge's
 > web API — where every caller presents an [[API token|Bridge-API-Tokens]] and is held to that

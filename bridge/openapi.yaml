@@ -2851,6 +2851,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: "Another writer replaced the snapshot while this change was being applied, and re-reading and re-applying kept losing the same race — so nothing was changed rather than the other writer's change being overwritten. The bridge's own lock cannot reach the MCP server (a separate process) or the app writing the synced file directly, so the publish is conditional on the file still being the one that was read. Retry."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           description: "The request body was not declared as application/json."
           content:
@@ -2966,6 +2972,12 @@ paths:
               schema:
                 type: "string"
               description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "Another writer replaced the snapshot while this change was being applied, and re-reading and re-applying kept losing the same race — so nothing was changed rather than the other writer's change being overwritten. The bridge's own lock cannot reach the MCP server (a separate process) or the app writing the synced file directly, so the publish is conditional on the file still being the one that was read. Retry."
           content:
             application/json:
               schema:
@@ -3110,6 +3122,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: "Another writer replaced the snapshot while this change was being applied, and re-reading and re-applying kept losing the same race — so nothing was changed rather than the other writer's change being overwritten. The bridge's own lock cannot reach the MCP server (a separate process) or the app writing the synced file directly, so the publish is conditional on the file still being the one that was read. Retry."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           description: "The request body was not declared as application/json."
           content:
@@ -3222,6 +3240,12 @@ paths:
               schema:
                 type: "string"
               description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "Another writer replaced the snapshot while this change was being applied, and re-reading and re-applying kept losing the same race — so nothing was changed rather than the other writer's change being overwritten. The bridge's own lock cannot reach the MCP server (a separate process) or the app writing the synced file directly, so the publish is conditional on the file still being the one that was read. Retry."
           content:
             application/json:
               schema:
@@ -3349,6 +3373,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: "Another writer replaced the snapshot while this change was being applied, and re-reading and re-applying kept losing the same race — so nothing was changed rather than the other writer's change being overwritten. The bridge's own lock cannot reach the MCP server (a separate process) or the app writing the synced file directly, so the publish is conditional on the file still being the one that was read. Retry."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           description: "The request body was not declared as application/json."
           content:
@@ -3459,6 +3489,12 @@ paths:
               schema:
                 type: "string"
               description: "The methods the bridge serves, e.g. \"GET, HEAD, OPTIONS\" — see the description above for when this is bridge-wide rather than scoped to the path."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: "Another writer replaced the snapshot while this change was being applied, and re-reading and re-applying kept losing the same race — so nothing was changed rather than the other writer's change being overwritten. The bridge's own lock cannot reach the MCP server (a separate process) or the app writing the synced file directly, so the publish is conditional on the file still being the one that was read. Retry."
           content:
             application/json:
               schema:
@@ -4774,6 +4810,7 @@ components:
               - "unsupported_media_type"
               - "unprocessable"
               - "payload_too_large"
+              - "conflict"
               - "scale_unavailable"
               - "scale_not_a_number"
               - "home_assistant_unreachable"
