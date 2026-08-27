@@ -106,6 +106,16 @@ describe('issue #542 — preserving a return without undoing the merge', () => {
     expect(row?.updated_at).toBe(501); // the closed copy's stamp +1 — frame-stable on both devices
   });
 
+  it('does not also report the preserved return as a lost edit', () => {
+    // Detection runs before the repair, so every column the repair carries across must be excused
+    // from it — otherwise the sync tells the user an edit was overwritten on the very row whose
+    // distinguishing values it has just preserved, and "Use my version" rewrites half the repair.
+    const plan = reconcile(local, remote, { ...opts, conflictSince: 1, now: 5000 });
+
+    expect(plan.loanReturnsPreserved).toEqual([{ itemId: 'i1', checkoutId: 'k1' }]);
+    expect(plan.conflicts.filter((c) => c.tableName === 'checkouts')).toEqual([]);
+  });
+
   it('leaves an uncontested return alone, re-pointing it exactly as any other row', () => {
     // Same collision, but both copies agree the loan is still open — nothing for the repair to do.
     const openRemote = snapshot({ ...remote.tables, checkouts: [loan({ updated_at: 500 })] });
