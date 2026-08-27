@@ -4,6 +4,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { SYNC_TABLES, type SyncTable } from '@/db/repositories';
 import { FK_REFS } from './fk-refs';
+import { REMOVED_PARENT_TABLES } from './reconcile';
 
 /**
  * Drift guard (issues #152, #246). Both the reconciliation engine and the backup codec decide
@@ -165,6 +166,34 @@ describe('FK_REFS covers the real schema (#152, #246)', () => {
       }
     }
     expect(stale).toEqual([]);
+  });
+
+  it('names a parent the merge builds a removed-id set for (#536)', () => {
+    // The other half of the registry's contract. `enforceForeignKeys` reads a parent with no
+    // removed-id set as "intact", so an entry whose parent `computeRemovedParents` does not
+    // produce is dead code: the guard never fires, and the merge re-inserts the orphan it exists
+    // to drop — a hard `FOREIGN KEY constraint failed` that rolls the whole atomic apply back and
+    // recurs on every retry. `location_photos` and `project_budget_categories` were exactly that.
+    const parents = new Set(
+      Object.values(FK_REFS)
+        .flatMap((refs) => refs ?? [])
+        .map((ref) => ref.parent),
+    );
+    // Non-empty, or the assertion below would be vacuous.
+    expect(parents.size).toBeGreaterThan(10);
+    const covered = new Set<SyncTable>(REMOVED_PARENT_TABLES);
+    expect([...parents].filter((parent) => !covered.has(parent))).toEqual([]);
+  });
+
+  it('leaves no removed-parent set that nothing references (#536)', () => {
+    // The converse: a table kept in REMOVED_PARENT_TABLES after its last FK_REFS entry went is
+    // dead work, and reads as coverage the registry no longer has.
+    const parents = new Set(
+      Object.values(FK_REFS)
+        .flatMap((refs) => refs ?? [])
+        .map((ref) => ref.parent),
+    );
+    expect(REMOVED_PARENT_TABLES.filter((table) => !parents.has(table))).toEqual([]);
   });
 
   it('keeps the EXEMPT list free of stale entries', () => {
