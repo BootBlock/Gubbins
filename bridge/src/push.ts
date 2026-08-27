@@ -172,7 +172,7 @@ export async function ingestSnapshot(options: IngestOptions): Promise<PushSummar
             throw new PushError(
               409,
               'conflict',
-              'The inventory changed while this snapshot was being merged. Try again.',
+              'The inventory changed, or was in use, while this snapshot was being merged. Try again.',
             );
           }
         }

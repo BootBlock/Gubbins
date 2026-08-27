@@ -1281,8 +1281,10 @@ enabled.
 > and under folder sync the app writes it directly. So the publish is **conditional**: the bridge
 > records which file it read and refuses to replace anything else, re-reading and re-applying the
 > change instead. A change made by someone else in that window is never quietly discarded
-> ([#549](https://github.com/BootBlock/Gubbins/issues/549)). If the retries keep losing, the call
-> returns `409` (`conflict`) having changed nothing, rather than overwriting.
+> ([#549](https://github.com/BootBlock/Gubbins/issues/549)). A publish refused because another
+> reader had the file open (Node opens without `FILE_SHARE_DELETE`, so a `rename` over a file being
+> read fails `EPERM` on Windows) retries the same way. If the retries keep losing, the call returns
+> `409` (`conflict`) having changed nothing, rather than overwriting.
 
 ### Enabling it
 
@@ -1333,7 +1335,8 @@ Status codes: `200`, `400` (malformed body, or a field of the wrong JSON type), 
 is not this item's), `422` (`unprocessable` — the change was rejected: quantity below zero, the
 wrong tracking mode, no borrower, not enough stock at the source, or an item with several open
 loans and no `checkoutId` naming which one is back), `409` (`conflict` — another writer kept
-replacing the snapshot mid-write; nothing was changed, so retry), `429` (rate-limited), `503`
+replacing the snapshot mid-write, or holding it open; nothing was changed, so retry), `429`
+(rate-limited), `503`
 (snapshot briefly unavailable). The `/api/v1` index reports `"writable": true|false` and lists the enabled write
 paths.
 
@@ -1422,7 +1425,8 @@ the cap on a constrained host (a Pi/NAS on an SD card).
 Status codes: `200` (accepted), `400` (malformed/non-JSON body), `401` (missing/unknown/revoked
 token), `403` (the owner's role lacks `bridge:write` or `sync:write`),
 `404` (push disabled, or a `.sqlite` source), `409` (`conflict` — another writer kept replacing the
-snapshot mid-merge; nothing was changed, so retry), `413` (`payload_too_large` — body over the cap),
+snapshot mid-merge, or holding it open; nothing was changed, so retry), `413` (`payload_too_large`
+— body over the cap),
 `422` (`unprocessable` — a snapshot from a newer Gubbins build), `429` (rate-limited). The
 `/api/v1` index reports `"pushable": true|false`.
 

@@ -127,13 +127,46 @@ export async function readSnapshotWithStamp(
  * Stamp the snapshot without reading it. `null` means "no file there" — a legitimate state (the
  * first push publishes into an empty folder), and one the precondition can require just as it
  * requires a particular stamp.
+ *
+ * Only a *missing* path answers `null`; every other failure is rethrown. Collapsing the two would
+ * be the precondition's own back door: the first-push publish requires `null`, so a permission or
+ * IO failure reported as "absent" would let the pushed body be renamed over a snapshot that is
+ * present and merely unreadable at that instant — the exact loss the check exists to stop.
  */
 export async function statSnapshot(snapshotPath: string): Promise<SnapshotStamp | null> {
   try {
     return toStamp(await stat(snapshotPath));
-  } catch {
-    return null;
+  } catch (err) {
+    if (isMissingPath(err)) return null;
+    throw err;
   }
+}
+
+/** Whether a filesystem error means "nothing is at that path", as opposed to "could not look". */
+function isMissingPath(err: unknown): boolean {
+  return errorCode(err) === 'ENOENT' || errorCode(err) === 'ENOTDIR';
+}
+
+/**
+ * Whether a failed `rename` was a sharing violation rather than a settled refusal — someone else
+ * had the target open at that instant.
+ *
+ * This is Windows in particular: Node opens a file without `FILE_SHARE_DELETE`, so a `rename` over
+ * a path another process is *reading* fails `EPERM`. The bridge's own snapshot is read constantly
+ * (the watcher re-hydrates it, a second bridge process reads it, the app syncs it), and a
+ * precondition that retries makes those renames more frequent rather than less, so the case is
+ * expected rather than exotic. Retrying is right: nothing was published, so the caller re-reads
+ * and re-applies exactly as it does after a lost precondition. A genuinely permanent refusal — a
+ * read-only folder — simply exhausts the attempts and lands as a `409` naming the file it could
+ * not replace, which says more than an opaque `500` would.
+ */
+function isSharingViolation(err: unknown): boolean {
+  const code = errorCode(err);
+  return code === 'EPERM' || code === 'EBUSY' || code === 'EACCES';
+}
+
+function errorCode(err: unknown): unknown {
+  return (err as { code?: unknown } | null)?.code;
 }
 
 /** Whether two stamps describe the same file. Both `null` (still absent) counts as unchanged. */
@@ -179,10 +212,25 @@ export async function renameSnapshotIf(
   snapshotPath: string,
   expected: SnapshotStamp | null,
 ): Promise<void> {
-  if (!stampsMatch(await statSnapshot(snapshotPath), expected)) {
+  let actual: SnapshotStamp | null;
+  try {
+    actual = await statSnapshot(snapshotPath);
+  } catch {
+    // The check itself failed, so the file's state is unknown — which is not permission to
+    // overwrite it. Reported as a conflict so the caller retries and then gives up with a `409`,
+    // rather than as an opaque `500`. The cause is deliberately not quoted: it would carry the
+    // snapshot's path back to the caller.
+    throw new SnapshotConflictError('The inventory snapshot could not be checked before publishing.');
+  }
+  if (!stampsMatch(actual, expected)) {
     throw new SnapshotConflictError('The inventory snapshot changed while this change was being applied.');
   }
-  await rename(tempPath, snapshotPath);
+  try {
+    await rename(tempPath, snapshotPath);
+  } catch (err) {
+    if (!isSharingViolation(err)) throw err;
+    throw new SnapshotConflictError('The inventory snapshot was in use and could not be replaced.');
+  }
 }
 
 /**

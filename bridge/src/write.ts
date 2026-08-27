@@ -445,7 +445,7 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteR
         throw new WriteError(
           409,
           'conflict',
-          'The inventory changed while this change was being applied. Try again.',
+          'The inventory changed, or was in use, while this change was being applied. Try again.',
         );
       }
     }

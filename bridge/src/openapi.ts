@@ -414,11 +414,12 @@ function errorResponsesIn(errorRef: string, codes: readonly number[]): JsonValue
       content: jsonContent(errorRef),
     },
     409: response(
-      'Another writer replaced the snapshot while this change was being applied, and re-reading ' +
-        'and re-applying kept losing the same race — so nothing was changed rather than the other ' +
-        "writer's change being overwritten. The bridge's own lock cannot reach the MCP server (a " +
-        'separate process) or the app writing the synced file directly, so the publish is ' +
-        'conditional on the file still being the one that was read. Retry.',
+      'Another writer replaced the snapshot — or had it open — while this change was being ' +
+        'applied, and re-reading and re-applying kept losing the same race, so nothing was ' +
+        "changed rather than the other writer's change being overwritten. The bridge's own lock " +
+        'cannot reach the MCP server (a separate process) or the app writing the synced file ' +
+        'directly, so the publish is conditional on the file still being the one that was read. ' +
+        'Retry.',
       errorRef,
     ),
     413: response(
