@@ -431,16 +431,14 @@ function planTombstoneClears(
     ...collisions.map((c) => [c.table, c.loserId] as const),
   ]);
 
+  // One entry per surviving upsert. `localUpserts` holds at most one row per (table, id) —
+  // `resolveTableMerges` walks a per-table id set, and every later pass replaces an entry in
+  // place rather than appending a second — so the list needs no de-duplication of its own.
   const clears: TombstoneClear[] = [];
-  const emitted = new Map<string, Set<string>>();
   for (const { table, row } of localUpserts) {
     const id = String(row.id);
     if (held.get(table)?.has(id) !== true) continue;
     if (excluded.get(table)?.has(id) === true) continue;
-    let done = emitted.get(table);
-    if (done === undefined) emitted.set(table, (done = new Set<string>()));
-    if (done.has(id)) continue;
-    done.add(id);
     clears.push({ tableName: table, id });
   }
   return clears;
