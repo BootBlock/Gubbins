@@ -159,35 +159,25 @@ export function setWidgetVisible(layout: DashboardLayout, id: string, visible: b
  */
 function dedupeCells(layout: DashboardLayout): DashboardLayout {
   const taken = new Set<string>();
-  const clashes = new Set<number>();
+  const clashes: number[] = [];
   layout.forEach((p, i) => {
     if (!p.visible) return;
     const cell = `${p.x},${p.y}`;
-    if (taken.has(cell)) clashes.add(i);
+    if (taken.has(cell)) clashes.push(i);
     else taken.add(cell);
   });
-  if (clashes.size === 0) return layout;
+  if (clashes.length === 0) return layout;
 
-  // Row-major sweep for free cells, shared across the re-homed placements so two losers
-  // of the same cell can't be handed the same replacement.
-  let x = 0;
-  let y = 0;
-  const claimNextFree = (): { x: number; y: number } => {
-    for (;;) {
-      const cell = { x, y };
-      x += 1;
-      if (x >= DASHBOARD_COLUMNS) {
-        x = 0;
-        y += 1;
-      }
-      const key = `${cell.x},${cell.y}`;
-      if (!taken.has(key)) {
-        taken.add(key);
-        return cell;
-      }
-    }
-  };
-  return layout.map((p, i) => (clashes.has(i) ? { ...p, ...claimNextFree() } : p));
+  // Re-home one at a time through the same `firstFreeCell` the rest of this module uses, so
+  // each move sees the previous one's landing cell as taken. A placement still awaiting a home
+  // holds its doubled-up cell meanwhile, which is exactly the first claimant's cell — so it
+  // narrows nothing that wasn't already occupied.
+  let result = layout;
+  for (const i of clashes) {
+    const cell = firstFreeCell(result);
+    result = result.map((p, j) => (j === i ? { ...p, x: cell.x, y: cell.y } : p));
+  }
+  return result;
 }
 
 /**

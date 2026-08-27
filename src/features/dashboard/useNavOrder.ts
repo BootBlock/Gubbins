@@ -13,7 +13,7 @@
  *
  * A hidden tile (its feature switched off) never appears and can't be ordered, but its stored
  * placement is kept verbatim and concatenated back on every write — so re-enabling the module
- * restores the exact arrangement (the same gated-intent trick the widget board uses). A stored
+ * restores the exact arrangement. A stored
  * order referencing tiles that no longer exist resolves gracefully: unknown ids are dropped and
  * newly-added tiles append into their default group.
  */
