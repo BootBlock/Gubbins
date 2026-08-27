@@ -98,11 +98,12 @@ a reservation was made. So Gubbins checks, rather than taking a reservation at i
 Reservations are released when a project is completed or archived.
 
 > **ℹ️ Note**
-> Reserving a part, and marking one as **in transit**, are both recorded in the part's
-> [[activity log|Activity-Log]] — but neither is stock actually moving, so neither is counted as a
-> movement by your [[reports|Reports-Overview]]. Only the **receipt**, when the parts land, changes
-> the figures behind the stock-movement chart, the [[turnover|ABC-Turnover-and-Aging]] ratios and
-> the valuation trend.
+> An **Actual** reservation of a matched part, and marking that line as **in transit**, are both
+> recorded in the part's [[activity log|Activity-Log]] (a Tentative hold isn't recorded at all, and
+> nor is a line with no matching item) — but neither is stock actually moving, so neither counts as
+> a movement in your [[reports|Reports-Overview]]. Only the **receipt**, when the parts land,
+> changes the figures behind the stock-movement chart, the [[turnover|ABC-Turnover-and-Aging]]
+> ratios and the valuation trend.
 
 **Where to find it:** the item's **Reservations** panel is on the **Supplier & ops** tab of the
 item's detail screen.
