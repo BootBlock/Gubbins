@@ -96,10 +96,11 @@ export interface PaletteDestination {
    * (issue #522). Several keys mean **any one of them** suffices, which is what a screen holding
    * more than one capability needs: Sync hosts both cloud sync and Backup & restore, so a role
    * granted backups but not sync must still reach it. `undefined` means the screen carries no
-   * read gate — either because it shows
-   * nothing a role can withhold (the Dashboard shell, About), because it is this device's own
-   * preferences rather than the vault's data (Settings), or because it is the one way back from
-   * a hidden module (Modules).
+   * read gate — either because it shows nothing a role can withhold (the Dashboard shell, About),
+   * or because it is this device's own preferences rather than the vault's data (Settings).
+   * Modules was in that second group until issue #429: being the way back from a hidden module is
+   * a reason to withhold no *module* gate from it, and turned out to be no reason at all to leave
+   * it open to every role — it is the screen that can switch the sign-in gate itself off.
    *
    * This is deliberately *screen*-level, not row-level: the same key also guards the matching
    * route via `PermissionGuard`, so a denied account cannot reach the screen by typing its URL.

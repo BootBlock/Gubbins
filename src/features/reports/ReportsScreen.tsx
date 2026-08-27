@@ -59,6 +59,7 @@ import {
   useTurnover,
   useValuationTrend,
 } from './queries';
+import { usePermission } from '@/features/users/usePermission';
 import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
 import type { HygieneIssueKind } from './data-hygiene';
 
@@ -76,6 +77,10 @@ export function ReportsScreen() {
   const f = useFormatters();
   const t = useT();
   const [exportOpen, setExportOpen] = useState(false);
+  // The other entry point to the export wizard is the Inventory screen, which is gated on the
+  // same key. Leaving this one open let a role without `export:run` walk the whole wizard and
+  // meet the refusal only when `runExport` finally read the data (issue #429).
+  const mayExport = usePermission('export:run');
   // Selectable trailing window driving the turnover + valuation-trend analytics (ABC stays annual).
   // Persisted per-section (issue #116) so each remembers its own window across reloads; normalised
   // on read so a stale persisted value can never reach a query key or the segmented control.
@@ -259,10 +264,12 @@ export function ReportsScreen() {
               <InsuranceScheduleIcon />
               Insurance schedule
             </Link>
-            <Button variant="outline" onClick={() => setExportOpen(true)} data-testid="open-report-export">
-              <ExportIcon />
-              Export CSV
-            </Button>
+            {mayExport ? (
+              <Button variant="outline" onClick={() => setExportOpen(true)} data-testid="open-report-export">
+                <ExportIcon />
+                Export CSV
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -576,7 +583,7 @@ export function ReportsScreen() {
         ) : null}
       </main>
 
-      <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} />
+      {mayExport ? <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} /> : null}
 
       {/* Pre-mounted announce-only regions; content mutates once reports resolve so the
           transition from "Loading…" to resolved values is announced to assistive tech

@@ -69,12 +69,19 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   const fmt = useFormatters();
   const t = useT();
   /**
-   * Both reclaim workflows delete data from this device, so they answer to `storage:write`
-   * (issue #429). A role without it still sees the breakdown — knowing what is using the space
-   * is what the banner sent them here for — but is not offered a door the gate will not open:
-   * the two workflow sections are hidden outright rather than shown disabled.
+   * The two reclaim workflows answer to **different** keys, because the repositories behind them
+   * do (issue #429). Downgrading images is `storage:write`, this device's own housekeeping. Purging
+   * history destroys an audit trail, so `StorageRepository.pruneHistoryBefore` asserts
+   * `audit:delete` — the same key the per-item history clear has always used — and gating both
+   * sections on `storage:write` would have shown one role a button that throws and refused another
+   * a capability it holds.
+   *
+   * A role with neither still sees the breakdown: knowing what is using the space is what the
+   * banner sent them here for. What it is not offered is a door the gate will not open, so each
+   * section is hidden outright rather than shown disabled.
    */
-  const mayWrite = usePermission('storage:write');
+  const mayDowngrade = usePermission('storage:write');
+  const mayPrune = usePermission('audit:delete');
 
   const pruneCutoffMs = useMemo(() => pruneCutoff(now, pruneMonths), [now, pruneMonths]);
   const downgradeCutoffMs = useMemo(() => pruneCutoff(now, downgradeMonths), [now, downgradeMonths]);
@@ -98,7 +105,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   const onPrune = async () => {
     // The markup below never renders this workflow without the permission; the guard is here
     // so a stale handler cannot outlive a revoked grant.
-    if (!mayWrite) return;
+    if (!mayPrune) return;
     setConfirming(null);
     // Reserve the destination inside the click (issue #502). The picker that can actually report
     // a completed save needs the user gesture, and the rows are not read until it resolves —
@@ -144,7 +151,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   };
 
   const onDowngrade = () => {
-    if (!mayWrite) return;
+    if (!mayDowngrade) return;
     setConfirming(null);
     downgrade.mutate(downgradeMonths, {
       onSuccess: (result) => {
@@ -234,7 +241,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
           ) : null}
         </section>
 
-        {mayWrite ? (
+        {mayPrune ? (
           <section
             aria-labelledby="triage-history"
             className="flex flex-col gap-3 border-t border-border pt-4"
@@ -294,7 +301,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
           </section>
         ) : null}
 
-        {mayWrite ? (
+        {mayDowngrade ? (
           <section
             aria-labelledby="triage-images"
             className="flex flex-col gap-3 border-t border-border pt-4"

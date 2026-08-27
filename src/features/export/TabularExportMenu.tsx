@@ -72,7 +72,7 @@ export function TabularExportMenu({
   // Every list export in the app is *this* component — the activity feed, alerts, bookings,
   // contacts, the item activity log and the location sidebar all render it rather than rolling
   // their own button + download. That makes it the one honest place to ask whether the session
-  // may export at all, so the gate is deliberately here and not repeated at the six call sites
+  // may export at all, so the gate is deliberately here and not repeated at each call site
   // (issue #429): one check that no new caller can forget, instead of six that will drift. A
   // refused session is offered no trigger rather than a disabled one — `disabled` above means
   // "there is nothing in this list to export", which is a different, recoverable thing to say.

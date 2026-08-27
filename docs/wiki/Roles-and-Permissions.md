@@ -31,7 +31,7 @@ sharply in what they can change, so pick by the post rather than by seniority:
 | **Auditor** | Everything Viewer sees, plus the activity history and the ability to export it. Changes nothing, and can't prune the history it inspects |
 | **Purchaser** | Owns suppliers, purchase orders and the wishlist outright, and can receive a delivery against an order. Edits items but never deletes one |
 | **Technician** | Owns maintenance, lends and returns equipment, consumes stock on a job and prints labels. The catalogue stays read-only |
-| **Loans desk** | Owns the whole booking and loan lifecycle including cancelling one raised in error, and keeps borrower contacts. The catalogue stays read-only |
+| **Loans desk** | Lends and returns equipment, owns bookings including cancelling one raised in error, and keeps borrower contacts. The catalogue stays read-only |
 
 > **ℹ️ Note**
 > None of the four job roles holds **Users and roles**, **Modules**, **Settings**, **Backups**,
@@ -43,7 +43,7 @@ case, in any language**, so `Workshop Lead` and `WORKSHOP LEAD` are one role rat
 look alike.
 
 > **ℹ️ Note**
-> These four are shown in your [[interface language|Language-and-Region]]. Rename one — or rewrite
+> These are shown in your [[interface language|Language-and-Region]]. Rename one — or rewrite
 > its description — and your own wording is what Gubbins shows from then on, whatever language you
 > switch to.
 
@@ -154,7 +154,9 @@ everything at once are held to the same role:
   on. Areas with no Delete action use **Change** instead, because that is the strongest permission
   they have. The **App & this device** entries are held to **Settings → Change**, except those with
   an area of their own: sync links and cloud sign-in need **Sync → Change**, and the bridge token
-  needs **Bridge → Change**.
+  needs **Bridge → Change**. *Enabled features* needs **Modules → Change** as well, because
+  resetting it switches the Users module off and takes the sign-in gate with it — the danger zone
+  must not be a way around the permission that guards the rest.
 - An entry that takes other records with it needs *their* permission too. *All items* removes each
   item's activity history, loans, maintenance schedules and supplier parts, so it needs
   **Activity history → Delete**, **Loans → Delete**, **Maintenance → Delete** and **Suppliers →

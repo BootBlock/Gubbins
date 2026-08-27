@@ -217,15 +217,6 @@ export const PERMISSION_ACTION_SLOTS = {
   delete: 'delete',
 } as const satisfies Record<string, PermissionActionSlot>;
 
-/** Every distinct action any subject declares, in the order the slots put them. */
-export const PERMISSION_ACTIONS: readonly string[] = [
-  ...new Set(PERMISSION_SUBJECT_IDS.flatMap((subject) => PERMISSION_SUBJECTS[subject].actions)),
-].sort(
-  (a, b) =>
-    PERMISSION_ACTION_SLOT_IDS.indexOf(actionSlot(a) ?? 'view') -
-    PERMISSION_ACTION_SLOT_IDS.indexOf(actionSlot(b) ?? 'view'),
-);
-
 /** The column `action` belongs in, or `undefined` for an action this build does not place. */
 export function actionSlot(action: string): PermissionActionSlot | undefined {
   return (PERMISSION_ACTION_SLOTS as Record<string, PermissionActionSlot | undefined>)[action];

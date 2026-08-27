@@ -15,7 +15,6 @@
 import { describe, expect, it } from 'vitest';
 import { EN_CATALOG } from '@/features/i18n/messages';
 import {
-  PERMISSION_ACTIONS,
   PERMISSION_ACTION_SLOTS,
   PERMISSION_ACTION_SLOT_IDS,
   PERMISSION_KEYS,
@@ -35,6 +34,15 @@ import {
   subjectLabelKey,
 } from './permission-labels';
 
+/**
+ * Every distinct action any subject declares. Derived here rather than exported from the registry:
+ * the registry itself never needs the list — it works subject by subject — so an export would be
+ * production code with only a test to reach it.
+ */
+const DECLARED_ACTIONS: readonly string[] = [
+  ...new Set(PERMISSION_SUBJECT_IDS.flatMap((subject) => PERMISSION_SUBJECTS[subject].actions)),
+];
+
 /** A catalog entry that is present and is a non-empty string. */
 function expectCopy(key: string, because: string): void {
   const value = EN_CATALOG[key];
@@ -51,7 +59,7 @@ describe('permission copy coverage', () => {
   });
 
   it('gives every declared action a label', () => {
-    for (const action of PERMISSION_ACTIONS) {
+    for (const action of DECLARED_ACTIONS) {
       expectCopy(actionLabelKey(action as PermissionAction), `action ${action} has no label`);
     }
   });
@@ -115,7 +123,7 @@ describe('permission action slots', () => {
   });
 
   it('keeps the slot map free of actions no subject declares', () => {
-    const declared = new Set(PERMISSION_ACTIONS);
+    const declared = new Set(DECLARED_ACTIONS);
     for (const action of Object.keys(PERMISSION_ACTION_SLOTS)) {
       expect(declared.has(action), `${action} is placed but never declared`).toBe(true);
     }

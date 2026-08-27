@@ -421,8 +421,13 @@ export class TombstoneRepository extends BaseRepository {
    * row was deleted; dropping one early is a sync-visible act — every peer that has not synced
    * since simply never learns of the deletion and re-publishes the row. This is the deletion
    * *ledger*, not the rows themselves, which is why the key is `sync:write` rather than the
-   * deleted subject's own. The orchestrator's equivalent prune inside a sync pass stays ungated
-   * for the reason documented on `runSync` in `features/sync/sync-engine.ts`.
+   * deleted subject's own.
+   *
+   * Nothing in production calls this today: the live TTL prune is `pruneTombstones` in
+   * `features/sync/sync-engine.ts`, raw SQL inside a sync pass, which stays ungated for the
+   * reason documented on `runSync` there. The gate is here because this is a public repository
+   * method that deletes sync-visible state, and the next caller should meet it already in place
+   * rather than have to remember to add it.
    */
   async pruneOlderThan(cutoff: number): Promise<number> {
     this.assertPermission('sync:write');

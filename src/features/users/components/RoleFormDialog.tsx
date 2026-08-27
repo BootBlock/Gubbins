@@ -201,12 +201,15 @@ export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFor
 /**
  * The column headings, each carrying the help that explains what that action means app-wide.
  *
- * `aria-hidden` is deliberate: every checkbox below already names its own subject and action in
- * full, so announcing these headings again would read each box twice. They orient the eye.
+ * The row is **not** `aria-hidden`, though every checkbox below already names its own subject and
+ * action in full. Hiding it would take the three help badges with it, and a badge is focusable —
+ * so a screen-reader user could Tab onto a node assistive technology had been told did not exist,
+ * and the explanation of what View, Change and Delete actually mean would be announced to nobody.
+ * Three words of duplication ahead of the grid is the smaller cost.
  */
 function SlotHeader({ t }: { readonly t: TypedTranslator }) {
   return (
-    <div className={`${GRID_TEMPLATE} pb-1`} aria-hidden>
+    <div className={`${GRID_TEMPLATE} pb-1`}>
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {t('roles.form.grid.subjectColumn')}
       </span>
@@ -306,7 +309,7 @@ function SlotCell({
       <Checkbox
         checked={isKeyTicked(model, key)}
         data-testid={`role-permission-${key}`}
-        aria-label={`${subjectLabel} — ${actionLabel}`}
+        aria-label={t('roles.form.grid.actionBox', { vars: { subject: subjectLabel, action: actionLabel } })}
         onChange={(event) => onChange(toggleKey(model, key, event.target.checked))}
       />
       {captioned ? <span className="text-xs leading-none text-muted-foreground">{actionLabel}</span> : null}

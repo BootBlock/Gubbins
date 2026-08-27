@@ -729,12 +729,15 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     ],
   },
   {
-    // Kept at `settings:write` even though resetting it switches the Users module back off and so
-    // lifts the sign-in gate. Anyone may do that from the Modules screen directly — it is one of
-    // the escape hatches the permission model documents rather than a hole in it — and unlike the
-    // factory reset, this target destroys no records on its way there.
+    // Needs `modules:write` as well as `settings:write`, because resetting this switches the Users
+    // module back off and so lifts the sign-in gate. It was held at `settings:write` alone while
+    // the Modules screen was open to everyone — the reasoning being that this target opened no
+    // door the screen did not. Closing that screen (issue #429) turned the same reasoning around:
+    // left as it was, this entry would be the way around the very permission that now guards the
+    // sign-in gate, and a Manager — which holds `settings:*` and deliberately not `modules:write`
+    // — could take that gate down from the Danger Zone instead.
     id: 'enabled-features',
-    permissions: ['settings:write'],
+    permissions: ['settings:write', 'modules:write'],
     section: 'local',
     label: 'Enabled features',
     tooltip:
@@ -795,10 +798,9 @@ export function eraseTargetPermissions(id: EraseTargetId): readonly PermissionKe
  * `wishlist` are here for the same plain reason: the reset destroys their rows and no catalog
  * entry asks for them.
  *
- * The point is the data, not the authority. Anyone may switch the Users module off from the
- * Modules screen and come back unrestricted — that is a documented, deliberate escape hatch, and
- * no key here closes it. What these keys withhold is the ability to take everyone's records with
- * you on the way.
+ * The point is the data, not the authority. What these keys withhold is the ability to take
+ * everyone's records with you, not the ability to become unrestricted — switching the Users module
+ * off does that, and it answers to `modules:write` rather than to anything here (issue #429).
  */
 const RESET_ONLY_PERMISSIONS: readonly PermissionKey[] = [
   'users:manage',

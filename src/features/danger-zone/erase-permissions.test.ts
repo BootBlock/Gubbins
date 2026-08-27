@@ -195,3 +195,28 @@ describe('the factory reset asks for more than any single target', () => {
     expect(() => assertMayEraseEverything(UNRESTRICTED_AUTHORITY)).not.toThrow();
   });
 });
+
+describe('the danger zone is not a way around the module gate (issue #429)', () => {
+  it('refuses a Manager the "Enabled features" reset, which would lift the sign-in gate', () => {
+    // Resetting enabled features switches the Users module back off, and that takes the sign-in
+    // gate with it. Manager holds `settings:*` and deliberately not `modules:write`, so holding
+    // this entry at `settings:write` alone would have made the Danger Zone the way around the one
+    // permission that guards every other.
+    const manager = builtinAuthority(MANAGER_ROLE_ID);
+    expect(mayEraseTarget(manager, 'enabled-features')).toBe(false);
+    expect(() => assertMayErase(manager, ['enabled-features'])).toThrow(DbError);
+  });
+
+  it('permits it to a role holding both keys', () => {
+    const authority: Authority = {
+      mode: 'granted',
+      grants: new Set(['settings:write', 'modules:write']),
+    };
+    expect(() => assertMayErase(authority, ['enabled-features'])).not.toThrow();
+  });
+
+  it('refuses it to a role holding only the module half', () => {
+    const authority: Authority = { mode: 'granted', grants: new Set(['modules:write']) };
+    expect(() => assertMayErase(authority, ['enabled-features'])).toThrow(DbError);
+  });
+});

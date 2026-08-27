@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_ROLES, BUILTIN_ROLE_IDS } from './builtin-roles';
 import { PERMISSION_KEYS, isPermissionGrant } from './permission-registry';
+import { mayEraseTarget } from '@/features/danger-zone/erase-actions';
 import { can, resolveAuthority, type Authority } from './permissions';
 
 /** The authority an ordinary, enabled user assigned `roleName` would resolve to. */
@@ -211,11 +212,18 @@ describe('built-in roles', () => {
   describe('Loans desk', () => {
     const authority = authorityFor('Loans desk');
 
-    it('owns the whole loan and booking lifecycle, including a record raised in error', () => {
-      expect(can(authority, 'checkouts:write')).toBe(true);
-      expect(can(authority, 'checkouts:delete')).toBe(true);
+    it('owns the whole booking lifecycle, including one raised in error', () => {
       expect(can(authority, 'bookings:write')).toBe(true);
       expect(can(authority, 'bookings:delete')).toBe(true);
+    });
+
+    it('lends and returns, and can clear the loan ledger', () => {
+      expect(can(authority, 'checkouts:write')).toBe(true);
+      // `checkouts:delete` is the ledger, not one loan: no repository deletes a single checkout,
+      // so its only enforcement point is the danger zone's Loans entry and the loans that go
+      // with a deleted item. Asserting the *reachable* act keeps this honest — testing the grant
+      // alone would only restate the list this role was built from.
+      expect(mayEraseTarget(authority, 'checkouts')).toBe(true);
     });
 
     it('keeps borrower contacts, but never edits the catalogue', () => {

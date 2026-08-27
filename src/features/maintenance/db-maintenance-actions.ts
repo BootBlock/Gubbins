@@ -46,6 +46,8 @@ import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { getDatabaseDriver } from '@/db/client';
 import { deleteImageFile, imagesBytesOnDisk, listImageFilenames } from '@/features/images/opfs-images';
 import { estimateTableBytes } from '@/features/storage/triage';
+import { assertPermissions } from '@/features/users/assert-permission';
+import { currentAuthority } from '@/features/users/current-authority';
 
 /** The side-effecting capabilities the engine needs, injected for testability. */
 export interface MaintenancePorts {
@@ -110,6 +112,11 @@ async function freePageCount(db: IDatabaseDriver): Promise<number> {
  * space reclaimed and what there was to reclaim.
  */
 export async function compactDatabase(ports: Pick<MaintenancePorts, 'db'>): Promise<CompactResult> {
+  // Gated here, not only in the dialog that offers it (issue #429). Both of this module's
+  // mutating actions compose their own statements and hand them straight to the driver, so
+  // `BaseRepository.assertPermission` never sees them — and a check that exists only in a React
+  // component is not a check, which is the same reasoning the export and import seams follow.
+  assertPermissions(currentAuthority(), ['storage:write']);
   const { db } = ports;
   const beforeBytes = await databaseBytes(db);
   // Capture the free pages before any step touches the file, so the count reflects the
@@ -206,6 +213,7 @@ function filenameOf(path: string): string | undefined {
  * photos. Any future image-owning table must be added here too.
  */
 export async function sweepOrphanImages(ports: MaintenancePorts): Promise<OrphanSweepResult> {
+  assertPermissions(currentAuthority(), ['storage:write']);
   const filenames = await ports.listImageFilenames();
   if (filenames === null) {
     return { supported: false, scanned: 0, referenced: 0, removed: 0 };

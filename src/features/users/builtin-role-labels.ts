@@ -1,7 +1,7 @@
 /**
  * Translate-only-while-default labels for the built-in roles (issue #406).
  *
- * The four shipped roles are **persisted rows**, not static copy: they are seeded from
+ * The shipped roles are **persisted rows**, not static copy: they are seeded from
  * `builtin-roles.ts` and an operator may rename one or rewrite its description. That rules out
  * rendering them through `t()` unconditionally — doing so would silently overwrite a name someone
  * deliberately chose, in the display layer, with no way to get it back.

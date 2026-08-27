@@ -102,7 +102,7 @@ describe('TabularExportMenu — the export:run gate (issue #429)', () => {
     renderMenu(() => Promise.resolve(COMPLETE));
 
     // Hidden, not disabled: a greyed-out trigger would still advertise the capability, and the
-    // gate is here so that all six call sites inherit it without a check of their own.
+    // gate is here so that every call site inherit it without a check of their own.
     expect(screen.queryByTestId('export-list')).not.toBeInTheDocument();
   });
 });

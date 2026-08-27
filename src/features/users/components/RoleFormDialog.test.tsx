@@ -116,6 +116,19 @@ describe('role editor permission grid', () => {
     expect(hints.length).toBe(PERMISSION_SUBJECT_IDS.length + 3 + 2);
   });
 
+  it('leaves the column help reachable to assistive technology', () => {
+    renderDialog();
+    // The header row is deliberately not `aria-hidden`. Hiding it would take the three column
+    // help badges with it, and a badge is focusable — so a screen-reader user could Tab onto a
+    // node assistive technology had been told did not exist, and the explanation of what View,
+    // Change and Delete mean would reach nobody.
+    const heading = screen.getByText(EN_CATALOG['users.slot.change'] as string);
+    expect(heading.closest('[aria-hidden="true"]')).toBeNull();
+    for (const hint of screen.getAllByLabelText('More information')) {
+      expect(hint.closest('[aria-hidden="true"]')).toBeNull();
+    }
+  });
+
   it('disables the grid while “allow everything” is set, rather than ticking every box', () => {
     renderDialog(['*']);
     const everything = screen.getByTestId('role-grants-everything') as HTMLInputElement;

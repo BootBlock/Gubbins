@@ -30,8 +30,8 @@ import {
 /**
  * A role shipped with Gubbins. `id` is a deliberately *constant* UUIDv4 for the same reason
  * the built-in user ids are (see `SYSTEM_USER_ID`): every device seeds these rows
- * independently, and a per-device id would produce four duplicate roles the first time two
- * devices synced.
+ * independently, and a per-device id would duplicate every one of them the first time two devices
+ * synced.
  */
 export interface BuiltinRoleDef {
   readonly id: string;
@@ -215,8 +215,10 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     name: 'Loans desk',
     description:
       'Books, lends and returns equipment, and keeps borrower contacts, without editing the catalogue.',
-    // The counter role for a shared tool store. It owns the whole loan lifecycle — including
-    // deleting a booking or a loan raised in error — while the catalogue itself stays read-only.
+    // The counter role for a shared tool store. It owns the whole booking and loan lifecycle,
+    // including cancelling a booking raised in error, while the catalogue itself stays read-only.
+    // `checkouts:delete` is the loan *ledger* rather than one loan — there is no per-loan delete,
+    // and a loan is closed by checking it in — but a desk that owns lending owns clearing it.
     grants: [
       'items:read',
       'stock:read',
