@@ -2432,7 +2432,9 @@ The bridge is designed to be safe by construction; this is the checklist it sati
 - **Rate-limited.** See [below](#rate-limiting).
 - **No secrets or real data in the repo.** Only [`.env.example`](.env.example) (placeholders)
   is committed; [`.gitignore`](.gitignore) and the repo-root [`.dockerignore`](../.dockerignore)
-  block any real `.env`, snapshot, `.sqlite`/`.db`, or `gubbins-sync.json`. Keep local test
+  block any real `.env`, `webhooks.json`, snapshot, `.sqlite`/`.db`, or `gubbins-sync.json`.
+  A unit test (`src/lib/docker-context-ignore.test.ts`) keeps the two lists in step, so a file
+  that git refuses to track can never be copied into an image layer. Keep local test
   data under `bridge/local/`. The only fixture committed is the fully synthetic
   `src/fixtures/synthetic-snapshot.json` (made-up parts, `example.com`/`localhost` only).
 - **Minimal dependency surface.** Zero runtime dependencies — stdlib `node:http` /
@@ -2597,7 +2599,10 @@ Notes:
   [API token minted in the app](#identities--permissions), which arrives in the mounted
   snapshot. The snapshot path (and any outbound broker / Home Assistant credentials) are passed
   at run time, never baked into the image. A repo-root [`.dockerignore`](../.dockerignore) keeps
-  any real `.env`, snapshot, or `.sqlite` out of the build context as a safety net.
+  any real `.env`, `webhooks.json`, snapshot, or `.sqlite` out of the build context as a safety
+  net. **If you built a bridge image before this exclusion existed** and had a real
+  `bridge/webhooks.json` in your working tree, that image holds your signing secrets: rebuild it,
+  and rotate the secrets on every affected target.
 - Mount the snapshot **read-only** (`:ro`) — the bridge only ever reads it.
 - Inside the container the process binds `0.0.0.0` (so Docker's port mapping works at all);
   keep it host-local by publishing to `127.0.0.1:8787:8787` as above. To let Home Assistant

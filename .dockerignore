@@ -2,21 +2,39 @@
 #
 # This is a safety net for both images — the app image (see Dockerfile) and the bridge
 # image (see bridge/Dockerfile) — whose context is the repo root. Most importantly it
-# guarantees a real `.env` or an exported snapshot/database can never be copied into an
-# image, even if one is present in the working tree.
+# guarantees a real `.env`, an exported snapshot/database, or a webhook config can never be
+# copied into an image, even if one is present in the working tree.
+#
+# The bridge image copies `bridge/` wholesale, so anything git-ignored that an operator keeps
+# there would otherwise land in an image layer. The rule is therefore: whatever `.gitignore`
+# and `bridge/.gitignore` refuse to track, this file refuses to copy.
+# `src/lib/docker-context-ignore.test.ts` enforces that, so the two lists cannot drift apart.
 
 # Secrets — never copy a real .env into an image (the placeholder .env.example is harmless
-# but also unneeded at runtime, so it stays out too).
+# but also unneeded at runtime, so it stays out too). `**/*.env` covers the un-dotted shapes
+# `bridge/.gitignore` ignores, such as a `production.env` left beside the bridge.
 **/.env
 **/.env.*
+**/*.env
+
+# Bridge webhook targets — these hold per-target HMAC signing secrets and the `secrets` block
+# that resolves `secret_ref` names, which is why `.gitignore` keeps them out of the repo. A
+# signing secret in an image layer travels to every registry and host that image reaches. The
+# committed `webhooks.example.json` is excluded too: it is documentation, not runtime config.
+**/webhooks.json
+**/webhooks.*.json
+
+# The bridge's remembered identity — machine-local runtime state, not a secret, but baking one
+# in would make every container built from the image claim to be the same bridge.
+**/bridge-id
 
 # Dependencies / build output / VCS / CI — not needed in the build-free bridge image.
 **/node_modules
-dist
-dist-ssr
+**/dist
+**/dist-ssr
 .git
 .github
-coverage
+**/coverage
 .vite
 *.tsbuildinfo
 
@@ -25,7 +43,7 @@ coverage
 .claude
 
 # Real inventory data must never enter an image (config points at a mounted snapshot).
-bridge/local/
+**/local/
 **/*.sqlite
 **/*.db
 **/gubbins-sync.json
