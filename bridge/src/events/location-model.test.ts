@@ -58,6 +58,24 @@ describe('diffNewLocationEntries', () => {
     const previous: EventCursor = { seenIds: [], locationSeenIds: ['a'] };
     expect(diffNewLocationEntries(previous, []).locationSeenIds).toEqual(['a']);
   });
+
+  it('does not replay rows that slide up into a window the ledger shrank under', () => {
+    // The location twin of issue #642: a prune or a restored backup shortens the window, and the
+    // rows that were below it are not news. The floor is the previous window's oldest row.
+    const previous: EventCursor = {
+      seenIds: [],
+      locationSeenIds: ['a', 'b'],
+      locationBackfillFloor: 200,
+    };
+    const result = diffNewLocationEntries(
+      previous,
+      [entry({ id: 'a', createdAt: 300 }), entry({ id: 'c', createdAt: 100 })],
+      { windowFull: true },
+    );
+    expect(result.newEntries).toEqual([]);
+    expect(result.locationSeenIds).toEqual(['a', 'c']);
+    expect(result.locationBackfillFloor).toBe(100);
+  });
 });
 
 describe('buildLocationEvents', () => {

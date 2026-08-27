@@ -52,15 +52,27 @@ export async function computeGenerationEvents(
   const scanLimit = options.scanLimit ?? DEFAULT_EVENT_SCAN_LIMIT;
   // One bounded page of the newest rows from each ledger — the diff and the cursor both live inside
   // these windows (see EventCursor). Between two debounced snapshot syncs the delta is small; a rare
-  // burst larger than a window surfaces its newest slice plus a truncation summary.
-  const recent = (await items.getHistoryFeed({ limit: scanLimit })).rows;
-  const recentLocations = (await locations.getHistoryFeed({ limit: scanLimit })).rows;
+  // burst larger than a window surfaces its newest slice plus a truncation summary. The whole page
+  // is kept, not just its rows: `hasMore` is what tells the diff the window has rows beneath it.
+  const recent = await items.getHistoryFeed({ limit: scanLimit });
+  const recentLocations = await locations.getHistoryFeed({ limit: scanLimit });
 
-  const { newEntries, cursor, baseline } = diffNewEntries(previous, recent);
-  const locationDiff = diffNewLocationEntries(previous, recentLocations);
+  // `hasMore` is the page's own "a full page came back", so it already reflects the repository
+  // clamping an over-large `limit`. It tells the diff whether rows exist *below* the window, which
+  // is what decides the backfill floor (issue #642).
+  const { newEntries, cursor, baseline } = diffNewEntries(previous, recent.rows, {
+    windowFull: recent.hasMore,
+  });
+  const locationDiff = diffNewLocationEntries(previous, recentLocations.rows, {
+    windowFull: recentLocations.hasMore,
+  });
   // Both windows advance together, whichever of them actually moved — a generation that only
   // renamed a shelf must still carry the item ledger's baseline forward, and vice versa.
-  const next: EventCursor = { ...cursor, locationSeenIds: locationDiff.locationSeenIds };
+  const next: EventCursor = {
+    ...cursor,
+    locationSeenIds: locationDiff.locationSeenIds,
+    locationBackfillFloor: locationDiff.locationBackfillFloor,
+  };
 
   // Each ledger observes the cold-start rule independently: a first generation (or the first one
   // after an older build's cursor is resumed) establishes that window's baseline and emits nothing.

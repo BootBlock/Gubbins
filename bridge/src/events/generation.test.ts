@@ -125,7 +125,12 @@ describe('computeGenerationEvents', () => {
     expect(events).toEqual([]);
     // Both ledger windows establish their baseline together; this vault has no location activity,
     // so the location window is simply empty (issue #691).
-    expect(cursor).toEqual({ seenIds: ['h-created'], locationSeenIds: [] });
+    expect(cursor).toEqual({
+      seenIds: ['h-created'],
+      backfillFloor: null,
+      locationSeenIds: [],
+      locationBackfillFloor: null,
+    });
   });
 
   it('emits stock.adjusted + item.low_stock for a new drop below the low-stock floor', async () => {
@@ -143,6 +148,26 @@ describe('computeGenerationEvents', () => {
       locationName: 'Shelf 2',
     });
     expect(events[1]!.id).toBe('h-adjust:low_stock');
+  });
+
+  it('emits nothing when a generation only removes ledger rows (issue #642)', async () => {
+    // A permanent delete cascades the item's whole ledger away, so the bounded scan window
+    // backfills from below with rows that were never in it. A `scanLimit` of 2 over a four-row
+    // ledger reproduces that with four rows instead of a hundred.
+    const rows = [
+      created(100),
+      quantityChange('h-2', 1, 200),
+      quantityChange('h-3', 1, 300),
+      quantityChange('h-4', 1, 400),
+    ];
+    const baseline = await hydrate(snapshot(50, rows));
+    const first = await computeGenerationEvents(baseline.driver, null, { scanLimit: 2 });
+    expect(first.cursor.seenIds).toEqual(['h-4', 'h-3']);
+
+    // The newest row is gone; h-2 slides up into the window carrying its original timestamp.
+    const shortened = await hydrate(snapshot(50, rows.slice(0, 3)));
+    const { events } = await computeGenerationEvents(shortened.driver, first.cursor, { scanLimit: 2 });
+    expect(events).toEqual([]);
   });
 
   it('applies the fan-out cap over a burst of new ledger rows', async () => {
