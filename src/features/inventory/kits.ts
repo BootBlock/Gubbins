@@ -91,8 +91,8 @@ export interface KitEdge {
  * function of frame-stable row data — so every device breaks exactly the same edges without
  * reference to which side is local. An already-acyclic graph is returned untouched (no churn).
  *
- * Only the edges to drop are returned, in the caller's own iteration order; the caller decides
- * what to do with them.
+ * Only the edges to drop are returned, oldest-first — the order they were judged in, not the
+ * caller's input order. The caller decides what to do with them.
  */
 export function findKitCycleBreaks(edges: readonly KitEdge[]): KitEdge[] {
   if (!hasKitCycle(edges)) return [];

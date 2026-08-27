@@ -66,6 +66,13 @@ describe('issue #539 — two devices nest the same pair of kits inside each othe
     // Offline, each nesting move passes its own device's guard: neither can see the other.
     await a.items.addKitComponent(x, y, 1);
     await b.items.addKitComponent(y, x, 1);
+    // Age A's link by a minute so it is unambiguously the one made first. Both are created in the
+    // same millisecond here, which would leave the winner to the id tie-break — deterministic, but
+    // not the rule the wiki tells users to expect.
+    await a.driver.execute(
+      'UPDATE kit_components SET created_at = created_at - 60000 WHERE kit_item_id = ?;',
+      [x],
+    );
 
     // A publishes; B pulls and now holds both directions → the merge breaks the loop.
     await runSync(a.driver, provider, NO_QUOTA);
@@ -76,10 +83,11 @@ describe('issue #539 — two devices nest the same pair of kits inside each othe
     const onA = await runSync(a.driver, provider, NO_QUOTA);
     expect(onA.kitLinksBroken).toBe(0);
 
+    // The link made first is the one that stands, on both devices — the promise the wiki makes.
     const onDeviceA = await links(a, [x, y]);
     const onDeviceB = await links(b, [x, y]);
-    expect(onDeviceA).toHaveLength(1);
-    expect(onDeviceB).toEqual(onDeviceA); // both devices kept the same link
+    expect(onDeviceA).toEqual([`${x}>${y}`]);
+    expect(onDeviceB).toEqual(onDeviceA);
 
     // The whole point: the surviving kit is readable again rather than taking the worker down.
     await expect(a.items.rollUpAvailability(x)).resolves.toMatchObject({ count: 0 });

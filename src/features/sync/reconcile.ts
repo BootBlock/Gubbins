@@ -290,7 +290,13 @@ export function reconcile(
   // after the FK guard so it judges the settled edge set — an edge whose item this merge removes is
   // already gone from the upserts and cascades out of the stored rows, so it must not count towards
   // a loop, nor be tombstoned as if it were the offender.
-  const kitLinksBroken = resolveKitComponentCycles(local, localUpserts, localDeletes, finalItemIds);
+  const kitLinksBroken = resolveKitComponentCycles(
+    local,
+    localUpserts,
+    localDeletes,
+    finalItemIds,
+    collisions,
+  );
 
   // --- Issues #157 / #192: "one flag per item" cross-row repair ------------------
   // Runs after the FK guard so it sees the final upsert set, and mutates the losing upserts in
@@ -968,23 +974,34 @@ function resolveBookingOverlapConflicts(
  *
  * A broken link is **deleted**, not softened: an edge either exists or it does not, so there is no
  * cancelled state to park it in as a serialised loan or a booking has. The removal is recorded as
- * an ordinary tombstone stamped at the edge's own `updated_at + 1` — deterministic, frame-invariant
- * under the linear push-shift, and strictly newer than the row it retires, so it wins LWW on a peer
- * that has not run the repair itself and both devices converge with no churn. Any upsert restoring
- * the same edge is dropped alongside it, or the apply would delete and re-insert the row in one
- * transaction.
+ * an ordinary tombstone stamped at the edge's own `updated_at + 1` — the same row-derived stamp
+ * `resolveUniqueKeyCollisions` retires a natural-key loser with. It is frame-invariant under the
+ * linear push-shift and strictly newer than the row it retires, so it wins LWW on a peer that has
+ * not run the repair itself, and both devices write the identical tombstone rather than
+ * overwriting each other's. The one thing a row-derived stamp is not is *recent*: repairing a loop
+ * whose newest edge is older than the §7.2 tombstone TTL publishes the removal once and then
+ * prunes it in the same pass. That costs nothing here — every device that merges the loop reaches
+ * the same verdict from its own edge set, so the edge stays gone without the tombstone to remind
+ * it. Any upsert restoring a broken edge is dropped alongside it, or the apply would delete and
+ * re-insert the row in one transaction.
  */
 function resolveKitComponentCycles(
   local: SyncSnapshot,
   localUpserts: TableRow[],
   localDeletes: Tombstone[],
   finalItemIds: ReadonlySet<string>,
+  collisions: readonly CollisionResolution[],
 ): KitLinkBreak[] {
-  // The edge rows that survive the merge: local rows overlaid with winning upserts, minus deletes.
+  // The edge rows that survive the merge: local rows overlaid with winning upserts, minus deletes
+  // and minus the ids §7.5 retired. A retired edge is a duplicate of the winner under the same
+  // `(kit_item_id, component_item_id)` pair that `applyPlan` deletes on the collision's own
+  // verdict, so counting it would report — and tombstone — one removal per duplicate of a single
+  // link the user only ever made once.
   const finalEdges = new Map<string, SqlRow>();
   for (const row of local.tables.kit_components ?? []) finalEdges.set(String(row.id), row);
   for (const u of localUpserts) if (u.table === 'kit_components') finalEdges.set(String(u.row.id), u.row);
   for (const d of localDeletes) if (d.tableName === 'kit_components') finalEdges.delete(d.id);
+  for (const c of collisions) if (c.table === 'kit_components') finalEdges.delete(c.loserId);
 
   const edges: KitEdge[] = [];
   for (const row of finalEdges.values()) {

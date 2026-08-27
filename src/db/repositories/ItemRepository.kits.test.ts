@@ -528,8 +528,10 @@ describe('ItemRepository — kit containment loop (issue #539)', () => {
     await forceEdge(z.id, x.id); // closes the loop
     await forceEdge(z.id, bolt.id);
 
+    // The Z → X back edge is dropped, so the chain reads X ← Y ← Z ← 7 bolts, one of each per
+    // kit: 7 whole X are buildable, and the loop costs nothing but the link that closed it.
     const roll = await items.rollUpAvailability(x.id);
-    expect(Number.isFinite(roll.count)).toBe(true);
+    expect(roll.count).toBe(7);
   });
 
   it('refuses to assemble from a looping kit rather than hanging', async () => {

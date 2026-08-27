@@ -502,6 +502,27 @@ describe('reconcile (§7.3 / §7.5)', () => {
       expect(plan.localUpserts.some((u) => u.table === 'kit_components' && u.row.id === 'kcC')).toBe(true);
     });
 
+    it('counts one removal when the loop-closing link is a natural-key duplicate', () => {
+      // Both devices added X → Y offline, so §7.5 retires one of the two ids for the shared
+      // `(kit_item_id, component_item_id)` key. Only one link was ever made, so only one is
+      // reported and tombstoned here — the retired twin is the collision pass's to delete.
+      const local = snapshot({
+        tables: {
+          items: [kitItem('X'), kitItem('Y')],
+          kit_components: [edge('kcB', 'Y', 'X', 100), edge('kcDup1', 'X', 'Y', 200)],
+        },
+      });
+      const remote = snapshot({ tables: { kit_components: [edge('kcDup2', 'X', 'Y', 210)] } });
+      const plan = reconcile(local, remote, opts);
+
+      expect(plan.collisions.filter((c) => c.table === 'kit_components')).toHaveLength(1);
+      expect(plan.kitLinksBroken).toHaveLength(1);
+      expect(plan.kitLinksBroken[0]).toMatchObject({ kitItemId: 'X', componentItemId: 'Y' });
+      // The retired id is not tombstoned twice — the collision verdict already deletes it.
+      const retired = plan.collisions.find((c) => c.table === 'kit_components')!.loserId;
+      expect(plan.localDeletes.some((d) => d.id === retired)).toBe(false);
+    });
+
     it('ignores a loop edge whose item the merge deletes, since it goes with the item', () => {
       // The peer deleted kit Y; its edges cascade away, so nothing is left to break.
       const local = snapshot({
