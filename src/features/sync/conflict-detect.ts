@@ -25,11 +25,19 @@ import type { SyncConflict, SyncTable } from './types';
  * is the trigger-derived SUM of it. So a divergence in either is a converged value, not a lost
  * edit — surfacing it as a conflict, or restoring the losing side's quantity, would misreport the
  * merge and be undone by the recompute triggers.
+ *
+ * Issue #542 adds `checkouts.returned_at` for the same reason, arrived at from the other
+ * direction: a loan goes out, comes back and stays back, so the column is write-once and
+ * `resolveLoanReturnConflicts` merges it monotonically rather than by timestamp. A difference in
+ * it is therefore a settled outcome too, and "Use my version" on a returned loan would write
+ * `returned_at = NULL` only for the next sync to take the closed copy straight back — the silent
+ * undo this set exists to prevent.
  */
 export const NON_LWW_COLUMNS: Partial<Record<SyncTable, ReadonlySet<string>>> = {
   items: new Set(['current_net_value', 'quantity']),
   item_stock: new Set(['quantity']),
   stock_batches: new Set(['quantity']),
+  checkouts: new Set(['returned_at']),
 };
 
 /** The non-LWW columns for a table (empty when none), for conflict detection/diff/restore. */

@@ -138,6 +138,25 @@ describe('issue #542 — one booking converted on two offline devices', () => {
     expect(await onHand(b, itemId)).toBe(1);
   });
 
+  it('gives the unit back once when both devices return their own conversion', async () => {
+    // The whole loan cycle run twice offline: both convert, and both hand the asset back before
+    // either syncs. The draw converges to one movement, so the return must too — otherwise the
+    // ledger gains a unit the asset never had.
+    const fromA = await a.bookings.convertToCheckout(bookingId);
+    const fromB = await b.bookings.convertToCheckout(bookingId);
+    await a.checkouts.checkIn(fromA.checkout.id);
+    await b.checkouts.checkIn(fromB.checkout.id);
+
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    await runSync(a.driver, provider, NO_QUOTA);
+
+    expect(await openLoanIds(a, itemId)).toEqual([]);
+    expect(await openLoanIds(b, itemId)).toEqual([]);
+    expect(await onHand(a, itemId)).toBe(1); // one unit, not two
+    expect(await onHand(b, itemId)).toBe(1);
+  });
+
   it('settles without further repair or churn once converged', async () => {
     await a.bookings.convertToCheckout(bookingId);
     await b.bookings.convertToCheckout(bookingId);

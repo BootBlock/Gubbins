@@ -161,6 +161,9 @@ were meant to be and merges them into a single loan, rather than recording the a
 borrowers. The asset's on-hand count drops by the one unit that actually left, so returning the loan
 puts that unit back and the count is right again.
 
+Returning it counts once too, even when both people gave the asset back on their own device
+before syncing — the unit comes home once, so the count goes up by one.
+
 If one device also *returned* the loan before syncing, the return stands — an asset that has come
 back cannot be put back out by the other device's later hand-over. The unit reads as on hand again,
 and nothing is left claiming to hold it.

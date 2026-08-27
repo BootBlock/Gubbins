@@ -20,9 +20,38 @@ import { SQL_NOW_MS } from '../migrations';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import type { BorrowerType, Condition } from './constants';
 import { historyStatement } from './item/history';
-import { addBatchStatement, UNTRACKED_BATCH } from './stock-batches';
+import { addBatchStatement, UNTRACKED_BATCH, withOperationKey } from './stock-batches';
 import { batchIdentityFromKey } from '@/features/inventory/batches';
+import { uuidv5 } from '@/lib/derived-uuid';
 import type { CheckoutRow } from './types';
+
+/**
+ * Namespace for the deterministic ids a **return** writes (issue #542).
+ *
+ * Returning is a one-shot terminal operation on one loan: a loan goes out, comes back, and stays
+ * back, so a given `checkouts` row can only ever be returned once. Two devices holding that row
+ * can each return it while offline, though — and left to `randomblob()` each device's copy of the
+ * one restore carried its own `stock_deltas` id, so the id-union replay in `reconcileStockQuantity`
+ * read the two copies as two movements and gave the units back twice. Deriving them from the
+ * checkout id makes both devices compute the same id, so the union sees the single return it was.
+ *
+ * The same fix issue #696 gave the assembly draw, applied to the other end of a loan. It matters
+ * for every loan two devices can hold, but #542 is what made it acute: a booking conversion now
+ * derives its `checkouts` id, so both devices' conversions *are* one row, and the draw they
+ * collapsed would otherwise be given back by two independent restores.
+ */
+const CHECKOUT_RETURN_NAMESPACE = '9b7c1f0a-1950-4e00-8b00-000000005420';
+
+/**
+ * The deterministic id a return gives to `kind` for `checkoutId` (see
+ * {@link CHECKOUT_RETURN_NAMESPACE}). A pure function of its inputs, which is the convergence
+ * property: two devices returning the same loan offline derive the same ids.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function checkInId(kind: string, checkoutId: string): Promise<string> {
+  return uuidv5(`${kind}:${checkoutId}`, CHECKOUT_RETURN_NAMESPACE);
+}
 
 /** The `checkouts` column holding the borrower id for a target type (the XOR triple). */
 export function borrowerColumn(type: BorrowerType): 'contact_id' | 'project_id' | 'location_id' {
@@ -125,7 +154,7 @@ export async function planCheckIn(
   const currentCondition = item?.condition ?? null;
   const conditionChanged = condition !== undefined && condition !== currentCondition;
 
-  return [
+  const statements: SqlStatement[] = [
     // Restore the stock lot — guarded, so a raced return does not restore it a second time.
     ...(restoreDelta > 0 && restoreLocationId
       ? [
@@ -138,6 +167,9 @@ export async function planCheckIn(
     // Log CHECKED_IN — guarded, so a raced return does not write a duplicate ledger entry.
     onlyWhileOpen(
       historyStatement(existing.item_id, 'CHECKED_IN', actorId, {
+        // Derived like the stock it restores (see {@link CHECKOUT_RETURN_NAMESPACE}), so two
+        // devices returning the same loan leave one entry in the union-by-id ledger, not two.
+        id: await checkInId('hist:CHECKED_IN', checkoutId),
         quantityDelta: restoreDelta === 0 ? null : restoreDelta,
         note: note?.trim() || `Returned ${existing.quantity} from loan.`,
         metadata: { checkoutId },
@@ -176,6 +208,17 @@ export async function planCheckIn(
       params: [note?.trim() || null, checkoutId],
     },
   ];
+
+  // Bracket the return so the `stock_batches` capture trigger derives its `stock_deltas` id from
+  // the loan rather than at random — without it, two devices returning the same loan offline give
+  // the units back twice (see {@link CHECKOUT_RETURN_NAMESPACE}). Each loan gets its own key, so a
+  // borrower-wide return concatenates one bracket per loan rather than sharing one across all of
+  // them, and no loan's id depends on how many others happened to be returned beside it.
+  //
+  // `CONDITION_CHANGED` above is deliberately left random: unlike the return itself, two devices
+  // can record genuinely *different* conditions on the way back, and one derived id would keep
+  // only whichever arrived first while the item's own `condition` settles by last-write-wins.
+  return withOperationKey(await checkInId('stock', checkoutId), statements);
 }
 
 /**
