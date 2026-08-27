@@ -28,6 +28,7 @@ import {
   type OverlapCandidate,
 } from '@/features/bookings/booking-overlap';
 import { startOfUtcDay } from '@/lib/calendar-days';
+import { uuidv5 } from '@/lib/derived-uuid';
 import { isBookableTrackingMode } from '@/features/bookings/booking-status';
 import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import { CheckoutRepository } from './CheckoutRepository';
@@ -45,6 +46,30 @@ import type {
   Page,
   PageParams,
 } from './types';
+
+/**
+ * Namespace for the deterministic ids a booking→checkout conversion mints (issue #542).
+ *
+ * Converting is a **one-shot terminal operation**: a booking becomes a loan exactly once, and two
+ * devices can each perform that conversion while offline. Left to `crypto.randomUUID()` they mint
+ * two `checkouts` rows with two ids, and the id-keyed last-write-wins union keeps both — the same
+ * unit recorded out to two borrowers, with a doubled stock draw-down behind it. Deriving every id
+ * the conversion writes from the stable booking id makes both devices compute the *same* ids, so
+ * the merge collapses their two runs to one loan. The same fix issue #195 applied to assembly
+ * finalisation, for the other one-shot operation in the app.
+ */
+const BOOKING_CONVERSION_NAMESPACE = '9b7c1f0a-1950-4e00-8b00-000000000542';
+
+/**
+ * The deterministic id a conversion gives to `kind` for `bookingId` (see
+ * {@link BOOKING_CONVERSION_NAMESPACE}). A pure function of its inputs, which is exactly the
+ * convergence property: two devices converting the same booking offline derive the same ids.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function bookingConversionId(kind: string, bookingId: string): Promise<string> {
+  return uuidv5(`${kind}:${bookingId}`, BOOKING_CONVERSION_NAMESPACE);
+}
 
 interface BookingJoinRow extends AssetBookingRow {
   readonly item_name: string;
@@ -131,11 +156,19 @@ export class AssetBookingRepository extends BaseRepository {
    * double-out guard to {@link CheckoutRepository.checkout}, then stamp the booking's
    * `converted_checkout_id`. The loan due date defaults to the booking's end day.
    *
-   * Best-effort (non-atomic): the checkout is created in its own transaction, then the
-   * booking is stamped in a second write. The window is tiny; if the stamp were to fail the
-   * checkout still stands and a re-convert would be blocked by the serialised double-out
-   * guard (a serialised asset) or simply create a second loan (multi-unit — but only
-   * single-unit assets are bookable). Mirrors the Phase-76 clone "best-effort" decision.
+   * Every id the conversion writes is **derived from the booking** rather than minted at random
+   * (issue #542, via {@link bookingConversionId}): the loan's own row id, its `CHECKED_OUT` ledger
+   * entry, and the key the draw's `stock_deltas` ids come from. Converting is a one-shot terminal
+   * operation two devices can each run offline, and per-row last-write-wins cannot see that their
+   * two loans are the same one — so without derived ids the merge keeps both, leaving a single
+   * unit out to two borrowers with the stock drawn down twice behind it. Derived, both devices
+   * write the identical rows and the merge collapses them to one. See {@link CheckoutDerivedIds}.
+   *
+   * Best-effort (non-atomic): the checkout is created in its own transaction, then the booking is
+   * stamped in a second write. The window is tiny, and the derived ids make it recoverable rather
+   * than merely narrow — if the stamp fails, the loan the first attempt created is found by its
+   * derived id and the re-convert simply stamps the booking onto it instead of drawing a second
+   * time. Mirrors the Phase-76 clone "best-effort" decision.
    */
   async convertToCheckout(
     id: string,
@@ -158,13 +191,25 @@ export class AssetBookingRepository extends BaseRepository {
       throw new DbError('SQLITE_CONSTRAINT', 'Add a contact to the booking before checking it out.');
     }
 
-    const checkout = await this.checkouts.checkout({
-      itemId: booking.itemId,
-      contactId,
-      contactName,
-      dueDate: input.dueDate ?? booking.endDate,
-      note: input.note?.trim() || booking.note,
-    });
+    const derivedIds = {
+      checkoutId: await bookingConversionId('checkout', id),
+      historyId: await bookingConversionId('hist:CHECKED_OUT', id),
+      operationKey: await bookingConversionId('stock', id),
+    };
+
+    // Recover a conversion whose stamp failed after the loan was written (see the doc comment):
+    // the loan is already there under its derived id, so re-running must adopt it rather than
+    // draw the unit down a second time.
+    const checkout =
+      (await this.checkouts.getById(derivedIds.checkoutId)) ??
+      (await this.checkouts.checkout({
+        itemId: booking.itemId,
+        contactId,
+        contactName,
+        dueDate: input.dueDate ?? booking.endDate,
+        note: input.note?.trim() || booking.note,
+        derivedIds,
+      }));
 
     await this.driver.execute('UPDATE asset_bookings SET converted_checkout_id = ? WHERE id = ?;', [
       checkout.id,

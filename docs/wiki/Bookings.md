@@ -29,7 +29,8 @@ same day.
 > If two devices are offline and each books the same asset for overlapping dates, they can't see
 > each other's reservation at the time. When they next [[sync|Cloud-Sync]], Gubbins keeps the
 > booking made **first** and cancels the later clashing one — see
-> [[Cloud sync → overlapping bookings|Cloud-Sync]].
+> [[Cloud sync → overlapping bookings|Cloud-Sync]]. The same goes for *checking a booking out* on
+> two offline devices: the two are merged into one loan rather than lending the asset twice.
 
 > **💡 Tip**
 > Bookings turn Gubbins into a simple shared-equipment scheduler. Reserve the good camera for a

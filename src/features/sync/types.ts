@@ -242,6 +242,22 @@ export interface BookingOverlapCancellation {
 }
 
 /**
+ * Issue #542 repair log: a loan the merge would have re-opened was kept closed.
+ *
+ * `checkouts.returned_at` is write-once — a loan goes out, comes back, and stays back. Whole-row
+ * last-write-wins does not know that, so when two devices hold the same loan row and one of them
+ * has returned it, a *later* edit to the still-open copy wins and the row comes back open. The
+ * stock the return already gave back stays in the ledger, so the asset ends up recorded as on loan
+ * *and* on the shelf. The merge takes the closed copy instead, recording it here.
+ */
+export interface LoanReturnRepair {
+  /** The item the loan is for. */
+  readonly itemId: string;
+  /** The loan whose return the merge preserved. */
+  readonly checkoutId: string;
+}
+
+/**
  * The outcome of reconciling a local snapshot against a remote one (§7.3). Describes
  * the **local** mutations to apply atomically; the engine re-reads and pushes the
  * merged state, so the push half needs no separate diff here.
@@ -372,6 +388,8 @@ export interface ReconciliationPlan {
   readonly serialisedLoansClosed: readonly SerialisedLoanClosure[];
   /** Issue #194: bookings cancelled because they double-booked an asset (see {@link BookingOverlapCancellation}). */
   readonly bookingsCancelled: readonly BookingOverlapCancellation[];
+  /** Issue #542: loans kept closed against a peer's newer still-open copy (see {@link LoanReturnRepair}). */
+  readonly loanReturnsPreserved: readonly LoanReturnRepair[];
   /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */
   readonly collisions: readonly CollisionResolution[];
   /** Issue #707: rows to move off a natural key another upsert takes (see {@link KeyPark}). */

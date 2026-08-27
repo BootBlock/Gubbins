@@ -4,7 +4,7 @@ import { DbError } from '@/db/errors';
 import { runMigrations } from '@/db/migrations';
 import { migrations } from '@/db/migrations/index';
 import { MS_PER_DAY } from './constants';
-import { AssetBookingRepository } from './AssetBookingRepository';
+import { AssetBookingRepository, bookingConversionId } from './AssetBookingRepository';
 import { ItemRepository } from './ItemRepository';
 
 // Midday-UTC instant `n` whole days from a fixed anchor, and its midnight-UTC day-start. Bookings
@@ -115,6 +115,19 @@ describe('AssetBookingRepository (Phase 78 — time-based asset booking)', () =>
     // A converted booking cannot be converted again or cancelled.
     await expect(bookings.convertToCheckout(booking.id)).rejects.toBeInstanceOf(DbError);
     await expect(bookings.cancel(booking.id)).rejects.toBeInstanceOf(DbError);
+  });
+
+  it('derives the loan and its ledger entry from the booking so concurrent conversions converge', async () => {
+    const itemId = await serialisedAsset();
+    const booking = await bookings.create({ itemId, startDate: day(1), endDate: day(3), contactName: 'Ada' });
+
+    const { checkout } = await bookings.convertToCheckout(booking.id);
+
+    // Both are pure functions of the booking id, not fresh random UUIDs — the property that makes
+    // two devices' offline conversions write the *same* loan and merge to one (issue #542).
+    expect(checkout.id).toBe(await bookingConversionId('checkout', booking.id));
+    const entry = (await items.getHistory(itemId)).rows.find((h) => h.action === 'CHECKED_OUT');
+    expect(entry?.id).toBe(await bookingConversionId('hist:CHECKED_OUT', booking.id));
   });
 
   it('requires a contact to convert a booking that has none', async () => {

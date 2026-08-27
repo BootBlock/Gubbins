@@ -42,6 +42,51 @@ describe('restoreConflictVersion (#72)', () => {
     await driver.close();
   });
 
+  it('restores a loan without breaking the returned_at / checked_out_at pair (#542)', async () => {
+    // The merge settled this loan as *returned*, keeping the closed copy's `checked_out_at`
+    // alongside its `returned_at` — the schema ties the two. The user's discarded version is the
+    // still-open copy they opened later, so restoring its `checked_out_at` while the merged
+    // `returned_at` stays put would describe a loan handed back before it went out.
+    await driver.execute("INSERT INTO items (id, name, location_id) VALUES ('i1', 'Dumpy level', ?);", [
+      UNASSIGNED_LOCATION_ID,
+    ]);
+    await driver.execute("INSERT INTO contacts (id, name, updated_at) VALUES ('c1', 'Ada', 1);");
+    await driver.execute(
+      `INSERT INTO checkouts (id, item_id, contact_id, quantity, checked_out_at, returned_at, updated_at)
+       VALUES ('k1', 'i1', 'c1', 1, 1, 500, 501);`,
+    );
+
+    const conflict = buildConflict(
+      'checkouts',
+      {
+        id: 'k1',
+        item_id: 'i1',
+        contact_id: 'c1',
+        quantity: 1,
+        checked_out_at: 800,
+        returned_at: null,
+        updated_at: 900,
+      },
+      {
+        id: 'k1',
+        item_id: 'i1',
+        contact_id: 'c1',
+        quantity: 1,
+        checked_out_at: 1,
+        returned_at: 500,
+        updated_at: 501,
+      },
+      999,
+    );
+
+    await expect(restoreConflictVersion(driver, conflict)).resolves.toBeUndefined();
+    const row = await driver.queryOne<{ checked_out_at: number; returned_at: number | null }>(
+      "SELECT checked_out_at, returned_at FROM checkouts WHERE id = 'k1';",
+    );
+    expect(row?.returned_at).toBe(500); // the settled return is not undone by a restore
+    expect(Number(row?.checked_out_at)).toBeLessThanOrEqual(500);
+  });
+
   it('re-applies the discarded version and re-stamps updated_at so it wins next sync', async () => {
     // A contact currently holding the "winning" (remote) name, with an old updated_at.
     await driver.execute("INSERT INTO contacts (id, name, updated_at) VALUES ('c1', 'Theirs', 1000);");

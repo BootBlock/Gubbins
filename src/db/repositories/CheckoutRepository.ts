@@ -27,6 +27,7 @@ import {
   runStockDraw,
   readPlacementBatches,
   stockBatchRowId,
+  withOperationKey,
 } from './stock-batches';
 import { planBatchSelection } from '@/features/inventory/batches';
 import { nowMs } from '@/lib/clock';
@@ -209,7 +210,12 @@ export class CheckoutRepository extends BaseRepository {
     }
 
     const borrower = await this.resolveBorrower(input);
-    const id = crypto.randomUUID();
+    // A loan is ordinarily a genuinely new event, so its ids are random. A loan that is the
+    // artefact of a one-shot operation two devices can each run offline — converting one booking
+    // (issue #542) — supplies ids derived from that operation instead, so the two runs merge to
+    // one loan rather than to two. See {@link CheckoutDerivedIds}.
+    const derived = input.derivedIds;
+    const id = derived?.checkoutId ?? crypto.randomUUID();
     const stockDelta = isSerialised ? 0 : quantity;
     const dueDate = input.dueDate ?? null;
 
@@ -232,7 +238,7 @@ export class CheckoutRepository extends BaseRepository {
           : await placementDeltaStatements(this.driver, input.itemId, fromLocationId, -stockDelta);
     }
 
-    await runStockDraw(this.driver, [
+    const drawStatements: SqlStatement[] = [
       ...stockStatements,
       {
         // The borrower lands in exactly one of the three FK columns per its target type; the
@@ -251,6 +257,7 @@ export class CheckoutRepository extends BaseRepository {
         ],
       },
       historyStatement(input.itemId, 'CHECKED_OUT', this.actorId(), {
+        id: derived?.historyId,
         quantityDelta: stockDelta === 0 ? null : -stockDelta,
         note: `Checked out ${quantity} to ${borrower.name}${dueDate ? ' (due set)' : ''}.`,
         metadata: {
@@ -263,7 +270,17 @@ export class CheckoutRepository extends BaseRepository {
           fromBatchKey,
         },
       }),
-    ]);
+    ];
+
+    // Bracket the draw so the `stock_batches` capture triggers derive their `stock_deltas` ids
+    // from the operation rather than at random (issue #696) — without it each device's copy of
+    // the same one-shot draw carries its own id and the Delta-CRDT replay counts both, taking
+    // the quantity twice. Only the statements above are wrapped, exactly as `finaliseAssembly`
+    // wraps its own; a SERIALISED loan moves no stock, so the bracket is inert there.
+    await runStockDraw(
+      this.driver,
+      derived ? withOperationKey(derived.operationKey, drawStatements) : drawStatements,
+    );
     return (await this.getById(id))!;
   }
 

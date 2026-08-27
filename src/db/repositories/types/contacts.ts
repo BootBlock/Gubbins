@@ -171,4 +171,40 @@ export interface CheckoutItemInput {
    * string targets the untracked default batch. Omitted = the Phase-28 FEFO behaviour.
    */
   readonly fromBatchKey?: string;
+  /**
+   * Deterministic ids for a loan that is the artefact of a **one-shot operation** two devices
+   * can each run offline before they sync — converting one booking (issue #542).
+   *
+   * Omitted for an ordinary loan, which is genuinely new on the device that records it and so
+   * takes a fresh `crypto.randomUUID()` and a random stock-delta id. Supplied, every id the
+   * checkout writes is derived from the operation's own stable identity, so both devices compute
+   * the *same* ids and the merge collapses their two runs to one loan, one ledger entry and one
+   * stock movement instead of keeping both. See {@link CheckoutDerivedIds}.
+   */
+  readonly derivedIds?: CheckoutDerivedIds;
+}
+
+/**
+ * The deterministic ids a one-shot loan derives from its operation's identity, rather than
+ * minting at random (issues #195, #696, #542).
+ *
+ * Each covers a different convergence seam, and all three are needed for the two runs to merge
+ * cleanly: `checkoutId` is the `checkouts` row's own primary key, which the id-keyed
+ * last-write-wins union collapses; `historyId` is the `CHECKED_OUT` ledger entry's, which the
+ * append-only union-by-id collapses; and `operationKey` is the key the `stock_batches` capture
+ * triggers derive their `stock_deltas` ids from while the draw runs, so the Delta-CRDT replay
+ * counts one movement rather than two.
+ *
+ * Every value must be a canonical lower-case UUID derived from stable inputs — see `uuidv5` in
+ * `src/lib/derived-uuid.ts`. `operationKey` in particular is validated by `withOperationKey`
+ * and by a column CHECK, because a key carrying the derivation's own separator or wildcards
+ * would mint colliding ids instead of failing loudly.
+ */
+export interface CheckoutDerivedIds {
+  /** The `checkouts` row id. */
+  readonly checkoutId: string;
+  /** The `CHECKED_OUT` Activity Log entry's id. */
+  readonly historyId: string;
+  /** The `stock_delta_capture.operation_key` the draw's delta ids are derived from. */
+  readonly operationKey: string;
 }

@@ -25,11 +25,33 @@ import type { SyncConflict, SyncTable } from './types';
  * is the trigger-derived SUM of it. So a divergence in either is a converged value, not a lost
  * edit — surfacing it as a conflict, or restoring the losing side's quantity, would misreport the
  * merge and be undone by the recompute triggers.
+ *
+ * Issue #542 adds `checkouts.returned_at` for the same reason, arrived at from the other
+ * direction: a loan goes out, comes back and stays back, so the column is write-once and
+ * `resolveLoanReturnConflicts` merges it monotonically rather than by timestamp. A difference in
+ * it is therefore a settled outcome too, and "Use my version" on a returned loan would write
+ * `returned_at = NULL` only for the next sync to take the closed copy straight back — the silent
+ * undo this set exists to prevent.
+ *
+ * `return_note` joins them because the repair writes it too — it is the note recorded *with* the
+ * return, so it travels with the return it belongs to. Left out, it becomes the only column the
+ * two copies still visibly differ on, and the merge reports a lost edit on a row whose every
+ * distinguishing value the repair has just carried across — while "Use my version" would rewrite
+ * that half of the repair with `returned_at` excused beside it.
+ *
+ * `checked_out_at` joins it because the schema ties the two — `CHECK (returned_at IS NULL OR
+ * returned_at >= checked_out_at)` — so they can only be excused together. Excusing the return
+ * alone leaves a restore writing one half of the pair against the other's merged value, and a
+ * loan the user opened *later* on this device would restore a `checked_out_at` after the stored
+ * `returned_at`, failing that CHECK and throwing the restore. Nothing is lost by excusing it:
+ * `checked_out_at` is stamped once when the loan is created and no user edit ever changes it, so
+ * a difference in it was never a lost edit to begin with.
  */
 export const NON_LWW_COLUMNS: Partial<Record<SyncTable, ReadonlySet<string>>> = {
   items: new Set(['current_net_value', 'quantity']),
   item_stock: new Set(['quantity']),
   stock_batches: new Set(['quantity']),
+  checkouts: new Set(['returned_at', 'checked_out_at', 'return_note']),
 };
 
 /** The non-LWW columns for a table (empty when none), for conflict detection/diff/restore. */
