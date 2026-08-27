@@ -152,6 +152,22 @@ clash with it, since the asset could only really be held by one of them. The can
 on record (marked *cancelled*) rather than vanishing, and the Sync screen notes it in the summary
 when it happens. Bookings for the same asset on dates that *don't* overlap are all kept.
 
+### When a borrower is deleted on another device
+
+A [[loan|Loans-Check-Out-and-In]] is always taken out against a borrower — a [[contact|Contacts]],
+a [[project|Projects-and-BOM]] or a [[location|Locations-and-Stock]]. Deleting any of the three
+returns its open loans first, so the stock goes back where it came from, and then takes the loan
+records with it: a loan needs a borrower to point at.
+
+Sync follows the same rule. If one device deletes a project while another still has a loan out to
+it, that loan goes when the two devices meet — just as it would have done had both changes been
+made on one device. The returned stock arrives with the deletion, the item itself is untouched, and
+its [[Activity log|Activity-Log]] still records that it went out and came back.
+
+> **💡 Tip**
+> If you want to keep the loan history, mark the [[project|Projects-and-BOM]] **Completed** or
+> **Archived** rather than deleting it. A project you keep keeps every record attached to it.
+
 ### Reviewing overwritten edits
 
 Last-write-wins means one side's change to that same field is set aside. So you never lose that

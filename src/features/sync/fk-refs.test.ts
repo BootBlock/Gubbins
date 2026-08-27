@@ -4,6 +4,8 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { SYNC_TABLES, type SyncTable } from '@/db/repositories';
 import { FK_REFS } from './fk-refs';
+import { REMOVED_PARENT_TABLES, reconcile } from './reconcile';
+import type { SyncSnapshot } from './types';
 
 /**
  * Drift guard (issues #152, #246). Both the reconciliation engine and the backup codec decide
@@ -76,12 +78,6 @@ const EXEMPT: Readonly<Record<string, string>> = {
   // parent→child repair — the parent set is the table itself.
   'items.parent_id': 'resolved by walking the variant chain',
   'locations.parent_id': 'resolved by the §7.5.2 re-parent / cycle guard',
-  // Known gap, tracked separately: the borrower is a tagged union (contact XOR project XOR
-  // location), so a dangling borrower can be neither nulled (it would break the XOR CHECK) nor
-  // dropped without deciding what a loan with no borrower means. Backups are unaffected — the
-  // only reference `filterSnapshot` can dangle is `item_id`, which is covered by FK_REFS.
-  'checkouts.project_id': 'tagged-union borrower; needs its own repair rule',
-  'checkouts.location_id': 'tagged-union borrower; needs its own repair rule',
   // NOT NULL `ON DELETE SET DEFAULT` (issue #691), so the rule above would demand `false` —
   // "drop the row". That is the wrong repair for a ledger: an activity entry must not be destroyed
   // because the account that wrote it was removed on another device. Its repair is the schema's
@@ -165,6 +161,114 @@ describe('FK_REFS covers the real schema (#152, #246)', () => {
       }
     }
     expect(stale).toEqual([]);
+  });
+
+  it('names a parent the merge builds a removed-id set for (#536)', () => {
+    // The other half of the registry's contract. `enforceForeignKeys` reads a parent with no
+    // removed-id set as "intact", so an entry whose parent `computeRemovedParents` does not
+    // produce is dead code: the guard never fires, and the merge re-inserts the orphan it exists
+    // to drop — a hard `FOREIGN KEY constraint failed` that rolls the whole atomic apply back and
+    // recurs on every retry. `location_photos` and `project_budget_categories` were exactly that.
+    const parents = new Set(
+      Object.values(FK_REFS)
+        .flatMap((refs) => refs ?? [])
+        .map((ref) => ref.parent),
+    );
+    // Non-empty, or the assertion below would be vacuous.
+    expect(parents.size).toBeGreaterThan(10);
+    const covered = new Set<SyncTable>(REMOVED_PARENT_TABLES);
+    expect([...parents].filter((parent) => !covered.has(parent))).toEqual([]);
+  });
+
+  it('leaves no removed-parent set that nothing references (#536)', () => {
+    // The converse: a table kept in REMOVED_PARENT_TABLES after its last FK_REFS entry went is
+    // dead work, and reads as coverage the registry no longer has.
+    const parents = new Set(
+      Object.values(FK_REFS)
+        .flatMap((refs) => refs ?? [])
+        .map((ref) => ref.parent),
+    );
+    expect(REMOVED_PARENT_TABLES.filter((table) => !parents.has(table))).toEqual([]);
+  });
+
+  it('folds the cascade into the removed set of a parent that is itself a cascade child (#536)', () => {
+    // The class of bug behind #536, closed generically rather than one table at a time. A parent
+    // that is *itself* a NOT-NULL / ON DELETE CASCADE child is swept away with no tombstone of
+    // its own (§7.2 records only the row the user deleted), so a removed set built from
+    // deletes-and-upserts alone reads it as alive and waves its children through. That was true
+    // of `location_photos`, `project_budget_categories` *and* `supplier_parts`.
+    //
+    // Rather than assert how `computeRemovedParents` is written, drive `reconcile` for every such
+    // parent the real schema declares: delete the grandparent locally, offer the whole chain from
+    // the remote, and require the chain not to be resurrected. A new cascade parent added to
+    // FK_REFS is covered the moment the schema declares it.
+    const parentTables = new Set<SyncTable>(REMOVED_PARENT_TABLES);
+    const chains = schemaFks.filter(
+      (fk) =>
+        parentTables.has(fk.table) && parentTables.has(fk.parent) && fk.notNull && fk.onDelete === 'CASCADE',
+    );
+    // Non-empty, or every assertion below is vacuous.
+    expect(chains.length).toBeGreaterThanOrEqual(3);
+
+    const problems: string[] = [];
+    for (const chain of chains) {
+      // Any registered child of the middle table will do — it is the row whose FK would trip.
+      const childEntry = Object.entries(FK_REFS)
+        .flatMap(([child, refs]) => (refs ?? []).map((ref) => ({ child, ref })))
+        .find(({ ref }) => ref.parent === chain.table);
+      if (childEntry === undefined) continue; // no child to guard, so nothing to assert
+      const { child, ref } = childEntry;
+
+      const empty = {
+        formatVersion: 1 as const,
+        generatedAt: 0,
+        tombstones: [],
+        gaugeHistory: [],
+        itemTags: [],
+        locationTags: [],
+        itemRegions: [],
+        itemHistory: [],
+        stockDeltas: [],
+      };
+      const local: SyncSnapshot = {
+        ...empty,
+        tables: {},
+        // The grandparent is deleted here; the cascade took the middle row with it, untombstoned.
+        tombstones: [{ tableName: chain.parent, id: 'GP', deletedAt: 100 }],
+      };
+      const remote: SyncSnapshot = {
+        ...empty,
+        tables: {
+          [chain.parent]: [{ id: 'GP', updated_at: 50 }],
+          [chain.table]: [{ id: 'MID', [chain.col]: 'GP', updated_at: 50 }],
+          [child]: [{ id: 'CHILD', [ref.col]: 'MID', updated_at: 50 }],
+        },
+      };
+      const plan = reconcile(local, remote, {
+        offset: 0,
+        dictionary: {
+          [chain.parent]: ['id', 'updated_at'],
+          [chain.table]: ['id', chain.col, 'updated_at'],
+          [child]: ['id', ref.col, 'updated_at'],
+        },
+      });
+
+      const label = `${chain.parent} → ${chain.table} → ${child}.${ref.col}`;
+      if (plan.localUpserts.some((u) => u.table === chain.table)) {
+        problems.push(`${label}: the cascade-removed ${chain.table} row was resurrected`);
+      }
+      const childUpsert = plan.localUpserts.find((u) => u.table === child);
+      if (ref.nullable) {
+        // ON DELETE SET NULL: the row is kept, the dangling reference cleared.
+        if (childUpsert === undefined) problems.push(`${label}: the child row was dropped, not cleared`);
+        else if (childUpsert.row[ref.col] !== null) {
+          problems.push(`${label}: the child kept a reference to a row that will not exist`);
+        }
+      } else if (childUpsert !== undefined) {
+        problems.push(`${label}: the child row was upserted against a parent that will not exist`);
+      }
+    }
+    expect(problems).toEqual([]);
   });
 
   it('keeps the EXEMPT list free of stale entries', () => {
