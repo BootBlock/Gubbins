@@ -22,6 +22,7 @@ import {
 import { AddIcon, DeleteIcon, PackageIcon, SearchIcon, TagIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useFeature } from '@/features/modules/useFeature';
+import { usePermission } from '@/features/users/usePermission';
 import { useT } from '@/features/i18n';
 import { useReportWriteFailure } from '@/features/errors';
 import { TabularExportMenu } from '@/features/export/TabularExportMenu';
@@ -281,9 +282,14 @@ export function LocationSidebar({
     setPendingRevealId(null);
   }, [flat, pendingRevealId, expandBranch]);
 
-  // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above. Gated on
-  // the Label printing module (Modular UI): with it off, the per-location action disappears.
-  const labelsEnabled = useFeature('labels');
+  // Printable location-label dialog (Phase 73) — co-located like Edit/Delete above. Two gates,
+  // answering different questions: the Label printing module (Modular UI) decides whether this
+  // *device* offers label printing at all, and `labels:print` decides whether this *role* may
+  // (issue #429). Printing a location's label is the same bulk capability the Inventory screen's
+  // label actions are held to, reached from a different corner, so it answers to the same key.
+  const labelsModule = useFeature('labels');
+  const mayPrintLabels = usePermission('labels:print');
+  const labelsEnabled = labelsModule && mayPrintLabels;
   const [printLabelNode, setPrintLabelNode] = useState<LocationTreeNode | null>(null);
 
   // Whether the dragged location may be nested under `targetId` (spec §4 drag-to-nest, §7.5.3):
@@ -653,7 +659,7 @@ export function LocationSidebar({
           }}
         />
       ) : null}
-      {printLabelNode ? (
+      {printLabelNode && labelsEnabled ? (
         <PrintLocationLabelDialog
           open
           onClose={() => setPrintLabelNode(null)}

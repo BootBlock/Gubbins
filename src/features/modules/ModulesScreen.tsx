@@ -13,6 +13,7 @@ import { CheckIcon, ModulesIcon, ResetIcon, SearchIcon } from '@/components/icon
 import { cn } from '@/lib/utils';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { ConfirmUsersEnableModal } from '@/features/users/components/ConfirmUsersEnableModal';
+import { usePermission } from '@/features/users/usePermission';
 import {
   FEATURE_GROUP_ORDER,
   FEATURE_REGISTRY,
@@ -76,6 +77,16 @@ const PRESET_ENABLED_KEYS: ReadonlyArray<readonly [PresetId, string]> = PRESETS.
  * effective set is resolved by the pure `resolveEnabled` engine.
  */
 export function ModulesScreen() {
+  // Issue #429. Every mutating control on this screen is gated on `modules:write`, and this is
+  // the most consequential gate in the app: the Users module is itself a module, so an account
+  // that reached these toggles without holding `modules:write` could switch Users off — taking
+  // the sign-in gate down with it and resolving every session back to unrestricted. That would
+  // make every *other* permission advisory, so the gate is applied to the markup *and* to the
+  // handlers below, and a session lacking it never sees a control it cannot use.
+  //
+  // `modules:read` is what got the session onto this screen, so the module list and the active
+  // preset still render — reading which modules are on is a legitimate read.
+  const mayWrite = usePermission('modules:write');
   const intent = useModulesStore((state) => state.intent);
   const setFeatureIntent = useModulesStore((state) => state.setFeatureIntent);
   const applyPreset = useModulesStore((state) => state.applyPreset);
@@ -111,6 +122,7 @@ export function ModulesScreen() {
    * a self-contained change (closure is just the feature itself) applies immediately.
    */
   const requestToggle = (id: FeatureId, nextOn: boolean) => {
+    if (!mayWrite) return;
     const closure = [
       ...(nextOn
         ? closureToEnable(id, intent, FEATURE_REGISTRY)
@@ -139,7 +151,10 @@ export function ModulesScreen() {
   };
 
   const confirmPending = () => {
-    if (!pending) return;
+    // Re-checked rather than trusted from the open modal: authority can change (a sign-out, a
+    // role edit arriving) while a confirmation is on screen, and a stale dialog must not land a
+    // change the session may no longer make.
+    if (!pending || !mayWrite) return;
     // Disabling only records the toggled feature's intent — resolution cascades the
     // dependents off (and re-enabling later restores them to their own intent). Enabling
     // must switch every pulled-in dependency on, or the feature would still resolve off.
@@ -169,28 +184,23 @@ export function ModulesScreen() {
             <h2 id="modules-presets-heading" className="text-sm font-semibold text-foreground">
               Presets
             </h2>
-            <Button
-              variant="outline"
-              size="sm"
-              data-testid="modules-run-setup-again"
-              onClick={() => setShowChooser(true)}
-            >
-              <ResetIcon aria-hidden />
-              Run setup again
-            </Button>
+            {mayWrite ? (
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="modules-run-setup-again"
+                onClick={() => setShowChooser(true)}
+              >
+                <ResetIcon aria-hidden />
+                Run setup again
+              </Button>
+            ) : null}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {PRESETS.map((preset) => {
               const active = preset.id === activePresetId;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  aria-pressed={active}
-                  data-testid={`preset-${preset.id}`}
-                  onClick={() => applyPreset(preset.id)}
-                  className={cn('flex flex-col gap-1.5 [&_svg]:size-4', optionCardClassName(active))}
-                >
+              const body = (
+                <>
                   <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <preset.Icon aria-hidden />
                     <span className="min-w-0 flex-1">{preset.label}</span>
@@ -203,7 +213,35 @@ export function ModulesScreen() {
                     ) : null}
                   </span>
                   <span className="text-xs text-muted-foreground">{preset.description}</span>
+                </>
+              );
+              // Without `modules:write` the same card renders as presentation: which preset is
+              // active stays visible (a read), but there is no button to press, rather than a
+              // dead control that still looks pressable. The hover tint goes with it, since
+              // nothing here responds to a pointer any more.
+              return mayWrite ? (
+                <button
+                  key={preset.id}
+                  type="button"
+                  aria-pressed={active}
+                  data-testid={`preset-${preset.id}`}
+                  onClick={() => applyPreset(preset.id)}
+                  className={cn('flex flex-col gap-1.5 [&_svg]:size-4', optionCardClassName(active))}
+                >
+                  {body}
                 </button>
+              ) : (
+                <div
+                  key={preset.id}
+                  data-testid={`preset-${preset.id}`}
+                  className={cn(
+                    'flex flex-col gap-1.5 [&_svg]:size-4',
+                    optionCardClassName(active),
+                    active ? null : 'hover:bg-card/60',
+                  )}
+                >
+                  {body}
+                </div>
               );
             })}
           </div>
@@ -245,6 +283,7 @@ export function ModulesScreen() {
                     key={feature.id}
                     feature={feature}
                     on={enabled.has(feature.id)}
+                    mayWrite={mayWrite}
                     onChange={(nextOn) => requestToggle(feature.id, nextOn)}
                   />
                 ))}
@@ -284,10 +323,13 @@ export function ModulesScreen() {
 function FeatureRow({
   feature,
   on,
+  mayWrite,
   onChange,
 }: {
   readonly feature: FeatureDef;
   readonly on: boolean;
+  /** Whether the session holds `modules:write` — without it the row states, but never sets. */
+  readonly mayWrite: boolean;
   readonly onChange: (nextOn: boolean) => void;
 }) {
   const requires =
@@ -313,6 +355,15 @@ function FeatureRow({
           >
             <CheckIcon aria-hidden className="size-4" />
             Always on
+          </span>
+        ) : !mayWrite ? (
+          // The same shape as the always-on row: the module's current state stays readable, with
+          // nothing to change it by (issue #429).
+          <span
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-sm text-muted-foreground"
+            data-testid={`module-state-${feature.id}`}
+          >
+            {ON_OFF_OPTIONS.find((option) => option.value === (on ? 'on' : 'off'))?.label}
           </span>
         ) : (
           <Select

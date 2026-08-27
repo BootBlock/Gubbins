@@ -26,6 +26,7 @@ import {
 } from '@/components/icons';
 import { plural } from '@/lib/plural';
 import { useT } from '@/features/i18n';
+import { usePermission } from '@/features/users/usePermission';
 import { useFormatters } from '@/lib/useFormatters';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -67,6 +68,13 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   const [choosingArchiveDestination, setChoosingArchiveDestination] = useState(false);
   const fmt = useFormatters();
   const t = useT();
+  /**
+   * Both reclaim workflows delete data from this device, so they answer to `storage:write`
+   * (issue #429). A role without it still sees the breakdown — knowing what is using the space
+   * is what the banner sent them here for — but is not offered a door the gate will not open:
+   * the two workflow sections are hidden outright rather than shown disabled.
+   */
+  const mayWrite = usePermission('storage:write');
 
   const pruneCutoffMs = useMemo(() => pruneCutoff(now, pruneMonths), [now, pruneMonths]);
   const downgradeCutoffMs = useMemo(() => pruneCutoff(now, downgradeMonths), [now, downgradeMonths]);
@@ -88,6 +96,9 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   const { confirmSaved, confirmSavedDialog } = useConfirmSaved();
 
   const onPrune = async () => {
+    // The markup below never renders this workflow without the permission; the guard is here
+    // so a stale handler cannot outlive a revoked grant.
+    if (!mayWrite) return;
     setConfirming(null);
     // Reserve the destination inside the click (issue #502). The picker that can actually report
     // a completed save needs the user gesture, and the rows are not read until it resolves —
@@ -133,6 +144,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   };
 
   const onDowngrade = () => {
+    if (!mayWrite) return;
     setConfirming(null);
     downgrade.mutate(downgradeMonths, {
       onSuccess: (result) => {
@@ -222,115 +234,125 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
           ) : null}
         </section>
 
-        <section aria-labelledby="triage-history" className="flex flex-col gap-3 border-t border-border pt-4">
-          <div className="flex items-center gap-2">
-            <HistoryIcon />
-            <h3 id="triage-history" className="text-sm font-semibold">
-              Purge old activity history
-            </h3>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Saves a JSON cold-storage archive first, and removes the entries from your device only once that
-            copy is confirmed.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm">
-              Older than{' '}
-              <Select
-                aria-label="Purge history older than"
-                data-testid="prune-months"
-                className="ml-1 inline-block h-9 w-auto"
-                value={String(pruneMonths)}
-                onChange={(value) => setPruneMonths(Number(value))}
-                options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
-              />
-            </label>
-            <span className="text-sm text-muted-foreground">
-              {pruneCount.data ?? 0} {plural(pruneCount.data ?? 0, 'entry', 'entries')} affected
-            </span>
-            {confirming === 'prune' ? (
-              <ConfirmRow
-                testIdPrefix="prune"
-                message={`Permanently delete ${pruneCount.data ?? 0} ${plural(pruneCount.data ?? 0, 'entry', 'entries')} once the archive is saved?`}
-                onConfirm={() => void onPrune()}
-                onCancel={() => setConfirming(null)}
-                pending={prune.isPending}
-              />
-            ) : (
-              <Tooltip
-                content="Saves a JSON cold-storage archive first, and permanently deletes those history entries from this device only once that copy is confirmed."
-                triggerTabIndex={-1}
-              >
-                <span>
-                  <Button
-                    data-testid="prune-history"
-                    variant="outline"
-                    onClick={() => setConfirming('prune')}
-                    disabled={prune.isPending || choosingArchiveDestination || (pruneCount.data ?? 0) === 0}
-                  >
-                    {prune.isPending || choosingArchiveDestination ? <Spinner /> : <DownloadIcon />}
-                    Archive &amp; purge
-                  </Button>
-                </span>
-              </Tooltip>
-            )}
-          </div>
-        </section>
+        {mayWrite ? (
+          <section
+            aria-labelledby="triage-history"
+            className="flex flex-col gap-3 border-t border-border pt-4"
+          >
+            <div className="flex items-center gap-2">
+              <HistoryIcon />
+              <h3 id="triage-history" className="text-sm font-semibold">
+                Purge old activity history
+              </h3>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Saves a JSON cold-storage archive first, and removes the entries from your device only once that
+              copy is confirmed.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="text-sm">
+                Older than{' '}
+                <Select
+                  aria-label="Purge history older than"
+                  data-testid="prune-months"
+                  className="ml-1 inline-block h-9 w-auto"
+                  value={String(pruneMonths)}
+                  onChange={(value) => setPruneMonths(Number(value))}
+                  options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
+                />
+              </label>
+              <span className="text-sm text-muted-foreground">
+                {pruneCount.data ?? 0} {plural(pruneCount.data ?? 0, 'entry', 'entries')} affected
+              </span>
+              {confirming === 'prune' ? (
+                <ConfirmRow
+                  testIdPrefix="prune"
+                  message={`Permanently delete ${pruneCount.data ?? 0} ${plural(pruneCount.data ?? 0, 'entry', 'entries')} once the archive is saved?`}
+                  onConfirm={() => void onPrune()}
+                  onCancel={() => setConfirming(null)}
+                  pending={prune.isPending}
+                />
+              ) : (
+                <Tooltip
+                  content="Saves a JSON cold-storage archive first, and permanently deletes those history entries from this device only once that copy is confirmed."
+                  triggerTabIndex={-1}
+                >
+                  <span>
+                    <Button
+                      data-testid="prune-history"
+                      variant="outline"
+                      onClick={() => setConfirming('prune')}
+                      disabled={prune.isPending || choosingArchiveDestination || (pruneCount.data ?? 0) === 0}
+                    >
+                      {prune.isPending || choosingArchiveDestination ? <Spinner /> : <DownloadIcon />}
+                      Archive &amp; purge
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
+            </div>
+          </section>
+        ) : null}
 
-        <section aria-labelledby="triage-images" className="flex flex-col gap-3 border-t border-border pt-4">
-          <div className="flex items-center gap-2">
-            <ImageIcon />
-            <h3 id="triage-images" className="text-sm font-semibold">
-              Downgrade old images
-            </h3>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Drops full-resolution photos to reclaim space, keeping the thumbnails. Your cloud backup is left
-            untouched.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm">
-              Older than{' '}
-              <Select
-                aria-label="Downgrade images older than"
-                data-testid="downgrade-months"
-                className="ml-1 inline-block h-9 w-auto"
-                value={String(downgradeMonths)}
-                onChange={(value) => setDowngradeMonths(Number(value))}
-                options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
-              />
-            </label>
-            <span className="text-sm text-muted-foreground">
-              {downgradeCount.data ?? 0} {plural(downgradeCount.data ?? 0, 'image')} affected
-            </span>
-            {confirming === 'downgrade' ? (
-              <ConfirmRow
-                testIdPrefix="downgrade"
-                message={`Drop full-resolution data for ${downgradeCount.data ?? 0} ${plural(downgradeCount.data ?? 0, 'image')}? Thumbnails are kept.`}
-                onConfirm={onDowngrade}
-                onCancel={() => setConfirming(null)}
-                pending={downgrade.isPending}
-              />
-            ) : (
-              <Tooltip
-                content="Drops the full-resolution photo data locally, keeping the thumbnails. Your cloud backup is left untouched."
-                triggerTabIndex={-1}
-              >
-                <span>
-                  <Button
-                    data-testid="downgrade-images"
-                    variant="outline"
-                    onClick={() => setConfirming('downgrade')}
-                    disabled={downgrade.isPending || (downgradeCount.data ?? 0) === 0}
-                  >
-                    {downgrade.isPending ? <Spinner /> : <SuccessIcon />}
-                    Downgrade
-                  </Button>
-                </span>
-              </Tooltip>
-            )}
-          </div>
-        </section>
+        {mayWrite ? (
+          <section
+            aria-labelledby="triage-images"
+            className="flex flex-col gap-3 border-t border-border pt-4"
+          >
+            <div className="flex items-center gap-2">
+              <ImageIcon />
+              <h3 id="triage-images" className="text-sm font-semibold">
+                Downgrade old images
+              </h3>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Drops full-resolution photos to reclaim space, keeping the thumbnails. Your cloud backup is left
+              untouched.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="text-sm">
+                Older than{' '}
+                <Select
+                  aria-label="Downgrade images older than"
+                  data-testid="downgrade-months"
+                  className="ml-1 inline-block h-9 w-auto"
+                  value={String(downgradeMonths)}
+                  onChange={(value) => setDowngradeMonths(Number(value))}
+                  options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
+                />
+              </label>
+              <span className="text-sm text-muted-foreground">
+                {downgradeCount.data ?? 0} {plural(downgradeCount.data ?? 0, 'image')} affected
+              </span>
+              {confirming === 'downgrade' ? (
+                <ConfirmRow
+                  testIdPrefix="downgrade"
+                  message={`Drop full-resolution data for ${downgradeCount.data ?? 0} ${plural(downgradeCount.data ?? 0, 'image')}? Thumbnails are kept.`}
+                  onConfirm={onDowngrade}
+                  onCancel={() => setConfirming(null)}
+                  pending={downgrade.isPending}
+                />
+              ) : (
+                <Tooltip
+                  content="Drops the full-resolution photo data locally, keeping the thumbnails. Your cloud backup is left untouched."
+                  triggerTabIndex={-1}
+                >
+                  <span>
+                    <Button
+                      data-testid="downgrade-images"
+                      variant="outline"
+                      onClick={() => setConfirming('downgrade')}
+                      disabled={downgrade.isPending || (downgradeCount.data ?? 0) === 0}
+                    >
+                      {downgrade.isPending ? <Spinner /> : <SuccessIcon />}
+                      Downgrade
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
+            </div>
+          </section>
+        ) : null}
       </div>
       {/*
        * Nested inside this dialog deliberately: it only ever opens on top of the workflow that

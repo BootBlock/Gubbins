@@ -130,7 +130,21 @@ export function SyncScreen() {
   // screen. Inside it the two halves are separate: a backups-only role gets the backup panel and
   // none of the cloud-sync controls (issue #522).
   const mayUseSync = can(authority, 'sync:read');
+  // Issue #429: reading where this device syncs is not the same capability as driving a sync.
+  // "Sync now" exchanges changes both ways and publishes this device's data over the shared copy,
+  // and the missing-remote republish does so *unconditionally* — it is the remote-reset path, the
+  // destructive one. Both answer to `sync:write`. What stays on `sync:read` is everything that only
+  // reports or configures this device: the connection status, the last-synced line, the conflicts
+  // review, and the shared-settings opt-in (a per-device preference that travels on someone else's
+  // sync). Connect / disconnect stay there too — they point *this device* at a provider and leave
+  // both the local data and the shared copy exactly as they were.
+  const maySync = can(authority, 'sync:write');
   const mayUseBridge = can(authority, 'bridge:read');
+  // Issue #429: the URL and token are the credentials a push travels on, and "Push now" replaces
+  // the snapshot the bridge serves — configuring one without the other is incoherent, so the whole
+  // panel answers to `bridge:write`. A `bridge:read` role still gets everything that only reports:
+  // what the bridge is for, the setup guide, the reload notice and the build check.
+  const mayConfigureBridge = can(authority, 'bridge:write');
   const [conflictsOpen, setConflictsOpen] = useState(false);
   // Issue #72: device-local record of edits a sync overwrote — surfaced for review below.
   const conflictCount = useSyncConflictsStore((s) => s.conflicts.length);
@@ -310,6 +324,10 @@ export function SyncScreen() {
    * never on the ordinary "Sync now" path, where a missing remote must stop the sync.
    */
   async function syncNow(allowRemoteReset = false) {
+    // Issue #429: re-read the authority at the moment of the action rather than trusting the render
+    // that offered the button — a role change from another device lands on a sync and is adopted
+    // here (`adoptAuthorityChange`), so the session can narrow while this screen is open.
+    if (!can(useSessionStore.getState().authority, 'sync:write')) return;
     const provider = getActiveProvider();
     if (!provider) {
       setError('Connect a sync provider first.');
@@ -385,6 +403,8 @@ export function SyncScreen() {
   }
 
   async function pushToBridge() {
+    // Issue #429: same re-read as `syncNow` — a push overwrites the snapshot the bridge serves.
+    if (!can(useSessionStore.getState().authority, 'bridge:write')) return;
     setBusy(true);
     // Clear any stale top banner from another action; the push outcome shows inline below.
     setError(null);
@@ -434,8 +454,10 @@ export function SyncScreen() {
         {/* Issue #196: the shared copy has gone missing, so the sync stopped rather than
           replace it. Recovering is the user's call — reconnecting the right folder/account
           is usually what they want, so publishing this device's data is the second option
-          and takes an explicit click. */}
-        {remoteMissing ? (
+          and takes an explicit click. Its one action is the remote reset, so the banner goes with
+          it behind `sync:write` (issue #429) — only a `sync:write` action raises it in the first
+          place, but the authority can narrow while it is on screen. */}
+        {remoteMissing && maySync ? (
           <Banner tone="warning" data-testid="sync-remote-missing">
             <div className="space-y-2">
               <p>{t('sync.remoteMissing.body')}</p>
@@ -577,37 +599,41 @@ export function SyncScreen() {
               )}
             </section>
 
-            {/* Sync */}
-            <section className="space-y-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Synchronise
-              </h2>
-              <div className="flex flex-wrap items-center gap-3">
-                <Tooltip
-                  content="Exchange changes both ways with the connected provider, merging newest-wins. Pauses automatically if local storage is critically full."
-                  triggerTabIndex={-1}
-                >
-                  <span>
-                    {/* Wrapped, not passed directly: `onClick` would hand the click event to
+            {/* Sync — `sync:write`, not the `sync:read` that opened the half around it (issue
+                #429). The whole section goes, heading and outcome line included: with the one
+                button removed there is nothing left that could ever fill them. */}
+            {maySync ? (
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  Synchronise
+                </h2>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Tooltip
+                    content="Exchange changes both ways with the connected provider, merging newest-wins. Pauses automatically if local storage is critically full."
+                    triggerTabIndex={-1}
+                  >
+                    <span>
+                      {/* Wrapped, not passed directly: `onClick` would hand the click event to
                       `allowRemoteReset`, which is truthy — the exact overwrite this guards. */}
-                    <Button
-                      onClick={() => void syncNow()}
-                      disabled={!connected || busy}
-                      data-testid="sync-now"
-                    >
-                      <SyncIcon />
-                      Sync now
-                    </Button>
-                  </span>
-                </Tooltip>
-                {/* Always-mounted polite region: the sync outcome appears in place after an
+                      <Button
+                        onClick={() => void syncNow()}
+                        disabled={!connected || busy}
+                        data-testid="sync-now"
+                      >
+                        <SyncIcon />
+                        Sync now
+                      </Button>
+                    </span>
+                  </Tooltip>
+                  {/* Always-mounted polite region: the sync outcome appears in place after an
                 explicit "Sync now", which a screen reader would otherwise miss (WCAG 4.1.3).
                 The region must pre-exist for the later content change to be announced. */}
-                <LiveRegion className="text-sm text-muted-foreground" data-testid="sync-result">
-                  {result && result.status !== 'HARD_STOP' ? describeSyncOutcome(result) : null}
-                </LiveRegion>
-              </div>
-            </section>
+                  <LiveRegion className="text-sm text-muted-foreground" data-testid="sync-result">
+                    {result && result.status !== 'HARD_STOP' ? describeSyncOutcome(result) : null}
+                  </LiveRegion>
+                </div>
+              </section>
+            ) : null}
 
             {/* Shared settings (issue #382) — opt in, per group, on this device. */}
             <section className="space-y-3">
@@ -782,66 +808,73 @@ export function SyncScreen() {
                   })}
                 </Banner>
               ) : null}
-              <Surface className="space-y-4 p-4">
-                <FormField
-                  label="Bridge URL"
-                  hint="The bridge's base address on your network, e.g. `http://127.0.0.1:8787`. The snapshot endpoint is added automatically."
-                >
-                  <Input
-                    type="url"
-                    inputMode="url"
-                    placeholder="http://127.0.0.1:8787"
-                    value={bridgeUrl}
-                    onChange={(e) => setBridgeUrl(e.target.value)}
-                    data-testid="bridge-url"
-                  />
-                </FormField>
-                <FormField
-                  label="Access token"
-                  hint="An API token minted in Users → the account → API tokens. Treated as a secret — stored only on this device and never synced. Where accounts are in use, signing out forgets it."
-                >
-                  <Input
-                    type="password"
-                    autoComplete="off"
-                    placeholder="Bridge access token"
-                    value={bridgeToken}
-                    onChange={(e) => setBridgeToken(e.target.value)}
-                    data-testid="bridge-token"
-                  />
-                </FormField>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Tooltip
-                    content="Build a snapshot of everything and POST it to the bridge. It replaces the snapshot the bridge serves."
-                    triggerTabIndex={-1}
+              {/* Issue #429: the credentials and the push they drive are `bridge:write`. */}
+              {mayConfigureBridge ? (
+                <Surface className="space-y-4 p-4">
+                  <FormField
+                    label="Bridge URL"
+                    hint="The bridge's base address on your network, e.g. `http://127.0.0.1:8787`. The snapshot endpoint is added automatically."
                   >
-                    <span>
-                      <Button onClick={pushToBridge} disabled={busy || !canPush} data-testid="push-to-bridge">
-                        <CloudUploadIcon />
-                        Push now
-                      </Button>
-                    </span>
-                  </Tooltip>
-                  {!canPush ? (
-                    <span className="text-xs text-muted-foreground">
-                      Enter the bridge URL and token to enable pushing.
-                    </span>
-                  ) : null}
-                  {/* The push outcome appears in place beside the button — close to where the
+                    <Input
+                      type="url"
+                      inputMode="url"
+                      placeholder="http://127.0.0.1:8787"
+                      value={bridgeUrl}
+                      onChange={(e) => setBridgeUrl(e.target.value)}
+                      data-testid="bridge-url"
+                    />
+                  </FormField>
+                  <FormField
+                    label="Access token"
+                    hint="An API token minted in Users → the account → API tokens. Treated as a secret — stored only on this device and never synced. Where accounts are in use, signing out forgets it."
+                  >
+                    <Input
+                      type="password"
+                      autoComplete="off"
+                      placeholder="Bridge access token"
+                      value={bridgeToken}
+                      onChange={(e) => setBridgeToken(e.target.value)}
+                      data-testid="bridge-token"
+                    />
+                  </FormField>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Tooltip
+                      content="Build a snapshot of everything and POST it to the bridge. It replaces the snapshot the bridge serves."
+                      triggerTabIndex={-1}
+                    >
+                      <span>
+                        <Button
+                          onClick={pushToBridge}
+                          disabled={busy || !canPush}
+                          data-testid="push-to-bridge"
+                        >
+                          <CloudUploadIcon />
+                          Push now
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    {!canPush ? (
+                      <span className="text-xs text-muted-foreground">
+                        Enter the bridge URL and token to enable pushing.
+                      </span>
+                    ) : null}
+                    {/* The push outcome appears in place beside the button — close to where the
                   user just clicked — rather than as a banner at the top they might miss. The
                   region is always mounted so screen readers announce the later content change
                   (WCAG 4.1.3), and errors interrupt (assertive) while successes queue (polite). */}
-                  <LiveRegion
-                    urgency={pushResult && !pushResult.ok ? 'assertive' : 'polite'}
-                    className={cn(
-                      'text-sm',
-                      pushResult ? (pushResult.ok ? 'text-glyph-success' : 'text-glyph-danger') : undefined,
-                    )}
-                    data-testid="push-result"
-                  >
-                    {pushResult ? pushResult.message : null}
-                  </LiveRegion>
-                </div>
-              </Surface>
+                    <LiveRegion
+                      urgency={pushResult && !pushResult.ok ? 'assertive' : 'polite'}
+                      className={cn(
+                        'text-sm',
+                        pushResult ? (pushResult.ok ? 'text-glyph-success' : 'text-glyph-danger') : undefined,
+                      )}
+                      data-testid="push-result"
+                    >
+                      {pushResult ? pushResult.message : null}
+                    </LiveRegion>
+                  </div>
+                </Surface>
+              ) : null}
             </section>
           </>
         ) : null}

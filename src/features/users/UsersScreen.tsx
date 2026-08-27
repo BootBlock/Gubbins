@@ -35,6 +35,7 @@ import {
 import { useT } from '@/features/i18n';
 import { useErrorMessage } from '@/features/errors';
 import { useFeature } from '@/features/modules/useFeature';
+import { usePermission } from './usePermission';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { BUILTIN_USER_IDS } from '@/db/repositories/constants';
 import type { Role, User } from '@/db/repositories/types';
@@ -67,6 +68,12 @@ export function UsersScreen() {
   const t = useT();
   const errorMessage = useErrorMessage();
   const moduleEnabled = useFeature('users');
+  // The screen opens on `users:read`, but every *change* it can make — creating, editing or
+  // deleting an account or a role, setting a password, minting a Bridge token — is enforced as
+  // `users:manage` by the repository. Rendering those controls on read alone offers doors the
+  // gate refuses, so a reader sees the accounts and roles and none of the affordances that
+  // would only produce a refusal (issue #429).
+  const mayManage = usePermission('users:manage');
   const signedInUserId = useSessionStore((state) => state.session?.userId ?? null);
 
   const usersQuery = useUsers();
@@ -112,22 +119,40 @@ export function UsersScreen() {
   // Every dialog opener goes through one of these. `formError` is shared by all of them, so an
   // opener that forgets to clear it shows the *previous* dialog's failure in a fresh, unsubmitted
   // form — which is why opening is a named function rather than a bare `setState` at each site.
+  //
+  // Each also refuses outright without `users:manage`: the controls are hidden, but an opener is
+  // the one place every route into a mutating dialog converges, so guarding here means a hidden
+  // control cannot still be driven by some other path (issue #429).
   const openUserDialog = (user: User | null): void => {
+    if (!mayManage) return;
     setFormError(null);
     setUserDialog({ user });
   };
   const openRoleDialog = (role: Role | null): void => {
+    if (!mayManage) return;
     setFormError(null);
     setRoleDialog({ role });
   };
   const openPasswordDialog = (user: User): void => {
+    if (!mayManage) return;
     setFormError(null);
     setPasswordFor(user);
   };
   const openTokensDialog = (user: User): void => {
+    if (!mayManage) return;
     setFormError(null);
     setMinted(null);
     setTokensFor(user);
+  };
+  const openDeleteUser = (user: User): void => {
+    if (!mayManage) return;
+    setFormError(null);
+    setDeletingUser(user);
+  };
+  const openDeleteRole = (role: Role): void => {
+    if (!mayManage) return;
+    setFormError(null);
+    setDeletingRole(role);
   };
   const closeTokensDialog = (): void => {
     setMinted(null);
@@ -188,10 +213,12 @@ export function UsersScreen() {
         icon={<UsersIcon />}
         title={t('users.title')}
         actions={
-          <Button onClick={() => openUserDialog(null)}>
-            <AddIcon aria-hidden />
-            {t('users.add')}
-          </Button>
+          mayManage ? (
+            <Button onClick={() => openUserDialog(null)}>
+              <AddIcon aria-hidden />
+              {t('users.add')}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -233,13 +260,11 @@ export function UsersScreen() {
                     user={user}
                     roleName={roleName(user.roleId)}
                     isSelf={user.id === signedInUserId}
+                    mayManage={mayManage}
                     onEdit={() => openUserDialog(user)}
                     onPassword={() => openPasswordDialog(user)}
                     onTokens={() => openTokensDialog(user)}
-                    onDelete={() => {
-                      setFormError(null);
-                      setDeletingUser(user);
-                    }}
+                    onDelete={() => openDeleteUser(user)}
                   />
                 </li>
               ))}
@@ -252,10 +277,12 @@ export function UsersScreen() {
             <h2 id="users-roles-heading" className="text-sm font-semibold text-foreground">
               {t('roles.heading')}
             </h2>
-            <Button variant="outline" size="sm" onClick={() => openRoleDialog(null)}>
-              <AddIcon aria-hidden />
-              {t('roles.add')}
-            </Button>
+            {mayManage ? (
+              <Button variant="outline" size="sm" onClick={() => openRoleDialog(null)}>
+                <AddIcon aria-hidden />
+                {t('roles.add')}
+              </Button>
+            ) : null}
           </div>
           <p className="text-sm text-muted-foreground">{t('roles.intro')}</p>
 
@@ -277,11 +304,9 @@ export function UsersScreen() {
                   <RoleRow
                     role={role}
                     memberCount={users.filter((user) => user.roleId === role.id).length}
+                    mayManage={mayManage}
                     onEdit={() => openRoleDialog(role)}
-                    onDelete={() => {
-                      setFormError(null);
-                      setDeletingRole(role);
-                    }}
+                    onDelete={() => openDeleteRole(role)}
                   />
                 </li>
               ))}
@@ -292,7 +317,10 @@ export function UsersScreen() {
 
       <LiveRegion visuallyHidden>{announcement}</LiveRegion>
 
-      {userDialog ? (
+      {/* Every dialog below is a mutation the repository enforces as `users:manage`. The openers
+          already refuse without it, but the guard is repeated on the render so a dialog opened
+          before the authority changed cannot outlive the permission (issue #429). */}
+      {mayManage && userDialog ? (
         <UserFormDialog
           // Remount when the target changes: the dialog seeds its fields from props with
           // `useState`, so reusing the instance would edit one account with another's values.
@@ -306,7 +334,7 @@ export function UsersScreen() {
         />
       ) : null}
 
-      {tokensFor ? (
+      {mayManage && tokensFor ? (
         <ApiTokensDialog
           key={tokensFor.id}
           user={tokensFor}
@@ -348,7 +376,7 @@ export function UsersScreen() {
         />
       ) : null}
 
-      {passwordFor ? (
+      {mayManage && passwordFor ? (
         <PasswordDialog
           key={passwordFor.id}
           user={passwordFor}
@@ -383,7 +411,7 @@ export function UsersScreen() {
         />
       ) : null}
 
-      {roleDialog ? (
+      {mayManage && roleDialog ? (
         <RoleFormDialog
           key={roleDialog.role?.id ?? 'new'}
           role={roleDialog.role}
@@ -394,7 +422,7 @@ export function UsersScreen() {
         />
       ) : null}
 
-      {deletingUser ? (
+      {mayManage && deletingUser ? (
         <Modal
           open
           onClose={() => setDeletingUser(null)}
@@ -439,7 +467,7 @@ export function UsersScreen() {
         </Modal>
       ) : null}
 
-      {deletingRole ? (
+      {mayManage && deletingRole ? (
         <Modal
           open
           onClose={() => setDeletingRole(null)}
@@ -487,6 +515,7 @@ function UserRow({
   user,
   roleName,
   isSelf,
+  mayManage,
   onEdit,
   onPassword,
   onTokens,
@@ -495,6 +524,8 @@ function UserRow({
   readonly user: User;
   readonly roleName: string | null;
   readonly isSelf: boolean;
+  /** Whether this session holds `users:manage` — without it the row is read-only (issue #429). */
+  readonly mayManage: boolean;
   readonly onEdit: () => void;
   readonly onPassword: () => void;
   readonly onTokens: () => void;
@@ -554,30 +585,34 @@ function UserRow({
         ) : null}
       </div>
 
-      <div className="flex items-center gap-2">
-        {/* System never signs in and never speaks for anyone over the Bridge, so neither a
+      {/* Password, API tokens, edit and delete are all `users:manage` at the repository, so a
+          read-only session is shown the account and none of them (issue #429). */}
+      {mayManage ? (
+        <div className="flex items-center gap-2">
+          {/* System never signs in and never speaks for anyone over the Bridge, so neither a
             password nor a credential belongs on its row. */}
-        {!isSystem ? (
-          <>
-            <Button variant="outline" size="sm" onClick={onPassword}>
-              {t('users.row.passwordAction')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={onTokens}>
-              {t('users.row.tokensAction')}
-            </Button>
-          </>
-        ) : null}
-        {!builtin ? (
-          <>
-            <Button variant="ghost" size="icon" onClick={onEdit} aria-label={t('users.row.edit')}>
-              <EditIcon aria-hidden />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={onDelete} aria-label={t('users.row.delete')}>
-              <DeleteIcon aria-hidden />
-            </Button>
-          </>
-        ) : null}
-      </div>
+          {!isSystem ? (
+            <>
+              <Button variant="outline" size="sm" onClick={onPassword}>
+                {t('users.row.passwordAction')}
+              </Button>
+              <Button variant="outline" size="sm" onClick={onTokens}>
+                {t('users.row.tokensAction')}
+              </Button>
+            </>
+          ) : null}
+          {!builtin ? (
+            <>
+              <Button variant="ghost" size="icon" onClick={onEdit} aria-label={t('users.row.edit')}>
+                <EditIcon aria-hidden />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={onDelete} aria-label={t('users.row.delete')}>
+                <DeleteIcon aria-hidden />
+              </Button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </Surface>
   );
 }
@@ -586,11 +621,14 @@ function UserRow({
 function RoleRow({
   role,
   memberCount,
+  mayManage,
   onEdit,
   onDelete,
 }: {
   readonly role: Role;
   readonly memberCount: number;
+  /** Whether this session holds `users:manage` — without it the row is read-only (issue #429). */
+  readonly mayManage: boolean;
   readonly onEdit: () => void;
   readonly onDelete: () => void;
 }) {
@@ -620,18 +658,22 @@ function RoleRow({
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" onClick={onEdit} aria-label={t('roles.row.edit')}>
-          <EditIcon aria-hidden />
-        </Button>
-        {/* A built-in role is editable but never deletable — removing it would strand everyone
-            assigned to it (plan §2.3). The repository and a schema trigger both refuse it too. */}
-        {!role.isBuiltin ? (
-          <Button variant="ghost" size="icon" onClick={onDelete} aria-label={t('roles.row.delete')}>
-            <DeleteIcon aria-hidden />
+      {/* Editing and deleting a role are both `users:manage`; a reader gets the row alone
+          rather than controls whose only outcome is a refusal (issue #429). */}
+      {mayManage ? (
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={onEdit} aria-label={t('roles.row.edit')}>
+            <EditIcon aria-hidden />
           </Button>
-        ) : null}
-      </div>
+          {/* A built-in role is editable but never deletable — removing it would strand everyone
+            assigned to it (plan §2.3). The repository and a schema trigger both refuse it too. */}
+          {!role.isBuiltin ? (
+            <Button variant="ghost" size="icon" onClick={onDelete} aria-label={t('roles.row.delete')}>
+              <DeleteIcon aria-hidden />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </Surface>
   );
 }

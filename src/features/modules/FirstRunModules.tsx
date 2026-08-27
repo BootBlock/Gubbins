@@ -28,6 +28,7 @@ import { CheckIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { usePermission } from '@/features/users/usePermission';
 import { ANIMATION_LEVELS, type AnimationLevel } from '@/features/settings/theme-registry';
 import { PRESETS, type PresetId } from './presets';
 
@@ -36,12 +37,20 @@ import { PRESETS, type PresetId } from './presets';
  * first-run flow is outstanding — except on the `/modules` manager itself, where the same choice is
  * already front-and-centre (and its "Run setup again" hosts the dialog), so stacking the wizard on
  * top would be redundant.
+ *
+ * It is also withheld from a session that may not write the module list (issue #429). This wizard
+ * is the third door onto that list, and the widest: `applyPreset` writes an intent for *every*
+ * optional feature, and no preset lists Users — so finishing the wizard switches the Users module
+ * off, and the whole sign-in gate with it. A restricted session is left on the defaults rather
+ * than shown a wizard whose one outcome it is not allowed to reach. The flow stays outstanding,
+ * so whoever may make the choice still gets it.
  */
 export function FirstRunModules() {
   const firstRunComplete = useModulesStore((state) => state.firstRunComplete);
   const onModulesScreen = useRouterState({ select: (state) => state.location.pathname === '/modules' });
+  const mayWriteModules = usePermission('modules:write');
 
-  if (firstRunComplete || onModulesScreen) return null;
+  if (firstRunComplete || onModulesScreen || !mayWriteModules) return null;
   // Dismissing at the root simply completes the flow; the flag flip unmounts this.
   return <FirstRunModulesDialog onClose={() => {}} />;
 }

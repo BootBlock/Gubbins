@@ -28,6 +28,8 @@ import { FirstRunModules } from './FirstRunModules';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { FEATURE_REGISTRY, OPTIONAL_FEATURE_IDS, PRESETABLE_FEATURE_IDS } from './feature-registry';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 /** Advance from the modules step to the animation step. */
 function goToAnimationStep() {
@@ -38,11 +40,13 @@ beforeEach(() => {
   mockPathname = '/';
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
   usePreferencesStore.setState({ animationLevel: 'balanced' });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
   usePreferencesStore.setState({ animationLevel: 'balanced' });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 
 describe('FirstRunModules — visibility', () => {
@@ -66,6 +70,28 @@ describe('FirstRunModules — visibility', () => {
     mockPathname = '/modules';
     render(<FirstRunModules />);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  /**
+   * Issue #429. The wizard is the widest door onto the module list: `applyPreset` writes an intent
+   * for *every* optional feature, and no preset lists Users — so finishing it switches the Users
+   * module off and takes the whole sign-in gate with it. A restricted session must not be handed
+   * that, and the check has to be here rather than on the button, because every exit from the
+   * wizard completes the flow.
+   */
+  it('is withheld from a session that may not write the module list', () => {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['modules:read']) } });
+    render(<FirstRunModules />);
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // The flow stays outstanding, so whoever may make the choice still gets it.
+    expect(useModulesStore.getState().firstRunComplete).toBe(false);
+  });
+
+  it('still shows for a session that holds the write', () => {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['modules:write']) } });
+    render(<FirstRunModules />);
+    expect(screen.getByRole('dialog', { name: 'Set up your modules' })).toBeTruthy();
   });
 });
 
