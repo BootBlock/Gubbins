@@ -353,3 +353,57 @@ describe('CycleCountDialog — the count sheet survives being closed (issue #587
     expect(useCountDraftStore.getState().drafts[LOC.id]?.counts).toEqual({ [BATCH_LINE_KEY]: '8' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Partial coverage (issue #637)
+// ---------------------------------------------------------------------------
+
+describe('CycleCountDialog — a sheet with lines left blank', () => {
+  it('says how much is counted and refuses to offer "Mark counted"', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+
+    // Nothing typed: the adjustment count alone reads identically to a perfect count, so the
+    // coverage line and the notice are what separate the two.
+    expect(screen.getByTestId('cycle-count-coverage').textContent).toBe('0 of 1 line counted');
+    expect(screen.getByTestId('count-coverage-notice').textContent).toContain('1 of 1 line not counted');
+    expect(screen.getByTestId('authorise-reconciliation').textContent).toContain('Record partial count');
+  });
+
+  it('does not stamp the location as counted, and says so afterwards', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('authorise-reconciliation'));
+    });
+
+    // The durable last-counted stamp is the whole point: a shelf nobody counted must not be
+    // removed from the list of shelves needing a count.
+    expect(authoriseCountSpy).toHaveBeenCalledWith(expect.objectContaining({ markCounted: false }));
+    const region = screen.getByTestId('cycle-count-result');
+    expect(region.textContent).toContain('Partial count recorded');
+    expect(region.textContent).toContain('0 of 1 line counted');
+    expect(region.textContent).toContain('has not been marked as counted');
+    expect(region.textContent).not.toContain('recorded as counted.');
+  });
+
+  it('a fully-counted clean sheet still stamps and still says "recorded as counted"', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+
+    // The expected 10, entered — a real clean count, which must keep the old behaviour.
+    fireEvent.change(screen.getByTestId(`count-${BATCH_LINE_KEY}`), { target: { value: '10' } });
+    expect(screen.queryByTestId('count-coverage-notice')).toBeNull();
+    expect(screen.getByTestId('authorise-reconciliation').textContent).toContain('Mark counted');
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('authorise-reconciliation'));
+    });
+
+    expect(authoriseCountSpy).toHaveBeenCalledWith(expect.objectContaining({ markCounted: true }));
+    expect(screen.getByTestId('cycle-count-result').textContent).toContain(
+      'No variances found — recorded as counted.',
+    );
+  });
+});

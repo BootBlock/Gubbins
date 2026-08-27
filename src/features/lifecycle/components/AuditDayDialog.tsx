@@ -32,6 +32,7 @@ import { useLocationTree } from '@/features/inventory/queries';
 import { useFormatters } from '@/lib/useFormatters';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
+import { CountCoverageNotice, coverageSummary } from './CountCoverageNotice';
 import { CountDraftNotice } from './CountDraftNotice';
 import { CycleCountLines } from './CycleCountLines';
 import { useAuditSessionStore } from '../useAuditSessionStore';
@@ -139,7 +140,14 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
   const completionAnnouncement = (() => {
     if (stage !== 'summary' || !session) return '';
     const tally = summarise(session);
-    return `Stock-take complete. Walked ${session.scope.length} ${plural(session.scope.length, 'location')} — ${tally.totalAdjustmentsMade} ${plural(tally.totalAdjustmentsMade, 'adjustment')} applied.`;
+    // Part-counted locations are named in the announcement, not just the tiles: a walk that
+    // "completed" while leaving shelves half-counted is the outcome most worth hearing about,
+    // and the tiles are silent to a screen reader (issue #637).
+    const partial =
+      tally.locationsPartial > 0
+        ? ` ${tally.locationsPartial} ${plural(tally.locationsPartial, 'location')} left part-counted.`
+        : '';
+    return `Stock-take complete. Walked ${session.scope.length} ${plural(session.scope.length, 'location')} — ${tally.totalAdjustmentsMade} ${plural(tally.totalAdjustmentsMade, 'adjustment')} applied.${partial}`;
   })();
 
   return (
@@ -330,21 +338,31 @@ function AuditStepper({ onClose, onAbandon }: { onClose: () => void; onAbandon: 
   // current step so a screen reader hears where the walk is on open/resume.
   const [announcement, setAnnouncement] = useState('');
   const stepMessage = `Now counting ${current.name}. Location ${prog.position} of ${prog.total}.`;
+  // The outcome just recorded, waiting to be spoken alongside the step it caused. Finishing a
+  // location advances the walk in the same render, so the effect below would otherwise replace
+  // the outcome with the next step's message before any screen reader saw it — the outcome was
+  // announced only on the walk's very last location. It matters most for the outcome that says
+  // a shelf was left part-counted (issue #637), which is precisely the one worth hearing.
+  const pendingOutcomeRef = useRef<string | null>(null);
   // Re-announce the step whenever the current location changes.
   const lastAnnouncedId = useRef<string | null>(null);
   useEffect(() => {
     if (lastAnnouncedId.current !== current.id) {
       lastAnnouncedId.current = current.id;
-      setAnnouncement(stepMessage);
+      const outcome = pendingOutcomeRef.current;
+      pendingOutcomeRef.current = null;
+      setAnnouncement(outcome ? `${outcome} ${stepMessage}` : stepMessage);
     }
   }, [current.id, stepMessage]);
 
   const finish = (status: AuditLocationStatus, totals: AuditTotals, outcomeMessage: string) => {
+    pendingOutcomeRef.current = outcomeMessage;
     setAnnouncement(outcomeMessage);
     recordCurrent(status, totals);
   };
 
   const skip = () => {
+    pendingOutcomeRef.current = `Skipped ${current.name}.`;
     setAnnouncement(`Skipped ${current.name}.`);
     // A skipped location is done with, so its unfinished sheet goes too — otherwise the walk
     // would offer to restore a count for somewhere the auditor decided not to count.
@@ -426,7 +444,7 @@ function AuditLocationPanel({
   onSkip: () => void;
 }) {
   const count = useLocationCycleCount(location);
-  const { isLoading, isEmpty, missing, totalToApply, pending, restored, clearSheet } = count;
+  const { isLoading, isEmpty, missing, totalToApply, coverage, pending, restored, clearSheet } = count;
 
   // Authorising writes this location's adjustments and its counted-at stamp in one transaction,
   // and the walk only advances once that lands. A dismissal mid-write would still alter the
@@ -439,12 +457,22 @@ function AuditLocationPanel({
   // is a no-op reconciliation when there's nothing to apply, so this is safe to call
   // unconditionally.
   const finishLocation = async () => {
+    const covered = coverageSummary(coverage);
     const result: AuthoriseResult = await count.authorise();
-    const message =
-      result.adjustmentsMade > 0
+    // A sheet finished with lines left blank is recorded as `partial`, not `counted`: its
+    // adjustments are real and still tallied, but it must not land in the summary's Audited
+    // tile beside the shelves that were genuinely walked end to end (issue #637).
+    const status: AuditLocationStatus = !result.coverageComplete
+      ? 'partial'
+      : result.adjustmentsMade > 0
+        ? 'reconciled'
+        : 'counted';
+    const message = !result.coverageComplete
+      ? `Partial count recorded at ${location.name} — ${covered}. Not marked as counted. Moving on.`
+      : result.adjustmentsMade > 0
         ? `Reconciled ${result.adjustmentsMade} ${plural(result.adjustmentsMade, 'adjustment')} at ${location.name}. Moving on.`
         : `Counted ${location.name}. Moving on.`;
-    onFinish(result.adjustmentsMade > 0 ? 'reconciled' : 'counted', result, message);
+    onFinish(status, result, message);
   };
 
   const hasVariances = totalToApply > 0;
@@ -476,8 +504,20 @@ function AuditLocationPanel({
         <div className="space-y-4">
           <CycleCountLines count={count} />
 
+          <CountCoverageNotice coverage={coverage} />
+
           <div className="flex items-center justify-between pt-1">
             <p className="text-xs text-muted-foreground">
+              {/*
+                Coverage above the adjustment count: with nothing typed the adjustment count
+                is 0, which reads exactly like a shelf counted and found perfect (issue #637).
+                Dropped when there is no discrete sheet, where "0 of 0" would be noise.
+              */}
+              {coverage.total > 0 ? (
+                <span className="block" data-testid="audit-coverage">
+                  {coverageSummary(coverage)}
+                </span>
+              ) : null}
               {totalToApply} {plural(totalToApply, 'adjustment')} to authorise
               {missing.length > 0 ? ` (${missing.length} missing)` : ''}
             </p>
@@ -485,7 +525,27 @@ function AuditLocationPanel({
               <Button variant="ghost" onClick={onSkip} data-testid="audit-skip">
                 Skip
               </Button>
-              {hasVariances ? (
+              {/*
+                "Mark counted & continue" is a claim about the whole location, so a sheet with
+                blank lines is offered a partial finish instead — same write, honest label.
+              */}
+              {!coverage.isComplete ? (
+                <Tooltip
+                  content="Commit the lines you did count and move on. This location keeps its old last-counted date, so it stays on the list of places still to check."
+                  triggerTabIndex={-1}
+                >
+                  <span>
+                    <Button
+                      onClick={() => void finishLocation()}
+                      disabled={pending}
+                      data-testid="audit-partial-continue"
+                    >
+                      <ChevronRightIcon />
+                      Record partial &amp; continue ({coverage.counted}/{coverage.total})
+                    </Button>
+                  </span>
+                </Tooltip>
+              ) : hasVariances ? (
                 <Tooltip
                   content="Authorise this location's variances (writing the reconciliation adjustments), then move to the next location."
                   triggerTabIndex={-1}
@@ -550,8 +610,14 @@ function AuditSummaryView({ onDone }: { onDone: () => void }) {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {/*
+        Five tiles, not four: "Audited" now means *fully* counted, so a part-counted location
+        needs somewhere of its own to land rather than being absorbed into a figure that claims
+        the shelf was verified (issue #637).
+      */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <StatTile label="Audited" value={summary.locationsAudited} />
+        <StatTile label="Partial" value={summary.locationsPartial} tone="warning" />
         <StatTile label="Variances" value={summary.totalVariancesFound} tone="warning" />
         <StatTile label="Adjustments" value={summary.totalAdjustmentsMade} tone="success" />
         <StatTile label="Skipped" value={summary.locationsSkipped} />
@@ -565,6 +631,22 @@ function AuditSummaryView({ onDone }: { onDone: () => void }) {
           </p>
           <ul className="space-y-0.5 text-sm" data-testid="audit-summary-variances">
             {summary.withVariances.map((l) => (
+              <li key={l.id} className="rounded bg-secondary/30 px-3 py-1.5">
+                {l.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {summary.partial.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <WarningIcon className="size-3.5 text-warning" aria-hidden />
+            Part-counted — still need a count
+          </p>
+          <ul className="space-y-0.5 text-sm" data-testid="audit-summary-partial">
+            {summary.partial.map((l) => (
               <li key={l.id} className="rounded bg-secondary/30 px-3 py-1.5">
                 {l.name}
               </li>
