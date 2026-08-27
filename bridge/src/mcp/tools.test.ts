@@ -238,7 +238,7 @@ describe('the write tools', () => {
         stored = text;
       },
     });
-    const tools = createWriteTools((op) => execute(op, SYSTEM_USER_ID));
+    const tools = createWriteTools(async (op) => (await execute(op, SYSTEM_USER_ID)).result);
     return { tools, stored: () => stored };
   }
 

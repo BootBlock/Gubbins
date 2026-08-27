@@ -208,6 +208,12 @@ export interface ApiV1Context {
   /** The parsed POST body (undefined for GET). */
   readonly body?: ParsedBody;
   /**
+   * The caller's `Idempotency-Key` header, validated by the server before routing (issue #567).
+   * Absent means the caller sent none, and the write applies unconditionally — the behaviour
+   * before keys existed. See `idempotency.ts` for what a key buys.
+   */
+  readonly idempotencyKey?: string;
+  /**
    * The id of the user whose API token authorised this request (issue #79, plan §1.3) — the
    * actor every write is attributed to. Present on POSTs; the server resolves it before routing,
    * so a request that reaches a write handler has always been identified.
@@ -694,11 +700,20 @@ async function handleWrite(res: ServerResponse, segments: string[], ctx: ApiV1Co
   }
 
   try {
-    const result = await ctx.write.execute(parsed.op, ctx.actorUserId);
+    const execution = await ctx.write.execute(parsed.op, ctx.actorUserId, ctx.idempotencyKey);
+    const { result } = execution;
+    // Answered only when the caller supplied a key: to anyone else the header would be a
+    // constant `false`, which says nothing. `true` means "you already had this" — the caller's
+    // earlier attempt landed, and this response is that one's result rather than a second change.
+    const headers: Record<string, string> =
+      ctx.idempotencyKey === undefined
+        ? {}
+        : { 'idempotency-replayed': execution.replayed ? 'true' : 'false' };
     sendJson(
       res,
       200,
       wrapsCheckout(action) ? { item: result.item, checkout: result.checkout } : result.item,
+      headers,
     );
   } catch (err) {
     if (err instanceof WriteError) {

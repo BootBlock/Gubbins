@@ -39,6 +39,12 @@ import { buildLocalSnapshot } from '@/features/sync/snapshot';
 import { snapshotToBackupJson } from '@/features/sync/backup';
 import { fromDueDateInputValue, toDueDateInputValue } from '@/lib/date-input';
 import { createSnapshotMutex, writeSnapshotAtomic, type SnapshotMutex } from './snapshot-io.ts';
+import {
+  createIdempotencyStore,
+  IdempotencyConflictError,
+  stableStringify,
+  type IdempotencyStore,
+} from './idempotency.ts';
 import { hydrateFromJson } from './hydrate.ts';
 import { loadItemDetail } from './item-detail.ts';
 import { toCheckout, type CheckoutDto, type ItemDetailDto } from './api/dto.ts';
@@ -438,19 +444,62 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteR
 }
 
 /**
+ * What one call to a {@link WriteExecute} produced: the write's result, and whether it was
+ * **replayed** from an earlier call carrying the same idempotency key rather than applied afresh.
+ * A transport surfaces `replayed` so a caller can tell "I did this" from "you already had" —
+ * which for a relative change (a delta, a transfer, a loan) are different facts.
+ */
+export interface WriteExecution {
+  readonly result: WriteResult;
+  readonly replayed: boolean;
+}
+
+/**
+ * Perform one write, optionally under a caller-supplied idempotency key. The key is the whole
+ * defence against a double-apply: see `idempotency.ts` for why a timed-out write has usually
+ * succeeded, and why re-sending one moves the number twice.
+ */
+export type WriteExecute = (
+  op: WriteOperation,
+  actorUserId: string,
+  idempotencyKey?: string,
+) => Promise<WriteExecution>;
+
+/**
  * Build a single-flight write executor bound to one snapshot path. Writes are **serialised**
  * through a shared {@link SnapshotMutex}: each waits for the previous mutation to settle before it
  * reads the file, so two concurrent writes can't both read the pre-write state and clobber each
  * other (a lost update). The mutex is shared with the push-ingest surface at the composition root,
  * so a write and a snapshot push likewise apply one-at-a-time rather than racing on the same file;
  * left to its own default each executor still serialises its own writes.
+ *
+ * The idempotency store wraps the mutex rather than sitting inside it, and the ordering is the
+ * point: a repeat of an in-flight write must *join* the original, not queue behind it and apply a
+ * second time once the lock frees (issue #567). A caller that supplies no key is untouched by any
+ * of this.
  */
 export function createWriteExecutor(
   snapshotPath: string,
   io?: Partial<WriteIo>,
   mutex: SnapshotMutex = createSnapshotMutex(),
-): (op: WriteOperation, actorUserId: string) => Promise<WriteResult> {
-  return (op, actorUserId) => mutex.runExclusive(() => executeWrite({ snapshotPath, op, actorUserId, io }));
+  idempotency: IdempotencyStore = createIdempotencyStore(),
+): WriteExecute {
+  return async (op, actorUserId, idempotencyKey) => {
+    try {
+      const outcome = await idempotency.run(
+        { scope: actorUserId, key: idempotencyKey, fingerprint: stableStringify(op) },
+        () => mutex.runExclusive(() => executeWrite({ snapshotPath, op, actorUserId, io })),
+      );
+      return { result: outcome.value, replayed: outcome.replayed };
+    } catch (err) {
+      // A key reused for a different change is a well-formed request the bridge refuses, which is
+      // exactly what a 422 says; every other failure keeps whatever status it already carried.
+      if (err instanceof IdempotencyConflictError) {
+        throw new WriteError(422, 'unprocessable', err.message);
+      }
+      throw err;
+    }
+  };
 }
 
 async function safeClose(driver: IDatabaseDriver): Promise<void> {

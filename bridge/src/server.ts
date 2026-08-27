@@ -53,7 +53,8 @@ import { EVENT_STREAM_CONTENT_TYPE } from './events/sse.ts';
 import { SCALE_STREAM_CONTENT_TYPE } from './homeassistant/scale-stream.ts';
 import { projectMetrics } from './feeds/metrics.ts';
 import { formatMetrics } from './feeds/metrics-format.ts';
-import type { WriteOperation, WriteResult } from './write.ts';
+import type { WriteExecute } from './write.ts';
+import { isValidIdempotencyKey, MAX_IDEMPOTENCY_KEY_LENGTH } from './idempotency.ts';
 import { PushError, type PushSummary } from './push.ts';
 import type { HaClient } from './homeassistant/client.ts';
 import type { WebhookDeliveryLog, WebhookDeliveryRecord } from './events/webhook-log.ts';
@@ -80,8 +81,12 @@ export interface WriteCapability {
    * required argument for the reason the plan gives at §2.4: a caller that forgets one should
    * fail to compile rather than quietly write everything as System, which is what the bridge
    * did when it had only a shared token to go on.
+   *
+   * `idempotencyKey` carries the caller's `Idempotency-Key` header when it sent one. A repeat of
+   * a request under the same key is answered with the first one's result instead of being applied
+   * again — the retry-after-timeout defence described in `idempotency.ts` (issue #567).
    */
-  readonly execute: (op: WriteOperation, actorUserId: string) => Promise<WriteResult>;
+  readonly execute: WriteExecute;
 }
 
 /** The versioned snapshot-ingest path (the PWA "push to bridge"); POST-only, opt-in. */
@@ -334,13 +339,30 @@ export function createBridgeServer(options: BridgeServerOptions): Server {
 const MAX_WARNED_ORIGINS = 100;
 
 /**
+ * Read the optional `Idempotency-Key` request header: the key when one was sent and is
+ * well-formed, `undefined` when none was sent, and `null` when what arrived is not a usable key.
+ *
+ * A malformed key is a `400` rather than being ignored, because ignoring it would leave the
+ * caller believing its retry was protected when it was not — the one failure mode this feature
+ * exists to prevent. Node joins repeated headers with a comma, which the key charset rejects, so
+ * two conflicting keys are refused too.
+ */
+function readIdempotencyKey(raw: string | string[] | undefined): string | undefined | null {
+  if (raw === undefined) return undefined;
+  const value = Array.isArray(raw) ? raw.join(',') : raw;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  return isValidIdempotencyKey(trimmed) ? trimmed : null;
+}
+
+/**
  * Add one header name to `Access-Control-Expose-Headers`, keeping whatever is already listed.
  *
  * A cross-origin browser can only read the CORS-safelisted response headers unless the server
  * names the others here — so every custom header the bridge sets has to be added. Appending
- * (rather than setting) matters because two of them are stamped at different points in the
- * request: the OData version before the auth gate, the staleness marker after it, and a plain
- * `setHeader` from the later one would silently drop the earlier.
+ * (rather than setting) matters because they are stamped at different points in the request: the
+ * OData version before the auth gate, the staleness marker and the idempotency-replay marker
+ * after it, and a plain `setHeader` from a later one would silently drop the earlier.
  */
 function exposeHeader(res: ServerResponse, name: string): void {
   const existing = res.getHeader('Access-Control-Expose-Headers');
@@ -419,7 +441,10 @@ export async function handleRequest(
     req.resume();
     res.writeHead(204, {
       'access-control-allow-methods': allow,
-      'access-control-allow-headers': 'Authorization, Content-Type',
+      // `Idempotency-Key` is listed so a browser-side caller (the PWA, or a dashboard card) can
+      // make its retries safe the same way the Home Assistant integration does — an unlisted
+      // header is stripped by the browser rather than refused, so the key would silently vanish.
+      'access-control-allow-headers': 'Authorization, Content-Type, Idempotency-Key',
       'access-control-max-age': '600',
     });
     res.end();
@@ -519,10 +544,31 @@ export async function handleRequest(
         await handlePush(req, res, options.push);
         return;
       }
+      // The write endpoints accept an optional idempotency key so a caller whose request timed
+      // out can retry without double-applying a relative change (issue #567). Read after the
+      // ingest branch above, which takes no key: a pushed snapshot replaces state rather than
+      // moving it by a delta, so re-sending one converges on its own.
+      const idempotencyKey = readIdempotencyKey(req.headers['idempotency-key']);
+      if (idempotencyKey === null) {
+        req.resume();
+        sendError(
+          res,
+          400,
+          'bad_request',
+          `"Idempotency-Key" must be at most ${MAX_IDEMPOTENCY_KEY_LENGTH} characters of ` +
+            'letters, digits or ".-_:+=/".',
+          { v1: true },
+        );
+        return;
+      }
+      // Advertise the outcome header to a browser caller; without this the fetch response hides
+      // it, and a page could not tell a fresh write from a replay.
+      if (idempotencyKey !== undefined) exposeHeader(res, 'Idempotency-Replayed');
       const body = await readJsonBody(req, MAX_BODY_BYTES);
       await handleApiV1(res, url, {
         method: 'POST',
         actorUserId: identity.userId,
+        idempotencyKey,
         getState: options.getState,
         getSnapshotHealth: options.getSnapshotHealth,
         bridgeId: options.bridgeId,

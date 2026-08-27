@@ -2786,6 +2786,16 @@ paths:
         description: "The item id."
         schema:
           type: "string"
+      -
+        name: "Idempotency-Key"
+        in: "header"
+        required: false
+        description: "Names this attempt, so retrying it is safe. Every write here is a *relative* change — a signed delta, a transfer, a loan — so re-sending one normally applies it twice; and because the bridge never abandons a write when the caller goes away, a request that timed out has usually already succeeded. Repeat the request with the same key and the bridge answers with the first attempt’s result instead of applying it again, setting `Idempotency-Replayed: true`. Reusing a key for a *different* body is a 422. Keys are remembered in memory, per token owner, for about 15 minutes; a bridge restart forgets them. Use a fresh key per intended change (a UUID is ideal) and reuse it only when retrying that same change."
+        schema:
+          type: "string"
+          maxLength: 200
+          pattern: "^[A-Za-z0-9._:+=/-]+$"
+        example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
       requestBody:
         required: true
         content:
@@ -2807,6 +2817,14 @@ paths:
       responses:
         "200":
           description: "The updated item."
+          headers:
+            Idempotency-Replayed:
+              description: "Present only when the request carried an `Idempotency-Key`. `true` means this is a previous attempt’s stored result and nothing was changed a second time."
+              schema:
+                type: "string"
+                enum:
+                - "true"
+                - "false"
           content:
             application/json:
               schema:
@@ -2905,6 +2923,16 @@ paths:
         description: "The item id."
         schema:
           type: "string"
+      -
+        name: "Idempotency-Key"
+        in: "header"
+        required: false
+        description: "Names this attempt, so retrying it is safe. Every write here is a *relative* change — a signed delta, a transfer, a loan — so re-sending one normally applies it twice; and because the bridge never abandons a write when the caller goes away, a request that timed out has usually already succeeded. Repeat the request with the same key and the bridge answers with the first attempt’s result instead of applying it again, setting `Idempotency-Replayed: true`. Reusing a key for a *different* body is a 422. Keys are remembered in memory, per token owner, for about 15 minutes; a bridge restart forgets them. Use a fresh key per intended change (a UUID is ideal) and reuse it only when retrying that same change."
+        schema:
+          type: "string"
+          maxLength: 200
+          pattern: "^[A-Za-z0-9._:+=/-]+$"
+        example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
       requestBody:
         required: true
         content:
@@ -2926,6 +2954,14 @@ paths:
       responses:
         "200":
           description: "The updated item."
+          headers:
+            Idempotency-Replayed:
+              description: "Present only when the request carried an `Idempotency-Key`. `true` means this is a previous attempt’s stored result and nothing was changed a second time."
+              schema:
+                type: "string"
+                enum:
+                - "true"
+                - "false"
           content:
             application/json:
               schema:
@@ -3024,6 +3060,16 @@ paths:
         description: "The item id."
         schema:
           type: "string"
+      -
+        name: "Idempotency-Key"
+        in: "header"
+        required: false
+        description: "Names this attempt, so retrying it is safe. Every write here is a *relative* change — a signed delta, a transfer, a loan — so re-sending one normally applies it twice; and because the bridge never abandons a write when the caller goes away, a request that timed out has usually already succeeded. Repeat the request with the same key and the bridge answers with the first attempt’s result instead of applying it again, setting `Idempotency-Replayed: true`. Reusing a key for a *different* body is a 422. Keys are remembered in memory, per token owner, for about 15 minutes; a bridge restart forgets them. Use a fresh key per intended change (a UUID is ideal) and reuse it only when retrying that same change."
+        schema:
+          type: "string"
+          maxLength: 200
+          pattern: "^[A-Za-z0-9._:+=/-]+$"
+        example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
       requestBody:
         required: true
         content:
@@ -3066,6 +3112,14 @@ paths:
       responses:
         "200":
           description: "The updated item and the loan that was opened."
+          headers:
+            Idempotency-Replayed:
+              description: "Present only when the request carried an `Idempotency-Key`. `true` means this is a previous attempt’s stored result and nothing was changed a second time."
+              schema:
+                type: "string"
+                enum:
+                - "true"
+                - "false"
           content:
             application/json:
               schema:
@@ -3164,6 +3218,16 @@ paths:
         description: "The item id."
         schema:
           type: "string"
+      -
+        name: "Idempotency-Key"
+        in: "header"
+        required: false
+        description: "Names this attempt, so retrying it is safe. Every write here is a *relative* change — a signed delta, a transfer, a loan — so re-sending one normally applies it twice; and because the bridge never abandons a write when the caller goes away, a request that timed out has usually already succeeded. Repeat the request with the same key and the bridge answers with the first attempt’s result instead of applying it again, setting `Idempotency-Replayed: true`. Reusing a key for a *different* body is a 422. Keys are remembered in memory, per token owner, for about 15 minutes; a bridge restart forgets them. Use a fresh key per intended change (a UUID is ideal) and reuse it only when retrying that same change."
+        schema:
+          type: "string"
+          maxLength: 200
+          pattern: "^[A-Za-z0-9._:+=/-]+$"
+        example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
       requestBody:
         required: true
         content:
@@ -3182,6 +3246,14 @@ paths:
       responses:
         "200":
           description: "The updated item and the loan that was closed."
+          headers:
+            Idempotency-Replayed:
+              description: "Present only when the request carried an `Idempotency-Key`. `true` means this is a previous attempt’s stored result and nothing was changed a second time."
+              schema:
+                type: "string"
+                enum:
+                - "true"
+                - "false"
           content:
             application/json:
               schema:
@@ -3280,6 +3352,16 @@ paths:
         description: "The item id."
         schema:
           type: "string"
+      -
+        name: "Idempotency-Key"
+        in: "header"
+        required: false
+        description: "Names this attempt, so retrying it is safe. Every write here is a *relative* change — a signed delta, a transfer, a loan — so re-sending one normally applies it twice; and because the bridge never abandons a write when the caller goes away, a request that timed out has usually already succeeded. Repeat the request with the same key and the bridge answers with the first attempt’s result instead of applying it again, setting `Idempotency-Replayed: true`. Reusing a key for a *different* body is a 422. Keys are remembered in memory, per token owner, for about 15 minutes; a bridge restart forgets them. Use a fresh key per intended change (a UUID is ideal) and reuse it only when retrying that same change."
+        schema:
+          type: "string"
+          maxLength: 200
+          pattern: "^[A-Za-z0-9._:+=/-]+$"
+        example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
       requestBody:
         required: true
         content:
@@ -3305,6 +3387,14 @@ paths:
       responses:
         "200":
           description: "The updated item."
+          headers:
+            Idempotency-Replayed:
+              description: "Present only when the request carried an `Idempotency-Key`. `true` means this is a previous attempt’s stored result and nothing was changed a second time."
+              schema:
+                type: "string"
+                enum:
+                - "true"
+                - "false"
           content:
             application/json:
               schema:

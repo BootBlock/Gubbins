@@ -18,6 +18,12 @@ Endpoints (all require ``Authorization: Bearer <token>``):
     POST /api/v1/items/<id>/check-in → { item, checkout } (opt-in; see above)
     POST /api/v1/items/<id>/transfer-stock → updated item (opt-in; see above)
 
+Each write takes an optional ``Idempotency-Key`` header. A bridge write costs work proportional
+to the whole inventory, so on a large vault it can outlast a client's patience while still
+succeeding — and every write here is a *relative* change, so repeating one moves the number
+twice. Naming the attempt lets a retry be answered with the first attempt's result instead. The
+reads need none of this: they change nothing.
+
 The bridge's JSON is camelCase; Home Assistant service fields are snake_case. The mapping
 between the two lives in this module (see :meth:`GubbinsClient.check_out`) so nothing above it
 has to know either convention — and the bridge's *responses* are passed through untouched, so a
@@ -32,6 +38,17 @@ from typing import Any
 import aiohttp
 
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
+
+# Writes get a far longer budget than reads, and the reason is structural rather than a guess.
+# A read is served from the bridge's already-hydrated snapshot; a write re-reads the whole
+# snapshot from disk, rebuilds it in memory, applies the change through the app's own repository
+# and writes the merged result back — work proportional to the size of the entire inventory, not
+# to the size of the change. On a large vault that comfortably exceeds ten seconds, and the
+# bridge does not abandon a write when the caller gives up (the snapshot publish is its last
+# step). So a short write timeout does not prevent the change; it just hides that it happened,
+# and invites a retry that applies the delta a second time. See GubbinsWriteTimeoutError, and
+# `idempotency_key` below for the retry that stays safe when the wait is genuinely too long.
+_WRITE_TIMEOUT = aiohttp.ClientTimeout(total=60)
 
 
 async def _error_message(response: aiohttp.ClientResponse) -> str:
@@ -60,6 +77,19 @@ class GubbinsAuthError(GubbinsError):
 
 class GubbinsConnectionError(GubbinsError):
     """The bridge could not be reached, timed out, or returned an unexpected status."""
+
+
+class GubbinsWriteTimeoutError(GubbinsError):
+    """A write was sent but the bridge did not answer within :data:`_WRITE_TIMEOUT`.
+
+    Deliberately *not* a :class:`GubbinsConnectionError`: the request was delivered and is
+    very likely still being applied, because the bridge finishes a write regardless of whether
+    the caller is still listening. Reporting it as "could not reach the bridge" is what makes an
+    operator add a retry, and every write here is a *relative* change — a delta, a transfer, a
+    loan — so a second application moves the number again rather than converging. Anything
+    catching this must say so, and must not retry blindly; a retry carrying the same
+    ``idempotency_key`` is the safe form.
+    """
 
 
 class GubbinsWritesDisabledError(GubbinsError):
@@ -155,7 +185,11 @@ class GubbinsClient:
         return await self._get("/api/v1/status", unsupported_on_404=True)
 
     async def adjust_quantity(
-        self, item_id: str, delta: int, note: str | None = None
+        self,
+        item_id: str,
+        delta: int,
+        note: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """POST /api/v1/items/<id>/adjust-quantity — add to or take from a DISCRETE item.
 
@@ -163,11 +197,18 @@ class GubbinsClient:
         to record that a particular borrower has something, and get it back, use
         :meth:`check_out` / :meth:`check_in`. See :meth:`_write` for how the change reaches
         the app.
+
+        ``idempotency_key``, when given, makes a repeat of this exact call safe — see
+        :meth:`_write`.
         """
-        return await self._adjust("adjust-quantity", item_id, delta, note)
+        return await self._adjust("adjust-quantity", item_id, delta, note, idempotency_key)
 
     async def adjust_gauge(
-        self, item_id: str, delta: float, note: str | None = None
+        self,
+        item_id: str,
+        delta: float,
+        note: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """POST /api/v1/items/<id>/adjust-gauge — change a CONSUMABLE_GAUGE item's contents.
 
@@ -175,8 +216,11 @@ class GubbinsClient:
         item's measured contents in its own unit (e.g. ``-45`` for 45 g of filament used), so
         it may be fractional. The app clamps the result to the item's empty/full bounds, and
         rejects the call if the item is not gauge-tracked.
+
+        ``idempotency_key``, when given, makes a repeat of this exact call safe — see
+        :meth:`_write`.
         """
-        return await self._adjust("adjust-gauge", item_id, delta, note)
+        return await self._adjust("adjust-gauge", item_id, delta, note, idempotency_key)
 
     async def check_out(
         self,
@@ -190,6 +234,7 @@ class GubbinsClient:
         due_date: str | None = None,
         from_location_id: str | None = None,
         note: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """POST /api/v1/items/<id>/check-out — lend an item out.
 
@@ -204,6 +249,9 @@ class GubbinsClient:
 
         Returns ``{ item, checkout }``: the loan's ``id`` is what :meth:`check_in` names later,
         and is the id the app's calendar feed embeds in that loan's event ``UID``.
+
+        ``idempotency_key``, when given, makes a repeat of this exact call safe — see
+        :meth:`_write`.
         """
         body: dict[str, Any] = {
             key: value
@@ -219,10 +267,14 @@ class GubbinsClient:
             )
             if value is not None
         }
-        return await self._write("check-out", item_id, body)
+        return await self._write("check-out", item_id, body, idempotency_key)
 
     async def check_in(
-        self, item_id: str, checkout_id: str | None = None, note: str | None = None
+        self,
+        item_id: str,
+        checkout_id: str | None = None,
+        note: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """POST /api/v1/items/<id>/check-in — take a lent item back.
 
@@ -230,16 +282,24 @@ class GubbinsClient:
         than one open at the same time: with a single open loan the item id alone is
         unambiguous, which is the case an automation reaching for "that's back now" actually
         has. Returns ``{ item, checkout }``, the checkout now marked returned.
+
+        ``idempotency_key``, when given, makes a repeat of this exact call safe — see
+        :meth:`_write`.
         """
         body: dict[str, Any] = {}
         if checkout_id is not None:
             body["checkoutId"] = checkout_id
         if note is not None:
             body["note"] = note
-        return await self._write("check-in", item_id, body)
+        return await self._write("check-in", item_id, body, idempotency_key)
 
     async def transfer_stock(
-        self, item_id: str, from_location_id: str, to_location_id: str, quantity: int
+        self,
+        item_id: str,
+        from_location_id: str,
+        to_location_id: str,
+        quantity: int,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """POST /api/v1/items/<id>/transfer-stock — move units between two locations.
 
@@ -250,6 +310,9 @@ class GubbinsClient:
 
         All of it moves or none does: too little at the source is a rejection, never a silent
         partial move. Returns the updated item, whose ``placements`` show the new split.
+
+        ``idempotency_key``, when given, makes a repeat of this exact call safe — see
+        :meth:`_write`.
         """
         return await self._write(
             "transfer-stock",
@@ -259,18 +322,30 @@ class GubbinsClient:
                 "toLocationId": to_location_id,
                 "quantity": quantity,
             },
+            idempotency_key,
         )
 
     async def _adjust(
-        self, action: str, item_id: str, delta: float, note: str | None
+        self,
+        action: str,
+        item_id: str,
+        delta: float,
+        note: str | None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """Build the ``{ delta, note? }`` body the two adjust endpoints share."""
         body: dict[str, Any] = {"delta": delta}
         if note is not None:
             body["note"] = note
-        return await self._write(action, item_id, body)
+        return await self._write(action, item_id, body, idempotency_key)
 
-    async def _write(self, action: str, item_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    async def _write(
+        self,
+        action: str,
+        item_id: str,
+        body: dict[str, Any],
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
         """Issue one of the bridge's item writes, mapping failures to typed errors.
 
         The bridge applies the change through the app's own mutation and writes it back into
@@ -278,13 +353,21 @@ class GubbinsClient:
         database write. Only available when the bridge runs with
         ``GUBBINS_BRIDGE_ALLOW_WRITES=on``; otherwise the path is a 404 and
         :class:`GubbinsWritesDisabledError` is raised.
+
+        ``idempotency_key`` names this attempt to the bridge. Send the *same* key when repeating
+        a call that failed and the bridge answers with the first attempt's result instead of
+        applying the change again — the only safe way to retry a relative change. A bridge that
+        predates the key ignores the header, so passing one is always harmless.
         """
+        headers = self._headers
+        if idempotency_key is not None:
+            headers = {**headers, "Idempotency-Key": idempotency_key}
         try:
             async with self._session.post(
                 f"{self._base_url}/api/v1/items/{item_id}/{action}",
                 json=body,
-                headers=self._headers,
-                timeout=_REQUEST_TIMEOUT,
+                headers=headers,
+                timeout=_WRITE_TIMEOUT,
             ) as response:
                 if response.status == 401:
                     raise GubbinsAuthError("Bridge rejected the access token")
@@ -302,7 +385,14 @@ class GubbinsClient:
                 return await response.json()
         except (GubbinsAuthError, GubbinsWritesDisabledError, GubbinsRejectedError):
             raise
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except asyncio.TimeoutError as err:
+            # Separated from the connection failure below: the request *was* delivered, so
+            # "the change may already have been applied" is the honest report. See
+            # :class:`GubbinsWriteTimeoutError`.
+            raise GubbinsWriteTimeoutError(
+                f"the bridge did not answer within {_WRITE_TIMEOUT.total:g} seconds"
+            ) from err
+        except aiohttp.ClientError as err:
             raise GubbinsConnectionError(str(err)) from err
 
     async def where_answer(self, item: str) -> tuple[str, dict[str, Any] | None]:

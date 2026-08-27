@@ -267,6 +267,41 @@ The bridge applies any of these through the app's own mutation and writes it bac
 write, no drift. (Writes are deliberately **not** wired into the voice intent; a voice
 "check out" automation can call these services explicitly.)
 
+#### Retrying a write safely — `idempotency_key`
+
+Every write service takes an optional `idempotency_key`, and an automation that has an error
+branch should use it. All five of them make a **relative** change — a delta, a move, a loan — so
+calling one twice applies it twice; the number drifts and the item's history shows two entries for
+one real event.
+
+That is not hypothetical, because a bridge write costs work proportional to the size of the whole
+inventory rather than the size of the change. On a large one it can take longer than this
+integration waits, and the bridge finishes the write regardless of whether anyone is still
+listening. So a call that reports a timeout has very likely **already been applied** — and running
+it again is exactly the wrong response.
+
+```yaml
+# A scale reports what was used. The key is minted once, then reused by the retry below.
+- variables:
+    attempt_key: "filament-{{ now().timestamp() | int }}"
+- action: gubbins.adjust_gauge
+  data:
+    item_id: "item-pla-filament"
+    delta: -45
+    idempotency_key: "{{ attempt_key }}"
+  continue_on_error: true
+```
+
+Give a **fresh** value for each intended change and reuse that same value only when repeating that
+change — which means minting it *outside* the call, as a variable, so the retry can refer to the
+same one. (Building the key inline would produce a new value on the second call, protecting
+nothing.) The bridge then replies with the first attempt's result instead of applying anything
+again. Leave the field out and behaviour is unchanged — every call applies.
+
+A write that does time out now reports so plainly, and says the change may already have landed,
+rather than reading as "could not reach the bridge". A bridge older than this feature ignores the
+key, so passing one is always safe.
+
 ### 7. (Optional) Lend and return — `gubbins.check_out` / `gubbins.check_in`
 
 Adjusting a quantity moves a number. A **loan** records *who* has the item and when it is due —

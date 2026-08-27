@@ -76,6 +76,10 @@
         "note": {
           "name": "Note",
           "description": "Optional note recorded in the item's activity log."
+        },
+        "idempotency_key": {
+          "name": "Idempotency key",
+          "description": "Optional. Names this attempt so repeating it is safe. Each of these changes is relative — a delta, a move, a loan — so calling again normally applies it a second time. Generate one value per intended change and reuse it if you repeat the call: the bridge then replies with the first attempt's result instead of changing anything again. Most useful on a large inventory, where a write can take longer than the call waits for it."
         }
       }
     },
@@ -94,6 +98,10 @@
         "note": {
           "name": "Note",
           "description": "Optional note recorded in the item's activity log."
+        },
+        "idempotency_key": {
+          "name": "Idempotency key",
+          "description": "Optional. Names this attempt so repeating it is safe. Each of these changes is relative — a delta, a move, a loan — so calling again normally applies it a second time. Generate one value per intended change and reuse it if you repeat the call: the bridge then replies with the first attempt's result instead of changing anything again. Most useful on a large inventory, where a write can take longer than the call waits for it."
         }
       }
     },
@@ -136,6 +144,10 @@
         "note": {
           "name": "Note",
           "description": "Optional note recorded on the loan and in the item's activity log."
+        },
+        "idempotency_key": {
+          "name": "Idempotency key",
+          "description": "Optional. Names this attempt so repeating it is safe. Each of these changes is relative — a delta, a move, a loan — so calling again normally applies it a second time. Generate one value per intended change and reuse it if you repeat the call: the bridge then replies with the first attempt's result instead of changing anything again. Most useful on a large inventory, where a write can take longer than the call waits for it."
         }
       }
     },
@@ -154,6 +166,10 @@
         "note": {
           "name": "Note",
           "description": "Optional note recorded on the return, e.g. what state it came back in."
+        },
+        "idempotency_key": {
+          "name": "Idempotency key",
+          "description": "Optional. Names this attempt so repeating it is safe. Each of these changes is relative — a delta, a move, a loan — so calling again normally applies it a second time. Generate one value per intended change and reuse it if you repeat the call: the bridge then replies with the first attempt's result instead of changing anything again. Most useful on a large inventory, where a write can take longer than the call waits for it."
         }
       }
     },
@@ -176,6 +192,10 @@
         "quantity": {
           "name": "Quantity",
           "description": "How many units to move."
+        },
+        "idempotency_key": {
+          "name": "Idempotency key",
+          "description": "Optional. Names this attempt so repeating it is safe. Each of these changes is relative — a delta, a move, a loan — so calling again normally applies it a second time. Generate one value per intended change and reuse it if you repeat the call: the bridge then replies with the first attempt's result instead of changing anything again. Most useful on a large inventory, where a write can take longer than the call waits for it."
         }
       }
     }
