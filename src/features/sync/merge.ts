@@ -215,23 +215,39 @@ async function reconcileAndApply(
  * long synchronous one. Deriving it here keeps that derivation in the single place that owns it
  * (`checkout-plan`) rather than duplicating the namespace into the merge engine.
  *
- * Two filters keep the cost — one hash apiece — to the loans that can actually need it. A loan
- * carrying no `stock_operation_key` took random delta ids and has nothing to pair up. A loan still
- * **open** has written no restore at all, so there is no return for two placements to disagree
- * about; it earns a key on the sync after it comes back. Both snapshots contribute, because the
- * loan may be a row this device has not seen yet.
+ * Three filters keep the work to the loans that can actually need it, because this runs on every
+ * sync and `checkouts` only ever grows. A loan carrying no `stock_operation_key` took random delta
+ * ids and has nothing to pair up. A loan still **open** has written no restore at all, so there is
+ * no return for two placements to disagree about; it earns a key on the sync after it comes back.
+ * And a loan whose draw no longer appears in the ledger has nothing left for the pass to read: the
+ * era compaction has replaced it with a checkpoint, which supersedes it in every replay
+ * (`./stock-delta-compaction`). That last one is what bounds the set to the live ledger rather than
+ * to every booking ever converted. Both snapshots contribute throughout, because the loan — or the
+ * ledger rows — may be a row this device has not seen yet.
+ *
+ * The hashes are awaited together rather than one after another. They are independent, and a
+ * sequential loop over a few thousand of them is measurable on the sync path.
  */
 async function loanReturnKeys(local: SyncSnapshot, remote: SyncSnapshot): Promise<Map<string, string>> {
+  const inLedger = new Set<string>();
+  for (const row of [...(local.stockDeltas ?? []), ...(remote.stockDeltas ?? [])]) {
+    const id = String(row.id);
+    const bar = id.indexOf('|');
+    if (bar > 0) inLedger.add(id.slice(0, bar));
+  }
+  if (inLedger.size === 0) return new Map();
+
   const ids = new Set<string>();
   for (const row of [...(local.tables.checkouts ?? []), ...(remote.tables.checkouts ?? [])]) {
     const returned = row.returned_at !== null && row.returned_at !== undefined;
-    if (returned && typeof row.stock_operation_key === 'string' && row.stock_operation_key.length > 0) {
-      ids.add(String(row.id));
-    }
+    const key = row.stock_operation_key;
+    if (returned && typeof key === 'string' && inLedger.has(key)) ids.add(String(row.id));
   }
-  const keys = new Map<string, string>();
-  for (const id of ids) keys.set(id, await checkInId('stock', id));
-  return keys;
+
+  const derived = await Promise.all(
+    [...ids].map(async (id): Promise<[string, string]> => [id, await checkInId('stock', id)]),
+  );
+  return new Map(derived);
 }
 
 /**
