@@ -1116,9 +1116,11 @@ export class ReportRepository extends BaseRepository {
    * (`@/features/reports/consumption-actions`, issue #571), so what is counted is stock that left
    * for good rather than every negative delta. A tool checked out is stock off the shelf, not stock
    * used up, and counting it here made this figure disagree with the movement chart beside it in
-   * one direction and with nothing at all in the other. The material arm needs the filter for a
-   * second reason: `net_value_delta` on a `SOLD` row holds the sale *proceeds*, so it is money in
-   * the column material is measured in.
+   * one direction and with nothing at all in the other. The material arm carries the filter for a
+   * second reason, and holds it as an invariant rather than a repair: `net_value_delta` on a `SOLD`
+   * row is the sale *proceeds*, money in the column material is measured in. `sell` only ever
+   * writes that positive, so `net_value_delta < 0` excludes it today by luck of sign — naming the
+   * gauge-bearing actions is what keeps a future money row out of a total measured in grams.
    *
    * The `UNION ALL` emits a row per *delta*, not per ledger entry, so an entry that carried both
    * changes contributes each magnitude on its own row rather than having them added together

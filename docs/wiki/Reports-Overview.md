@@ -62,9 +62,10 @@ computed over **every** row, not just the ones on screen.
 
 ## Consumption rate
 
-The **consumption rate** looks at everything that was *used up* over the last 30 days — items
-consumed, sold, written off or found missing at a count, and material drawn from
-[[gauges|Low-Stock-and-Gauges]] — and tells you how fast it is going.
+The **consumption rate** looks at everything that was *used up* over the last 30 days — stock
+adjusted down by hand, consumed by a build, sold, written off or found missing at a
+[[count|Cycle-Counts-and-Audit-Day]], and material drawn from [[gauges|Low-Stock-and-Gauges]] — and
+tells you how fast it is going.
 
 Stock that is only expected back does not count. A [[loan|Loans-Check-Out-and-In]] leaves the
 shelf and returns, a [[return to a supplier|Purchase-Orders]] reverses a delivery, and taking a kit

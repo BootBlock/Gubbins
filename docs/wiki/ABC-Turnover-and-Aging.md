@@ -14,10 +14,10 @@ few that account for most of the value), **B** (the middle), and **C** (the triv
 the classic "80/20" lens: a small number of items usually dominate, and they deserve the most
 careful stock control.
 
-An item's ranking comes from what it **consumes** over the past year — how much of it is used up,
-sold or written off, priced at what it costs you. Lending something out is not consuming it, so a
-tool that goes out every week and comes back every week does not climb the ranking: it would read
-as a thing to buy more of when you already have enough of it.
+An item's ranking comes from how much of it is **consumed** over the past year — used up, sold,
+written off or adjusted away — priced at what it costs you. Lending something out is not consuming
+it, so a tool that goes out every week and comes back every week does not climb the ranking: it
+would read as a thing to buy more of when you already have enough of it.
 
 > **💡 Tip**
 > Tighten [[reorder points|Reorder-and-Shopping-List]] and [[cycle counts|Cycle-Counts-and-Audit-Day]]

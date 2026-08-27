@@ -4,8 +4,6 @@ import {
   actionInSql,
   CONSUMPTION_MATERIAL_ACTIONS,
   CONSUMPTION_UNIT_ACTIONS,
-  isConsumptionMaterialAction,
-  isConsumptionUnitAction,
   RECOVERABLE_STOCK_OUT_ACTIONS,
 } from './consumption-actions';
 
@@ -33,23 +31,21 @@ describe('consumption vocabulary (issue #571)', () => {
 
   it('excludes a loan, a supplier return and a disassembly from consumption', () => {
     for (const action of ['CHECKED_OUT', 'CHECKED_IN', 'RETURNED_TO_SUPPLIER', 'DISASSEMBLED'] as const) {
-      expect(isConsumptionUnitAction(action)).toBe(false);
-      expect(isConsumptionMaterialAction(action)).toBe(false);
+      expect(CONSUMPTION_UNIT_ACTIONS).not.toContain(action);
+      expect(CONSUMPTION_MATERIAL_ACTIONS).not.toContain(action);
     }
   });
 
   it('counts a sale, a write-off, an assembly draw, a manual reduction and a count variance', () => {
     for (const action of ['SOLD', 'WRITTEN_OFF', 'CONSUMED', 'QUANTITY_CHANGE', 'RECONCILED'] as const) {
-      expect(isConsumptionUnitAction(action)).toBe(true);
+      expect(CONSUMPTION_UNIT_ACTIONS).toContain(action);
     }
   });
 
   // A `SOLD` row's `net_value_delta` is the sale proceeds, not material — so the material list
   // must not admit it, or a sale would be counted in grams.
   it('counts only gauge-bearing actions as material, never a sale', () => {
-    expect(isConsumptionMaterialAction('GAUGE_UPDATE')).toBe(true);
-    expect(isConsumptionMaterialAction('CONSUMED')).toBe(true);
-    expect(isConsumptionMaterialAction('SOLD')).toBe(false);
+    expect(CONSUMPTION_MATERIAL_ACTIONS).toEqual(['GAUGE_UPDATE', 'CONSUMED']);
   });
 
   it('builds an IN predicate over the given column', () => {

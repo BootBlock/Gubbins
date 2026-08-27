@@ -19,7 +19,9 @@
  * each column carries its own action list. Neither list is the other's superset: `GAUGE_UPDATE`
  * only ever moves material, `SOLD` only ever moves units — and a `SOLD` row's `net_value_delta`
  * holds the sale **proceeds**, money rather than material, which is exactly the kind of row
- * {@link CONSUMPTION_MATERIAL_ACTIONS} exists to keep out of a material total.
+ * {@link CONSUMPTION_MATERIAL_ACTIONS} exists to keep out of a material total. Today those proceeds
+ * are always positive, so a sign test happens to exclude them; naming the actions makes it a
+ * property of the vocabulary instead of an accident of which rows exist.
  *
  * **What is deliberately *not* consumption**, listed in {@link RECOVERABLE_STOCK_OUT_ACTIONS} so
  * the exclusions are as explicit as the inclusions: a check-out (expected back), a return to a
@@ -72,16 +74,6 @@ export const RECOVERABLE_STOCK_OUT_ACTIONS: readonly HistoryAction[] = [
   'RETURNED_TO_SUPPLIER',
   'DISASSEMBLED',
 ];
-
-/** Whether a negative `quantity_delta` written by `action` counts as units consumed. */
-export function isConsumptionUnitAction(action: HistoryAction): boolean {
-  return CONSUMPTION_UNIT_ACTIONS.includes(action);
-}
-
-/** Whether a negative `net_value_delta` written by `action` counts as material consumed. */
-export function isConsumptionMaterialAction(action: HistoryAction): boolean {
-  return CONSUMPTION_MATERIAL_ACTIONS.includes(action);
-}
 
 /**
  * A SQL `IN (…)` predicate over `column` for one of the action lists above, e.g.

@@ -1162,7 +1162,9 @@ describe('ReportRepository', () => {
     });
 
     // `net_value_delta` on a `SOLD` row is the sale *proceeds*, not material - money sharing a
-    // column with grams. Only the gauge-bearing actions may be read as a material draw.
+    // column with grams. `sell` only ever writes those positive, so this drives the case directly
+    // rather than through the API: the guard being pinned is that only a gauge-bearing action may
+    // be read as a material draw, whatever sign a money row happens to carry.
     it('never reads a sale price as material drawn from a gauge', async () => {
       const now = Date.now();
       const filament = await items.create({
@@ -1170,7 +1172,8 @@ describe('ReportRepository', () => {
         trackingMode: 'CONSUMABLE_GAUGE',
         gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 800 },
       });
-      // A refunded sale: negative proceeds in the same column a gauge draw uses.
+      // A money row in the column a gauge measures grams in, forced negative so a sign test
+      // alone would admit it. Nothing writes this today; the action list is what keeps it out.
       await driver.execute(
         `INSERT INTO item_history (id, item_id, action, net_value_delta, created_at)
          VALUES (?, ?, 'SOLD', -25, ?);`,
@@ -1682,7 +1685,7 @@ describe('ReportRepository', () => {
   });
 
   // Phase 74 — advanced analytics -----------------------------------------------
-  /** Insert one append-only consumption/movement ledger row. */
+  /** Insert one append-only ledger row under an explicit action. */
   async function addHistoryAs(itemId: string, action: string, delta: number, at: number): Promise<void> {
     await driver.execute(
       `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
@@ -1691,6 +1694,7 @@ describe('ReportRepository', () => {
     );
   }
 
+  /** Insert one append-only consumption/movement ledger row. */
   async function addHistory(itemId: string, delta: number, at: number): Promise<void> {
     await driver.execute(
       `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
