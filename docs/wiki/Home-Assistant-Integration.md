@@ -186,6 +186,27 @@ now the same automation can also chase it and mark it returned. A few things wor
 > Home Assistant can act on directly — and returning an item needs only the item, which an
 > automation that lent it out already knows.
 
+### Repeating a change without doing it twice
+
+Every one of these changes is **relative** — take three away, move five, lend one — so making the
+same call twice makes the change twice. That matters more than it sounds, because a change on a
+large inventory can take longer than Home Assistant waits for an answer, and the bridge finishes
+what it started regardless. A call that reports a timeout has very likely already worked, so
+running it again is the one response that does harm.
+
+Each of the change actions therefore takes an optional **idempotency key**: a value you make up to
+name *this* change. Repeat the call with the same key and you get the first attempt's answer back,
+with nothing changed a second time. Give a fresh value for each new change, and reuse a value only
+when repeating one — so mint it once, before the call, rather than inside it.
+
+> **💡 Tip**
+> If your automation has a "try again if it failed" branch, give it a key. Without one, the branch
+> that exists to make things reliable is the thing that makes stock drift.
+
+Leave the field out and nothing changes: every call is applied, as before. A timeout is now also
+reported as what it is — the change may already have landed — rather than as a bridge you couldn't
+reach.
+
 > **⚠️ Heads-up**
 > Exposing the bridge to Home Assistant means it's reachable on your LAN. Give it its own
 > [[API token|Bridge-API-Tokens]] on an account with a narrow role, keep write-back off unless you

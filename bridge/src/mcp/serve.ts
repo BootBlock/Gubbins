@@ -64,8 +64,13 @@ export async function startMcpServer(env: Env = process.env): Promise<RunningMcp
   // against the System user — the actor the app itself writes as — which is stated here once
   // rather than being a silent default inside the write path.
   const writeExecutor = createWriteExecutor(snapshotPath);
+  // No idempotency key is passed: stdio is a single in-process caller with no request timeout to
+  // race, so there is no timed-out attempt for a repeat to collide with — and an agent that
+  // retried would mint a fresh key anyway, which protects nothing. The HTTP surface, where a
+  // client timeout is real and a key can be stable across attempts, is where keys earn their
+  // place (issue #567).
   const tools = writesEnabled
-    ? [...ALL_TOOLS, ...createWriteTools((op) => writeExecutor(op, SYSTEM_USER_ID))]
+    ? [...ALL_TOOLS, ...createWriteTools(async (op) => (await writeExecutor(op, SYSTEM_USER_ID)).result)]
     : ALL_TOOLS;
 
   const server = runStdioServer({

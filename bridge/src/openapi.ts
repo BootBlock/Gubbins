@@ -491,6 +491,47 @@ function response(description: string, ref: string, example?: JsonValue): JsonVa
 }
 
 /**
+ * The optional `Idempotency-Key` header the five write endpoints accept (issue #567). Documented
+ * once and shared, so every write states the same contract.
+ */
+const idempotencyKeyParam: JsonValue = {
+  name: 'Idempotency-Key',
+  in: 'header',
+  required: false,
+  description:
+    'Names this attempt, so retrying it is safe. Every write here is a *relative* change — a ' +
+    'signed delta, a transfer, a loan — so re-sending one normally applies it twice; and because ' +
+    'the bridge never abandons a write when the caller goes away, a request that timed out has ' +
+    'usually already succeeded. Repeat the request with the same key and the bridge answers with ' +
+    'the first attempt’s result instead of applying it again, setting ' +
+    '`Idempotency-Replayed: true`. Reusing a key for a *different* body is a 422. Keys are ' +
+    'remembered in memory, per token owner, for about 15 minutes; a bridge restart forgets them. ' +
+    'Use a fresh key per intended change (a UUID is ideal) and reuse it only when retrying that ' +
+    'same change.',
+  schema: { type: 'string', maxLength: 200, pattern: '^[A-Za-z0-9._:+=/-]+$' },
+  example: '2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109',
+};
+
+/**
+ * A write endpoint's `200`, which additionally reports whether the response was replayed from an
+ * earlier attempt under the same idempotency key rather than applied afresh.
+ */
+function writeResponse(description: string, ref: string): JsonValue {
+  return {
+    description,
+    headers: {
+      'Idempotency-Replayed': {
+        description:
+          'Present only when the request carried an `Idempotency-Key`. `true` means this is a ' +
+          'previous attempt’s stored result and nothing was changed a second time.',
+        schema: { type: 'string', enum: ['true', 'false'] },
+      },
+    },
+    content: jsonContent(ref),
+  };
+}
+
+/**
  * The `{id}` path parameter of an OData key segment. The template is `…({id})`, so the value
  * substituted is the key *inside* the parentheses — quoted or bare, both accepted.
  */
@@ -1572,10 +1613,10 @@ export const openapiDocument: JsonValue = {
           'then writes the merged snapshot back so the PWA reconciles it (LWW) on its next sync. ' +
           'This is stock going in or out, not a loan — to lend an item to someone and get it back, ' +
           'use check-out / check-in, which track who has it.',
-        parameters: [idParam('item')],
+        parameters: [idParam('item'), idempotencyKeyParam],
         requestBody: adjustRequestBody('Whole-number change; negative to take stock out.'),
         responses: {
-          200: response('The updated item.', '#/components/schemas/ItemDetail'),
+          200: writeResponse('The updated item.', '#/components/schemas/ItemDetail'),
           ...(errorResponses(400, 401, 404, 409, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
@@ -1588,10 +1629,10 @@ export const openapiDocument: JsonValue = {
           'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Applies a ' +
           'signed delta to the gauge’s current net value (clamped to [0, capacity]) and records it ' +
           'as a net-value delta, which the PWA replays through the §7.3 Delta-CRDT on its next sync.',
-        parameters: [idParam('item')],
+        parameters: [idParam('item'), idempotencyKeyParam],
         requestBody: adjustRequestBody('Signed change to the net value (e.g. -45 for 45 consumed).'),
         responses: {
-          200: response('The updated item.', '#/components/schemas/ItemDetail'),
+          200: writeResponse('The updated item.', '#/components/schemas/ItemDetail'),
           ...(errorResponses(400, 401, 404, 409, 415, 422, 429) as Record<string, JsonValue>),
         },
       },
@@ -1608,7 +1649,7 @@ export const openapiDocument: JsonValue = {
           'it, as the app does. The response carries the loan, whose id names it at check-in and ' +
           'is the id the calendar feed embeds in that loan’s UID (loan-<id>@gubbins.invalid). ' +
           'Needs checkouts:write (not stock:write).',
-        parameters: [idParam('item')],
+        parameters: [idParam('item'), idempotencyKeyParam],
         requestBody: {
           required: true,
           content: {
@@ -1663,7 +1704,10 @@ export const openapiDocument: JsonValue = {
           },
         },
         responses: {
-          200: response('The updated item and the loan that was opened.', '#/components/schemas/LoanResult'),
+          200: writeResponse(
+            'The updated item and the loan that was opened.',
+            '#/components/schemas/LoanResult',
+          ),
           ...(errorResponses(400, 401, 404, 409, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },
@@ -1678,7 +1722,7 @@ export const openapiDocument: JsonValue = {
           'exactly as the app does. `checkoutId` is optional when the item has exactly one open ' +
           'loan, and required (422) once it has more than one. Needs checkouts:write (not ' +
           'stock:write).',
-        parameters: [idParam('item')],
+        parameters: [idParam('item'), idempotencyKeyParam],
         requestBody: {
           required: true,
           content: {
@@ -1705,7 +1749,10 @@ export const openapiDocument: JsonValue = {
           },
         },
         responses: {
-          200: response('The updated item and the loan that was closed.', '#/components/schemas/LoanResult'),
+          200: writeResponse(
+            'The updated item and the loan that was closed.',
+            '#/components/schemas/LoanResult',
+          ),
           ...(errorResponses(400, 401, 404, 409, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },
@@ -1721,7 +1768,7 @@ export const openapiDocument: JsonValue = {
           'location. Each moved lot keeps its batch and expiry at the destination. The whole ' +
           'amount moves or none of it does: too little on hand at the source is a 422, never a ' +
           'silent partial move.',
-        parameters: [idParam('item')],
+        parameters: [idParam('item'), idempotencyKeyParam],
         requestBody: {
           required: true,
           content: {
@@ -1744,7 +1791,7 @@ export const openapiDocument: JsonValue = {
           },
         },
         responses: {
-          200: response('The updated item.', '#/components/schemas/ItemDetail'),
+          200: writeResponse('The updated item.', '#/components/schemas/ItemDetail'),
           ...(errorResponses(400, 401, 404, 409, 415, 422, 429, 503) as Record<string, JsonValue>),
         },
       },

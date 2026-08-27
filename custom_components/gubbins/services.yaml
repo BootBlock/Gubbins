@@ -22,6 +22,14 @@ search:
           max: 25
           mode: box
 
+# Every one of the five write services below takes an optional idempotency_key. It exists because
+# a bridge write costs work proportional to the size of the whole inventory, so on a large vault
+# it can outlast the client's patience while still succeeding — and each of these changes is
+# RELATIVE (a delta, a move, a loan), so simply calling again applies it a second time. Pass a
+# value you generate once per intended change, and reuse that same value if you repeat the call:
+# the bridge then answers with the first attempt's result instead of changing anything again.
+# Leave it out and the behaviour is unchanged — every call applies.
+#
 # Opt-in change to a discrete item's count. One of five services that change inventory, and they
 # work only when the bridge is started with GUBBINS_BRIDGE_ALLOW_WRITES=on (otherwise they error
 # with "writes disabled"). The change round-trips through the app's own sync merge, so the PWA
@@ -46,6 +54,11 @@ adjust_quantity:
     note:
       required: false
       example: "Checked out for the workshop"
+      selector:
+        text:
+    idempotency_key:
+      required: false
+      example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
       selector:
         text:
 
@@ -75,6 +88,11 @@ adjust_gauge:
     note:
       required: false
       example: "Printed the bracket"
+      selector:
+        text:
+    idempotency_key:
+      required: false
+      example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
       selector:
         text:
 
@@ -137,6 +155,11 @@ check_out:
       example: "For the bench build"
       selector:
         text:
+    idempotency_key:
+      required: false
+      example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
+      selector:
+        text:
 
 # Take a lent item back: the stock returns to the place (and lot) it was lent from and the loan
 # closes. checkout_id is only needed when the item has more than one loan open at once — with a
@@ -157,6 +180,11 @@ check_in:
     note:
       required: false
       example: "Back on the shelf"
+      selector:
+        text:
+    idempotency_key:
+      required: false
+      example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
       selector:
         text:
 
@@ -192,3 +220,8 @@ transfer_stock:
           min: 1
           max: 1000000
           mode: box
+    idempotency_key:
+      required: false
+      example: "2f1a9c8e-0b57-4a2d-9f3e-6c5d4b3a2109"
+      selector:
+        text:

@@ -1316,6 +1316,9 @@ object.
 | `POST /api/v1/items/{id}/check-in` | `{ checkoutId?, note? }` | Take the item back, restoring stock to the placement (and lot) it was lent from. `checkoutId` is optional while there is exactly one open loan. |
 | `POST /api/v1/items/{id}/transfer-stock` | `{ fromLocationId, toLocationId, quantity }` | Move units between two locations, leaving the item's total unchanged. All of it moves or none does. |
 
+Each of them also accepts an optional `Idempotency-Key` header — see
+[Retrying safely](#retrying-safely--idempotency-key).
+
 The **stock** endpoints answer with the updated item — the same `ItemDetail` shape as
 `GET /api/v1/items/{id}`. The **loan** endpoints answer with
 `{ "item": ItemDetail, "checkout": Checkout }`: a caller that has just lent something out needs the
@@ -1329,15 +1332,61 @@ calendar-driven automation can close the very loan it was reminded about.
 > the history entry) is the operation you asked for. Pass `contactId` instead if you would rather a
 > caller could never do that.
 
-Status codes: `200`, `400` (malformed body, or a field of the wrong JSON type), `401`
+### Retrying safely — `Idempotency-Key`
+
+Every write above is a **relative** change: a signed delta, a move of an amount, a loan opened.
+Send one twice and the number moves twice — there is no state to converge on. That matters because
+a write is not cheap: it re-reads the whole snapshot, rebuilds it in memory, applies the change and
+writes the merged result back, so its cost is proportional to the size of the **inventory**, not of
+the change. On a large one it can take longer than the caller is willing to wait, and the bridge
+does not abandon a write when the caller goes away — the atomic publish is its last step, and
+stopping midway is its own hazard. A timed-out write has therefore usually *succeeded*, which makes
+a retry the most natural and the most damaging response.
+
+Pass an **`Idempotency-Key`** header to make that retry safe:
+
+```bash
+KEY=$(uuidgen)      # one value per intended change; reuse it only when retrying that change
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -H "Idempotency-Key: $KEY" \
+  -d '{"delta":-2,"note":"Taken to the workshop"}' \
+  "$BASE/items/item-m3-bolt/adjust-quantity"
+```
+
+- A repeat under the same key is answered with the **first attempt's stored result**; nothing is
+  applied a second time. The response carries `Idempotency-Replayed: true` so a caller can tell the
+  two apart, and `false` on the attempt that actually applied.
+- A repeat that arrives while the first is **still running** joins it, rather than queueing behind
+  it on the write lock and applying afterwards.
+- A **failed** attempt is not remembered: nothing reached the snapshot, so repeating the key
+  genuinely re-runs.
+- Reusing one key for a **different** body is a `422` — that is a caller mistake, not a retry, and
+  answering it with the earlier result would be worse than refusing it.
+- Keys are held **in memory**, scoped to the token's owner, and forgotten after about 15 minutes or
+  at restart. They absorb a retry that follows a timeout; they are not a durable log. The store
+  keeps 128 of them, dropping the oldest **settled** key first, so a write still in flight is never
+  forgotten out from under its own retry — until an outright flood of concurrent keyed writes
+  reaches four times that, at which point the oldest go regardless rather than the store growing
+  without bound.
+- A key must be 1–200 characters of `A–Z a–z 0–9 . _ : + = / -`. Anything else is a
+  `400`, rather than being ignored and leaving the caller believing a retry is protected when
+  it is not.
+
+Omit the header and nothing changes: every call applies, exactly as before.
+
+The MCP write tools take no key. stdio is a single in-process caller with no request timeout to
+race, so there is no timed-out attempt for a repeat to collide with.
+
+Status codes: `200`, `400` (malformed body, a field of the wrong JSON type, or a malformed
+`Idempotency-Key`), `401`
 (missing/unknown/revoked token), `403` (the owner's role lacks `bridge:write`, or `stock:write` /
 `checkouts:write` for that endpoint), `404` (writes disabled, no such item, or a `checkoutId` that
 is not this item's), `422` (`unprocessable` — the change was rejected: quantity below zero, the
-wrong tracking mode, no borrower, not enough stock at the source, or an item with several open
-loans and no `checkoutId` naming which one is back), `409` (`conflict` — another writer kept
-replacing the snapshot mid-write, or holding it open; nothing was changed, so retry), `429`
-(rate-limited), `503`
-(snapshot briefly unavailable). The `/api/v1` index reports `"writable": true|false` and lists the enabled write
+wrong tracking mode, no borrower, not enough stock at the source, an item with several open
+loans and no `checkoutId` naming which one is back, or an `Idempotency-Key` reused for a different
+body), `409` (`conflict` — another writer kept replacing the snapshot mid-write, or holding it
+open; nothing was changed, so retry), `429` (rate-limited), `503` (snapshot briefly unavailable).
+The `/api/v1` index reports `"writable": true|false` and lists the enabled write
 paths.
 
 ### Example

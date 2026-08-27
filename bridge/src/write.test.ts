@@ -558,6 +558,104 @@ describe('executeWrite', () => {
   });
 });
 
+// --- idempotency keys: a retry after a timeout must not apply twice (issue #567) ---
+
+describe('idempotency keys', () => {
+  /**
+   * An executor over the shared virtual snapshot, wrapped so the test can also count *reads* —
+   * the cheapest proof a replay never re-hydrated, since re-hydrating is the whole cost a key
+   * exists to skip.
+   */
+  function inMemoryExecutor(initial: string): {
+    execute: ReturnType<typeof createWriteExecutor>;
+    stored: () => string;
+    reads: () => number;
+  } {
+    const file = createVirtualSnapshot(initial);
+    let reads = 0;
+    const execute = createWriteExecutor('/virtual/gubbins-sync.json', {
+      ...file.io,
+      readSnapshot: async (path) => {
+        reads += 1;
+        return await file.io.readSnapshot!(path);
+      },
+    });
+    return { execute, stored: file.read, reads: () => reads };
+  }
+
+  const bolt = { kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: 1 } as const;
+
+  it('applies a repeated write once and replays the first result', async () => {
+    const { execute, stored, reads } = inMemoryExecutor(await fixtureJson());
+    const first = await execute(bolt, ACTOR, 'key-1');
+    const second = await execute(bolt, ACTOR, 'key-1');
+
+    expect(first.replayed).toBe(false);
+    expect(second.replayed).toBe(true);
+    expect(second.result.item).toEqual(first.result.item); // the stored answer, not a new one
+    expect(reads()).toBe(1); // the second call never re-read or re-hydrated the snapshot
+
+    const after = await hydrateFromJson(stored());
+    expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(43); // 42 + 1, applied once
+    await after.driver.close();
+  });
+
+  it('applies twice when the retry forgets to reuse the key — the defect the key exists for', async () => {
+    const { execute, stored } = inMemoryExecutor(await fixtureJson());
+    await execute(bolt, ACTOR, 'key-1');
+    await execute(bolt, ACTOR, 'key-2');
+
+    const after = await hydrateFromJson(stored());
+    expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(44);
+    await after.driver.close();
+  });
+
+  it('joins a repeat that arrives while the first write is still running', async () => {
+    const { execute, stored } = inMemoryExecutor(await fixtureJson());
+    // Fired without awaiting between them: the mutex alone would serialise these into two
+    // applications; the shared key must collapse them into one.
+    const [first, second] = await Promise.all([execute(bolt, ACTOR, 'key-1'), execute(bolt, ACTOR, 'key-1')]);
+    expect([first.replayed, second.replayed].filter(Boolean)).toHaveLength(1);
+
+    const after = await hydrateFromJson(stored());
+    expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(43);
+    await after.driver.close();
+  });
+
+  it('refuses a key reused for a different change with a 422', async () => {
+    const { execute } = inMemoryExecutor(await fixtureJson());
+    await execute(bolt, ACTOR, 'key-1');
+    await expect(
+      execute({ kind: 'adjust-quantity', itemId: 'item-m3-bolt', delta: -5 }, ACTOR, 'key-1'),
+    ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
+  });
+
+  it('does not remember a rejected write, so a corrected retry under the same key still runs', async () => {
+    const { execute, stored } = inMemoryExecutor(await fixtureJson());
+    await expect(
+      execute({ kind: 'adjust-quantity', itemId: 'no-such-item', delta: 1 }, ACTOR, 'key-1'),
+    ).rejects.toMatchObject({ status: 404 });
+    // A different body under the same key would be a conflict had the failure been remembered.
+    const retry = await execute(bolt, ACTOR, 'key-1');
+    expect(retry.replayed).toBe(false);
+
+    const after = await hydrateFromJson(stored());
+    expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(43);
+    await after.driver.close();
+  });
+
+  it('scopes a key to its actor, so two callers picking the same one do not collide', async () => {
+    const { execute, stored } = inMemoryExecutor(await fixtureJson());
+    await execute(bolt, ACTOR, 'shared');
+    const other = await execute(bolt, SYSTEM_USER_ID, 'shared');
+    expect(other.replayed).toBe(false);
+
+    const after = await hydrateFromJson(stored());
+    expect(await quantityOf(after.driver, 'item-m3-bolt')).toBe(44); // both applied
+    await after.driver.close();
+  });
+});
+
 // --- the gold round-trip: no drift through the real sync merge --------------------
 
 describe('round-trip through the app’s §7.3 reconcile (no drift)', () => {

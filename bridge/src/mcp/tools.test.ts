@@ -234,7 +234,7 @@ describe('the write tools', () => {
     // MCP has no credential and therefore no identity, so its writes are System's — the same
     // binding `mcp/serve.ts` makes at the composition root (issue #79).
     const execute = createWriteExecutor('/virtual/gubbins-sync.json', file.io);
-    const tools = createWriteTools((op) => execute(op, SYSTEM_USER_ID));
+    const tools = createWriteTools(async (op) => (await execute(op, SYSTEM_USER_ID)).result);
     return { tools, stored: file.read };
   }
 

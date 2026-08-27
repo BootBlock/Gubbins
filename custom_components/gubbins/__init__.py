@@ -49,6 +49,7 @@ from .api import (
     GubbinsConnectionError,
     GubbinsError,
     GubbinsRejectedError,
+    GubbinsWriteTimeoutError,
     GubbinsWritesDisabledError,
 )
 from .bridge_id import bridge_id_from_health
@@ -84,6 +85,7 @@ _ADJUST_QUANTITY_SCHEMA = vol.Schema(
         vol.Required("item_id"): cv.string,
         vol.Required("delta"): vol.All(vol.Coerce(int), vol.Range(min=-1_000_000, max=1_000_000)),
         vol.Optional("note"): cv.string,
+        vol.Optional("idempotency_key"): cv.string,
     }
 )
 
@@ -95,6 +97,7 @@ _ADJUST_GAUGE_SCHEMA = vol.Schema(
         vol.Required("item_id"): cv.string,
         vol.Required("delta"): vol.All(vol.Coerce(float), vol.Range(min=-1_000_000, max=1_000_000)),
         vol.Optional("note"): cv.string,
+        vol.Optional("idempotency_key"): cv.string,
     }
 )
 
@@ -117,6 +120,7 @@ _CHECK_OUT_SCHEMA = vol.Schema(
         vol.Optional("due_date"): cv.date,
         vol.Optional("from_location_id"): cv.string,
         vol.Optional("note"): cv.string,
+        vol.Optional("idempotency_key"): cv.string,
     }
 )
 
@@ -128,6 +132,7 @@ _CHECK_IN_SCHEMA = vol.Schema(
         vol.Required("item_id"): cv.string,
         vol.Optional("checkout_id"): cv.string,
         vol.Optional("note"): cv.string,
+        vol.Optional("idempotency_key"): cv.string,
     }
 )
 
@@ -140,6 +145,7 @@ _TRANSFER_STOCK_SCHEMA = vol.Schema(
         vol.Required("from_location_id"): cv.string,
         vol.Required("to_location_id"): cv.string,
         vol.Required("quantity"): vol.All(vol.Coerce(int), vol.Range(min=1, max=1_000_000)),
+        vol.Optional("idempotency_key"): cv.string,
     }
 )
 
@@ -321,7 +327,10 @@ def _async_register_adjust_quantity_service(hass: HomeAssistant) -> None:
         SERVICE_ADJUST_QUANTITY,
         _ADJUST_QUANTITY_SCHEMA,
         lambda client, call: client.adjust_quantity(
-            call.data["item_id"], call.data["delta"], call.data.get("note")
+            call.data["item_id"],
+            call.data["delta"],
+            call.data.get("note"),
+            call.data.get("idempotency_key"),
         ),
     )
 
@@ -339,7 +348,10 @@ def _async_register_adjust_gauge_service(hass: HomeAssistant) -> None:
         SERVICE_ADJUST_GAUGE,
         _ADJUST_GAUGE_SCHEMA,
         lambda client, call: client.adjust_gauge(
-            call.data["item_id"], call.data["delta"], call.data.get("note")
+            call.data["item_id"],
+            call.data["delta"],
+            call.data.get("note"),
+            call.data.get("idempotency_key"),
         ),
     )
 
@@ -366,6 +378,7 @@ def _async_register_check_out_service(hass: HomeAssistant) -> None:
             due_date=_iso_day(call.data.get("due_date")),
             from_location_id=call.data.get("from_location_id"),
             note=call.data.get("note"),
+            idempotency_key=call.data.get("idempotency_key"),
         ),
         not_found="the item was not found (or this bridge predates loan writes)",
     )
@@ -383,7 +396,10 @@ def _async_register_check_in_service(hass: HomeAssistant) -> None:
         SERVICE_CHECK_IN,
         _CHECK_IN_SCHEMA,
         lambda client, call: client.check_in(
-            call.data["item_id"], call.data.get("checkout_id"), call.data.get("note")
+            call.data["item_id"],
+            call.data.get("checkout_id"),
+            call.data.get("note"),
+            call.data.get("idempotency_key"),
         ),
         not_found="the item or loan was not found (or this bridge predates loan writes)",
     )
@@ -409,6 +425,7 @@ def _async_register_transfer_stock_service(hass: HomeAssistant) -> None:
             call.data["from_location_id"],
             call.data["to_location_id"],
             call.data["quantity"],
+            call.data.get("idempotency_key"),
         ),
     )
 
@@ -444,6 +461,17 @@ def _async_register_write_service(
             raise HomeAssistantError(
                 f"The Gubbins bridge has writes disabled, or {not_found}. "
                 "Start the bridge with GUBBINS_BRIDGE_ALLOW_WRITES=on to enable writes."
+            ) from err
+        except GubbinsWriteTimeoutError as err:
+            # Reported separately from a connection failure, and worded carefully: the change
+            # was very likely applied, so "it failed, run it again" is the one conclusion an
+            # operator must not draw from this. Every write here is a relative change, and a
+            # second application moves the number again.
+            raise HomeAssistantError(
+                f"The Gubbins bridge accepted the change but {err}, so it may already have "
+                "been applied. Check the item before repeating this — and if you retry, pass "
+                "the same idempotency_key so the bridge answers with the first attempt's "
+                "result instead of applying the change twice."
             ) from err
         except GubbinsConnectionError as err:
             raise HomeAssistantError(f"Could not reach the Gubbins bridge: {err}") from err

@@ -26,18 +26,31 @@ let state: BridgeServerState;
 /** The operations the mock executor received, in order (asserted by the routing tests). */
 const calls: WriteOperation[] = [];
 
+/** The `Idempotency-Key` each call arrived with, in the same order as {@link calls}. */
+const keys: (string | undefined)[] = [];
+
+/**
+ * Keys the mock has already seen, so it can report a replay exactly as the real executor does —
+ * the transport contract under test here is "the header reaches the executor and its verdict
+ * reaches the response", not the store itself (that is `idempotency.test.ts`).
+ */
+const seenKeys = new Set<string>();
+
 const stubDetail = { id: 'item-m3-bolt', name: 'M3 x 10 Hex Bolt', quantity: 41 } as unknown as ItemDetailDto;
 const stubCheckout = { id: 'loan-1', itemId: 'item-m3-bolt', status: 'OPEN' } as unknown as CheckoutDto;
 
 const writeCapability: WriteCapability = {
-  execute: async (op) => {
+  execute: async (op, _actorUserId, idempotencyKey) => {
     calls.push(op);
+    keys.push(idempotencyKey);
     if (op.itemId === 'unknown-item') throw new WriteError(404, 'not_found', 'No such item.');
     if (op.kind === 'adjust-quantity' && op.delta < -1000) {
       throw new WriteError(422, 'unprocessable', 'Quantity cannot fall below zero.');
     }
+    const replayed = idempotencyKey !== undefined && seenKeys.has(idempotencyKey);
+    if (idempotencyKey !== undefined) seenKeys.add(idempotencyKey);
     const isLoan = op.kind === 'check-out' || op.kind === 'check-in';
-    return { item: stubDetail, checkout: isLoan ? stubCheckout : null };
+    return { result: { item: stubDetail, checkout: isLoan ? stubCheckout : null }, replayed };
   },
 };
 
@@ -312,5 +325,69 @@ describe('loan and transfer endpoints', () => {
   it('404s a loan path when writes are off, exactly like the adjust paths', async () => {
     const res = await post(readonlyBase, '/api/v1/items/item-m3-bolt/check-out', { contactName: 'Sam' });
     expect(res.status).toBe(404);
+  });
+});
+
+// --- the Idempotency-Key transport contract (issue #567) ---------------------------
+
+describe('the Idempotency-Key header', () => {
+  /** Post an adjust-quantity carrying `key`, so each test names its own attempt. */
+  function adjust(key: string | undefined, delta = -1): Promise<Response> {
+    return post(
+      writableBase,
+      '/api/v1/items/item-m3-bolt/adjust-quantity',
+      { delta },
+      key === undefined ? {} : { headers: { 'idempotency-key': key } },
+    );
+  }
+
+  it('forwards the key to the executor and reports a fresh write', async () => {
+    keys.length = 0;
+    const res = await adjust('key-fresh');
+    expect(res.status).toBe(200);
+    expect(keys).toEqual(['key-fresh']);
+    expect(res.headers.get('idempotency-replayed')).toBe('false');
+  });
+
+  it('reports a replay when the same key comes back', async () => {
+    await adjust('key-repeat');
+    const res = await adjust('key-repeat');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('idempotency-replayed')).toBe('true');
+  });
+
+  it('omits the header entirely when the caller sent no key', async () => {
+    keys.length = 0;
+    const res = await adjust(undefined);
+    expect(res.status).toBe(200);
+    expect(keys).toEqual([undefined]);
+    // A constant `false` would say nothing to a caller that never asked for the guarantee.
+    expect(res.headers.get('idempotency-replayed')).toBeNull();
+  });
+
+  it('exposes the outcome header to a browser caller', async () => {
+    const res = await adjust('key-cors');
+    expect(res.headers.get('access-control-expose-headers')).toMatch(/Idempotency-Replayed/);
+  });
+
+  it('rejects a malformed key with 400 rather than silently ignoring it', async () => {
+    keys.length = 0;
+    const res = await adjust('not a key');
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toMatch(/Idempotency-Key/);
+    expect(keys).toEqual([]); // refused before the write, so nothing was applied
+  });
+
+  it('rejects an over-long key', async () => {
+    const res = await adjust('k'.repeat(201));
+    expect(res.status).toBe(400);
+  });
+
+  it('lists the header on the CORS preflight, so a browser does not strip it', async () => {
+    const res = await fetch(`${writableBase}/api/v1/items/item-m3-bolt/adjust-quantity`, {
+      method: 'OPTIONS',
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-headers')).toMatch(/Idempotency-Key/);
   });
 });
