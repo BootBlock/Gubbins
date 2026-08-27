@@ -347,8 +347,7 @@ export function reconcile(
   // re-inserts the edge against a row the same transaction deletes.
   const finalRegionIds = survivingCascadeIds(
     'location_regions',
-    'photo_id',
-    removedParents.location_photos,
+    [{ col: 'photo_id', removed: removedParents.location_photos }],
     local,
     localUpserts,
     localDeletes,
@@ -815,8 +814,15 @@ function computeRemovedParents(
     remote,
     survivingIds('projects', local, localUpserts, localDeletes),
   );
+  const removedItems = removedIds('items', local, remote, finalItemIds);
+  const removedSuppliers = removedIds(
+    'suppliers',
+    local,
+    remote,
+    survivingIds('suppliers', local, localUpserts, localDeletes),
+  );
   return {
-    items: removedIds('items', local, remote, finalItemIds),
+    items: removedItems,
     // A placement at a removed location must not be resurrected — its location's RESTRICT
     // FK would reject it (Phase 25). The active set already drives the §7.5.2 item re-parent.
     locations: removedLocations,
@@ -847,17 +853,24 @@ function computeRemovedParents(
     // routes in FK_REFS below — a supplier part cannot outlive its supplier (CASCADE), while a
     // purchase order keeps its row and merely loses the link (SET NULL), because an order is a
     // record of money spent and must survive the other device tidying its supplier list.
-    suppliers: removedIds(
-      'suppliers',
-      local,
-      remote,
-      survivingIds('suppliers', local, localUpserts, localDeletes),
-    ),
+    suppliers: removedSuppliers,
+    // A part is a cascade child of *both* its item and its supplier (issue #536), so its removed
+    // set folds in each — otherwise a part swept away by a local item/supplier delete reads as
+    // surviving and its own children (a price point, a PO line) are let through the guard.
     supplier_parts: removedIds(
       'supplier_parts',
       local,
       remote,
-      survivingIds('supplier_parts', local, localUpserts, localDeletes),
+      survivingCascadeIds(
+        'supplier_parts',
+        [
+          { col: 'item_id', removed: removedItems },
+          { col: 'supplier_id', removed: removedSuppliers },
+        ],
+        local,
+        localUpserts,
+        localDeletes,
+      ),
     ),
     purchase_orders: removedIds(
       'purchase_orders',
@@ -871,21 +884,20 @@ function computeRemovedParents(
     // usual local rows − deletes + upserts.
     roles: removedIds('roles', local, remote, survivingIds('roles', local, localUpserts, localDeletes)),
     users: removedIds('users', local, remote, survivingIds('users', local, localUpserts, localDeletes)),
-    // Issue #536: the two parents that are themselves cascade *children*, so their removed set
-    // has to fold in the cascade the tombstone does not record (§7.2 tombstones the parent only).
-    // A photo of a removed location is gone — the location tombstone's DELETE cascades to it —
-    // so every region drawn on it must be dropped too, or the merge re-inserts a region against
-    // a photo the same transaction is deleting. A budget category of a removed project is the
-    // same shape one level over, and clears the nullable `project_expenses.category_id` rather
-    // than dropping the spend.
+    // Issue #536: the two parents that had no set at all. Both are themselves cascade *children*
+    // (as `supplier_parts` above is), so their removed set has to fold in the cascade the
+    // tombstone does not record — §7.2 tombstones the parent only. A photo of a removed location
+    // is gone, because the location tombstone's DELETE cascades to it, so every region drawn on
+    // it must be dropped too or the merge re-inserts a region against a photo the same
+    // transaction is deleting. A budget category of a removed project is the same shape one level
+    // over, and clears the nullable `project_expenses.category_id` rather than dropping the spend.
     location_photos: removedIds(
       'location_photos',
       local,
       remote,
       survivingCascadeIds(
         'location_photos',
-        'location_id',
-        removedLocations,
+        [{ col: 'location_id', removed: removedLocations }],
         local,
         localUpserts,
         localDeletes,
@@ -897,8 +909,7 @@ function computeRemovedParents(
       remote,
       survivingCascadeIds(
         'project_budget_categories',
-        'project_id',
-        removedProjects,
+        [{ col: 'project_id', removed: removedProjects }],
         local,
         localUpserts,
         localDeletes,
@@ -1155,6 +1166,14 @@ function survivingIds(
   return ids;
 }
 
+/** One `ON DELETE CASCADE` reference a table is on the receiving end of, and its removed parents. */
+interface CascadeParent {
+  /** The child column holding the parent id. */
+  readonly col: string;
+  /** The parent ids that will not survive this merge. */
+  readonly removed: ReadonlySet<string>;
+}
+
 /**
  * The surviving ids of a child table whose own parent's removal cascades to it (issue #536).
  *
@@ -1165,6 +1184,9 @@ function survivingIds(
  * children are then let through the guard to trip the foreign key. Removing every row whose parent
  * did not survive gives the set the cascade will actually leave behind.
  *
+ * A table can sit under more than one cascade — `supplier_parts` dies with either its item or its
+ * supplier — so every reference is folded in, and one removed parent is enough to take the row.
+ *
  * The parent id is read from the merged row (a pending upsert overrides the stored one), so a row
  * being re-parented *out of* a removed parent by this same merge is correctly kept. Ids present
  * only on the remote need no lookup: they are absent from `surviving` already, so {@link removedIds}
@@ -1172,24 +1194,24 @@ function survivingIds(
  */
 function survivingCascadeIds(
   table: SyncTable,
-  parentCol: string,
-  removedParentIds: ReadonlySet<string>,
+  parents: readonly CascadeParent[],
   local: SyncSnapshot,
   localUpserts: readonly TableRow[],
   localDeletes: readonly Tombstone[],
 ): Set<string> {
   const surviving = survivingIds(table, local, localUpserts, localDeletes);
-  if (removedParentIds.size === 0) return surviving;
+  const live = parents.filter((p) => p.removed.size > 0);
+  if (live.length === 0) return surviving;
 
-  const parentOf = new Map<string, string>();
-  for (const row of local.tables[table] ?? []) parentOf.set(String(row.id), String(row[parentCol]));
-  for (const u of localUpserts) {
-    if (u.table === table) parentOf.set(String(u.row.id), String(u.row[parentCol]));
-  }
+  // The merged row of every id still in `surviving`: stored rows overlaid with pending upserts.
+  const rowOf = new Map<string, SqlRow>();
+  for (const row of local.tables[table] ?? []) rowOf.set(String(row.id), row);
+  for (const u of localUpserts) if (u.table === table) rowOf.set(String(u.row.id), u.row);
 
   for (const id of surviving) {
-    const parent = parentOf.get(id);
-    if (parent !== undefined && removedParentIds.has(parent)) surviving.delete(id);
+    const row = rowOf.get(id);
+    if (row === undefined) continue;
+    if (live.some(({ col, removed }) => removed.has(String(row[col])))) surviving.delete(id);
   }
   return surviving;
 }
