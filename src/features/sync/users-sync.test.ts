@@ -34,6 +34,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   bookingsCancelled: [],
   collisions: [],
   keyParks: [],
+  tombstoneClears: [],
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],

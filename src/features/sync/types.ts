@@ -294,6 +294,24 @@ export interface KeyPark {
 }
 
 /**
+ * Issue #537: a local tombstone this merge contradicts, to delete as part of the apply.
+ *
+ * A row deleted here and then edited on a peer comes back down as an ordinary upsert, but the
+ * tombstone recording our deletion stays behind — and `buildLocalSnapshot` reads the tombstone
+ * table wholesale, so the next push publishes "this row is deleted" alongside the row itself.
+ * A third device that holds neither then has a tombstone and a row under one id, and the two
+ * never converge until the tombstone reaches its 180-day TTL.
+ *
+ * `reconcile` emits one of these for every id it resurrects that this device still holds a
+ * tombstone for, mirroring what `restoreSnapshot` and the manual conflict restore already do
+ * for the same hazard on their own paths.
+ */
+export interface TombstoneClear {
+  readonly tableName: SyncTable;
+  readonly id: string;
+}
+
+/**
  * Issues #157 / #192: a "one flag per parent" invariant the merge had to repair. `supplier_parts`
  * carries two independent one-of-N flags per item — `is_preferred` (drives valuation) and
  * `is_price_source` (drives which supplier a price refresh fetches) — each maintained by an
@@ -358,6 +376,8 @@ export interface ReconciliationPlan {
   readonly collisions: readonly CollisionResolution[];
   /** Issue #707: rows to move off a natural key another upsert takes (see {@link KeyPark}). */
   readonly keyParks: readonly KeyPark[];
+  /** Issue #537: local tombstones for ids this merge resurrects (see {@link TombstoneClear}). */
+  readonly tombstoneClears: readonly TombstoneClear[];
   /** Issues #157 / #192: "one flag per item" reductions to apply before the upserts (see {@link FlagRepair}). */
   readonly flagRepairs: readonly FlagRepair[];
   /**

@@ -1061,6 +1061,17 @@ export async function applyPlan(
     statements.push(stockDeltaInsertStatement(row, dictionary[STOCK_DELTAS_TABLE]));
   }
 
+  // Issue #537: a row this merge resurrects must not keep the tombstone recording our own earlier
+  // deletion of it. `buildLocalSnapshot` reads the tombstone table wholesale, so leaving it behind
+  // republishes "this row is deleted" alongside the row itself, and a peer holding neither refuses
+  // the row until the tombstone reaches its TTL. Ordered after the upserts and before the delete
+  // loop below, so an id this merge also deletes still ends up tombstoned; `reconcile` excludes
+  // those (and the deliberately-retired collision losers tombstoned at the top of this function)
+  // from the list in any case. Mirrors `restoreSnapshot` and the manual conflict restore.
+  for (const { tableName, id } of plan.tombstoneClears) {
+    statements.push(clearTombstoneStatement(tableName, id));
+  }
+
   // Phase 11: item_tags membership additions (after tags + items exist, FK-safe). Clear
   // any stale edge tombstone so the edge is genuinely present in the merged set.
   for (const { itemId, tagId } of plan.itemTagUpserts) {

@@ -50,6 +50,7 @@ import { SUPPLIER_PART_FLAG_COLUMNS, flagWinner, type FlagRanked } from './suppl
 import { planKeyParks, resolveUniqueKeyCollisions } from './unique-keys';
 import type {
   BookingOverlapCancellation,
+  CollisionResolution,
   FlagRepair,
   GaugeHistoryDelta,
   GaugeResolution,
@@ -72,6 +73,7 @@ import type {
   SyncTable,
   TableRow,
   Tombstone,
+  TombstoneClear,
 } from './types';
 
 export interface ReconcileOptions {
@@ -109,6 +111,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   bookingsCancelled: [],
   collisions: [],
   keyParks: [],
+  tombstoneClears: [],
   flagRepairs: [],
   defaultLocationWinnerId: null,
   historyInserts: [],
@@ -354,6 +357,10 @@ export function reconcile(
   // upsert, so this must see the set every earlier pass has finished dropping from.
   const keyParks = planKeyParks(local, localUpserts);
 
+  // --- Issue #537: stop republishing a deletion this merge has just undone -------
+  // Read-only, and last, so it sees the upsert set every pass above has finished dropping from.
+  const tombstoneClears = planTombstoneClears(local, localUpserts, localDeletes, collisions);
+
   return {
     localUpserts,
     localDeletes,
@@ -366,6 +373,7 @@ export function reconcile(
     bookingsCancelled,
     collisions,
     keyParks,
+    tombstoneClears,
     flagRepairs,
     defaultLocationWinnerId,
     historyInserts,
@@ -382,9 +390,67 @@ export function reconcile(
 }
 
 /**
+ * Issue #537: the local tombstones this merge contradicts, to delete alongside the upserts.
+ *
+ * A row this device deleted, that a peer then edited, is downloaded again by the LWW pass — but
+ * nothing clears the tombstone recording our deletion, and `buildLocalSnapshot` reads that table
+ * wholesale. The device would go on publishing the row and a tombstone for it under one id, so a
+ * peer holding neither refuses the row for the tombstone's whole 180-day TTL. Every id the merge
+ * writes a row for is therefore paired with a DELETE of any tombstone this device still holds for
+ * it, which is what `restoreSnapshot` and the manual conflict restore already do on their paths.
+ *
+ * Two id sets are deliberately left alone:
+ *
+ *  - an id this same merge is also **deleting** — the delete records its own tombstone moments
+ *    later, and clearing it would be a contradiction whichever order the statements ran in;
+ *  - a **collision loser** (issue #187), whose tombstone this merge recorded on purpose to retire
+ *    the id. Clearing it would undo the retirement and re-publish the losing id to every peer —
+ *    the hazard issue #538 already fixed on the restore path.
+ */
+function planTombstoneClears(
+  local: SyncSnapshot,
+  localUpserts: readonly TableRow[],
+  localDeletes: readonly Tombstone[],
+  collisions: readonly CollisionResolution[],
+): TombstoneClear[] {
+  if (local.tombstones.length === 0 || localUpserts.length === 0) return [];
+  // Membership is nested per table rather than flattened onto a composite key: an id is only
+  // unique within its own table, and `item_relations` keys a row by the `from|to|kind` triple.
+  const perTable = (entries: Iterable<readonly [string, string]>) => {
+    const map = new Map<string, Set<string>>();
+    for (const [table, id] of entries) {
+      let set = map.get(table);
+      if (set === undefined) map.set(table, (set = new Set<string>()));
+      set.add(id);
+    }
+    return map;
+  };
+  const held = perTable(local.tombstones.map((t) => [t.tableName, t.id] as const));
+  const excluded = perTable([
+    ...localDeletes.map((d) => [d.tableName, d.id] as const),
+    ...collisions.map((c) => [c.table, c.loserId] as const),
+  ]);
+
+  const clears: TombstoneClear[] = [];
+  const emitted = new Map<string, Set<string>>();
+  for (const { table, row } of localUpserts) {
+    const id = String(row.id);
+    if (held.get(table)?.has(id) !== true) continue;
+    if (excluded.get(table)?.has(id) === true) continue;
+    let done = emitted.get(table);
+    if (done === undefined) emitted.set(table, (done = new Set<string>()));
+    if (done.has(id)) continue;
+    done.add(id);
+    clears.push({ tableName: table, id });
+  }
+  return clears;
+}
+
+/**
  * Per-table LWW + tombstone resolution (§7.3). For every synced table, diff the local
  * and remote snapshots id-by-id: a remote tombstone deletes the local row unless a
- * strictly-newer local row resurrects it; otherwise the newer of two concurrent rows
+ * strictly-newer row resurrects it — which either side's snapshot can carry, the remote's
+ * own row included (issue #537); otherwise the newer of two concurrent rows
  * wins (remote rows are sanitised against the schema dictionary before download), and a
  * row new on the remote is downloaded unless our own (offset-adjusted) tombstone is at
  * least as new. Local-only rows are left for the push half. Returns the initial upsert
@@ -425,8 +491,16 @@ function resolveTableMerges(
       // A local edit made *after* the last sync that now loses is a genuine collision (#72).
       const localEditedSinceSync = reportable && lUpd !== undefined && lUpd > conflictSince!;
 
+      // Issue #537: the remote's *own* row can outlive the tombstone beside it — a peer
+      // resurrected the id, and the snapshot carries both records because nothing cleared the
+      // tombstone when the row came back. That pair is resolved by the same strictly-newer rule
+      // already applied to the local pair below, rather than letting the tombstone win by
+      // position: otherwise a device holding no copy of the row falls through both conditions of
+      // the branch and never downloads it, permanently, while its peers keep the row.
+      const remoteResurrects = rTomb !== undefined && rUpd !== undefined && rUpd > rTomb;
+
       // Remote deleted this row.
-      if (rTomb !== undefined) {
+      if (rTomb !== undefined && !remoteResurrects) {
         // Local has a strictly-newer row → resurrect (keep local, drop tombstone).
         if (lUpd !== undefined && lUpd > rTomb) continue;
         // Otherwise the remote tombstone wins: delete locally + record it.
