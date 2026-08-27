@@ -9,7 +9,8 @@
 # keeps there travels wherever that image goes. The files they keep there are exactly the ones
 # git refuses to track. The rule is therefore: **whatever `.gitignore` and `bridge/.gitignore`
 # refuse to track, this file refuses to copy.** `src/lib/docker-context-ignore.test.ts` checks
-# every rule in both of those files against this one, so the lists cannot drift apart.
+# every rule in both of those files against this one, so a newly git-ignored file cannot be left
+# out of this list. (The reverse is deliberately not checked: over-excluding is harmless here.)
 #
 # Sections below follow `.gitignore`'s own order, so the two read side by side.
 
@@ -67,8 +68,7 @@ public/ocr/
 # that resolves `secret_ref` names, which is why `.gitignore` keeps them out of the repo. A
 # signing secret in an image layer travels to every registry and host that image reaches. The
 # committed `webhooks.example.json` is excluded too: it is documentation, not runtime config.
-**/webhooks.json
-**/webhooks.*.json
+**/webhooks*.json
 
 # The bridge's remembered identity — machine-local runtime state, not a secret, but baking one
 # in would make every container built from the image claim to be the same bridge.

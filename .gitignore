@@ -57,11 +57,10 @@ __pycache__/
 !.env.example
 
 # Bridge webhook targets — carry per-target signing secrets; keep the example only.
-bridge/webhooks.json
-bridge/webhooks.*.json
+bridge/webhooks*.json
 !bridge/webhooks.example.json
-# Belt-and-braces: a root-level webhooks.json (if the bridge is ever run from the repo root).
-/webhooks.json
+# Belt-and-braces: a root-level webhooks file (if the bridge is ever run from the repo root).
+/webhooks*.json
 
 # The bridge's remembered identity (issue #672) — machine-local runtime state, written on first
 # start so consumers can recognise the bridge after its address changes. No secret, but it belongs

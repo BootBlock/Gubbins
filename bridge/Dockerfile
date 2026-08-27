@@ -36,10 +36,10 @@ WORKDIR /app
 # The only things the bridge needs at runtime: its own package, and the app's pure source
 # modules it imports via `@/`. No node_modules — the bridge has zero runtime deps.
 #
-# This copies `bridge/` wholesale, so the repo-root `.dockerignore` is what keeps an operator's
-# local files — a real `webhooks.json` of signing secrets, a `*.env`, a snapshot, a database —
-# out of the layer. That list mirrors `.gitignore` / `bridge/.gitignore`, and
-# `src/lib/docker-context-ignore.test.ts` fails the build if the two ever disagree.
+# This copies `bridge/` wholesale into the final layer, so the repo-root `.dockerignore` is what
+# keeps an operator's local files — a real `webhooks.json` of signing secrets, a `*.env`, a
+# snapshot, a database, a private key — out of it. That list covers every rule in `.gitignore`
+# and `bridge/.gitignore`, and `src/lib/docker-context-ignore.test.ts` checks each one.
 COPY bridge/ ./bridge/
 COPY src/ ./src/
 
