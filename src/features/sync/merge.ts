@@ -49,6 +49,7 @@ import {
   parseLocationTagEdgeId,
 } from '@/db/repositories/tombstone';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
+import { checkInId } from '@/db/repositories/checkout-plan';
 import { decodeRowForTable } from './blob-codec';
 import { defaultLocationWinner } from './location-default-flag';
 import { forceLwwTies } from './lww-tie-override';
@@ -187,6 +188,7 @@ async function reconcileAndApply(
     historyPrunedBefore: request.historyPrunedBefore,
     conflictSince: request.conflictSince,
     now: request.effectiveNow,
+    loanReturnKeys: await loanReturnKeys(local, remote),
   });
   await applyPlan(driver, plan, dictionary);
 
@@ -203,6 +205,33 @@ async function reconcileAndApply(
     tagEdgesRemoved: plan.itemTagDeletes.length + plan.locationTagDeletes.length,
     conflicts: plan.conflicts,
   };
+}
+
+/**
+ * Issue #711: loan id → the operation key that loan's **return** captured its stock under.
+ *
+ * `reconcile` needs this to recognise a return two devices ran against two different placements,
+ * and cannot derive it: `checkInId` hashes, so it is asynchronous, and the reconcile pass is a
+ * long synchronous one. Deriving it here keeps that derivation in the single place that owns it
+ * (`checkout-plan`) rather than duplicating the namespace into the merge engine.
+ *
+ * Two filters keep the cost — one hash apiece — to the loans that can actually need it. A loan
+ * carrying no `stock_operation_key` took random delta ids and has nothing to pair up. A loan still
+ * **open** has written no restore at all, so there is no return for two placements to disagree
+ * about; it earns a key on the sync after it comes back. Both snapshots contribute, because the
+ * loan may be a row this device has not seen yet.
+ */
+async function loanReturnKeys(local: SyncSnapshot, remote: SyncSnapshot): Promise<Map<string, string>> {
+  const ids = new Set<string>();
+  for (const row of [...(local.tables.checkouts ?? []), ...(remote.tables.checkouts ?? [])]) {
+    const returned = row.returned_at !== null && row.returned_at !== undefined;
+    if (returned && typeof row.stock_operation_key === 'string' && row.stock_operation_key.length > 0) {
+      ids.add(String(row.id));
+    }
+  }
+  const keys = new Map<string, string>();
+  for (const id of ids) keys.set(id, await checkInId('stock', id));
+  return keys;
 }
 
 /**

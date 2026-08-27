@@ -41,6 +41,7 @@ import { resolveBookingConflicts, type BookingWindow } from '@/features/bookings
 import { applyOffset } from './clock';
 import { buildConflict, detectsConflicts, nonLwwColumns } from './conflict-detect';
 import { reconcileGauge, reconcileStockQuantity, replayGaugeValue, replayStockQuantity } from './delta-crdt';
+import { resolveSplitLoanStock, type SplitLoanStockRepair } from './loan-split-stock';
 import { enforceForeignKeys } from './fk-refs';
 import { resolveLww } from './lww';
 import { overwrittenFields } from './merge-audit';
@@ -98,6 +99,14 @@ export interface ReconcileOptions {
   readonly conflictSince?: number;
   /** Clock stamped onto detected conflicts (the sync's effective now). Defaults to `Date.now()`. */
   readonly now?: number;
+  /**
+   * Issue #711: loan id → the operation key that loan's **return** captured its stock under, i.e.
+   * `checkInId('stock', loanId)`. Supplied by the caller because that derivation is asynchronous
+   * and this pass is not; {@link resolveSplitLoanStock} uses it to spot a return two devices ran
+   * against two different placements. Left undefined, only the *draw* is examined, which is the
+   * pre-#711 behaviour for the return rather than a wrong answer.
+   */
+  readonly loanReturnKeys?: ReadonlyMap<string, string>;
 }
 
 const EMPTY_PLAN: ReconciliationPlan = {
@@ -296,8 +305,22 @@ export function reconcile(
   // --- §7.3 Delta-CRDT gauge reconciliation -------------------------------------
   const gaugeResolutions = reconcileGauges(local, remote, finalItems);
 
+  // --- Issue #711: one loan, two placements --------------------------------------
+  // A loan derived from a booking conversion is one row on both devices, but each device drew the
+  // unit from wherever *it* last saw the asset — so two devices that disagreed about the placement
+  // wrote the draw twice, and the per-placement replay below cannot see that the two are one
+  // movement. This cancels the surplus first, and hands the stock CRDT the placements it touched
+  // so their quantities settle in the same pass.
+  const splitLoanStock = resolveSplitLoanStock(
+    local,
+    remote,
+    finalCheckouts(local, localUpserts, localDeletes),
+    options.loanReturnKeys ?? new Map(),
+    finalItemIds,
+  );
+
   // --- Issue #188 Delta-CRDT discrete-stock reconciliation ----------------------
-  const stockResolutions = reconcileStock(local, remote, finalItemIds);
+  const stockResolutions = reconcileStock(local, remote, finalItemIds, splitLoanStock);
 
   // --- Phase 11: non-LWW sections (append-only ledger + M:N membership) ----------
   // Both reference parents (items/tags), so they are filtered to the rows that will
@@ -333,12 +356,12 @@ export function reconcile(
   );
   const historyClears = reconcileHistoryClears(local, clearMarks, finalItemIds);
   // Issue #188: the discrete-stock convergence ledger, unioned by id like the history ledger.
-  const stockDeltaInserts = reconcileStockDeltas(
-    local,
-    remote,
-    options.dictionary[STOCK_DELTAS_TABLE],
-    finalItemIds,
-  );
+  const stockDeltaInserts = [
+    ...reconcileStockDeltas(local, remote, options.dictionary[STOCK_DELTAS_TABLE], finalItemIds),
+    // The issue #711 cancellations ride the same append-only union: ordinary movement rows, minted
+    // here rather than pulled from a peer, and `INSERT OR IGNORE` skips one this device holds.
+    ...splitLoanStock.cancellations,
+  ];
   const { itemTagUpserts, itemTagDeletes } = reconcileItemTags(
     local,
     remote,
@@ -664,6 +687,23 @@ function reparentOrphans(
 }
 
 /**
+ * The `checkouts` rows that survive the merge: this device's rows overlaid with the upserts the
+ * merge settled on, minus everything it is deleting. Shared by the serialised-loan cardinality
+ * repair and the issue #711 split-stock pass so the two read the same post-merge loan set.
+ */
+function finalCheckouts(
+  local: SyncSnapshot,
+  localUpserts: readonly TableRow[],
+  localDeletes: readonly Tombstone[],
+): Map<string, SqlRow> {
+  const rows = new Map<string, SqlRow>();
+  for (const row of local.tables.checkouts ?? []) rows.set(String(row.id), row);
+  for (const u of localUpserts) if (u.table === 'checkouts') rows.set(String(u.row.id), u.row);
+  for (const d of localDeletes) if (d.tableName === 'checkouts') rows.delete(d.id);
+  return rows;
+}
+
+/**
  * Issue #193: a SERIALISED item is a single physical instance, so it can have **at most one open
  * checkout**. `CheckoutRepository.checkout`'s pre-flight probe enforces that on one device, but
  * two offline devices can each pass it and INSERT a checkout with its own UUID; the id-keyed LWW
@@ -700,15 +740,9 @@ function resolveSerialisedLoanConflicts(
     if (u.table === 'items') trackingMode.set(String(u.row.id), String(u.row.tracking_mode));
   }
 
-  // The checkout rows that survive the merge: local rows overlaid with winning upserts, minus deletes.
-  const finalCheckouts = new Map<string, SqlRow>();
-  for (const row of local.tables.checkouts ?? []) finalCheckouts.set(String(row.id), row);
-  for (const u of localUpserts) if (u.table === 'checkouts') finalCheckouts.set(String(u.row.id), u.row);
-  for (const d of localDeletes) if (d.tableName === 'checkouts') finalCheckouts.delete(d.id);
-
   // Group the still-open loans of each serialised item.
   const openByItem = new Map<string, SqlRow[]>();
-  for (const row of finalCheckouts.values()) {
+  for (const row of finalCheckouts(local, localUpserts, localDeletes).values()) {
     if (row.returned_at !== null && row.returned_at !== undefined) continue; // already returned
     const itemId = String(row.item_id);
     if (trackingMode.get(itemId) !== 'SERIALISED') continue;
@@ -1925,38 +1959,75 @@ function reconcileGauges(
  *     placements have not diverged, so re-`UPDATE`ing to the same value would only bump
  *     `updated_at` and re-push the row every sync (a fresh source of the
  *     `[[sync-redundant-resync-churn]]` ping-pong).
+ *
+ * A placement the issue #711 pass has just cancelled a movement at is exempt from (1): the
+ * cancellation is a movement this merge is itself appending, so the placement has to be replayed
+ * whether or not both devices had touched it before. It is counted among the remote deltas, so (3)
+ * still lets a settled placement pass by untouched, and (2) still holds each side to its own
+ * ledger — `resolveSplitLoanStock` requires the same of both sides before it writes anything.
  */
 function reconcileStock(
   local: SyncSnapshot,
   remote: SyncSnapshot,
   finalItemIds: ReadonlySet<string>,
+  splitLoanStock: SplitLoanStockRepair,
 ): StockResolution[] {
   const localByPlacement = byPlacement(local.stockDeltas ?? []);
   const remoteByPlacement = byPlacement(remote.stockDeltas ?? []);
   const localQuantities = placementQuantities(local.tables.stock_batches ?? []);
   const remoteQuantities = placementQuantities(remote.tables.stock_batches ?? []);
+  const cancellations = byPlacement(splitLoanStock.cancellations);
   const resolutions: StockResolution[] = [];
-  for (const [placementId, localEntry] of localByPlacement) {
+  // Every placement this device has moved, plus those the #711 repair has just written a
+  // cancellation into — the latter may have no local ledger of their own, and their quantity has
+  // to follow the row this merge appended either way.
+  const placementIds = new Set([...localByPlacement.keys(), ...splitLoanStock.placements]);
+  for (const placementId of placementIds) {
+    const repaired = splitLoanStock.placements.has(placementId);
+    const localEntry = localByPlacement.get(placementId);
     const remoteEntry = remoteByPlacement.get(placementId);
-    // (1) Only a placement both devices moved can have diverged; a one-sided one keeps its LWW value.
-    if (!remoteEntry) continue;
-    if (!finalItemIds.has(localEntry.key.itemId)) continue;
+    const key = localEntry?.key ?? remoteEntry?.key ?? cancellations.get(placementId)?.key;
+    if (!key) continue;
+    // (1) Only a placement both devices moved can have diverged; a one-sided one keeps its LWW
+    // value. A repaired placement is exempt: the cancellation is this merge's own new movement,
+    // and it is exactly the divergence the guard is looking for.
+    if (!repaired && (!localEntry || !remoteEntry)) continue;
+    if (!finalItemIds.has(key.itemId)) continue;
     // (2) Both ledgers must be complete — `replay(deltas) == quantity` — or the replay would lose
     // an uncaptured baseline. A baseline-less side falls back to LWW rather than to a wrong figure.
-    if (replayStockQuantity(localEntry.deltas) !== localQuantities.get(placementId)) continue;
-    if (replayStockQuantity(remoteEntry.deltas) !== remoteQuantities.get(placementId)) continue;
+    // A side holding no `stock_batches` row for the placement has nothing to contradict, so it is
+    // not asked; only a repaired placement reaches this with a side missing, and #711's own guard
+    // has already required completeness of both sides before writing a cancellation.
+    if (!sideIsComplete(localEntry, localQuantities.get(placementId))) continue;
+    if (!sideIsComplete(remoteEntry, remoteQuantities.get(placementId))) continue;
+    const localDeltas = localEntry?.deltas ?? [];
+    const remoteDeltas = [...(remoteEntry?.deltas ?? []), ...(cancellations.get(placementId)?.deltas ?? [])];
     // (3) Skip when the remote carries no movement this device lacks (no divergence → no churn).
-    const localIds = new Set(localEntry.deltas.map((d) => d.id));
-    if (remoteEntry.deltas.every((d) => localIds.has(d.id))) continue;
-    const quantity = reconcileStockQuantity(localEntry.deltas, remoteEntry.deltas);
+    // The cancellations are counted as remote movements above, so a repaired placement passes
+    // this on its first merge and settles quietly on every one after it.
+    const localIds = new Set(localDeltas.map((d) => d.id));
+    if (remoteDeltas.every((d) => localIds.has(d.id))) continue;
     resolutions.push({
-      itemId: localEntry.key.itemId,
-      locationId: localEntry.key.locationId,
-      batchKey: localEntry.key.batchKey,
-      quantity,
+      itemId: key.itemId,
+      locationId: key.locationId,
+      batchKey: key.batchKey,
+      quantity: reconcileStockQuantity(localDeltas, remoteDeltas),
     });
   }
   return resolutions;
+}
+
+/**
+ * {@link reconcileStock}'s guard (2) for one side: its own ledger for the placement must replay to
+ * the quantity it stored. A side with no `stock_batches` row there is vacuously complete — it has
+ * recorded no figure the replay could contradict.
+ */
+function sideIsComplete(
+  entry: { deltas: StockQuantityDelta[] } | undefined,
+  stored: number | undefined,
+): boolean {
+  if (stored === undefined) return entry === undefined || entry.deltas.length === 0;
+  return replayStockQuantity(entry?.deltas ?? []) === stored;
 }
 
 /** Map each `stock_batches` row to its placement id → quantity, for the ledger-completeness check. */
