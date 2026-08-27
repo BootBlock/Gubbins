@@ -153,6 +153,32 @@ describe('issue #542 — one booking converted on two offline devices', () => {
     expect(await onHand(b, itemId)).toBe(0);
   });
 
+  it('keeps the loan closed when one device returned it and the other converted later', async () => {
+    // A checks the booking out and gives the asset back. B, still offline, checks the same booking
+    // out afterwards — so B's copy of the one loan row is the *newer* edit and would win outright.
+    const { checkout } = await a.bookings.convertToCheckout(bookingId);
+    await a.checkouts.checkIn(checkout.id);
+    await b.bookings.convertToCheckout(bookingId);
+
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    await runSync(a.driver, provider, NO_QUOTA);
+
+    // `returned_at` is write-once, so the return stands: the unit is back on the shelf and nothing
+    // claims to be holding it. Letting the open copy win would leave the asset out on loan *and*
+    // on hand, because the return's stock is already in the ledger either way.
+    expect(await openLoanIds(a, itemId)).toEqual([]);
+    expect(await openLoanIds(b, itemId)).toEqual([]);
+    expect(await onHand(a, itemId)).toBe(1);
+    expect(await onHand(b, itemId)).toBe(1);
+
+    // Settled — re-syncing neither re-opens the loan nor conjures a second unit.
+    await runSync(a.driver, provider, NO_QUOTA);
+    await runSync(b.driver, provider, NO_QUOTA);
+    expect(await openLoanIds(b, itemId)).toEqual([]);
+    expect(await onHand(b, itemId)).toBe(1);
+  });
+
   it('adopts the loan a half-finished conversion left behind rather than drawing again', async () => {
     // The convert is best-effort: the loan is written first, then the booking is stamped. Undo
     // just the stamp to stand in for that second write failing, then convert again.

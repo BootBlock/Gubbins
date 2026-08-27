@@ -161,9 +161,9 @@ were meant to be and merges them into a single loan, rather than recording the a
 borrowers. The asset's on-hand count drops by the one unit that actually left, so returning the loan
 puts that unit back and the count is right again.
 
-If the two devices checked the booking out to different people, the merge keeps one of them — the
-[[most recent edit|Cloud-Sync]], as with any other detail two devices disagree on. Check the loan
-after a sync if it matters who has it.
+If one device also *returned* the loan before syncing, the return stands — an asset that has come
+back cannot be put back out by the other device's later hand-over. The unit reads as on hand again,
+and nothing is left claiming to hold it.
 
 ### Reviewing overwritten edits
 

@@ -66,6 +66,7 @@ import type {
   ReconciliationPlan,
   ReparentLog,
   SchemaDictionary,
+  LoanReturnRepair,
   SerialisedLoanClosure,
   SyncConflict,
   SyncSnapshot,
@@ -107,6 +108,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   rejectedCycles: [],
   serialisedLoansClosed: [],
   bookingsCancelled: [],
+  loanReturnsPreserved: [],
   collisions: [],
   keyParks: [],
   flagRepairs: [],
@@ -222,6 +224,19 @@ export function reconcile(
   // Runs before every later phase: it can drop upserts, retire ids and repoint references,
   // all of which the FK guard, the tag-edge sections and the apply must see settled.
   const { collisions, rekeys } = resolveUniqueKeyCollisions(local, localUpserts, localDeletes, offset);
+
+  // --- Issue #542 a return is terminal -------------------------------------------
+  // `returned_at` is write-once, which whole-row LWW cannot see: a peer's newer still-open copy of
+  // a loan this device has returned would re-open it, stranding the stock the return gave back.
+  // Runs before the serialised pass below, so that pass counts a re-opened loan as the closed one
+  // it really is rather than collapsing a phantom pair.
+  const loanReturnsPreserved = resolveLoanReturnConflicts(
+    local,
+    remote,
+    localUpserts,
+    localDeletes,
+    dictionary.checkouts,
+  );
 
   // --- Issue #193 serialised-loan cardinality -----------------------------------
   // Collapse a serialised item that the id-keyed union left on loan more than once. Runs after
@@ -364,6 +379,7 @@ export function reconcile(
     rejectedCycles,
     serialisedLoansClosed,
     bookingsCancelled,
+    loanReturnsPreserved,
     collisions,
     keyParks,
     flagRepairs,
@@ -644,6 +660,75 @@ function resolveSerialisedLoanConflicts(
     }
   }
   return closures;
+}
+
+/**
+ * Issue #542: `checkouts.returned_at` is **write-once** — a loan goes out, comes back, and stays
+ * back. `checkIn` refuses an already-returned loan and `renew` only touches an open one, so the
+ * column only ever moves from NULL to a stamp. Whole-row last-write-wins does not know that: when
+ * two devices hold the same loan row and one has returned it, a *later* edit to the still-open copy
+ * wins the row outright and the loan comes back open.
+ *
+ * That is not merely an odd row — it strands stock. The return's `+1` is already an entry in the
+ * `stock_deltas` ledger, and the union keeps it whichever row wins, so a re-opened loan leaves the
+ * asset recorded as out with a borrower *and* sitting on the shelf. Returning it again then adds a
+ * second unit to a single-unit asset. Since #542 gave a booking conversion a derived `checkouts`
+ * id, two devices converting one booking write the *same* row, which is exactly the pair this can
+ * happen to: one device converts and returns while the other, still offline, converts later.
+ *
+ * So the merge honours the monotonic column instead of the row's timestamp: where one side's copy
+ * is closed and the other's is open, the **closed** copy is taken, mutating `localUpserts` in
+ * place. Both devices run the same rule over the same two rows and reach the identical result
+ * without reference to which side is local. The closed row is written whole rather than having its
+ * `returned_at` spliced in, so the return note and condition recorded with it travel too.
+ *
+ * `updated_at` is bumped by 1, the convention the sibling repairs use: frame-invariant under the
+ * linear push-shift so both devices converge on the identical pushed row with no last-write-wins
+ * churn, and strictly greater than the old value so it also skips the `updated_at` self-stamp
+ * trigger. Two *closed* copies need no repair — LWW already picks the same one on both devices.
+ */
+function resolveLoanReturnConflicts(
+  local: SyncSnapshot,
+  remote: SyncSnapshot,
+  localUpserts: TableRow[],
+  localDeletes: readonly Tombstone[],
+  allowedCols: readonly string[] | undefined,
+): LoanReturnRepair[] {
+  const localRows = rowsById(local.tables.checkouts ?? []);
+  const remoteRows = rowsById(remote.tables.checkouts ?? []);
+  if (localRows.size === 0 || remoteRows.size === 0) return [];
+
+  const deleted = new Set(localDeletes.filter((d) => d.tableName === 'checkouts').map((d) => d.id));
+  const upsertIndex = new Map<string, number>();
+  localUpserts.forEach((u, i) => {
+    if (u.table === 'checkouts') upsertIndex.set(String(u.row.id), i);
+  });
+
+  const repairs: LoanReturnRepair[] = [];
+  for (const [id, l] of localRows) {
+    const r = remoteRows.get(id);
+    if (r === undefined || deleted.has(id)) continue;
+
+    const lClosed = isReturned(l);
+    if (lClosed === isReturned(r)) continue; // agreed — nothing a monotonic column can repair
+
+    // What the merge has settled on so far: the winning upsert, or the untouched local row.
+    const existing = upsertIndex.get(id);
+    const merged = existing !== undefined ? localUpserts[existing]!.row : l;
+    if (isReturned(merged)) continue; // the closed copy already won on its own
+
+    const closed = lClosed ? l : allowedCols ? sanitiseRow(r, allowedCols) : r;
+    const repaired: SqlRow = { ...closed, updated_at: num(closed.updated_at) + 1 };
+    if (existing !== undefined) localUpserts[existing] = { table: 'checkouts', row: repaired };
+    else localUpserts.push({ table: 'checkouts', row: repaired });
+    repairs.push({ itemId: String(closed.item_id), checkoutId: id });
+  }
+  return repairs;
+}
+
+/** Whether a `checkouts` row has been returned — the derived RETURNED half of its OPEN/RETURNED status. */
+function isReturned(row: SqlRow): boolean {
+  return row.returned_at !== null && row.returned_at !== undefined;
 }
 
 /** The loan checked out first (smaller `checked_out_at`, id-tiebroken) — the merge survivor. */
