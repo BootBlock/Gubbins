@@ -97,6 +97,12 @@ export function describeSyncOutcome(result: SyncResult): string {
       `${count(result.bookingsCancelled, 'overlapping booking')} cancelled (an asset was already booked for those dates elsewhere).`,
     );
   }
+  // Issue #542: a loan returned here was still open on another device; the return is what stands.
+  if (result.loanReturnsPreserved > 0) {
+    sentences.push(
+      `${count(result.loanReturnsPreserved, 'returned loan')} kept closed (it was still checked out elsewhere).`,
+    );
+  }
   // Issue #72: a concurrent edit of yours was overwritten — flag it plainly so it can be reviewed.
   if (result.conflicts.length > 0) {
     sentences.push(

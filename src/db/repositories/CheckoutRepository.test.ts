@@ -5,7 +5,7 @@ import { runMigrations } from '@/db/migrations';
 import { migrations } from '@/db/migrations/index';
 import { MS_PER_DAY, SYSTEM_USER_ID } from './constants';
 import { CheckoutRepository, overdueCheckoutExistsSql } from './CheckoutRepository';
-import { planCheckIn } from './checkout-plan';
+import { checkInId, planCheckIn } from './checkout-plan';
 import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
 import { ProjectRepository } from './ProjectRepository';
@@ -127,6 +127,22 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       expect((await items.getById(itemId))?.quantity).toBe(5);
       const history = await items.getHistory(itemId);
       expect(history.rows.some((h) => h.action === 'CHECKED_IN' && h.quantityDelta === 2)).toBe(true);
+    });
+
+    it('derives the CHECKED_IN entry and its stock movement from the loan so two devices converge', async () => {
+      const itemId = await makeItem('Torque wrench', 1);
+      const checkout = await checkouts.checkout({ itemId, contactName: 'Bob' });
+      await checkouts.checkIn(checkout.id);
+
+      // Both are pure functions of the loan's own id, not fresh random ones — the property that
+      // makes two devices returning the same loan offline give the unit back once (issue #542).
+      const entry = (await items.getHistory(itemId)).rows.find((h) => h.action === 'CHECKED_IN');
+      expect(entry?.id).toBe(await checkInId('hist:CHECKED_IN', checkout.id));
+      const delta = await driver.queryOne<{ id: string }>(
+        'SELECT id FROM stock_deltas WHERE item_id = ? AND quantity_delta > 0 ORDER BY created_at DESC LIMIT 1;',
+        [itemId],
+      );
+      expect(delta?.id).toContain(await checkInId('stock', checkout.id));
     });
 
     it('records the return note in its own column without clobbering the loan note', async () => {

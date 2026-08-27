@@ -677,10 +677,24 @@ function resolveSerialisedLoanConflicts(
  * happen to: one device converts and returns while the other, still offline, converts later.
  *
  * So the merge honours the monotonic column instead of the row's timestamp: where one side's copy
- * is closed and the other's is open, the **closed** copy is taken, mutating `localUpserts` in
- * place. Both devices run the same rule over the same two rows and reach the identical result
- * without reference to which side is local. The closed row is written whole rather than having its
- * `returned_at` spliced in, so the return note and condition recorded with it travel too.
+ * is closed and the other's is open, the **return** is taken, mutating `localUpserts` in place.
+ * Both devices run the same rule over the same two rows and reach the identical result without
+ * reference to which side is local.
+ *
+ * Only the return is taken across, onto the row the merge has already settled on — never a raw
+ * snapshot row in its place. Earlier passes have written to that upsert: `resolveUniqueKeyCollisions`
+ * repoints a `contact_id` whose contact lost a name collision and is about to be deleted, so
+ * resurrecting the pre-merge row would restore the retired id and the atomic apply would abort on
+ * its foreign key — taking every other change in the same merge with it, on every subsequent sync.
+ * Every other column is LWW's to decide and is left as it settled.
+ *
+ * "The return" is three columns, not two. `returned_at` and its `return_note` are the return
+ * itself; `checked_out_at` comes with them because the schema ties the two together
+ * (`CHECK (returned_at IS NULL OR returned_at >= checked_out_at)`), and the two copies of a loan
+ * two devices each opened do **not** share it — the later conversion stamps a later hour, so a
+ * return lifted onto it would describe a loan handed back before it went out, and the apply would
+ * reject the whole merge. The pair is meaningful only together: this loan, closed at that moment.
+ * Both values are frame-stable, so both devices write the same ones.
  *
  * `updated_at` is bumped by 1, the convention the sibling repairs use: frame-invariant under the
  * linear push-shift so both devices converge on the identical pushed row with no last-write-wins
@@ -717,8 +731,17 @@ function resolveLoanReturnConflicts(
     const merged = existing !== undefined ? localUpserts[existing]!.row : l;
     if (isReturned(merged)) continue; // the closed copy already won on its own
 
+    // The return's own columns, lifted onto the settled row rather than replacing it. The stamp is
+    // taken from the closed copy's `updated_at` — the one value both devices hold identically for
+    // it — so the +1 bump converges however the rest of the row was resolved.
     const closed = lClosed ? l : allowedCols ? sanitiseRow(r, allowedCols) : r;
-    const repaired: SqlRow = { ...closed, updated_at: num(closed.updated_at) + 1 };
+    const repaired: SqlRow = {
+      ...merged,
+      checked_out_at: num(closed.checked_out_at),
+      returned_at: num(closed.returned_at),
+      return_note: closed.return_note ?? null,
+      updated_at: num(closed.updated_at) + 1,
+    };
     if (existing !== undefined) localUpserts[existing] = { table: 'checkouts', row: repaired };
     else localUpserts.push({ table: 'checkouts', row: repaired });
     repairs.push({ itemId: String(closed.item_id), checkoutId: id });
