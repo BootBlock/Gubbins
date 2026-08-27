@@ -182,6 +182,22 @@ jobs:
           body="$(curl -fsS http://127.0.0.1:18080${{ matrix.prefix }}/items)"
           grep -q '<title>Gubbins</title>' <<<"$body"
 
+      - name: Assert the web-app manifest matches the configured base path
+        run: |
+          set -euo pipefail
+          # An installed PWA launches at `start_url` and treats anything outside `scope` as
+          # leaving the app. Nothing downstream of the build re-derives either, so once they
+          # stop tracking the base path the image installs an icon that opens the not-found
+          # screen and silently drops the share/file/protocol entry points — with no HTTP error
+          # anywhere, because the SPA fallback answers 200 for the wrong path too (issue #648).
+          manifest="$(curl -fsS http://127.0.0.1:18080${{ matrix.prefix }}/manifest.webmanifest)"
+          echo "$manifest"
+          for member in id scope start_url; do
+            value="$(jq -r ".$member" <<<"$manifest")"
+            echo "$member: $value"
+            test "$value" = '${{ matrix.base }}'
+          done
+
       - name: Assert the service worker is served uncached
         run: |
           set -euo pipefail

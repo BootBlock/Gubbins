@@ -74,6 +74,13 @@ docker build --build-arg GUBBINS_BASE_PATH=/gubbins/ -t gubbins .
 > The path is fixed when the image is **built**, not when it starts, because it's baked into the
 > app's internal links. Changing it means rebuilding the image.
 
+> **⚠️ Heads-up**
+> The path is also what an [[installed|Installing-Gubbins]] copy is identified by. If you rebuild
+> under a different path, install it again from the new address — an already-installed copy still
+> points at the old one, and your browser treats the two as separate apps. The same applies if you
+> installed from an older image and the installed icon opened a "We couldn't find that page"
+> screen: rebuild, then remove that copy and install it again.
+
 ### Reaching it from other devices
 
 The default setup listens on `localhost` only. To reach Gubbins from a phone or another computer
