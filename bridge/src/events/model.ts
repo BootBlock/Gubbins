@@ -172,11 +172,15 @@ export interface EventCursor {
   readonly seenIds: readonly string[];
   /**
    * The `created_at` of the **oldest row in the previous window**, recorded only when that window
-   * was full — i.e. only when rows existed below it. A row older than this floor cannot be new: it
-   * was already below the window last time, so it has slid *up* into view because the ledger
-   * shrank, not because anything happened (issue #642). `null` (or absent) means "no floor" — the
-   * window held the whole ledger, so nothing can backfill into it and every unseen id is genuinely
-   * new.
+   * came back full. A row older than this floor was already below the window last time, so it can
+   * only be in view now because the ledger shrank underneath the cursor, not because anything
+   * happened (issue #642). `null` (or absent) means "no floor" — the window did not fill, so it
+   * held the whole ledger and every unseen id is genuinely new.
+   *
+   * "Full" is the page's `hasMore`, which is `rows.length === limit` and so also true for a ledger
+   * of exactly `limit` rows, where nothing lies below. That boundary records a floor it does not
+   * need. It costs nothing: suppression additionally requires a row to appear *below* the previous
+   * bottom, which cannot happen while no row leaves the window.
    *
    * This is the monotonic half of the cursor. The id set alone is bounded by the window, so it
    * slides backwards whenever the window shrinks: a hard delete cascades an item's whole ledger
@@ -188,12 +192,17 @@ export interface EventCursor {
    * It is deliberately *not* a plain high-water mark on the newest row: that would drop the
    * out-of-order synced row the id set exists to catch (§7.3 keeps each row's own `created_at`, so
    * a row from another device can arrive with a timestamp older than one already delivered). The
-   * floor sits at the *bottom* of the window, so such a row is still inside it and still emitted.
+   * floor sits at the *bottom* of the window instead, which is as low as a boundary can go and
+   * still exclude backfill, so all but the oldest of those rows stay inside it and are emitted.
    *
-   * One residue, accepted rather than hidden: rows sharing the floor's exact millisecond are
-   * ambiguous, because the feed's tie-break (`rowid`) is not carried on the entry. They compare as
-   * "not older" and are emitted, so a same-millisecond backfill can still produce a small burst.
-   * That errs towards a duplicate rather than a lost event, which is the right way round.
+   * Two residues, both stated rather than hidden, and both narrow:
+   *
+   *  - Rows sharing the floor's exact millisecond are ambiguous, because the feed's tie-break
+   *    (`rowid`) is not carried on the entry. They compare as "not older" and are emitted, so a
+   *    same-millisecond backfill can still produce a small burst.
+   *  - A synced row *older* than the floor is dropped. It can only reach the window at all in a
+   *    generation that also removed rows, and at that point it is indistinguishable from the
+   *    backfill those removals caused — the ledger carries nothing that separates them.
    */
   readonly backfillFloor?: number | null;
   /**
@@ -237,9 +246,9 @@ function isStockAction(action: HistoryAction): boolean {
 /** How the caller describes the page it read, for the parts of the diff a page shape decides. */
 export interface DiffOptions {
   /**
-   * Did the read fill its page — are there rows below the window? Pass the page's own `hasMore`,
-   * which already accounts for the repository clamping an over-large `limit`. It decides whether
-   * this window records a {@link EventCursor.backfillFloor}; a window holding the whole ledger
+   * Did the read fill its page? Pass the page's own `hasMore`, which already accounts for the
+   * repository clamping an over-large `limit`. It decides whether this window records a
+   * {@link EventCursor.backfillFloor}; a window that did not fill holds the whole ledger and
    * records none. Defaults to `false`, the conservative reading: no floor, so nothing is
    * suppressed.
    */
@@ -325,9 +334,9 @@ function diffNewRows<T extends { readonly id: string; readonly createdAt: number
   windowFull: boolean,
 ): { newRows: T[]; seenIds: readonly string[]; floor: number | null; baseline: boolean } {
   const seenIds = recent.length > 0 ? recent.map((e) => e.id) : (previousSeenIds ?? []);
-  // The next floor is this window's oldest row, and only when rows remain below it. A window that
-  // holds the whole ledger records no floor: nothing can backfill into it, and a floor there would
-  // suppress a genuinely older row synced from another device.
+  // The next floor is this window's oldest row, and only when the page came back full. A window
+  // that did not fill holds the whole ledger and records no floor: nothing can backfill into it,
+  // and a floor there would suppress a genuinely older row synced from another device.
   const floor =
     recent.length === 0 ? previousFloor : windowFull ? recent[recent.length - 1]!.createdAt : null;
   if (previousSeenIds === null) return { newRows: [], seenIds, floor, baseline: true };

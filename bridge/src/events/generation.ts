@@ -53,13 +53,13 @@ export async function computeGenerationEvents(
   // One bounded page of the newest rows from each ledger — the diff and the cursor both live inside
   // these windows (see EventCursor). Between two debounced snapshot syncs the delta is small; a rare
   // burst larger than a window surfaces its newest slice plus a truncation summary. The whole page
-  // is kept, not just its rows: `hasMore` is what tells the diff the window has rows beneath it.
+  // is kept, not just its rows, because the diff reads `hasMore` as well.
   const recent = await items.getHistoryFeed({ limit: scanLimit });
   const recentLocations = await locations.getHistoryFeed({ limit: scanLimit });
 
   // `hasMore` is the page's own "a full page came back", so it already reflects the repository
-  // clamping an over-large `limit`. It tells the diff whether rows exist *below* the window, which
-  // is what decides the backfill floor (issue #642).
+  // clamping an over-large `limit`. A window that did not fill holds the whole ledger, and only a
+  // window that filled records a backfill floor (issue #642).
   const { newEntries, cursor, baseline } = diffNewEntries(previous, recent.rows, {
     windowFull: recent.hasMore,
   });
