@@ -61,7 +61,7 @@ function toRegExp(pattern: string): RegExp {
     .replaceAll(`/${ANY_DEPTH}/`, '/(?:.*/)?')
     // A leading `**/` likewise matches at the context root, so `**/x` matches a bare `x`.
     .replace(new RegExp(`^${ANY_DEPTH}/`), '(?:.*/)?')
-    .replace(new RegExp(`/${ANY_DEPTH}$`), '(?:/.*)?')
+    .replace(new RegExp(`/${ANY_DEPTH}$`), '/.*')
     .replaceAll(ANY_DEPTH, '.*')
     .replaceAll(ANY_NAME, '[^/]*')
     .replaceAll(ANY_CHAR, '[^/]');
@@ -98,16 +98,21 @@ function isIgnored(path: string, dockerignore: string[]): boolean {
 /**
  * @param pattern a non-negated `.gitignore` line
  * @param base    the directory the ignore file governs (`''` for the repository root)
- * @param nested  a real subdirectory of `base`, used to check unanchored patterns at depth
+ * @param nested  real subdirectories of `base`. An unanchored git rule applies at *every*
+ *                depth, so probing only one level would pass a `.dockerignore` that spelled the
+ *                rule out per directory instead of using a doubled star.
  */
-function samplePaths(pattern: string, base: string, nested: string): string[] {
-  if (pattern.includes('**')) {
+function samplePaths(pattern: string, base: string, nested: string[]): string[] {
+  // A leading `**/` is git's explicit spelling of "at any depth", which is already how an
+  // unanchored rule is treated below — strip it and let the same branch handle it.
+  const rule = pattern.replace(/^\*\*\//, '');
+  if (rule.includes('**')) {
     // Not a shape this generator understands; fail loudly rather than assert nothing.
     throw new Error(`samplePaths: unsupported git-ignore pattern "${pattern}" — extend this helper`);
   }
 
-  const isDirectory = pattern.endsWith('/');
-  const trimmed = pattern.replace(/\/+$/, '');
+  const isDirectory = rule.endsWith('/');
+  const trimmed = rule.replace(/\/+$/, '');
   // A `*` stands for at least one character and `?` for exactly one; any literal builds a
   // concrete example. A `[cod]` class expands into one sample per member, so a rule such as
   // `*.py[cod]` is checked for every extension it covers rather than only the first.
@@ -121,7 +126,10 @@ function samplePaths(pattern: string, base: string, nested: string): string[] {
     if (raw.startsWith('/') || raw.includes('/')) return [withFile(under(base, concrete))];
 
     // Unanchored: git applies it at every depth below `base`, so an image must exclude it there.
-    return [withFile(under(base, concrete)), withFile(under(base ? `${base}/${nested}` : nested, concrete))];
+    return [
+      withFile(under(base, concrete)),
+      ...nested.map((dir) => withFile(under(base ? `${base}/${dir}` : dir, concrete))),
+    ];
   });
 }
 
@@ -140,7 +148,7 @@ const mirrored = [
   ...patterns(read('bridge', '.gitignore')).map((pattern) => ({
     pattern,
     base: 'bridge',
-    nested: 'src',
+    nested: ['src', 'src/api', 'src/api/schemas'],
     source: 'bridge/.gitignore',
   })),
   // The root list governs the whole repository, and the bridge's build context *is* the repo
@@ -148,7 +156,7 @@ const mirrored = [
   ...patterns(read('.gitignore')).map((pattern) => ({
     pattern,
     base: '',
-    nested: 'bridge',
+    nested: ['bridge', 'bridge/src', 'src/db/repositories'],
     source: '.gitignore',
   })),
 ].filter(({ pattern }) => !pattern.startsWith('!'));
@@ -156,7 +164,11 @@ const mirrored = [
 describe('.dockerignore mirrors the git-ignore rules', () => {
   it('finds the ignore rules at all (guards against a silently-empty sweep)', () => {
     expect(dockerignore.length).toBeGreaterThan(10);
-    expect(mirrored.length).toBeGreaterThan(50);
+    expect(mirrored.length).toBeGreaterThan(20);
+    // Both files must contribute — a read that silently returned nothing would otherwise leave
+    // the sweep looking healthy on the strength of the other one alone.
+    expect(mirrored.some((rule) => rule.source === '.gitignore')).toBe(true);
+    expect(mirrored.some((rule) => rule.source === 'bridge/.gitignore')).toBe(true);
   });
 
   it.each(mirrored)('$source rule "$pattern" is also excluded from the build context', (rule) => {
