@@ -151,11 +151,22 @@ function versionManifestPlugin(): Plugin {
   };
 }
 
+/**
+ * The public path this build is served from: `/Gubbins/` for GitHub Pages (spec §1.2),
+ * overridable via `GUBBINS_BASE_PATH` so a self-hosted deployment (see Dockerfile) can serve
+ * from the domain root or a sub-path. See src/base-path.ts.
+ *
+ * Resolved once, here, because more than one part of the config has to agree on it: Vite's
+ * `base` (which drives asset URLs, the router basepath and the precache manifest) *and* the
+ * web-app manifest's `id` / `scope` / `start_url`. Those three used to be `/Gubbins/`
+ * literals, which made every self-hosted install launch onto the not-found screen and put
+ * the share/file/protocol entry points outside the declared scope (issue #648).
+ */
+const basePath = resolveBasePath(process.env.GUBBINS_BASE_PATH);
+
 // https://vite.dev/config/
 export default defineConfig({
-  // `/Gubbins/` for GitHub Pages (spec §1.2); overridable via `GUBBINS_BASE_PATH` so a
-  // self-hosted deployment (see Dockerfile) can serve from the root. See src/base-path.ts.
-  base: resolveBasePath(process.env.GUBBINS_BASE_PATH),
+  base: basePath,
 
   // Build-time constants consumed by src/lib/app-version.ts (About + Dashboard).
   // The release date is pinned per version in package.json (`releaseDate`, an ISO
@@ -213,7 +224,13 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
       },
       manifest: {
-        id: '/Gubbins/',
+        // `id`, `scope` and `start_url` all track the build's base path. vite-plugin-pwa
+        // merges this object over its defaults and never rewrites these members afterwards,
+        // so a literal here would survive verbatim into every deployment (issue #648).
+        // `id` is set explicitly rather than left to its `start_url` default so the installed
+        // app's identity is stated in the manifest, and it carries the base because it resolves
+        // against the *origin* rather than against the manifest URL.
+        id: basePath,
         name: 'Gubbins',
         short_name: 'Gubbins',
         description:
@@ -223,8 +240,8 @@ export default defineConfig({
         background_color: '#0b0b0f',
         display: 'standalone',
         orientation: 'any',
-        scope: '/Gubbins/',
-        start_url: '/Gubbins/',
+        scope: basePath,
+        start_url: basePath,
         // A scalable vector master plus raster fallbacks. The `any` and `maskable`
         // purposes are kept on *separate* assets: the maskable PNG carries the safe-zone
         // padding Android's adaptive mask needs, so reusing one image for both (which
@@ -264,7 +281,8 @@ export default defineConfig({
         // "Share to Gubbins" from the OS share sheet. Declared as a POST + multipart/form-data so a
         // shared image file can arrive; sw.ts captures it, stashes it, and redirects to the
         // share-landing route which opens a pre-filled add-item draft. Paths are relative to the
-        // manifest (served under the `/Gubbins/` scope), matching start_url/scope above.
+        // manifest, so they resolve under whatever base the build was made for — which is also
+        // what `scope` above declares, keeping them inside it.
         share_target: {
           action: 'share-target',
           method: 'POST',
