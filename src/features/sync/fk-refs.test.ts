@@ -76,12 +76,6 @@ const EXEMPT: Readonly<Record<string, string>> = {
   // parent→child repair — the parent set is the table itself.
   'items.parent_id': 'resolved by walking the variant chain',
   'locations.parent_id': 'resolved by the §7.5.2 re-parent / cycle guard',
-  // Known gap, tracked separately: the borrower is a tagged union (contact XOR project XOR
-  // location), so a dangling borrower can be neither nulled (it would break the XOR CHECK) nor
-  // dropped without deciding what a loan with no borrower means. Backups are unaffected — the
-  // only reference `filterSnapshot` can dangle is `item_id`, which is covered by FK_REFS.
-  'checkouts.project_id': 'tagged-union borrower; needs its own repair rule',
-  'checkouts.location_id': 'tagged-union borrower; needs its own repair rule',
   // NOT NULL `ON DELETE SET DEFAULT` (issue #691), so the rule above would demand `false` —
   // "drop the row". That is the wrong repair for a ledger: an activity entry must not be destroyed
   // because the account that wrote it was removed on another device. Its repair is the schema's
