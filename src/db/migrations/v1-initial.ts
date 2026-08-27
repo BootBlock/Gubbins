@@ -1854,6 +1854,27 @@ const baselineStatements: SqlStatement[] = [
       `,
   },
   { sql: `ALTER TABLE checkouts ADD COLUMN source_batch_key TEXT;` },
+  // The operation key the loan's stock draw was captured under (issue #711), or NULL for a loan
+  // whose draw took ordinary random delta ids. It is the handle the merge needs to find the draw's
+  // rows in the append-only `stock_deltas` ledger again: they are exactly the rows whose id begins
+  // `<key>|` (see {@link stockDeltaIdExpression}).
+  //
+  // Why the merge needs it: a loan derived from a one-shot operation — converting a booking — is
+  // ONE row on both devices, but each device draws the unit from wherever *it* last saw the asset.
+  // Two devices that disagree about the placement therefore write the draw twice, at two
+  // placements under two ids, and the per-placement replay has no way to tell that the two are one
+  // movement. `resolveSplitLoanStock` (`features/sync/loan-split-stock.ts`) uses this key to pair
+  // them up and cancel the surplus.
+  //
+  // The CHECK is `stock_delta_capture.operation_key`'s, for the same reason: `|` is the
+  // derivation's own separator, and `%` and `_` are the wildcards its ordinal counts by, so a key
+  // carrying any of them mints ids that collide or miscount. The canonical-UUID shape the
+  // derivation actually relies on is checked in JS by `withOperationKey`, which is what wrote
+  // every value this column can hold.
+  {
+    sql: `ALTER TABLE checkouts ADD COLUMN stock_operation_key TEXT
+            CHECK (stock_operation_key IS NULL OR stock_operation_key NOT GLOB '*[|%_]*');`,
+  },
   // A return keeps its own note, distinct from the checkout `note`, so a return remark
   // never overwrites the loan's own note (both ends retain their text). NULL while open.
   {

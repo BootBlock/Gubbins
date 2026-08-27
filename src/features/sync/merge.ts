@@ -49,6 +49,7 @@ import {
   parseLocationTagEdgeId,
 } from '@/db/repositories/tombstone';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
+import { checkInId } from '@/db/repositories/checkout-plan';
 import { decodeRowForTable } from './blob-codec';
 import { defaultLocationWinner } from './location-default-flag';
 import { forceLwwTies } from './lww-tie-override';
@@ -189,6 +190,7 @@ async function reconcileAndApply(
     historyPrunedBefore: request.historyPrunedBefore,
     conflictSince: request.conflictSince,
     now: request.effectiveNow,
+    loanReturnKeys: await loanReturnKeys(local, remote),
   });
   await applyPlan(driver, plan, dictionary);
 
@@ -206,6 +208,49 @@ async function reconcileAndApply(
     tagEdgesRemoved: plan.itemTagDeletes.length + plan.locationTagDeletes.length,
     conflicts: plan.conflicts,
   };
+}
+
+/**
+ * Issue #711: loan id → the operation key that loan's **return** captured its stock under.
+ *
+ * `reconcile` needs this to recognise a return two devices ran against two different placements,
+ * and cannot derive it: `checkInId` hashes, so it is asynchronous, and the reconcile pass is a
+ * long synchronous one. Deriving it here keeps that derivation in the single place that owns it
+ * (`checkout-plan`) rather than duplicating the namespace into the merge engine.
+ *
+ * Three filters keep the work to the loans that can actually need it, because this runs on every
+ * sync and `checkouts` only ever grows. A loan carrying no `stock_operation_key` took random delta
+ * ids and has nothing to pair up. A loan still **open** has written no restore at all, so there is
+ * no return for two placements to disagree about; it earns a key on the sync after it comes back.
+ * And a loan whose draw no longer appears in the ledger has nothing left for the pass to read: the
+ * era compaction has replaced it with a checkpoint, which supersedes it in every replay
+ * (`./stock-delta-compaction`). That last one is what bounds the set to the live ledger rather than
+ * to every booking ever converted. Both snapshots contribute throughout, because the loan — or the
+ * ledger rows — may be a row this device has not seen yet.
+ *
+ * The hashes are awaited together rather than one after another. They are independent, and a
+ * sequential loop over a few thousand of them is measurable on the sync path.
+ */
+async function loanReturnKeys(local: SyncSnapshot, remote: SyncSnapshot): Promise<Map<string, string>> {
+  const inLedger = new Set<string>();
+  for (const row of [...(local.stockDeltas ?? []), ...(remote.stockDeltas ?? [])]) {
+    const id = String(row.id);
+    const bar = id.indexOf('|');
+    if (bar > 0) inLedger.add(id.slice(0, bar));
+  }
+  if (inLedger.size === 0) return new Map();
+
+  const ids = new Set<string>();
+  for (const row of [...(local.tables.checkouts ?? []), ...(remote.tables.checkouts ?? [])]) {
+    const returned = row.returned_at !== null && row.returned_at !== undefined;
+    const key = row.stock_operation_key;
+    if (returned && typeof key === 'string' && inLedger.has(key)) ids.add(String(row.id));
+  }
+
+  const derived = await Promise.all(
+    [...ids].map(async (id): Promise<[string, string]> => [id, await checkInId('stock', id)]),
+  );
+  return new Map(derived);
 }
 
 /**

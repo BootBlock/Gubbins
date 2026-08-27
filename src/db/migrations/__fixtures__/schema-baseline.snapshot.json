@@ -551,7 +551,7 @@
       "type": "table",
       "name": "checkouts",
       "tbl_name": "checkouts",
-      "sql": "CREATE TABLE checkouts (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          -- The borrower is a TAGGED UNION (B4): a loan targets exactly one of a contact\n          -- (a person), a project (\"out on the Henderson job\") or a location (\"in the van\").\n          -- All three FKs are nullable and the XOR CHECK below enforces that precisely one is\n          -- set. Each cascades on the target's delete, mirroring the contact precedent — the\n          -- app returns any open loan first (restoring stock) so a delete never strands stock.\n          -- NB: a borrower location_id is the loan TARGET, distinct from source_location_id\n          -- (the provenance — where the units were lent FROM), added by a later ALTER below.\n          contact_id     TEXT    REFERENCES contacts(id)  ON DELETE CASCADE,\n          project_id     TEXT    REFERENCES projects(id)  ON DELETE CASCADE,\n          location_id    TEXT    REFERENCES locations(id) ON DELETE CASCADE,\n          quantity       INTEGER NOT NULL DEFAULT 1,\n          due_date       INTEGER,\n          checked_out_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          returned_at    INTEGER,\n          note           TEXT,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), source_location_id TEXT REFERENCES locations(id), source_batch_key TEXT, return_note TEXT CHECK (return_note IS NULL OR length(return_note) <= 20000),\n          CHECK (quantity > 0),\n          CHECK (returned_at IS NULL OR returned_at >= checked_out_at),\n          -- Exactly one borrower: contact XOR project XOR location.\n          CHECK (\n            (contact_id IS NOT NULL) + (project_id IS NOT NULL) + (location_id IS NOT NULL) = 1\n          ),\n          CHECK (note IS NULL OR length(note) <= 20000)\n        ) STRICT"
+      "sql": "CREATE TABLE checkouts (\n          id             TEXT    PRIMARY KEY NOT NULL,\n          item_id        TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,\n          -- The borrower is a TAGGED UNION (B4): a loan targets exactly one of a contact\n          -- (a person), a project (\"out on the Henderson job\") or a location (\"in the van\").\n          -- All three FKs are nullable and the XOR CHECK below enforces that precisely one is\n          -- set. Each cascades on the target's delete, mirroring the contact precedent — the\n          -- app returns any open loan first (restoring stock) so a delete never strands stock.\n          -- NB: a borrower location_id is the loan TARGET, distinct from source_location_id\n          -- (the provenance — where the units were lent FROM), added by a later ALTER below.\n          contact_id     TEXT    REFERENCES contacts(id)  ON DELETE CASCADE,\n          project_id     TEXT    REFERENCES projects(id)  ON DELETE CASCADE,\n          location_id    TEXT    REFERENCES locations(id) ON DELETE CASCADE,\n          quantity       INTEGER NOT NULL DEFAULT 1,\n          due_date       INTEGER,\n          checked_out_at INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)),\n          returned_at    INTEGER,\n          note           TEXT,\n          updated_at     INTEGER NOT NULL DEFAULT (CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER)), source_location_id TEXT REFERENCES locations(id), source_batch_key TEXT, stock_operation_key TEXT\n            CHECK (stock_operation_key IS NULL OR stock_operation_key NOT GLOB '*[|%_]*'), return_note TEXT CHECK (return_note IS NULL OR length(return_note) <= 20000),\n          CHECK (quantity > 0),\n          CHECK (returned_at IS NULL OR returned_at >= checked_out_at),\n          -- Exactly one borrower: contact XOR project XOR location.\n          CHECK (\n            (contact_id IS NOT NULL) + (project_id IS NOT NULL) + (location_id IS NOT NULL) = 1\n          ),\n          CHECK (note IS NULL OR length(note) <= 20000)\n        ) STRICT"
     },
     {
       "type": "table",
@@ -1961,6 +1961,14 @@
         },
         {
           "cid": 13,
+          "name": "stock_operation_key",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
           "name": "return_note",
           "type": "TEXT",
           "notnull": 0,

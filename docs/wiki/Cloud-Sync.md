@@ -168,6 +168,13 @@ If one device also *returned* the loan before syncing, the return stands — an 
 back cannot be put back out by the other device's later hand-over. The unit reads as on hand again,
 and nothing is left claiming to hold it.
 
+This holds even when the two devices disagreed about **where the asset was**. If one of them moved
+the asset to another [[location|Locations-and-Stock]] before checking the booking out, the two
+hand-overs take the unit from two different places — but it is still one unit and one loan, so
+Gubbins keeps the one the shelves can actually account for and discards the other. Whether one
+device returns the asset, both do, or neither does, the count comes out the same as it would have
+had the whole thing happened on one device.
+
 ### When two devices put kits inside each other
 
 A [[kit|Kits-and-Bundles]] can contain another kit, but never itself — not directly, and not round
