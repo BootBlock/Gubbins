@@ -216,6 +216,44 @@ const ALWAYS_PRESENT_FIELDS: Readonly<Record<string, string>> = {
 const SEPARATORS = new Set([':', '=', '>', '<']);
 const QUOTES = new Set(['"', "'"]);
 
+/**
+ * True when a quote at `index` sits where a quoted span could *begin* — at the start of a
+ * term, or immediately after a field separator. Anywhere else it is an ordinary character,
+ * so an English possessive or contraction (`Bob's`, `don't`, `O'Reilly`) and an inch mark
+ * (`3.5"`) stay literal instead of swallowing every term after them (issue #625), while
+ * `name:"a b"` and `"-40C"` are unaffected.
+ *
+ * Position alone is not enough — see {@link hasClosingQuote}, which the lexer also requires.
+ *
+ * `index` is where the quote *sits*, which the lexer gives as the current buffer length —
+ * it has not appended the quote yet — so only the character before it is ever read.
+ */
+function opensQuotedSpan(text: string, index: number): boolean {
+  if (index === 0) return true;
+  return SEPARATORS.has(text[index - 1]!);
+}
+
+/**
+ * True when a quote at `index` could *close* a span — it ends a token, so what follows is a
+ * token boundary or nothing at all. A quote inside a word never closes one, which is what
+ * stops a later contraction acting as the partner for an elided leading apostrophe: in
+ * `'80s vinyl tag:retro don't`, the `'` in `don't` is not a candidate, so the leading one
+ * opens nothing and every filter survives (issue #625).
+ */
+function closesQuotedSpan(chars: readonly string[], index: number): boolean {
+  const next = chars[index + 1];
+  if (next === undefined) return true;
+  return /\s/.test(next) || next === '(' || next === ')' || next === '|';
+}
+
+/** True when some quote after `from` could close a span opened there. */
+function hasClosingQuote(chars: readonly string[], from: number, quote: string): boolean {
+  for (let i = from + 1; i < chars.length; i++) {
+    if (chars[i] === quote && closesQuotedSpan(chars, i)) return true;
+  }
+  return false;
+}
+
 /** A leaf condition, or a parse failure message for one term. */
 type TermResult = { condition: FilterCondition } | { skip: true } | { error: string };
 
@@ -362,7 +400,8 @@ function termToNode(text: string): Node {
 /**
  * Lex the query into structural tokens. Whitespace, `(`, `)` and `|` are token
  * boundaries; a bare `OR`/`AND`/`NOT` word (case-insensitive, unquoted) is a keyword.
- * Quoted spans are kept verbatim so a bracket or `|` inside quotes is literal.
+ * Quoted spans are kept verbatim so a bracket or `|` inside quotes is literal — but only a
+ * quote that could open one *and* has a later quote able to close it starts a span (#625).
  *
  * A `-` is the shorthand `NOT` **only where a term could start** — buffer empty, outside
  * quotes, and immediately followed by something to negate. Everywhere else it stays an
@@ -387,10 +426,15 @@ function lex(input: string): LexToken[] {
     const ch = chars[i]!;
     if (quote) {
       buffer += ch;
-      if (ch === quote) quote = null;
+      if (ch === quote && closesQuotedSpan(chars, i)) quote = null;
       continue;
     }
-    if (QUOTES.has(ch)) {
+    // A quote is structure only where a phrase could begin *and* where a later quote could
+    // end it. Both halves are needed: without the first, `Bob's` swallows the query; without
+    // the second, an elided leading apostrophe (`'80s`, `'til`) opens a span that runs to the
+    // end. A quote failing either test is an ordinary character. `hasClosingQuote` uses the
+    // same test the branch above closes on, so `quote` is always null once the loop finishes.
+    if (QUOTES.has(ch) && opensQuotedSpan(buffer, buffer.length) && hasClosingQuote(chars, i, ch)) {
       quote = ch;
       buffer += ch;
       continue;
@@ -660,7 +704,7 @@ function parsePresenceTerm(rest: string): TermResult {
 function findCustomFieldOperator(rest: string): number {
   for (let i = 0; i < rest.length; i++) {
     const ch = rest[i]!;
-    if (QUOTES.has(ch)) return -1;
+    if (QUOTES.has(ch) && opensQuotedSpan(rest, i)) return -1;
     if (ch === ':' || ch === '>' || ch === '<' || ch === '=') return i;
   }
   return -1;
@@ -670,7 +714,7 @@ function findCustomFieldOperator(rest: string): number {
 function findSeparator(token: string): number {
   for (let i = 0; i < token.length; i++) {
     const ch = token[i]!;
-    if (QUOTES.has(ch)) return -1;
+    if (QUOTES.has(ch) && opensQuotedSpan(token, i)) return -1;
     if (SEPARATORS.has(ch)) return i;
   }
   return -1;
@@ -680,7 +724,7 @@ function findSeparator(token: string): number {
 function findCapabilityOperator(rest: string): number {
   for (let i = 0; i < rest.length; i++) {
     const ch = rest[i]!;
-    if (QUOTES.has(ch)) return -1;
+    if (QUOTES.has(ch) && opensQuotedSpan(rest, i)) return -1;
     if (ch === '>' || ch === '<' || ch === '=') return i;
   }
   return -1;
