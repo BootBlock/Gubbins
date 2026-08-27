@@ -124,6 +124,8 @@ export interface SnapshotMergeResult {
   readonly rejectedCycles: number;
   readonly serialisedLoansClosed: number;
   readonly bookingsCancelled: number;
+  /** Issue #539: kit component links removed because the merge closed a containment loop. */
+  readonly kitLinksBroken: number;
   readonly loanReturnsPreserved: number;
   readonly historyInserted: number;
   readonly tagEdgesAdded: number;
@@ -199,6 +201,7 @@ async function reconcileAndApply(
     rejectedCycles: plan.rejectedCycles.length,
     serialisedLoansClosed: plan.serialisedLoansClosed.length,
     bookingsCancelled: plan.bookingsCancelled.length,
+    kitLinksBroken: plan.kitLinksBroken.length,
     loanReturnsPreserved: plan.loanReturnsPreserved.length,
     historyInserted: plan.historyInserts.length,
     tagEdgesAdded: plan.itemTagUpserts.length + plan.locationTagUpserts.length,
@@ -332,6 +335,7 @@ function emptyResult(merged: SyncSnapshot): SnapshotMergeResult {
     rejectedCycles: 0,
     serialisedLoansClosed: 0,
     bookingsCancelled: 0,
+    kitLinksBroken: 0,
     loanReturnsPreserved: 0,
     historyInserted: 0,
     tagEdgesAdded: 0,

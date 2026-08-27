@@ -12,6 +12,7 @@ function makeResult(overrides: Partial<SyncResult> = {}): SyncResult {
     rejectedCycles: 0,
     serialisedLoansClosed: 0,
     bookingsCancelled: 0,
+    kitLinksBroken: 0,
     prunedTombstones: 0,
     clockOffset: 0,
     historyInserted: 0,
@@ -79,6 +80,16 @@ describe('describeSyncOutcome', () => {
     expect(describeSyncOutcome(makeResult({ bookingsCancelled: 2 }))).toContain(
       '2 overlapping bookings cancelled',
     );
+  });
+
+  it('flags a kit link removed because the merge would have put a kit inside itself (#539)', () => {
+    const plain = describeSyncOutcome(makeResult({ status: 'SYNCED' }));
+    expect(plain).not.toMatch(/kit component link/);
+
+    expect(describeSyncOutcome(makeResult({ kitLinksBroken: 1 }))).toContain(
+      '1 kit component link removed (it would have put a kit inside itself).',
+    );
+    expect(describeSyncOutcome(makeResult({ kitLinksBroken: 2 }))).toContain('2 kit component links removed');
   });
 
   it('flags overwritten local edits for review (#72), with correct pluralisation', () => {

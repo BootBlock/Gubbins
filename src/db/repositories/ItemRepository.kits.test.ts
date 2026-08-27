@@ -477,3 +477,69 @@ describe('ItemRepository — Kits v3 (roll-up, cascade, cross-location, gauge)',
     });
   });
 });
+
+/**
+ * Issue #539 — the reader must survive a containment loop it could never have created itself.
+ * `addKitComponent` refuses one, but the graph is an edge table that a sync merge can close into
+ * a loop across two devices, and the tree build used to recurse into it until the stack overflowed
+ * inside the database worker. The merge repairs such a graph; this proves the reader degrades to a
+ * truncated tree in the meantime rather than taking the worker down.
+ */
+describe('ItemRepository — kit containment loop (issue #539)', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  /** Write an edge straight to the table, as a merge does — the repository guard would refuse it. */
+  async function forceEdge(kitId: string, componentItemId: string): Promise<void> {
+    await driver.execute(
+      `INSERT INTO kit_components (id, kit_item_id, component_item_id, quantity, sort)
+       VALUES (?, ?, ?, 1, 0);`,
+      [crypto.randomUUID(), kitId, componentItemId],
+    );
+  }
+
+  it('rolls up a two-kit loop instead of recursing for ever', async () => {
+    const x = await items.create({ name: 'Kit X', quantity: 0 });
+    const y = await items.create({ name: 'Kit Y', quantity: 0 });
+    await forceEdge(x.id, y.id);
+    await forceEdge(y.id, x.id);
+
+    const roll = await items.rollUpAvailability(x.id);
+    expect(roll.count).toBe(0); // nothing on hand anywhere in the loop
+  });
+
+  it('rolls up a three-kit loop, counting the stock outside it', async () => {
+    const x = await items.create({ name: 'Kit X', quantity: 0 });
+    const y = await items.create({ name: 'Kit Y', quantity: 0 });
+    const z = await items.create({ name: 'Kit Z', quantity: 0 });
+    const bolt = await items.create({ name: 'Bolt', quantity: 7 });
+    await forceEdge(x.id, y.id);
+    await forceEdge(y.id, z.id);
+    await forceEdge(z.id, x.id); // closes the loop
+    await forceEdge(z.id, bolt.id);
+
+    // The Z → X back edge is dropped, so the chain reads X ← Y ← Z ← 7 bolts, one of each per
+    // kit: 7 whole X are buildable, and the loop costs nothing but the link that closed it.
+    const roll = await items.rollUpAvailability(x.id);
+    expect(roll.count).toBe(7);
+  });
+
+  it('refuses to assemble from a looping kit rather than hanging', async () => {
+    const x = await items.create({ name: 'Kit X', quantity: 0 });
+    const y = await items.create({ name: 'Kit Y', quantity: 0 });
+    await forceEdge(x.id, y.id);
+    await forceEdge(y.id, x.id);
+
+    await expect(items.assemble(x.id, 1)).rejects.toBeInstanceOf(DbError);
+  });
+});
