@@ -146,6 +146,18 @@ export const FK_REFS: Partial<Record<SyncTable, readonly FkRef[]>> = {
     // is meant to die with the contact; without this the deleting device would re-download an
     // orphaned checkout and trip the FK on its next sync.
     { col: 'contact_id', parent: 'contacts', nullable: false },
+    // Issue #404: the other two arms of the borrower union, and the exact twins of
+    // `contact_id` above. All three are nullable columns whose FK is ON DELETE CASCADE, so
+    // the same reasoning applies to each: the loan is meant to die with its borrower, and
+    // *clearing* the column is not even available — the XOR CHECK forbids a checkout with no
+    // borrower, so a null-out would abort the merge transaction outright. Every borrower
+    // delete returns the target's open loans first (`planCheckInAllForTarget`, used by
+    // `ContactRepository`, `ProjectRepository` and `LocationRepository` alike), restoring the
+    // stock before the cascade, so dropping the row here discards a record the deleting device
+    // already closed rather than stranding stock marked "out".
+    { col: 'project_id', parent: 'projects', nullable: false },
+    // NB: the borrower location, distinct from `source_location_id` below (the provenance).
+    { col: 'location_id', parent: 'locations', nullable: false },
     // Phase 26: the per-location lend-from pointer. Nullable (NO ACTION) — an incoming
     // checkout whose source location did not survive the merge keeps the loan but clears
     // the pointer (the return then falls back to the item's primary location), mirroring
