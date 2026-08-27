@@ -44,6 +44,32 @@ just a working sheet. If you'd rather recount from scratch, **Start over** on th
 Once a location is authorised or skipped, its saved counts are cleared — and abandoning a
 stock-take discards them for every location in the walk.
 
+## A part-counted location says so
+
+Leaving a line blank is not the same as counting it and finding nothing wrong, so Gubbins never
+treats it as such. A blank line is left completely alone — its stock is not touched — and the
+count sheet tells you how much of it you have covered as you go: **"12 of 40 lines counted"** sits
+alongside the number of adjustments waiting to be authorised.
+
+Finish with lines still blank and the button says so — **Record partial count** in a single-location
+count, **Record partial & continue** on audit day, rather than **Mark counted** — and the location
+keeps its existing **last counted** date rather than gaining a fresh one. The lines you *did*
+count are still applied; only the claim that the whole location has been checked is withheld.
+
+> **⚠️ Heads-up**
+> That last-counted date is what tells you which places are overdue. A shelf recorded as counted
+> when half of it was never looked at drops off that list, which is worse than one that was never
+> counted at all — so a partial count deliberately leaves it stale, and the location stays on the
+> list until you finish it.
+
+On [[audit day|#audit-day]] a part-counted location gets its own **Partial** figure in the final
+summary, and is named in a **Part-counted — still need a count** list, so you know exactly where
+to go back to.
+
+> **ℹ️ Note**
+> This covers the per-location quantity lines. Serialised units are audited by presence and start
+> as **Present**, so they carry no blank state to report.
+
 ## Counting the same shelf on two devices
 
 Two people can count the same place at once — a phone each on audit day, or a count in the garage

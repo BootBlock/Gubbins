@@ -254,6 +254,27 @@ describe('audit-session — summarise', () => {
     expect(s.withVariances).toEqual([{ id: 'a', name: 'Drawer A' }]);
   });
 
+  it('keeps a part-counted location out of Audited and lists it separately (issue #637)', () => {
+    // The point of the status: its adjustments are real and still tallied, but the walk must
+    // not claim the shelf was verified — that claim is what removed it from attention.
+    let state = fresh();
+    state = markLocation(state, 'a', 'counted');
+    state = markLocation(state, 'b', 'partial', { variancesFound: 1, adjustmentsMade: 1 });
+    const s = summarise(state);
+    expect(s.locationsAudited).toBe(1);
+    expect(s.locationsPartial).toBe(1);
+    expect(s.partial).toEqual([{ id: 'b', name: 'Drawer B' }]);
+    expect(s.totalAdjustmentsMade).toBe(1);
+    expect(s.withVariances).toEqual([{ id: 'b', name: 'Drawer B' }]);
+  });
+
+  it('a part-counted location is terminal, so the walk still completes', () => {
+    let state = fresh();
+    for (const id of ['a', 'b', 'c']) state = markLocation(state, id, 'partial');
+    expect(progress(state).isComplete).toBe(true);
+    expect(summarise(state).locationsAudited).toBe(0);
+  });
+
   it('an all-clean walk reports zero variances and no skips', () => {
     let state = fresh();
     for (const id of ['a', 'b', 'c']) state = markLocation(state, id, 'counted');
@@ -265,6 +286,8 @@ describe('audit-session — summarise', () => {
     expect(s.totalAdjustmentsMade).toBe(0);
     expect(s.skipped).toEqual([]);
     expect(s.withVariances).toEqual([]);
+    expect(s.locationsPartial).toBe(0);
+    expect(s.partial).toEqual([]);
   });
 
   it('a counted location that still carried variances is listed under withVariances', () => {

@@ -93,3 +93,43 @@ export function missingInstances(
 export function serialisedAuditNote(line: SerialisedAuditLine, locationName: string): string {
   return `Serialised audit of ${locationName}: ${serialisedLabel(line)} not found — marked missing.`;
 }
+
+// --- Count coverage (issue #637) ------------------------------------------------
+//
+// A blind count deliberately *skips* a line the auditor left blank rather than reading
+// it as zero — that is the safe reading, and `variances()` above never sees such a line.
+// The cost of that safety is that "counted every line and found no drift" and "typed
+// nothing at all" produce an identical result: no variance, no adjustment. So the sheet's
+// **coverage** is derived separately and carried alongside the variances, and it is what
+// decides whether the location may be recorded as counted at all.
+//
+// Coverage is measured over the DISCRETE lines only. A serialised instance carries no
+// blank state — presence defaults to PRESENT until the auditor flags it missing — so
+// there is nothing to distinguish "confirmed present" from "not looked at" without
+// changing that toggle into a tri-state, which is a separate change.
+
+/** How much of a location's discrete count sheet the auditor actually filled in. */
+export interface CountCoverage {
+  /** Discrete lines on the sheet. */
+  readonly total: number;
+  /** Lines with a quantity entered. */
+  readonly counted: number;
+  /** Lines left blank, and therefore not counted at all. */
+  readonly blank: number;
+  /** Every line was counted. True for a sheet with no discrete lines to count. */
+  readonly isComplete: boolean;
+}
+
+/**
+ * Measure how many of a sheet's lines carry an entered quantity. A line counts as
+ * entered on exactly the same test the variance path uses — a non-empty trimmed
+ * value — so coverage and variance can never disagree about which lines participated.
+ */
+export function countCoverage(
+  lineKeys: readonly string[],
+  counts: Readonly<Record<string, string>>,
+): CountCoverage {
+  const total = lineKeys.length;
+  const counted = lineKeys.reduce((acc, key) => acc + (counts[key]?.trim().length ? 1 : 0), 0);
+  return { total, counted, blank: total - counted, isComplete: counted === total };
+}

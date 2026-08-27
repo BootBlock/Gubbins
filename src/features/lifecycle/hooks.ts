@@ -319,6 +319,8 @@ export function useAuthoriseCount() {
       locationId: string;
       quantityAdjustments: readonly ReconciliationAdjustment[];
       serialisedAdjustments: readonly SerialisedReconciliation[];
+      /** False for a sheet with lines left blank — applies the adjustments, omits the stamp. */
+      markCounted?: boolean;
     }) => getItemRepository().authoriseCount(input),
     // Surface a rejected count authorisation rather than letting it fail silently (#389).
     onError: reportFailure,

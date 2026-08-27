@@ -152,7 +152,10 @@ describe('AuditDayDialog — guided walk', () => {
     expect(screen.getByTestId('audit-variance-tally').textContent).toContain('1 with variance');
     await waitForCountInput();
 
-    // Drawer B counts clean — mark counted and continue (no variance entered).
+    // Drawer B counts clean — the expected 10 is entered and agrees, so the sheet is fully
+    // covered and "Mark counted & continue" is offered. Leaving the line blank instead would
+    // be a *partial* count, which is a different button and a different outcome (issue #637).
+    fireEvent.change(screen.getByTestId(COUNT_TESTID), { target: { value: '10' } });
     await act(async () => {
       fireEvent.click(screen.getByTestId('audit-continue'));
     });
@@ -177,9 +180,10 @@ describe('AuditDayDialog — guided walk', () => {
       fireEvent.click(screen.getByTestId('audit-skip'));
     });
 
-    // On Drawer B, mark counted.
+    // On Drawer B, count the one line and mark it counted.
     await waitFor(() => expect(screen.getByTestId('audit-step-heading').textContent).toContain('Drawer B'));
     await waitForCountInput();
+    fireEvent.change(screen.getByTestId(COUNT_TESTID), { target: { value: '10' } });
     await act(async () => {
       fireEvent.click(screen.getByTestId('audit-continue'));
     });
@@ -223,6 +227,7 @@ describe('AuditDayDialog — resume', () => {
 
     // Finish B → the summary carries A's already-recorded reconciliation.
     await waitForCountInput();
+    fireEvent.change(screen.getByTestId(COUNT_TESTID), { target: { value: '10' } });
     await act(async () => {
       fireEvent.click(screen.getByTestId('audit-continue'));
     });
@@ -384,5 +389,42 @@ describe('AuditDayDialog — completion burst (F4)', () => {
     expect(screen.getByTestId('audit-complete-live')).toHaveTextContent(
       'Stock-take complete. Walked 2 locations — 0 adjustments applied.',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Partial coverage (issue #637)
+// ---------------------------------------------------------------------------
+
+describe('AuditDayDialog — a location finished with lines left blank', () => {
+  it('records it as part-counted, keeping it out of the Audited tile', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('audit-start')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('audit-start'));
+
+    // Drawer A: finish without typing anything. This used to be indistinguishable from a
+    // shelf counted and found perfect — same button, same tile, same last-counted stamp.
+    await waitForCountInput();
+    expect(screen.getByTestId('audit-coverage').textContent).toBe('0 of 1 line counted');
+    expect(screen.queryByTestId('audit-continue')).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('audit-partial-continue'));
+    });
+    expect(authoriseCountSpy).toHaveBeenCalledWith(expect.objectContaining({ markCounted: false }));
+    expect(screen.getByTestId('audit-live-region').textContent).toContain('Partial count recorded');
+
+    // Drawer B: counted properly.
+    await waitFor(() => expect(screen.getByTestId('audit-step-heading').textContent).toContain('Drawer B'));
+    await waitForCountInput();
+    fireEvent.change(screen.getByTestId(COUNT_TESTID), { target: { value: '10' } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('audit-continue'));
+    });
+
+    await waitFor(() => expect(screen.getByTestId('audit-summary')).toBeTruthy());
+    expect(screen.getByTestId('audit-stat-audited').textContent).toBe('1');
+    expect(screen.getByTestId('audit-stat-partial').textContent).toBe('1');
+    expect(screen.getByTestId('audit-summary-partial').textContent).toContain('Drawer A');
+    expect(screen.getByTestId('audit-complete-live').textContent).toContain('1 location left part-counted');
   });
 });

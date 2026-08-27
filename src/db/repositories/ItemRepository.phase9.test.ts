@@ -258,6 +258,46 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
       expect((await locations.getById(drawer.id))?.lastCountedAt).toBeNull();
     });
 
+    it('applies a partial count but leaves the last-counted stamp alone (issue #637)', async () => {
+      // A sheet with lines left blank: the lines that *were* counted are real evidence and
+      // still adjust stock, but the stamp is a claim about the whole location. Making it would
+      // remove a shelf nobody finished counting from the list of shelves needing a count.
+      const drawer = await locations.create({ name: 'Drawer D' });
+      const widget = await items.create({ name: 'Widget', quantity: 10, locationId: drawer.id });
+
+      const result = await items.authoriseCount({
+        locationId: drawer.id,
+        quantityAdjustments: [{ itemId: widget.id, counted: 8, locationName: 'Bench' }],
+        serialisedAdjustments: [],
+        markCounted: false,
+      });
+
+      expect(result.discrete.map((i) => i.quantity)).toEqual([8]);
+      expect((await locations.getById(drawer.id))?.lastCountedAt).toBeNull();
+    });
+
+    it('re-stamps an already-counted location on a full count, but not on a partial one', async () => {
+      // The stamp is an UPDATE, not an insert, so "omit it" has to mean the *previous* date
+      // survives untouched — a partial count must neither refresh nor clear it.
+      const drawer = await locations.create({ name: 'Drawer E' });
+      await items.authoriseCount({
+        locationId: drawer.id,
+        quantityAdjustments: [],
+        serialisedAdjustments: [],
+        countedAt: 1_000,
+      });
+      expect((await locations.getById(drawer.id))?.lastCountedAt).toBe(1_000);
+
+      await items.authoriseCount({
+        locationId: drawer.id,
+        quantityAdjustments: [],
+        serialisedAdjustments: [],
+        countedAt: 2_000,
+        markCounted: false,
+      });
+      expect((await locations.getById(drawer.id))?.lastCountedAt).toBe(1_000);
+    });
+
     it('counts the system Unassigned location, omitting the stamp it cannot write', async () => {
       // The schema forbids any UPDATE on a system location, so the stamp is skipped rather than
       // aborting the count — previously the reconciliation applied and then the stamp errored.

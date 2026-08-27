@@ -18,11 +18,15 @@ import { isPlainObject, normaliseInteger, normaliseOneOf } from '@/lib/persisted
  * How a single location in the scope has been dealt with:
  *
  * - `pending` — not yet finished: still to walk, or currently open.
- * - `counted` — counted with nothing left to authorise (a clean count, or no countable stock).
- * - `reconciled` — variances were found and their reconciliation adjustments authorised.
+ * - `counted` — counted in full with nothing left to authorise (a clean count, or no
+ *   countable stock).
+ * - `reconciled` — counted in full, variances found, and their adjustments authorised.
+ * - `partial` — finished with lines left blank (issue #637). Any adjustments for the lines
+ *   that *were* counted are applied, but the location is not claimed as audited and its
+ *   durable last-counted date is left alone, so it stays on the list of shelves to check.
  * - `skipped` — deliberately skipped by the auditor: done, but not counted.
  */
-export const AUDIT_LOCATION_STATUSES = ['pending', 'counted', 'reconciled', 'skipped'] as const;
+export const AUDIT_LOCATION_STATUSES = ['pending', 'counted', 'reconciled', 'partial', 'skipped'] as const;
 
 export type AuditLocationStatus = (typeof AUDIT_LOCATION_STATUSES)[number];
 
@@ -194,7 +198,7 @@ export function resumeAt(state: AuditSessionState): AuditSessionState {
 export interface AuditProgress {
   /** Total locations in scope. */
   readonly total: number;
-  /** Locations with a terminal status (counted / reconciled / skipped). */
+  /** Locations with a terminal status (counted / reconciled / partial / skipped). */
   readonly done: number;
   /** Locations still pending. */
   readonly remaining: number;
@@ -234,8 +238,14 @@ export function progress(state: AuditSessionState): AuditProgress {
 
 /** The terminal roll-up shown when the walk is complete (or as a running tally). */
 export interface AuditSummary {
-  /** Locations counted or reconciled (i.e. actually audited, not skipped). */
+  /**
+   * Locations counted in full (clean or reconciled) — i.e. actually audited. A part-counted
+   * or skipped location is deliberately excluded: this tile is the walk's claim about how
+   * much of the inventory was genuinely verified, so it must not absorb either (issue #637).
+   */
   readonly locationsAudited: number;
+  /** Locations finished with lines left blank. */
+  readonly locationsPartial: number;
   /** Locations the auditor skipped. */
   readonly locationsSkipped: number;
   /** Locations where at least one variance was found. */
@@ -246,6 +256,8 @@ export interface AuditSummary {
   readonly totalAdjustmentsMade: number;
   /** The scope locations that were skipped (in walk order), for the summary list. */
   readonly skipped: readonly AuditScopeLocation[];
+  /** The scope locations left part-counted (in walk order), for the summary list. */
+  readonly partial: readonly AuditScopeLocation[];
   /** The scope locations that had variances (in walk order), for the summary list. */
   readonly withVariances: readonly AuditScopeLocation[];
 }
@@ -257,11 +269,13 @@ export function summarise(state: AuditSessionState): AuditSummary {
   let totalVariancesFound = 0;
   let totalAdjustmentsMade = 0;
   const skipped: AuditScopeLocation[] = [];
+  const partial: AuditScopeLocation[] = [];
   const withVariances: AuditScopeLocation[] = [];
 
   for (const loc of state.scope) {
     const record = recordFor(state, loc.id);
     if (record.status === 'counted' || record.status === 'reconciled') locationsAudited++;
+    if (record.status === 'partial') partial.push(loc);
     if (record.status === 'skipped') {
       locationsSkipped++;
       skipped.push(loc);
@@ -273,11 +287,13 @@ export function summarise(state: AuditSessionState): AuditSummary {
 
   return {
     locationsAudited,
+    locationsPartial: partial.length,
     locationsSkipped,
     locationsWithVariances: withVariances.length,
     totalVariancesFound,
     totalAdjustmentsMade,
     skipped,
+    partial,
     withVariances,
   };
 }
