@@ -66,7 +66,7 @@ This is worth being plain about, because it would be easy to assume more.
 - ✅ It **controls who gets into the app** on this device.
 - ✅ It **puts a name against every change**, so the [[activity log|Activity-Log]] says who. That
   holds even if sign-in is later switched off while you're still signed in — your changes keep your
-  name until you sign out.
+  name on this device until sign-in is switched back on.
 - ❌ It **does not encrypt your data.** Anyone who can reach this device's files can read your whole
   inventory regardless of any password you set.
 
