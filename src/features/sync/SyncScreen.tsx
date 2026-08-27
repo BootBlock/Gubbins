@@ -750,8 +750,13 @@ export function SyncScreen() {
               <p className="text-sm text-muted-foreground">
                 Send your whole inventory to a Gubbins query bridge (e.g. for Home Assistant) over your local
                 network, without needing a shared folder. The bridge must have pushes enabled (
-                <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_ALLOW_PUSH=on</code>). Your URL
-                and token are stored only on this device.
+                <code className="rounded bg-secondary/60 px-1">GUBBINS_BRIDGE_ALLOW_PUSH=on</code>).{' '}
+                {/* The sentence about where the URL and token are kept describes fields that are
+                only rendered for `bridge:write`. Saying it to a role that cannot see them
+                explains the storage of something it was never shown. */}
+                {mayConfigureBridge
+                  ? 'Your URL and token are stored only on this device.'
+                  : 'Your role doesn’t allow changing where this device pushes to.'}
               </p>
               {/* Entry point to the interactive Home Assistant setup guide — the natural place to
               discover it, since the bridge and push settings it walks through live right here. The

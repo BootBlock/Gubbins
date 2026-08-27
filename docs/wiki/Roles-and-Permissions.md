@@ -11,15 +11,32 @@ it.
 
 ## The roles Gubbins ships with
 
-Four roles come ready to use. You can retune what any of them allows, but they can't be deleted —
+Eight roles come ready to use. You can retune what any of them allows, but they can't be deleted —
 people are assigned to them.
+
+The first four describe **how much** of Gubbins someone gets:
 
 | Role | What it allows |
 | --- | --- |
 | **Administrator** | Everything, including managing users and roles |
-| **Manager** | Everything across inventory, projects and settings, but can't manage users |
-| **Stocker** | Add and edit items, move stock and run counts. No deleting, and no activity history, projects, contacts, suppliers, purchase orders, bookings, user accounts, sync or bridge setup |
-| **Viewer** | Look at inventory, projects, contacts, suppliers, purchase orders, bookings and reports; change nothing. No activity history, user accounts, sync or bridge setup |
+| **Manager** | Everything across inventory, projects and settings, but can't manage users or switch modules off |
+| **Stocker** | Add and edit items, move stock, run counts and print labels. No deleting, and no activity history, projects, contacts, suppliers, purchase orders, bookings, user accounts, sync or bridge setup |
+| **Viewer** | Look at inventory, projects, contacts, suppliers, purchase orders, bookings and reports; change nothing. No activity history, no export, no user accounts, sync or bridge setup |
+
+The other four describe **which job** someone does. They overlap in what they can see and differ
+sharply in what they can change, so pick by the post rather than by seniority:
+
+| Role | What it allows |
+| --- | --- |
+| **Auditor** | Everything Viewer sees, plus the activity history and the ability to export it. Changes nothing, and can't prune the history it inspects |
+| **Purchaser** | Owns suppliers, purchase orders and the wishlist outright, and can receive a delivery against an order. Edits items but never deletes one |
+| **Technician** | Owns maintenance, lends and returns equipment, consumes stock on a job and prints labels. The catalogue stays read-only |
+| **Loans desk** | Owns the whole booking and loan lifecycle including cancelling one raised in error, and keeps borrower contacts. The catalogue stays read-only |
+
+> **ℹ️ Note**
+> None of the four job roles holds **Users and roles**, **Modules**, **Settings**, **Backups**,
+> **Sync** or **Bridge**. Doing work in Gubbins and administering the device it runs on are
+> separate jobs. If someone needs both, give them Manager or a role of your own.
 
 Add your own with **Add role** whenever none of these quite fits. Role names are matched **ignoring
 case, in any language**, so `Workshop Lead` and `WORKSHOP LEAD` are one role rather than two that
@@ -32,22 +49,45 @@ look alike.
 
 ## How permissions are described
 
-Permissions are a grid: a **row for each area** of Gubbins and a **column for each action**.
+Permissions are a grid: a **row for each area** of Gubbins and **three columns** — View, Change and
+Delete.
 
 - **Areas** are the things you work with — items, stock levels, locations, categories, tags,
   projects, contacts, suppliers, purchase orders, bookings, loans, maintenance, wishlist, reports —
-  plus a few that cut across the app: activity history, settings, users and roles, backups,
-  [[sync|Cloud-Sync]] and the [[bridge|Bridge-Overview]].
-- **Actions** are **View**, **Change** and **Delete**, with a couple of sensible exceptions.
-  **Stock levels** has no Delete — stock is written down or written off, never deleted. **Activity
-  history** is View and Delete only, because the ledger is a record of what happened and isn't
-  edited. **Users and roles** is View and Manage, because anyone who can edit an account could grant
-  themselves anything anyway.
+  plus those that cut across the app: activity history, import, export, labels and printing,
+  settings, modules, storage, users and roles, backups, [[sync|Cloud-Sync]] and the
+  [[bridge|Bridge-Overview]].
+- **Every box sits in the column that says what it does.** An area with nothing in a column leaves
+  that cell empty, so reading straight down a column always means the same thing. **Stock levels**
+  has no Delete — stock is written down or written off, never deleted. **Activity history** has
+  View and Delete but no Change, because the ledger is a record of what happened and isn't edited.
+- **A few boxes are narrower than their column, and say so underneath.** **Users and roles** shows
+  **Manage** in the Change column, because anyone who can edit an account could grant themselves
+  anything anyway. **Import** and **Export** show **Run**, and **Labels and printing** shows
+  **Print** — "change" describes none of the three.
+
+Every row and every column carries an **ℹ️** badge. Hover or focus it for the full explanation of
+exactly what that permission gates, including the areas it reaches that you might not expect.
 
 > **ℹ️ Note**
-> **Change** covers an entity's own details *and* the things attached to it — an item's attachments,
+> **Change** covers an area's own details *and* the things attached to it — an item's attachments,
 > photos, capabilities and BOM lines are all part of changing the item. **Delete** means deleting
-> the item itself.
+> the item itself, and is never granted by Change.
+
+### The three that gate a capability rather than a record
+
+Three areas are worth calling out, because withholding them stops something people often assume
+is covered by an area's own View or Change:
+
+- **Import → Run** is needed *in addition to* the Change permission for whatever is being
+  imported. Editing one record and merging a supplier's catalogue into the whole inventory are
+  different acts with different consequences.
+- **Export → Run** covers the export wizard, the vault archive, and the CSV and spreadsheet
+  buttons throughout the app. Withholding it hides nothing on screen — someone with **Items →
+  View** still reads every item — but it stops them taking the lot away in one file.
+- **Modules → Change** decides who may switch parts of Gubbins on and off. It is the permission
+  that protects every other one, because switching the Users module off takes the sign-in gate
+  down with it. The built-in **Manager** role is deliberately given View without Change here.
 
 ## What **View** actually does
 
@@ -71,6 +111,14 @@ quietly reports what the screen won't show.
 - **Settings** is the exception that stays open to everyone: it holds this device's own
   preferences — [[appearance|Appearance-and-Theming]], [[language|Language-and-Region]] — rather
   than your inventory, so **Settings → Change** is the permission that bites there, not View.
+  Its **Data & storage** tab is the one part held back, under **Storage → View**.
+- **Storage → View** opens that tab and the storage figures on [[About|About-and-Diagnostics]].
+- **Modules → View** opens the [[Modules|Modular-UI]] screen. Grant it alongside **Change** —
+  Change on its own doesn't open the screen, so a role holding only Change can edit nothing.
+
+Three areas have no View at all, because they are things you *do* rather than places you go:
+**Import**, **Export** and **Labels and printing** each have a single box, and withholding it
+removes the buttons that start them.
 
 > **ℹ️ Note**
 > Four areas — **Stock levels**, **Locations**, **Categories** and **Wishlist** — currently show a
@@ -108,14 +156,17 @@ everything at once are held to the same role:
   an area of their own: sync links and cloud sign-in need **Sync → Change**, and the bridge token
   needs **Bridge → Change**.
 - An entry that takes other records with it needs *their* permission too. *All items* removes each
-  item's activity history, checkouts, maintenance schedules and supplier parts, so it needs
-  **Activity history → Delete**, **Loans → Change**, **Maintenance → Delete** and **Suppliers →
+  item's activity history, loans, maintenance schedules and supplier parts, so it needs
+  **Activity history → Delete**, **Loans → Delete**, **Maintenance → Delete** and **Suppliers →
   Delete** as well as **Items → Delete** — the same permissions the entries for those records ask
   for on their own.
 - **Erase everything** — the factory reset — needs *all* of those at once, plus four the entries
   never ask for on their own: **Users and roles → Manage**, **Stock levels → Change**, **Bookings →
   Delete** and **Wishlist → Delete**. It deletes the whole database rather than a list of records,
   so it reaches accounts, roles, stock levels, bookings and the wishlist as well.
+- **Exporting** needs **Export → Run**, wherever the button appears — the export wizard, the vault
+  archive and the CSV and spreadsheet buttons on Activity, Alerts, Bookings, Contacts and the
+  location lists. Someone refused it can still read every screen their role opens.
 - Creating a [[backup|Backup-and-Restore]] needs **Backups → View**: a backup file contains the
   whole database. Restoring one needs **Backups → Change**. **Replace** needs both, because it
   saves a restore point of your current data first, and that restore point is itself a backup.
@@ -190,11 +241,19 @@ is refused the item endpoints, the search and the OData service alike.
 
 > **⚠️ Heads-up**
 > Permissions decide what Gubbins *lets someone do in the app*. They are not a lock on the data
-> itself — anyone with access to this device's files can still read everything, and anyone using
-> the app can switch the Users module off from the [[Modules|Modular-UI]] screen, which takes the
-> sign-in gate down with it. Roles keep honest people out of each other's way on a shared device;
-> they are not a security barrier against whoever holds it. See
-> [[Privacy & security|Privacy-and-Security]].
+> itself — anyone with access to this device's files can still read everything. Roles keep honest
+> people out of each other's way on a shared device; they are not a security barrier against
+> whoever holds it. See [[Privacy & security|Privacy-and-Security]].
+
+> **ℹ️ Note**
+> Switching the Users module off takes the sign-in gate down with it, so that is held to
+> **Modules → Change** — not only on the [[Modules|Modular-UI]] screen, but on the "this module
+> is hidden" page and the first-run chooser, which write the same list. Someone without it keeps
+> **Continue anyway** on the hidden-module page, so they are never stuck.
+>
+> The way back in if *nobody* can sign in is unaffected: the **Can't sign in?** control on the
+> [[sign-in screen|Signing-In]] switches the module off from outside the gate, where no role
+> applies.
 
 ## If a role mentions permissions Gubbins doesn't recognise
 

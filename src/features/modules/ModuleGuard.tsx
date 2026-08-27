@@ -107,7 +107,12 @@ function ModuleHiddenInterstitial({
         heading={`${def.label} is hidden`}
         body={[
           def.description,
-          'You’ve switched this module off for a leaner app. Your data is untouched — switch it back on whenever you like.',
+          // The second line promises an action, so it has to match who is reading it: a role
+          // without `modules:write` is offered no "Show this module" button, and telling it to
+          // switch the module back on whenever it likes describes a control it cannot see.
+          mayWriteModules
+            ? 'You’ve switched this module off for a leaner app. Your data is untouched — switch it back on whenever you like.'
+            : 'This module is switched off for a leaner app. Your data is untouched, but your role doesn’t allow changing which modules are on — ask whoever looks after this device.',
         ]}
         actions={
           <>
