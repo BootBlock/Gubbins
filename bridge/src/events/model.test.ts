@@ -76,7 +76,7 @@ describe('diffNewEntries', () => {
     const { newEntries, cursor, baseline } = diffNewEntries(null, recent);
     expect(baseline).toBe(true);
     expect(newEntries).toEqual([]);
-    expect(cursor).toEqual({ seenIds: ['b', 'a'] });
+    expect(cursor).toEqual({ seenIds: ['b', 'a'], backfillFloor: null });
   });
 
   it('returns rows whose ids were not in the previous window, oldest-first', () => {
@@ -89,7 +89,7 @@ describe('diffNewEntries', () => {
     const { newEntries, cursor, baseline } = diffNewEntries(previous, recent);
     expect(baseline).toBe(false);
     expect(newEntries.map((e) => e.id)).toEqual(['b', 'c']);
-    expect(cursor).toEqual({ seenIds: ['c', 'b', 'a'] });
+    expect(cursor).toEqual({ seenIds: ['c', 'b', 'a'], backfillFloor: null });
   });
 
   it('detects an out-of-order synced row whose timestamp predates the last-seen boundary', () => {
@@ -115,7 +115,97 @@ describe('diffNewEntries', () => {
     const previous: EventCursor = { seenIds: ['a'] };
     const { newEntries, cursor } = diffNewEntries(previous, []);
     expect(newEntries).toEqual([]);
-    expect(cursor).toEqual({ seenIds: ['a'] });
+    expect(cursor).toEqual({ seenIds: ['a'], backfillFloor: null });
+  });
+});
+
+/**
+ * The backfill floor (issue #642). The id set alone is bounded by the scan window, so anything
+ * that *shortens* the window — a hard delete cascading an item's ledger away, a history prune, a
+ * restored backup shorter than the live ledger — lets rows that were previously below the window
+ * slide up into it, where an id diff reads them as new and re-announces months-old changes to
+ * every webhook, SSE client and MQTT subscriber.
+ */
+describe('diffNewEntries backfill floor', () => {
+  /** A full three-row window, newest-first, at 300 / 200 / 100. */
+  const window3 = [
+    entry({ id: 'r1', createdAt: 300 }),
+    entry({ id: 'r2', createdAt: 200 }),
+    entry({ id: 'r3', createdAt: 100 }),
+  ];
+
+  it('records the oldest row of the window as the floor when rows exist below it', () => {
+    const { cursor } = diffNewEntries(null, window3, { windowFull: true });
+    expect(cursor).toEqual({ seenIds: ['r1', 'r2', 'r3'], backfillFloor: 100 });
+  });
+
+  it('records no floor when the window holds the whole ledger', () => {
+    const { cursor } = diffNewEntries(null, window3, { windowFull: false });
+    expect(cursor.backfillFloor).toBeNull();
+  });
+
+  it('emits nothing for a generation that only deletes rows', () => {
+    // The invariant this exists for. Baseline sees r1..r3 with r4@50 below the window; deleting r2
+    // pulls r4 up into view, and its id has never been seen.
+    const baseline = diffNewEntries(null, window3, { windowFull: true });
+    const afterDelete = [
+      entry({ id: 'r1', createdAt: 300 }),
+      entry({ id: 'r3', createdAt: 100 }),
+      entry({ id: 'r4', createdAt: 50 }),
+    ];
+    const { newEntries, cursor } = diffNewEntries(baseline.cursor, afterDelete, { windowFull: true });
+    expect(newEntries).toEqual([]);
+    // r4 is settled into the seen set all the same, so it is never reconsidered.
+    expect(cursor).toEqual({ seenIds: ['r1', 'r3', 'r4'], backfillFloor: 50 });
+  });
+
+  it('emits nothing when a deleted item takes a whole run of ledger rows with it', () => {
+    const baseline = diffNewEntries(null, window3, { windowFull: true });
+    const afterDelete = [
+      entry({ id: 'r4', createdAt: 50 }),
+      entry({ id: 'r5', createdAt: 40 }),
+      entry({ id: 'r6', createdAt: 30 }),
+    ];
+    expect(diffNewEntries(baseline.cursor, afterDelete, { windowFull: true }).newEntries).toEqual([]);
+  });
+
+  it('still emits a genuinely new row written in the same generation as a delete', () => {
+    const baseline = diffNewEntries(null, window3, { windowFull: true });
+    const mixed = [
+      entry({ id: 'n1', createdAt: 400 }), // written now
+      entry({ id: 'r1', createdAt: 300 }),
+      entry({ id: 'r3', createdAt: 100 }), // r2 deleted
+      entry({ id: 'r4', createdAt: 50 }), // backfilled from below
+    ];
+    const { newEntries } = diffNewEntries(baseline.cursor, mixed, { windowFull: true });
+    expect(newEntries.map((e) => e.id)).toEqual(['n1']);
+  });
+
+  it('still emits an out-of-order synced row that sits inside the window', () => {
+    // The case the id diff exists for, and the reason the floor sits at the *bottom* of the window
+    // rather than being a high-water mark on the newest row: x@150 predates r1, but not the floor.
+    const baseline = diffNewEntries(null, window3, { windowFull: true });
+    const synced = [
+      entry({ id: 'r1', createdAt: 300 }),
+      entry({ id: 'r2', createdAt: 200 }),
+      entry({ id: 'x', createdAt: 150 }),
+    ];
+    const { newEntries } = diffNewEntries(baseline.cursor, synced, { windowFull: true });
+    expect(newEntries.map((e) => e.id)).toEqual(['x']);
+  });
+
+  it('suppresses nothing when the previous window held the whole ledger', () => {
+    // No floor was recorded, so an older row synced from another device is still news.
+    const baseline = diffNewEntries(null, window3, { windowFull: false });
+    const synced = [...window3, entry({ id: 'x', createdAt: 20 })];
+    const { newEntries } = diffNewEntries(baseline.cursor, synced, { windowFull: false });
+    expect(newEntries.map((e) => e.id)).toEqual(['x']);
+  });
+
+  it('holds the floor through a generation that reads back an empty ledger', () => {
+    const baseline = diffNewEntries(null, window3, { windowFull: true });
+    const empty = diffNewEntries(baseline.cursor, []);
+    expect(empty.cursor).toEqual({ seenIds: ['r1', 'r2', 'r3'], backfillFloor: 100 });
   });
 });
 

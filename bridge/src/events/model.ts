@@ -158,7 +158,8 @@ export interface ResolvedEntry {
 
 /**
  * A resumption cursor: the ids present in the **previous scan window** (the newest `scanLimit`
- * ledger rows). A row is "new" when its id is **absent** from this set — an id-based diff rather
+ * ledger rows), plus the floor that window rested on. A row is "new" when its id is **absent**
+ * from this set and it is not older than that floor — an id-based diff rather
  * than a `created_at` high-water mark, so an out-of-order row synced from another device (whose
  * `created_at` predates a change the bridge already saw — §7.3 union-by-id keeps each row's own
  * timestamp) is still detected, not silently skipped. `null` means "no baseline yet" (the
@@ -170,12 +171,49 @@ export interface ResolvedEntry {
 export interface EventCursor {
   readonly seenIds: readonly string[];
   /**
+   * The `created_at` of the **oldest row in the previous window**, recorded only when that window
+   * came back full. A row older than this floor was already below the window last time, so it can
+   * only be in view now because the ledger shrank underneath the cursor, not because anything
+   * happened (issue #642). `null` (or absent) means "no floor" — the window did not fill, so it
+   * held the whole ledger and every unseen id is genuinely new.
+   *
+   * "Full" is the page's `hasMore`, which is `rows.length === limit` and so also true for a ledger
+   * of exactly `limit` rows, where nothing lies below. That boundary records a floor it does not
+   * need. It costs nothing: suppression additionally requires a row to appear *below* the previous
+   * bottom, which cannot happen while no row leaves the window.
+   *
+   * This is the monotonic half of the cursor. The id set alone is bounded by the window, so it
+   * slides backwards whenever the window shrinks: a hard delete cascades an item's whole ledger
+   * away (`ItemRepository.hardDelete`, through the `ON DELETE CASCADE` on `item_history`), a prune
+   * moves rows out from under it, and a restored backup can be shorter than the live ledger. Each pulls
+   * previously-unseen old rows into the window, which the id diff alone reads as new and re-emits
+   * with their original — months-old — timestamps.
+   *
+   * It is deliberately *not* a plain high-water mark on the newest row: that would drop the
+   * out-of-order synced row the id set exists to catch (§7.3 keeps each row's own `created_at`, so
+   * a row from another device can arrive with a timestamp older than one already delivered). The
+   * floor sits at the *bottom* of the window instead, which is as low as a boundary can go and
+   * still exclude backfill, so all but the oldest of those rows stay inside it and are emitted.
+   *
+   * Two residues, both stated rather than hidden, and both narrow:
+   *
+   *  - Rows sharing the floor's exact millisecond are ambiguous, because the feed's tie-break
+   *    (`rowid`) is not carried on the entry. They compare as "not older" and are emitted, so a
+   *    same-millisecond backfill can still produce a small burst.
+   *  - A synced row *older* than the floor is dropped. It can only reach the window at all in a
+   *    generation that also removed rows, and at that point it is indistinguishable from the
+   *    backfill those removals caused — the ledger carries nothing that separates them.
+   */
+  readonly backfillFloor?: number | null;
+  /**
    * The same thing for the `location_history` scan window (issue #691). Its own set, because the
    * two ledgers are paged independently and a burst in one must not evict the other's baseline.
    * Optional so a cursor persisted by an older build (or a test) still resumes rather than
    * replaying every location change as new — an absent set is read as "no baseline yet".
    */
   readonly locationSeenIds?: readonly string[];
+  /** {@link backfillFloor} for the `location_history` window. */
+  readonly locationBackfillFloor?: number | null;
 }
 
 /** Default page size when scanning the recent ledger for new rows (== the repo page ceiling). */
@@ -205,24 +243,46 @@ function isStockAction(action: HistoryAction): boolean {
   return eventTypeForAction(action) === STOCK_ADJUSTED_TYPE;
 }
 
+/** How the caller describes the page it read, for the parts of the diff a page shape decides. */
+export interface DiffOptions {
+  /**
+   * Did the read fill its page? Pass the page's own `hasMore`, which already accounts for the
+   * repository clamping an over-large `limit`. It decides whether this window records a
+   * {@link EventCursor.backfillFloor}; a window that did not fill holds the whole ledger and
+   * records none. Defaults to `false`, the conservative reading: no floor, so nothing is
+   * suppressed.
+   */
+  readonly windowFull?: boolean;
+}
+
 /**
  * Compute the delta of the recent ledger against the previous cursor: the rows whose ids were
- * not in the last scan window, **oldest-first** (natural emission order), plus the advanced
- * cursor (this window's ids).
+ * not in the last scan window **and** are not older than the previous window's floor,
+ * **oldest-first** (natural emission order), plus the advanced cursor (this window's ids and
+ * floor).
  *
  * `recent` must be the ledger's newest-first page (exactly what `getHistoryFeed` returns).
  * When `previous` is `null` this is the first generation: we establish the baseline from
  * `recent` and emit nothing (`baseline: true`) — no history replay. An empty `recent` (e.g. all
  * history pruned) holds the previous seen-set rather than forgetting it.
+ *
+ * The floor is what makes a generation that only *removes* rows emit nothing (issue #642) — see
+ * {@link EventCursor.backfillFloor} for why an id set alone cannot.
  */
 export function diffNewEntries(
   previous: EventCursor | null,
   recent: readonly ActivityFeedEntry[],
+  options: DiffOptions = {},
 ): { newEntries: ActivityFeedEntry[]; cursor: EventCursor; baseline: boolean } {
-  const { newRows, seenIds, baseline } = diffNewRows(previous?.seenIds ?? null, recent);
+  const { newRows, seenIds, floor, baseline } = diffNewRows(
+    previous?.seenIds ?? null,
+    previous?.backfillFloor ?? null,
+    recent,
+    options.windowFull ?? false,
+  );
   // Spread `previous` first so the *other* ledger's baseline survives this diff untouched — a
   // burst of item changes must not make the next generation replay every location change as new.
-  return { newEntries: newRows, cursor: { ...previous, seenIds }, baseline };
+  return { newEntries: newRows, cursor: { ...previous, seenIds, backfillFloor: floor }, baseline };
 }
 
 /**
@@ -232,14 +292,27 @@ export function diffNewEntries(
  *
  * The cold-start rule applies independently: an existing cursor with no location window yet — the
  * shape an older build persisted — establishes its baseline here and emits nothing, rather than
- * replaying the whole location record as a burst of "new" events.
+ * replaying the whole location record as a burst of "new" events. So does the backfill floor: a
+ * pruned or restored `location_history` shrinks the window the same way, and the floor is what
+ * keeps the rows that slide up into it from being announced as fresh.
  */
 export function diffNewLocationEntries(
   previous: EventCursor | null,
   recent: readonly LocationHistoryEntry[],
-): { newEntries: LocationHistoryEntry[]; locationSeenIds: readonly string[]; baseline: boolean } {
-  const { newRows, seenIds, baseline } = diffNewRows(previous?.locationSeenIds ?? null, recent);
-  return { newEntries: newRows, locationSeenIds: seenIds, baseline };
+  options: DiffOptions = {},
+): {
+  newEntries: LocationHistoryEntry[];
+  locationSeenIds: readonly string[];
+  locationBackfillFloor: number | null;
+  baseline: boolean;
+} {
+  const { newRows, seenIds, floor, baseline } = diffNewRows(
+    previous?.locationSeenIds ?? null,
+    previous?.locationBackfillFloor ?? null,
+    recent,
+    options.windowFull ?? false,
+  );
+  return { newEntries: newRows, locationSeenIds: seenIds, locationBackfillFloor: floor, baseline };
 }
 
 /**
@@ -247,17 +320,31 @@ export function diffNewLocationEntries(
  * `previousSeenIds`, returned **oldest-first**, plus the advanced window.
  *
  * `previousSeenIds === null` means "no baseline yet" — establish one and emit nothing. An empty
- * `recent` (everything pruned) holds the previous window rather than forgetting it, which would
- * otherwise make the next generation re-emit whatever came back.
+ * `recent` (everything pruned) holds the previous window and floor rather than forgetting them,
+ * which would otherwise make the next generation re-emit whatever came back.
+ *
+ * A row older than `previousFloor` is backfill, not news: it sat below the previous window, so it
+ * can only be in view now because the ledger shrank underneath the cursor. It is dropped from
+ * `newRows` but still enters `seenIds`, so it is settled once and never reconsidered.
  */
-function diffNewRows<T extends { readonly id: string }>(
+function diffNewRows<T extends { readonly id: string; readonly createdAt: number }>(
   previousSeenIds: readonly string[] | null,
+  previousFloor: number | null,
   recent: readonly T[],
-): { newRows: T[]; seenIds: readonly string[]; baseline: boolean } {
+  windowFull: boolean,
+): { newRows: T[]; seenIds: readonly string[]; floor: number | null; baseline: boolean } {
   const seenIds = recent.length > 0 ? recent.map((e) => e.id) : (previousSeenIds ?? []);
-  if (previousSeenIds === null) return { newRows: [], seenIds, baseline: true };
+  // The next floor is this window's oldest row, and only when the page came back full. A window
+  // that did not fill holds the whole ledger and records no floor: nothing can backfill into it,
+  // and a floor there would suppress a genuinely older row synced from another device.
+  const floor =
+    recent.length === 0 ? previousFloor : windowFull ? recent[recent.length - 1]!.createdAt : null;
+  if (previousSeenIds === null) return { newRows: [], seenIds, floor, baseline: true };
   const seen = new Set(previousSeenIds);
-  return { newRows: recent.filter((e) => !seen.has(e.id)).reverse(), seenIds, baseline: false };
+  const newRows = recent
+    .filter((e) => !seen.has(e.id) && (previousFloor === null || e.createdAt >= previousFloor))
+    .reverse();
+  return { newRows, seenIds, floor, baseline: false };
 }
 
 /**
