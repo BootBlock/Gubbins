@@ -1113,9 +1113,11 @@ describe('ReportRepository', () => {
         trackingMode: 'CONSUMABLE_GAUGE',
         gauge: { unitOfMeasure: 'L', grossCapacity: 10, currentNetValue: 10 },
       });
+      // Sold rather than lent: the cylinders have to *leave for good* to be counted at all
+      // (issue #571), and this test is about which unit they are counted in.
       await driver.execute(
         `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
-         VALUES (?, ?, 'CHECKED_OUT', -2, ?);`,
+         VALUES (?, ?, 'SOLD', -2, ?);`,
         [crypto.randomUUID(), cylinder.id, now - 3 * MS_PER_DAY],
       );
       await driver.execute(
@@ -1129,6 +1131,59 @@ describe('ReportRepository', () => {
         { unit: 'L', totalConsumed: 4, perDay: 0.4 },
         { unit: null, totalConsumed: 2, perDay: 0.2 },
       ]);
+    });
+
+    // A loan is stock off the shelf, not stock used up: the check-out's negative delta is
+    // cancelled by the check-in that brings the same units back. Counting the outbound leg made
+    // a tool library read as a consumer of its own tools (issue #571).
+    it('ignores a loan, a supplier return and a disassembly, counting only stock gone for good', async () => {
+      const now = Date.now();
+      const drill = await items.create({ name: 'Drill', quantity: 10 });
+      const spares = await items.create({ name: 'Spares', quantity: 10 });
+      const kit = await items.create({ name: 'Kit', quantity: 10 });
+      const rows: readonly (readonly [string, string, number, number])[] = [
+        [drill.id, 'CHECKED_OUT', -5, now - 4 * MS_PER_DAY],
+        [drill.id, 'CHECKED_IN', 5, now - 3 * MS_PER_DAY],
+        [spares.id, 'RETURNED_TO_SUPPLIER', -4, now - 3 * MS_PER_DAY],
+        [kit.id, 'DISASSEMBLED', -3, now - 2 * MS_PER_DAY],
+        [drill.id, 'SOLD', -2, now - MS_PER_DAY],
+      ];
+      for (const [itemId, action, delta, at] of rows) {
+        await driver.execute(
+          `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
+           VALUES (?, ?, ?, ?, ?);`,
+          [crypto.randomUUID(), itemId, action, delta, at],
+        );
+      }
+
+      // Only the sale counts: 2 units over 10 days.
+      const report = await reports.consumptionRate(10, now);
+      expect(report.lines).toEqual([{ unit: null, totalConsumed: 2, perDay: 0.2 }]);
+    });
+
+    // `net_value_delta` on a `SOLD` row is the sale *proceeds*, not material - money sharing a
+    // column with grams. Only the gauge-bearing actions may be read as a material draw.
+    it('never reads a sale price as material drawn from a gauge', async () => {
+      const now = Date.now();
+      const filament = await items.create({
+        name: 'Filament',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 800 },
+      });
+      // A refunded sale: negative proceeds in the same column a gauge draw uses.
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, net_value_delta, created_at)
+         VALUES (?, ?, 'SOLD', -25, ?);`,
+        [crypto.randomUUID(), filament.id, now - 2 * MS_PER_DAY],
+      );
+      await driver.execute(
+        `INSERT INTO item_history (id, item_id, action, net_value_delta, created_at)
+         VALUES (?, ?, 'GAUGE_UPDATE', -100, ?);`,
+        [crypto.randomUUID(), filament.id, now - MS_PER_DAY],
+      );
+
+      const report = await reports.consumptionRate(10, now);
+      expect(report.lines).toEqual([{ unit: 'g', totalConsumed: 100, perDay: 10 }]);
     });
   });
 
@@ -1628,6 +1683,14 @@ describe('ReportRepository', () => {
 
   // Phase 74 — advanced analytics -----------------------------------------------
   /** Insert one append-only consumption/movement ledger row. */
+  async function addHistoryAs(itemId: string, action: string, delta: number, at: number): Promise<void> {
+    await driver.execute(
+      `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
+       VALUES (?, ?, ?, ?, ?);`,
+      [crypto.randomUUID(), itemId, action, delta, at],
+    );
+  }
+
   async function addHistory(itemId: string, delta: number, at: number): Promise<void> {
     await driver.execute(
       `INSERT INTO item_history (id, item_id, action, quantity_delta, created_at)
@@ -1657,6 +1720,28 @@ describe('ReportRepository', () => {
       expect(idleLine.tier).toBe('C');
       expect(report.totalValue).toBe(30);
     });
+
+    // ABC's whole job is to say what deserves tighter stock control. Ranking a weekly-lent tool
+    // as class A said "buy more of this" about something that comes back every time (issue #571).
+    it('does not rank a repeatedly-lent tool as consumed', async () => {
+      const now = Date.now();
+      const lent = await items.create({ name: 'Lent drill', quantity: 10, unitCost: 50 });
+      const used = await items.create({ name: 'Used screws', quantity: 100, unitCost: 1 });
+      // Five loans out and back over the year - no net movement, and no consumption either.
+      for (let week = 1; week <= 5; week += 1) {
+        await addHistoryAs(lent.id, 'CHECKED_OUT', -2, now - week * 14 * MS_PER_DAY);
+        await addHistoryAs(lent.id, 'CHECKED_IN', 2, now - (week * 14 - 1) * MS_PER_DAY);
+      }
+      await addHistoryAs(used.id, 'SOLD', -20, now - 30 * MS_PER_DAY);
+
+      const report = await reports.abcAnalysis(365, now);
+      const lentLine = report.lines.find((l) => l.id === lent.id)!;
+      const usedLine = report.lines.find((l) => l.id === used.id)!;
+      expect(lentLine.annualValue).toBe(0);
+      expect(lentLine.tier).toBe('C');
+      expect(usedLine.annualValue).toBe(20); // 20 x GBP 1
+      expect(usedLine.tier).toBe('A');
+    });
   });
 
   describe('turnover (Phase 74)', () => {
@@ -1674,6 +1759,23 @@ describe('ReportRepository', () => {
       expect(line.avgValue).toBe(40);
       expect(line.turnover).toBe(2); // 80 / 40
       expect(report.turnover).toBe(2);
+    });
+
+    // A loan contributes no cost of goods, but it *is* real movement, so it must still be
+    // reversed when reconstructing what was on hand at the window start (issue #571).
+    it('books no cost of goods for a loan, while still reconstructing the holding from it', async () => {
+      const now = Date.now();
+      const item = await items.create({ name: 'Lent jig', quantity: 6, unitCost: 5 });
+      // Out and back inside the window: net zero movement, so the holding never changed.
+      await addHistoryAs(item.id, 'CHECKED_OUT', -4, now - 10 * MS_PER_DAY);
+      await addHistoryAs(item.id, 'CHECKED_IN', 4, now - 5 * MS_PER_DAY);
+
+      const report = await reports.turnover(30, now);
+      const line = report.lines.find((l) => l.id === item.id)!;
+      expect(line.cogs).toBe(0);
+      // startQty = 6 - 0 = 6; avgQty = 6; avgValue = 30 - the stock is still all there.
+      expect(line.avgValue).toBe(30);
+      expect(line.turnover).toBe(0);
     });
   });
 
