@@ -1337,7 +1337,10 @@ Pass an **`Idempotency-Key`** header to make that retry safe:
 
 ```bash
 KEY=$(uuidgen)      # one value per intended change; reuse it only when retrying that change
-curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json'   -H "Idempotency-Key: $KEY"   -d '{"delta":-2,"note":"Taken to the workshop"}'   "$BASE/items/item-m3-bolt/adjust-quantity"
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -H "Idempotency-Key: $KEY" \
+  -d '{"delta":-2,"note":"Taken to the workshop"}' \
+  "$BASE/items/item-m3-bolt/adjust-quantity"
 ```
 
 - A repeat under the same key is answered with the **first attempt's stored result**; nothing is
@@ -1355,8 +1358,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/jso
   forgotten out from under its own retry — until an outright flood of concurrent keyed writes
   reaches four times that, at which point the oldest go regardless rather than the store growing
   without bound.
-- A key must be 1–200 characters of `A–Z a–z 0–9 . _ : + = / -`. Anything else is a `400`, rather
-  than being ignored and leaving the caller believing a retry is protected when it is not.
+- A key must be 1–200 characters of `A–Z a–z 0–9 . _ : + = / -`. Anything else is a
+  `400`, rather than being ignored and leaving the caller believing a retry is protected when
+  it is not.
 
 Omit the header and nothing changes: every call applies, exactly as before.
 

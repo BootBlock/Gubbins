@@ -39,12 +39,7 @@ import { buildLocalSnapshot } from '@/features/sync/snapshot';
 import { snapshotToBackupJson } from '@/features/sync/backup';
 import { fromDueDateInputValue, toDueDateInputValue } from '@/lib/date-input';
 import { createSnapshotMutex, writeSnapshotAtomic, type SnapshotMutex } from './snapshot-io.ts';
-import {
-  createIdempotencyStore,
-  IdempotencyConflictError,
-  stableStringify,
-  type IdempotencyStore,
-} from './idempotency.ts';
+import { createIdempotencyStore, IdempotencyConflictError, stableStringify } from './idempotency.ts';
 import { hydrateFromJson } from './hydrate.ts';
 import { loadItemDetail } from './item-detail.ts';
 import { toCheckout, type CheckoutDto, type ItemDetailDto } from './api/dto.ts';
@@ -482,8 +477,11 @@ export function createWriteExecutor(
   snapshotPath: string,
   io?: Partial<WriteIo>,
   mutex: SnapshotMutex = createSnapshotMutex(),
-  idempotency: IdempotencyStore = createIdempotencyStore(),
 ): WriteExecute {
+  // One store per executor, and not injectable: unlike the mutex — which the composition root
+  // shares with the push surface so the two mutating paths serialise against each other — nothing
+  // outside a write has any business replaying a write's result.
+  const idempotency = createIdempotencyStore();
   return async (op, actorUserId, idempotencyKey) => {
     try {
       const outcome = await idempotency.run(
