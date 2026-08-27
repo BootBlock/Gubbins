@@ -57,11 +57,10 @@ __pycache__/
 !.env.example
 
 # Bridge webhook targets — carry per-target signing secrets; keep the example only.
-bridge/webhooks.json
-bridge/webhooks.*.json
+# Matched at any depth: GUBBINS_BRIDGE_WEBHOOKS_FILE takes an arbitrary path, so anchoring to
+# bridge/ alone would leave bridge/config/webhooks.json committable.
+**/webhooks*.json
 !bridge/webhooks.example.json
-# Belt-and-braces: a root-level webhooks.json (if the bridge is ever run from the repo root).
-/webhooks.json
 
 # The bridge's remembered identity (issue #672) — machine-local runtime state, written on first
 # start so consumers can recognise the bridge after its address changes. No secret, but it belongs

@@ -2192,7 +2192,7 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_LOOKUP_EVENTS` | no | `off` | Also emit the **read-triggered** [`lookup.resolved` event](#lookup-events--read-triggered-opt-in-separate-flag) when a "where is X?" lookup resolves. **Off by default and deliberately NOT implied by `GUBBINS_BRIDGE_EVENTS`** — it publishes the search text, so it is its own explicit choice. Needs a sink (SSE / webhooks / MQTT) to reach. |
 | `GUBBINS_BRIDGE_LOOKUP_EVENTS_DEBOUNCE_MS` | no | `3000` | Window (ms) in which repeated **equivalent** lookups emit once. Clamped to `[0, 600000]`; `0` disables debouncing. |
 | `GUBBINS_BRIDGE_WEBHOOKS` | no | `off` | Enable opt-in signed [outbound webhooks](#events-webhooks--sse-opt-in). **Off by default**; also lights up the event stream (shared pipeline). A webhook never mutates inventory. |
-| `GUBBINS_BRIDGE_WEBHOOKS_FILE` | no | `webhooks.json` | Path to the **git-ignored** JSON webhook-target list. The target **secrets live only here** — never in a committed file. |
+| `GUBBINS_BRIDGE_WEBHOOKS_FILE` | no | `webhooks.json` | Path to the **git-ignored** JSON webhook-target list. The target **secrets live only here** — never in a committed file. Point it outside the repo, or keep the name matching `webhooks*.json` — that is the shape the `.gitignore` / `.dockerignore` rules match, so a file called anything else is neither kept out of git nor out of a Docker image. |
 | `GUBBINS_BRIDGE_WEBHOOKS_TARGETS` | no | — | The whole target list inline as JSON (wins over the file). Carries secrets, so keep it in the git-ignored `.env` only. |
 | `GUBBINS_BRIDGE_WEBHOOKS_SECRETS` | no | — | Inline JSON `{ "name": "secret" }` map resolving the secret **name** an app-configured webhook may sign with, so the value never enters the database (and therefore never the sync artefact or a backup). Merged over any `"secrets"` block in the targets file. A webhook naming a secret that is not configured is **not delivered** — never delivered unsigned. Keep it in the git-ignored `.env` only. |
 | `GUBBINS_BRIDGE_WEBHOOKS_ALLOW_PRIVATE` | no | `off` | Allow webhook delivery to loopback, link-local, private and cloud-metadata addresses. **Off by default** — a webhook URL is user-supplied and arrives over sync, and the bridge sits on the LAN, so this is the feature's primary SSRF control. Turn it on to reach your own Home Assistant / Node-RED on the LAN. |
@@ -2432,7 +2432,10 @@ The bridge is designed to be safe by construction; this is the checklist it sati
 - **Rate-limited.** See [below](#rate-limiting).
 - **No secrets or real data in the repo.** Only [`.env.example`](.env.example) (placeholders)
   is committed; [`.gitignore`](.gitignore) and the repo-root [`.dockerignore`](../.dockerignore)
-  block any real `.env`, snapshot, `.sqlite`/`.db`, or `gubbins-sync.json`. Keep local test
+  block any real `.env`, `webhooks.json`, snapshot, `.sqlite`/`.db`, or `gubbins-sync.json`.
+  A unit test (`src/lib/docker-context-ignore.test.ts`) checks every rule in both `.gitignore`
+  files against `.dockerignore`, so a file that git refuses to track cannot be copied into an
+  image layer. Keep local test
   data under `bridge/local/`. The only fixture committed is the fully synthetic
   `src/fixtures/synthetic-snapshot.json` (made-up parts, `example.com`/`localhost` only).
 - **Minimal dependency surface.** Zero runtime dependencies — stdlib `node:http` /
@@ -2597,7 +2600,11 @@ Notes:
   [API token minted in the app](#identities--permissions), which arrives in the mounted
   snapshot. The snapshot path (and any outbound broker / Home Assistant credentials) are passed
   at run time, never baked into the image. A repo-root [`.dockerignore`](../.dockerignore) keeps
-  any real `.env`, snapshot, or `.sqlite` out of the build context as a safety net.
+  every file the two `.gitignore` files refuse to track — a real `.env`, `webhooks.json`,
+  snapshot, database, backup archive, or private key — out of the build context as a safety net.
+  The bridge image is a single stage, so anything copied in stays in the published layer. **If you built a bridge image before this exclusion existed** and had a real
+  `bridge/webhooks.json` in your working tree, that image holds your signing secrets: rebuild it,
+  and rotate the secrets on every affected target.
 - Mount the snapshot **read-only** (`:ro`) — the bridge only ever reads it.
 - Inside the container the process binds `0.0.0.0` (so Docker's port mapping works at all);
   keep it host-local by publishing to `127.0.0.1:8787:8787` as above. To let Home Assistant
