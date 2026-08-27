@@ -90,6 +90,8 @@ export function TextQueryInput() {
             '- `tag:fragile` — items carrying a tag (use `tag=fragile` for the whole name)',
             '- `has:mpn` — the field is filled in at all',
             '- `-mfr:acme` (or `NOT mfr:acme`) — **exclude** a term or `-( … )` group',
+            '- `name:"esp 32"` — quote a value with spaces, a bracket or a leading `-`',
+            "- an apostrophe inside a word is literal, so `Bob's drill mfr:acme` keeps its filter",
             '- combine with `OR` and group with `( )`; terms are **AND**-ed by default',
           ].join('\n')}
           placement="top"

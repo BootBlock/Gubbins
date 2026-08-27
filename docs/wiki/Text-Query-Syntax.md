@@ -194,9 +194,16 @@ resistor -mfr:acme        resistors, but not the ones made by Acme
 - **`-` / `NOT`** exclude, and bind tightest of the three.
 
 > **💡 Tip**
-> A value containing a bracket, a `|`, or a leading `-` must be quoted so it isn't read as
-> structure — for example `name:"a|b"` or `"-40C"`. A hyphen *inside* a term is always literal, so
-> `mpn:ABC-123` needs no quoting.
+> A value containing a space, a bracket, a `|`, or a leading `-` must be quoted so it isn't read
+> as structure — for example `name:"a|b"` or `"-40C"`. Either `"…"` or `'…'` will do. A hyphen
+> *inside* a term is always literal, so `mpn:ABC-123` needs no quoting.
+
+> **ℹ️ Note**
+> A quote only begins a phrase where one could start — at the **start of a term**, or immediately
+> after a `:`, `=`, `>` or `<` — and only when a later quote can **end** a term and close it.
+> Anywhere else it is an ordinary character, so an apostrophe or an inch mark needs no escaping:
+> `Bob's drill mfr:acme`, `'80s vinyl tag:retro don't` and `3.5" spanner qty>2` all keep their
+> filters.
 
 > **ℹ️ Note**
 > If a term can't be understood, Gubbins tells you why rather than silently ignoring it — so a

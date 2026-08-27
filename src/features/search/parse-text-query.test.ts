@@ -722,6 +722,112 @@ describe('parseTextQuery — presence (has:, issue #139)', () => {
   });
 });
 
+describe('parseTextQuery — a mid-word quote stays literal (issue #625)', () => {
+  it('keeps every filter after an apostrophe in a name', () => {
+    expect(conditionsOf("Bob's drill mfr:acme")).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: "Bob's" },
+      { field: 'name', operator: 'CONTAINS', value: 'drill' },
+      { field: 'manufacturer', operator: 'CONTAINS', value: 'acme' },
+    ]);
+  });
+
+  it('keeps a tag filter after a possessive', () => {
+    expect(conditionsOf("children's toys tag:donate")).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: "children's" },
+      { field: 'name', operator: 'CONTAINS', value: 'toys' },
+      { field: 'tag', operator: 'CONTAINS', value: 'donate' },
+    ]);
+  });
+
+  it('keeps a negated presence term after a possessive', () => {
+    expect(conditionsOf("Bob's drill -has:mpn")).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: "Bob's" },
+      { field: 'name', operator: 'CONTAINS', value: 'drill' },
+      {
+        type: 'GROUP',
+        logicalOperator: 'AND',
+        negate: true,
+        conditions: [{ field: 'mpn', operator: 'HAS_CAPABILITY', value: '' }],
+      },
+    ]);
+  });
+
+  it('still reads OR as an operator after a contraction', () => {
+    const result = parseTextQuery("don't OR do");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.ast).toEqual({
+        type: 'GROUP',
+        logicalOperator: 'OR',
+        conditions: [
+          { field: 'name', operator: 'CONTAINS', value: "don't" },
+          { field: 'name', operator: 'CONTAINS', value: 'do' },
+        ],
+      });
+    }
+  });
+
+  it('treats an inch mark the same way', () => {
+    expect(conditionsOf('3.5" spanner qty>2')).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: '3.5"' },
+      { field: 'name', operator: 'CONTAINS', value: 'spanner' },
+      { field: 'quantity', operator: 'GREATER_THAN', value: 2 },
+    ]);
+  });
+
+  it('keeps an apostrophe inside a field value literal', () => {
+    expect(singleCondition("mfr:O'Reilly")).toEqual({
+      field: 'manufacturer',
+      operator: 'CONTAINS',
+      value: "O'Reilly",
+    });
+  });
+
+  it('still opens a quoted span at a term start or after a separator', () => {
+    expect(singleCondition('name:"esp 32"')).toMatchObject({ field: 'name', value: 'esp 32' });
+    expect(singleCondition('"-40C"')).toMatchObject({ field: 'name', value: '-40C' });
+    expect(singleCondition("tag:'needs a clean'")).toMatchObject({ field: 'tag', value: 'needs a clean' });
+  });
+
+  it('keeps an elided leading apostrophe literal — it has no closing partner', () => {
+    expect(conditionsOf("'80s vinyl tag:retro")).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: "'80s" },
+      { field: 'name', operator: 'CONTAINS', value: 'vinyl' },
+      { field: 'tag', operator: 'CONTAINS', value: 'retro' },
+    ]);
+    expect(conditionsOf("'til dawn")).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: "'til" },
+      { field: 'name', operator: 'CONTAINS', value: 'dawn' },
+    ]);
+  });
+
+  it('does not let a later contraction close an elided leading apostrophe', () => {
+    expect(conditionsOf("'80s vinyl tag:retro don't")).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: "'80s" },
+      { field: 'name', operator: 'CONTAINS', value: 'vinyl' },
+      { field: 'tag', operator: 'CONTAINS', value: 'retro' },
+      { field: 'name', operator: 'CONTAINS', value: "don't" },
+    ]);
+  });
+
+  it('keeps an unclosed quote literal rather than absorbing the rest of the query', () => {
+    expect(conditionsOf('"unclosed phrase qty>2')).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: '"unclosed' },
+      { field: 'name', operator: 'CONTAINS', value: 'phrase' },
+      { field: 'quantity', operator: 'GREATER_THAN', value: 2 },
+    ]);
+  });
+
+  it('still closes a span at the matching quote when one exists', () => {
+    expect(conditionsOf("rock 'n' roll mfr:acme")).toEqual([
+      { field: 'name', operator: 'CONTAINS', value: 'rock' },
+      { field: 'name', operator: 'CONTAINS', value: 'n' },
+      { field: 'name', operator: 'CONTAINS', value: 'roll' },
+      { field: 'manufacturer', operator: 'CONTAINS', value: 'acme' },
+    ]);
+  });
+});
+
 describe('parseTextQuery — every output round-trips through parseASTtoSQL', () => {
   const queries = [
     'esp32',
@@ -769,7 +875,15 @@ describe('parseTextQuery — every output round-trips through parseASTtoSQL', ()
  * matter are the ones the quick box *can't* express.
  */
 describe('isPlainTextQuery', () => {
-  const plain = ['esp32', 'blue widget', 'M3 hex bolt 10mm', "it's fine", 'ABC-123'];
+  const plain = [
+    'esp32',
+    'blue widget',
+    'M3 hex bolt 10mm',
+    "it's fine",
+    'ABC-123',
+    "O'Reilly",
+    '3.5" spanner',
+  ];
   for (const q of plain) {
     it(`treats "${q}" as plain text`, () => {
       expect(isPlainTextQuery(q)).toBe(true);
@@ -777,6 +891,7 @@ describe('isPlainTextQuery', () => {
   }
 
   const structured = [
+    "Bob's drill mfr:acme",
     'mfr:acme',
     'qty>10',
     'mpn=ABC-123',
