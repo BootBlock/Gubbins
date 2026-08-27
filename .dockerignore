@@ -2,13 +2,59 @@
 #
 # This is a safety net for both images — the app image (see Dockerfile) and the bridge
 # image (see bridge/Dockerfile) — whose context is the repo root. Most importantly it
-# guarantees a real `.env`, an exported snapshot/database, or a webhook config can never be
-# copied into an image, even if one is present in the working tree.
+# guarantees a real `.env`, a webhook config, an exported snapshot/database, or a private key
+# can never be copied into an image, even if one is present in the working tree.
 #
-# The bridge image copies `bridge/` wholesale, so anything git-ignored that an operator keeps
-# there would otherwise land in an image layer. The rule is therefore: whatever `.gitignore`
-# and `bridge/.gitignore` refuse to track, this file refuses to copy.
-# `src/lib/docker-context-ignore.test.ts` enforces that, so the two lists cannot drift apart.
+# The bridge image copies `bridge/` wholesale into its *final* layer, so anything an operator
+# keeps there travels wherever that image goes. The files they keep there are exactly the ones
+# git refuses to track. The rule is therefore: **whatever `.gitignore` and `bridge/.gitignore`
+# refuse to track, this file refuses to copy.** `src/lib/docker-context-ignore.test.ts` checks
+# every rule in both of those files against this one, so the lists cannot drift apart.
+#
+# Sections below follow `.gitignore`'s own order, so the two read side by side.
+
+# Logs
+**/logs
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
+
+# Dependencies / build output / caches — not needed in the build-free bridge image, and the app
+# image builds its own `dist` (and fetches the OCR assets) inside the container.
+**/node_modules
+**/.pnpm-store
+**/dist
+**/dist-ssr
+**/*.local
+**/.vite
+**/*.tsbuildinfo
+public/ocr/
+**/coverage
+**/.nyc_output
+
+# Editor / OS / VCS / CI cruft.
+**/.vscode
+**/.idea
+**/.DS_Store
+**/Thumbs.db
+**/*.suo
+**/*.ntvs*
+**/*.njsproj
+**/*.sln
+**/*.sw?
+.git
+.github
+
+# Python tooling artefacts (the wiki/screenshot helpers).
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.egg-info
+**/.mypy_cache
+**/.ruff_cache
 
 # Secrets — never copy a real .env into an image (the placeholder .env.example is harmless
 # but also unneeded at runtime, so it stays out too). `**/*.env` covers the un-dotted shapes
@@ -28,22 +74,34 @@
 # in would make every container built from the image claim to be the same bridge.
 **/bridge-id
 
-# Dependencies / build output / VCS / CI — not needed in the build-free bridge image.
-**/node_modules
-**/dist
-**/dist-ssr
-.git
-.github
-**/coverage
-.vite
-*.tsbuildinfo
+# Real inventory data must never enter an image (config points at a mounted snapshot).
+**/local/
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+**/*.sql
+**/gubbins-sync.json
+**/gubbins-backup*.zip
+
+# Keys, certificates, and keystores.
+**/*.pem
+**/*.key
+**/*.crt
+**/*.cer
+**/*.pfx
+**/*.p12
+**/*.keystore
+**/*.jks
+**/id_rsa
+**/id_rsa.*
+**/id_dsa
+**/id_ecdsa
+**/id_ed25519
 
 # Agent scratch space — `.claude/worktrees/` holds entire additional checkouts of this
 # repository, which would otherwise be copied into the app image's build context.
 .claude
 
-# Real inventory data must never enter an image (config points at a mounted snapshot).
-**/local/
-**/*.sqlite
-**/*.db
-**/gubbins-sync.json
+# Local artefacts of the developer tooling.
+scripts/.smoke-screenshot.png
+.wiki/

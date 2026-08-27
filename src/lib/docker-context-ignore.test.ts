@@ -13,9 +13,11 @@
  * enforceable rather than remembered, so the next feature that git-ignores a local file cannot
  * quietly reintroduce the same leak.
  *
- * Scope, stated honestly: the root `.gitignore` covers the whole repository, most of which is
- * irrelevant to an image (`.idea/`, `*.log`). Only its bridge-related entries are mirrored here.
- * `bridge/.gitignore` is mirrored in full, because every line in it is local or sensitive.
+ * Both ignore files are mirrored in *full*, not just their obviously-sensitive lines. Narrowing
+ * the sweep to the names that read as secrets is how the gap reappears: `*.sqlite` was mirrored
+ * while `*.sqlite3` beside it was not, and a `*.key` or `gubbins-backup*.zip` an operator left in
+ * `bridge/` is no less of a leak than `webhooks.json`. Excluding editor and log noise from an
+ * image costs nothing, so there is no reason to carve out exceptions and every reason not to.
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -99,23 +101,36 @@ function isIgnored(path: string, dockerignore: string[]): boolean {
  * @param nested  a real subdirectory of `base`, used to check unanchored patterns at depth
  */
 function samplePaths(pattern: string, base: string, nested: string): string[] {
-  if (pattern.includes('[') || pattern.includes('**')) {
+  if (pattern.includes('**')) {
     // Not a shape this generator understands; fail loudly rather than assert nothing.
     throw new Error(`samplePaths: unsupported git-ignore pattern "${pattern}" — extend this helper`);
   }
 
   const isDirectory = pattern.endsWith('/');
   const trimmed = pattern.replace(/\/+$/, '');
-  // A `*` stands for at least one character; any literal serves to build a concrete example.
-  const concrete = trimmed.replaceAll('*', 'sample').replace(/^\//, '');
+  // A `*` stands for at least one character and `?` for exactly one; any literal builds a
+  // concrete example. A `[cod]` class expands into one sample per member, so a rule such as
+  // `*.py[cod]` is checked for every extension it covers rather than only the first.
+  const expanded = expandClasses(trimmed.replaceAll('*', 'sample').replaceAll('?', 'x'));
   const withFile = (path: string) => (isDirectory ? `${path}/kept-locally.txt` : path);
-  const under = (dir: string) => (dir ? `${dir}/${concrete}` : concrete);
+  const under = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
-  // Anchored: a leading slash, or a slash anywhere but the end, pins the rule to `base`.
-  if (trimmed.startsWith('/') || trimmed.includes('/')) return [withFile(under(base))];
+  return expanded.flatMap((raw) => {
+    const concrete = raw.replace(/^\//, '');
+    // Anchored: a leading slash, or a slash anywhere but the end, pins the rule to `base`.
+    if (raw.startsWith('/') || raw.includes('/')) return [withFile(under(base, concrete))];
 
-  // Unanchored: git applies it at every depth below `base`, so an image must exclude it there too.
-  return [withFile(under(base)), withFile(under(base ? `${base}/${nested}` : nested))];
+    // Unanchored: git applies it at every depth below `base`, so an image must exclude it there.
+    return [withFile(under(base, concrete)), withFile(under(base ? `${base}/${nested}` : nested, concrete))];
+  });
+}
+
+/** `a.py[cod]` → `['a.pyc', 'a.pyo', 'a.pyd']`; a pattern with no class comes back unchanged. */
+function expandClasses(pattern: string): string[] {
+  const match = /\[([^\]]+)\]/.exec(pattern);
+  if (!match) return [pattern];
+  const [whole, members] = match;
+  return [...members].flatMap((member) => expandClasses(pattern.replace(whole, member)));
 }
 
 const dockerignore = patterns(read('.dockerignore'));
@@ -128,16 +143,20 @@ const mirrored = [
     nested: 'src',
     source: 'bridge/.gitignore',
   })),
-  // The root list governs the whole repository; only its bridge-related lines are in scope.
-  ...patterns(read('.gitignore'))
-    .filter((pattern) => /bridge|webhook/i.test(pattern))
-    .map((pattern) => ({ pattern, base: '', nested: 'bridge', source: '.gitignore' })),
+  // The root list governs the whole repository, and the bridge's build context *is* the repo
+  // root — so every one of its rules applies to what an image would copy.
+  ...patterns(read('.gitignore')).map((pattern) => ({
+    pattern,
+    base: '',
+    nested: 'bridge',
+    source: '.gitignore',
+  })),
 ].filter(({ pattern }) => !pattern.startsWith('!'));
 
-describe('.dockerignore mirrors the bridge ignore rules', () => {
+describe('.dockerignore mirrors the git-ignore rules', () => {
   it('finds the ignore rules at all (guards against a silently-empty sweep)', () => {
     expect(dockerignore.length).toBeGreaterThan(10);
-    expect(mirrored.length).toBeGreaterThan(8);
+    expect(mirrored.length).toBeGreaterThan(50);
   });
 
   it.each(mirrored)('$source rule "$pattern" is also excluded from the build context', (rule) => {
@@ -160,6 +179,11 @@ describe('.dockerignore mirrors the bridge ignore rules', () => {
     'bridge/bridge-id',
     'bridge/local/real-snapshot.json',
     'bridge/inventory.sqlite',
+    'bridge/inventory.sqlite3',
+    'bridge/dump.sql',
+    'bridge/gubbins-backup-2026-08-27.zip',
+    'bridge/tls.key',
+    'bridge/certs/client.p12',
   ])('never copies %s into an image', (path) => {
     expect(isIgnored(path, dockerignore)).toBe(true);
   });
@@ -171,7 +195,7 @@ describe('.dockerignore mirrors the bridge ignore rules', () => {
     'bridge/package.json',
     'bridge/src/serve.ts',
     'bridge/src/fixtures/synthetic-snapshot.json',
-    'src/db/index.ts',
+    'src/db/repositories/ItemRepository.ts',
     'package.json',
   ])('still copies %s, which the bridge image needs to run', (path) => {
     expect(isIgnored(path, dockerignore)).toBe(false);
