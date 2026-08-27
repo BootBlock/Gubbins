@@ -187,4 +187,32 @@ describe('reconcileLayout', () => {
     expect(b?.visible).toBe(true);
     expect(b).toEqual(at('b', 1, 0)); // first free cell beside a
   });
+
+  // Issue #627: a board arranged by an older build — or synced in from a device running a
+  // leaner module set — can already stack two visible widgets in one cell, which draws one
+  // tile over the other. Reading it repairs it.
+  it('re-homes a second widget stacked in an already-occupied cell', () => {
+    const stored: DashboardLayout = [at('a', 0, 0), at('b', 0, 0), at('c', 2, 0)];
+    const next = reconcileLayout(stored, ['a', 'b', 'c']);
+    // The first claimant keeps the cell; the later one takes the first genuinely free one.
+    expect(next).toEqual([at('a', 0, 0), at('b', 1, 0), at('c', 2, 0)]);
+  });
+
+  it('gives two widgets stacked on one cell different homes, and spills onto the next row', () => {
+    const stored: DashboardLayout = [
+      at('a', 0, 0),
+      at('b', 0, 0),
+      at('c', 0, 0),
+      at('d', 1, 0),
+      at('e', 2, 0),
+    ];
+    const next = reconcileLayout(stored, ['a', 'b', 'c', 'd', 'e']);
+    expect(next).toEqual([at('a', 0, 0), at('b', 0, 1), at('c', 1, 1), at('d', 1, 0), at('e', 2, 0)]);
+  });
+
+  it('ignores a hidden placement sharing a visible widget’s cell (it occupies nothing)', () => {
+    const stored: DashboardLayout = [at('a', 0, 0), at('b', 0, 0, false)];
+    const next = reconcileLayout(stored, ['a', 'b']);
+    expect(next).toEqual(stored);
+  });
 });

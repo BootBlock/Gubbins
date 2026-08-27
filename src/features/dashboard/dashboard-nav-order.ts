@@ -119,7 +119,9 @@ export function tilesInGroup(order: NavOrder, group: NavGroup): NavOrder {
  * Split an order into the tiles that render (`enabled`) and those whose feature is off
  * (`gated`), by an id predicate. The gated placements are kept verbatim so the caller can
  * concatenate them back on persist — a hidden module's tiles then keep their exact
- * arrangement, and re-enabling the module restores it untouched (mirrors the widget board).
+ * arrangement, and re-enabling the module restores it untouched. An order is ordinal, so a
+ * reinserted tile can't land on top of another; the widget board carries absolute coordinates
+ * and so has to edit its gated placements too (issue #627).
  */
 export function partitionByEnabled(
   order: NavOrder,

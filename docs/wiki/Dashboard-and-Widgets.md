@@ -35,6 +35,12 @@ provides, including which **storage engine** holds the database — see
 > moved to column 2 of 3, row 1"), so you always know where a card landed.
 
 > **ℹ️ Note**
+> A widget belonging to a [[module you've switched off|Modular-UI]] keeps its place on the board
+> while it's away, so switching the module back on brings the card home. That place stays
+> reserved, so a gap you can't drop into is a card waiting to return, not a fault. Nudging a card
+> into it simply trades places with the one that's away.
+
+> **ℹ️ Note**
 > Widgets are independent, so a problem in one stays in one. If a card can't read its data or
 > can't be drawn, that card alone shows a short message and every other card carries on as
 > normal. The same is true of the inventory list: an item that can't be displayed becomes a

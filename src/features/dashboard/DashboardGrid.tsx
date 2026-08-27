@@ -138,21 +138,23 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
   const fullLayout = useMemo(() => reconcileLayout(stored, DASHBOARD_WIDGET_IDS), [stored]);
 
   // Gate on top of the stored layout: a widget whose feature is off, or whose read permission
-  // this session lacks, is split out into `gated` and never rendered, while `layout` (its
-  // enabled complement) is what the board draws and what every edit operates on. The gated
-  // placements are kept verbatim and concatenated back on each persist (`apply`), so a hidden
-  // widget keeps its exact coordinates — turning the module back on, or being granted the
-  // permission, restores the prior layout untouched.
-  const { layout, gated } = useMemo(() => {
+  // this session lacks, is dropped from `layout` and never rendered. `layout` is what the board
+  // *draws*; every edit still runs against `fullLayout`, so a gated widget's cell stays occupied
+  // and its coordinates are only ever rewritten by a swap it takes part in — turning the module
+  // back on, or being granted the permission, restores the prior layout untouched.
+  //
+  // Editing the gated-out subset as well is what keeps two tiles off the same cell (issue #627):
+  // to the pure ops a cell held only by a gated widget used to look free, so a drop or a re-show
+  // could land a second widget on it, and switching the module back on drew both tiles stacked.
+  const layout = useMemo(() => {
     const onBoard: WidgetPlacement[] = [];
-    const gatedOut: WidgetPlacement[] = [];
     for (const p of fullLayout) {
       const widget = widgetById(p.id);
       const feature = widget?.feature;
       const visible = (!feature || enabled.has(feature)) && allows(widget?.permission);
-      (visible ? onBoard : gatedOut).push(p);
+      if (visible) onBoard.push(p);
     }
-    return { layout: onBoard as DashboardLayout, gated: gatedOut as DashboardLayout };
+    return onBoard as DashboardLayout;
   }, [fullLayout, enabled, allows]);
 
   // "Hide healthy cards" (issue #111) only bites in view mode — while customising, every card
@@ -170,9 +172,9 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
   const registerTile = useReorderFlip(orderKey, editing && !reduced);
 
   const apply = (next: DashboardLayout) => {
-    // Pure ops return the same reference on a no-op; only persist a real change. The
-    // gated placements are merged back untouched so their coords are never rewritten.
-    if (next !== layout) setLayout([...next, ...gated]);
+    // Pure ops return the same reference on a no-op; only persist a real change. `next` is a
+    // whole-board layout (gated placements included), so it persists as-is.
+    if (next !== fullLayout) setLayout(next);
   };
 
   const [announcement, setAnnouncement] = useState('');
@@ -183,7 +185,7 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
   // returns the same layout on a no-op (a nudge clamped at an edge), so nothing is announced
   // unless the board actually changed.
   const applyMove = (id: string, next: DashboardLayout) => {
-    if (next === layout) return;
+    if (next === fullLayout) return;
     apply(next);
     const moved = next.find((p) => p.id === id);
     const def = widgetById(id);
@@ -208,7 +210,7 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
     enabled: editing,
     onDrop: (id, key) => {
       const cell = parseCellKey(key);
-      if (cell) applyMove(id, moveWidget(layout, id, cell.x, cell.y));
+      if (cell) applyMove(id, moveWidget(fullLayout, id, cell.x, cell.y));
     },
   });
   // The cell under the pointer during a drag, decoded from the active drop key — drives the ghost.
@@ -232,7 +234,7 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
     const dir = ARROW_DIRECTIONS[e.key];
     if (!dir) return;
     e.preventDefault();
-    applyMove(id, nudgeWidget(layout, id, dir));
+    applyMove(id, nudgeWidget(fullLayout, id, dir));
   };
 
   // Empty drop cells fill the gaps (edit mode only) so a tile can be dragged onto a
@@ -242,7 +244,9 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
     const maxRow = placed.reduce((m, p) => Math.max(m, p.y), 0);
     for (let y = 0; y <= maxRow + 1; y++) {
       for (let x = 0; x < DASHBOARD_COLUMNS; x++) {
-        if (!occupantAt(layout, x, y)) dropCells.push({ x, y });
+        // Occupancy is read from the whole board: a cell held by a gated widget is not free,
+        // so no drop cell invites a drag onto it (issue #627).
+        if (!occupantAt(fullLayout, x, y)) dropCells.push({ x, y });
       }
     }
   }
@@ -299,15 +303,15 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
               nodeRef={registerTile(p.id)}
               dragSourceProps={drag.sourceProps(p.id, t(def.titleKey))}
               dropProps={drag.dropProps(cellKey(p.x, p.y))}
-              onMove={(dir) => applyMove(p.id, nudgeWidget(layout, p.id, dir))}
+              onMove={(dir) => applyMove(p.id, nudgeWidget(fullLayout, p.id, dir))}
               moveDisabled={{
-                up: nudgeWidget(layout, p.id, 'up') === layout,
-                down: nudgeWidget(layout, p.id, 'down') === layout,
-                left: nudgeWidget(layout, p.id, 'left') === layout,
-                right: nudgeWidget(layout, p.id, 'right') === layout,
+                up: nudgeWidget(fullLayout, p.id, 'up') === fullLayout,
+                down: nudgeWidget(fullLayout, p.id, 'down') === fullLayout,
+                left: nudgeWidget(fullLayout, p.id, 'left') === fullLayout,
+                right: nudgeWidget(fullLayout, p.id, 'right') === fullLayout,
               }}
               onKeyDown={handleKeyDown(p.id)}
-              onHide={() => apply(setWidgetVisible(layout, p.id, false))}
+              onHide={() => apply(setWidgetVisible(fullLayout, p.id, false))}
             />
           );
         })}
@@ -373,7 +377,7 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
                 >
                   <button
                     type="button"
-                    onClick={() => apply(setWidgetVisible(layout, p.id, true))}
+                    onClick={() => apply(setWidgetVisible(fullLayout, p.id, true))}
                     data-testid={`widget-add-${p.id}`}
                     className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
                   >
