@@ -44,7 +44,9 @@ import {
  * - `/catalogue` and `/insurance-schedule` are Reports sub-screens, reached from the Reports page
  *   and gated by the same `reports` feature.
  * - `/modules` is the Modules manager, reached from Settings, the first-run chooser and the
- *   "module hidden" interstitial — never gated, since it is how hidden features are brought back.
+ *   "module hidden" interstitial. It carries no *module* gate — it is how hidden features are
+ *   brought back — but it does answer to `modules:read` (issue #429), since it is the screen that
+ *   can switch the sign-in gate itself off.
  */
 export type AppRoutePath =
   | '/'
@@ -94,10 +96,11 @@ export interface PaletteDestination {
    * (issue #522). Several keys mean **any one of them** suffices, which is what a screen holding
    * more than one capability needs: Sync hosts both cloud sync and Backup & restore, so a role
    * granted backups but not sync must still reach it. `undefined` means the screen carries no
-   * read gate — either because it shows
-   * nothing a role can withhold (the Dashboard shell, About), because it is this device's own
-   * preferences rather than the vault's data (Settings), or because it is the one way back from
-   * a hidden module (Modules).
+   * read gate — either because it shows nothing a role can withhold (the Dashboard shell, About),
+   * or because it is this device's own preferences rather than the vault's data (Settings).
+   * Modules was in that second group until issue #429: being the way back from a hidden module is
+   * a reason to withhold no *module* gate from it, and turned out to be no reason at all to leave
+   * it open to every role — it is the screen that can switch the sign-in gate itself off.
    *
    * This is deliberately *screen*-level, not row-level: the same key also guards the matching
    * route via `PermissionGuard`, so a denied account cannot reach the screen by typing its URL.
@@ -288,8 +291,17 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
  *   page and gated by the same `reports` feature — so they vanish from the palette exactly when
  *   Reports is switched off in the module manager.
  * - **Modules** is the module manager itself, reached from Settings / first-run. It carries no
- *   feature gate (`feature` omitted), so it is always jumpable — it is the one screen that must
- *   stay reachable even when everything else is turned off, since it is how they come back.
+ *   *feature* gate (`feature` omitted), so no module being switched off can hide it — it is the
+ *   one screen that must stay reachable when everything else is turned off, since it is how they
+ *   come back. The two gates answer different questions, though, and only the module one has to
+ *   stay off: it does carry a *permission* gate (issue #429), because the module list is what can
+ *   switch the Users module — and the whole sign-in gate with it — back off, so leaving it open to
+ *   every account made every other permission advisory.
+ *
+ *   Closing it cannot strand an operator, because the recovery route does not run through this
+ *   screen: the sign-in screen's own **Can't sign in?** control switches the Users module off on
+ *   this device, and it is reached while signed *out*, where no permission applies. A forgotten
+ *   password and a role that cannot open this screen have the same, still-open way back.
  *
  * These deliberately omit `messageKey`/`group`: they are not nav rows and the palette renders the
  * English {@link PaletteDestination.label} directly, matching how it already lists nav screens.
@@ -309,7 +321,7 @@ export const PALETTE_EXTRA_DESTINATIONS: readonly PaletteDestination[] = [
     feature: 'reports',
     permission: 'reports:read',
   },
-  { to: '/modules', label: 'Manage modules', Icon: ModulesIcon },
+  { to: '/modules', label: 'Manage modules', Icon: ModulesIcon, permission: 'modules:read' },
   // The tag dictionary manager (issue #84), reached from an item/location's tag editor and the
   // palette. No module gate — tags are a core inventory concept — but a role that cannot read
   // tags has no business in the dictionary that defines them.
@@ -331,19 +343,26 @@ export const NAV_GROUP_ORDER: readonly NavGroup[] = ['primary', 'manage', 'syste
 
 /**
  * Routes that are **not** navigable destinations — no nav row, no palette entry — but still put a
- * gated subject's records on screen, so the route guard has to know about them anyway.
+ * gated subject's records on screen, or act on them in bulk, so the route guard has to know about
+ * them anyway.
  *
  * `/deep-link` is the `web+gubbins:` protocol-handler landing: it loads an item by id and opens
  * its full detail dialog, which is the same record `/inventory` shows. `/share-target` is the Web
  * Share Target landing, which creates an item from the shared payload. Both are reached by URL
  * from outside the app, which is precisely the door a hidden nav row does not close.
  *
- * The other off-nav routes are deliberately absent: `/import` and `/lab` write or configure rather
- * than disclose, and the repository layer already refuses a write the role may not make.
+ * `/import` and `/lab` are here for the opposite reason — they write rather than disclose. The
+ * repository layer does refuse an individual write the role may not make, but neither screen is
+ * worth offering to an account that cannot finish what it starts: the importer's whole purpose is
+ * a bulk merge (`import:run`), and the lab seeds synthetic records into the live database and
+ * shifts the clock the rest of the app reads (`storage:write`), which is device-level data
+ * housekeeping rather than an edit to any one record.
  */
 const OFF_NAV_ROUTE_PERMISSIONS: readonly (readonly [string, PermissionKey])[] = [
   ['/deep-link', 'items:read'],
   ['/share-target', 'items:write'],
+  ['/import', 'import:run'],
+  ['/lab', 'storage:write'],
 ];
 
 /** Read one destination's gate as a list, so the map below need not care which form it took. */

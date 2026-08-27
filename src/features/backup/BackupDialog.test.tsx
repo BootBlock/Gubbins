@@ -471,3 +471,51 @@ describe('BackupDialog — what a role is offered (issue #519)', () => {
     expect(screen.getByText(/does not allow creating or restoring backups/i)).toBeTruthy();
   });
 });
+
+describe('BackupDialog — a role that only reads the sync status (issue #429)', () => {
+  // The Sync screen's route admits `sync:read` on its own, and Backup & restore is reachable from
+  // there — so this dialog opens for a session holding neither backup key, and must offer it
+  // nothing at all rather than a destructive Replace.
+  beforeEach(() => {
+    useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+  });
+  afterEach(() => {
+    useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+  });
+
+  function signInWith(grants: readonly string[]): void {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(grants) } });
+  }
+
+  it('offers no restore at all — no tab, no file picker, no Replace', () => {
+    signInWith(['sync:read']);
+    render(<BackupDialog open onClose={() => {}} />);
+
+    expect(screen.queryByRole('tab', { name: /restore/i })).toBeNull();
+    // The picker is what stages a restore, so it goes with the mode it feeds.
+    expect(screen.queryByTestId('restore-backup-input')).toBeNull();
+    expect(screen.queryByTestId('restore-mode-replace')).toBeNull();
+    expect(screen.queryByTestId('restore-backup')).toBeNull();
+  });
+
+  it('offers no export either, and says so once rather than showing an empty dialog', () => {
+    signInWith(['sync:read']);
+    render(<BackupDialog open onClose={() => {}} />);
+
+    expect(screen.queryByTestId('create-backup')).toBeNull();
+    expect(screen.getByText(/does not allow creating or restoring backups/i)).toBeTruthy();
+  });
+
+  it('falls back to the half still held when the authority narrows mid-dialog', () => {
+    // A role change from another device arrives on a sync and is adopted while this is open. The
+    // tab was chosen once, on mount, so without the fallback it would point at a panel that is no
+    // longer rendered — a dialog with a tab rail and nothing under it.
+    render(<BackupDialog open onClose={() => {}} />);
+    expect(screen.getByTestId('create-backup')).toBeTruthy();
+
+    act(() => signInWith(['backup:write']));
+
+    expect(screen.queryByTestId('create-backup')).toBeNull();
+    expect(screen.getByTestId('restore-backup-input')).toBeTruthy();
+  });
+});

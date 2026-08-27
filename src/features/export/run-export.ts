@@ -29,6 +29,8 @@ import { getReportRepository } from '@/db/repositories';
 import { bucketIds } from '@/features/inventory/id-buckets';
 import { toLocationExportRows } from '@/features/inventory/locations-export';
 import { readImageBlob } from '@/features/images/opfs-images';
+import { assertPermissions } from '@/features/users/assert-permission';
+import { currentAuthority } from '@/features/users/current-authority';
 import { download } from './download';
 import { summariseBudget } from '@/features/projects/budget';
 import { moneyDecimals } from '@/lib/money';
@@ -357,8 +359,24 @@ function scopeSuffix(scope: ExportScope, items: readonly Item[]): string {
   return '';
 }
 
-/** Run an export of the chosen format & scope, returning the downloaded filename. */
+/**
+ * Run an export of the chosen format & scope, returning the downloaded filename.
+ *
+ * Gated on `export:run` (issue #429), asserted here — before the first repository read — rather
+ * than in the wizard that calls it. Reading one item at a time and extracting the whole vault to
+ * a file are different acts, which is why `export` is a subject of its own and not an action on
+ * `items`; and a check in a component is not a check, because this function is the seam every
+ * format goes through. It is required *on top of* the subject reads below, each of which still
+ * asserts its own key, so an export can never reach data its session could not otherwise see.
+ *
+ * The pure builders in `./export-data` stay ungated on purpose: they take rows they are handed
+ * and return a string, touching no repository and no session. The `export-vault.worker` is
+ * likewise ungated — it receives a finished `path → text` map and zips it, having no database
+ * access and, as a worker, no session to resolve an authority from.
+ */
 export async function runExport(format: ExportFormat, options: ExportOptions): Promise<string> {
+  assertPermissions(currentAuthority(), ['export:run']);
+
   // §3 Reports CSV (Phase 61): an aggregate report, independent of the item-scope plumbing.
   if (format === 'REPORTS') {
     const kind = options.reportKind ?? 'VALUATION';

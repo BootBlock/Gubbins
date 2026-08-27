@@ -122,12 +122,12 @@ item on two devices — the more recent entry is kept, by the same last-write-wi
 
 > **ℹ️ Note**
 > A [[built-in role|Roles-and-Permissions]] is the one exception to "the more recent record is
-> kept". Gubbins ships with Administrator, Manager, Stocker and Viewer, and those four are
-> permanent — you can rename and retune them, but you cannot delete them. So if a role you created
-> ends up sharing a name with one of them, the built-in role is the one that survives, whichever
-> was edited last, and everyone assigned to your role is moved onto it.
+> kept". Every role Gubbins ships with is permanent — you can rename and retune them, but you
+> cannot delete them. So if a role you created ends up sharing a name with one of them, the
+> built-in role is the one that survives, whichever was edited last, and everyone assigned to your
+> role is moved onto it.
 >
-> Because none of the four can be removed, two *built-in* roles given the same name on two devices
+> Because none of them can be removed, two *built-in* roles given the same name on two devices
 > cannot be merged at all. Nothing is lost and syncing carries on, but each device keeps its own
 > name for one of them, and any other change made to that role on the other device waits with it.
 > Rename one of the two and both devices agree again.

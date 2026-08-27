@@ -237,6 +237,13 @@ export default function SettingsDialog({
   // not the vault's records. The rows that *leave* Settings for a gated screen are not, or the
   // one page everyone can reach becomes a set of buttons to the refusal page (issue #522).
   const mayReachWebhooks = usePermission(ROUTE_PERMISSIONS.get('/webhooks'));
+  // "Data & storage" is the exception to that openness: it reports what this device is holding
+  // and opens the housekeeping tools, which is the vault's data rather than a preference — so
+  // the whole tab answers to `storage:read` and is dropped from the rail for a role without it.
+  const mayReachStorage = usePermission('storage:read');
+  // The Modules manager answers to its own keys, so the row that leaves Settings for it is
+  // hidden for a role holding neither (issue #429).
+  const mayReachModules = usePermission(ROUTE_PERMISSIONS.get('/modules'));
 
   // A configurable nav-tile count picker is shown only when its tile's feature is enabled —
   // a hidden tile has no count to re-point. Keyed by the same route as NAV_COUNT_METRIC_CONFIG.
@@ -248,7 +255,7 @@ export default function SettingsDialog({
   };
   const anyNavCountPicker = NAV_COUNT_ROUTES.some((route) => navCountFeatureOn[route]);
 
-  const tabs: readonly RailTab[] = [
+  const allTabs: readonly RailTab[] = [
     {
       id: 'appearance',
       label: 'Appearance',
@@ -1522,25 +1529,27 @@ export default function SettingsDialog({
               </span>
             )}
           </SettingRow>
-          <SettingRow
-            noWrap
-            label="Manage modules"
-            description="Choose which pages and capabilities appear, from a preset or a granular list. Hidden features stay fully functional underneath."
-            hint={
-              'Opens the **Modules** manager: turn whole pages and capabilities on or off — from a quick preset (e.g. *Simple* vs *Everything*) or a granular list.\n\n' +
-              'Hidden features keep working underneath; only their entry points disappear, so nothing you have already created is lost. Opening this leaves Settings.'
-            }
-          >
-            <Link
-              to="/modules"
-              data-testid="open-modules-settings"
-              onClick={onClose}
-              className={cn(buttonVariants({ variant: 'outline' }))}
+          {mayReachModules ? (
+            <SettingRow
+              noWrap
+              label="Manage modules"
+              description="Choose which pages and capabilities appear, from a preset or a granular list. Hidden features stay fully functional underneath."
+              hint={
+                'Opens the **Modules** manager: turn whole pages and capabilities on or off — from a quick preset (e.g. *Simple* vs *Everything*) or a granular list.\n\n' +
+                'Hidden features keep working underneath; only their entry points disappear, so nothing you have already created is lost. Opening this leaves Settings.'
+              }
             >
-              <ModulesIcon />
-              Manage modules
-            </Link>
-          </SettingRow>
+              <Link
+                to="/modules"
+                data-testid="open-modules-settings"
+                onClick={onClose}
+                className={cn(buttonVariants({ variant: 'outline' }))}
+              >
+                <ModulesIcon />
+                Manage modules
+              </Link>
+            </SettingRow>
+          ) : null}
           {mayReachWebhooks ? (
             <SettingRow
               noWrap
@@ -1585,6 +1594,11 @@ export default function SettingsDialog({
       content: <DangerZone />,
     },
   ];
+
+  // Hidden from the rail *and* from the cross-tab search, so a refused tab leaves nothing
+  // behind. A stored "last tab" pointing at a dropped tab is harmless: RailModal falls back to
+  // the first tab when the selected id is not in the set.
+  const tabs: readonly RailTab[] = allTabs.filter((tab) => tab.id !== 'storage' || mayReachStorage);
 
   return (
     <>

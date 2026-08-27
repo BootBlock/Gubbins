@@ -95,13 +95,12 @@ export interface EraseTarget {
    * **Which key a target names.** The Danger Zone destroys wholesale, so a target names the
    * *delete-strength* key of the subject it is presented as erasing — `items:delete`, not
    * `items:write`, because the roles that stop at `write` (Stocker) are defined as the ones
-   * that cannot delete. Where a subject has no `delete` action its `write` key is the strongest
-   * thing there is, so that is what the target names: `checkouts:write` for the checkout ledger.
-   * That is a limit of the registry rather than a judgement about the data — the subject has no
-   * delete key to ask for — and it does mean a role holding `checkouts:write` can clear the whole
-   * ledger. The two targets naming more than one key delete rows belonging to a subject they are
-   * not named for: `categories` and `field-dictionary` both clear stored custom-field values
-   * outright.
+   * that cannot delete. `checkouts` used to be the exception — the subject had no `delete` action,
+   * so the target named `checkouts:write` and a role that could lend an item could also clear the
+   * whole loan ledger. The registry now declares `checkouts:delete` (issue #429) and the target
+   * asks for it, so that gap is closed rather than documented. The two targets naming more than
+   * one key delete rows belonging to a subject they are not named for: `categories` and
+   * `field-dictionary` both clear stored custom-field values outright.
    *
    * Local-scope targets are gated on `settings:write`, except where a more specific capability
    * owns the value (`sync:write` for the sync links and the cloud sign-in, `bridge:write` for
@@ -311,7 +310,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
   },
   {
     id: 'checkouts',
-    permissions: ['checkouts:write'],
+    permissions: ['checkouts:delete'],
     section: 'inventory',
     label: 'Checkout & loan records',
     tooltip: 'Removes every checkout/loan record. Items and contacts are kept.',
@@ -730,12 +729,15 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     ],
   },
   {
-    // Kept at `settings:write` even though resetting it switches the Users module back off and so
-    // lifts the sign-in gate. Anyone may do that from the Modules screen directly — it is one of
-    // the escape hatches the permission model documents rather than a hole in it — and unlike the
-    // factory reset, this target destroys no records on its way there.
+    // Needs `modules:write` as well as `settings:write`, because resetting this switches the Users
+    // module back off and so lifts the sign-in gate. It was held at `settings:write` alone while
+    // the Modules screen was open to everyone — the reasoning being that this target opened no
+    // door the screen did not. Closing that screen (issue #429) turned the same reasoning around:
+    // left as it was, this entry would be the way around the very permission that now guards the
+    // sign-in gate, and a Manager — which holds `settings:*` and deliberately not `modules:write`
+    // — could take that gate down from the Danger Zone instead.
     id: 'enabled-features',
-    permissions: ['settings:write'],
+    permissions: ['settings:write', 'modules:write'],
     section: 'local',
     label: 'Enabled features',
     tooltip:
@@ -796,10 +798,9 @@ export function eraseTargetPermissions(id: EraseTargetId): readonly PermissionKe
  * `wishlist` are here for the same plain reason: the reset destroys their rows and no catalog
  * entry asks for them.
  *
- * The point is the data, not the authority. Anyone may switch the Users module off from the
- * Modules screen and come back unrestricted — that is a documented, deliberate escape hatch, and
- * no key here closes it. What these keys withhold is the ability to take everyone's records with
- * you on the way.
+ * The point is the data, not the authority. What these keys withhold is the ability to take
+ * everyone's records with you, not the ability to become unrestricted — switching the Users module
+ * off does that, and it answers to `modules:write` rather than to anything here (issue #429).
  */
 const RESET_ONLY_PERMISSIONS: readonly PermissionKey[] = [
   'users:manage',

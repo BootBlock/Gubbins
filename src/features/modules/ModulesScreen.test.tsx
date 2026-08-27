@@ -9,7 +9,7 @@
  * click the option) per the component-test conventions.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 
 // Plain-anchor Link so PageHeader renders without a RouterProvider.
 vi.mock('@tanstack/react-router', () => ({
@@ -43,14 +43,24 @@ vi.mock('@/components/icons', async (importOriginal) => {
 
 import { ModulesScreen } from './ModulesScreen';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 beforeEach(() => {
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
+  // Every test but the permission suite below runs as single-user mode does — unrestricted.
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {}, firstRunComplete: false });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
+
+/** A session that reached the screen on `modules:read` alone — no write authority. */
+function signInReadOnly() {
+  useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['modules:read']) } });
+}
 
 /** Open a feature's on/off combobox and click one of its options. */
 function chooseToggle(featureLabel: string, option: 'On' | 'Off') {
@@ -196,5 +206,66 @@ describe('ModulesScreen — search', () => {
     fireEvent.change(search, { target: { value: 'zzzznope' } });
     expect(screen.getByTestId('modules-no-results')).toBeTruthy();
     expect(screen.queryByRole('combobox')).toBeNull();
+  });
+});
+
+describe('ModulesScreen — read-only session (modules:read without modules:write)', () => {
+  it('still shows the module list and which preset is active', () => {
+    signInReadOnly();
+    render(<ModulesScreen />);
+    expect(screen.getByTestId('preset-everything')).toBeTruthy();
+    // The active card keeps the selected token pair (the check glyph itself is stubbed here).
+    expect(screen.getByTestId('preset-everything').className).toContain('border-primary');
+    expect(screen.getByTestId('preset-minimal').className).not.toContain('border-primary');
+    expect(screen.getByTestId('module-state-reports').textContent).toContain('On');
+    expect(screen.getByTestId('module-locked-inventory').textContent).toContain('Always on');
+  });
+
+  it('renders no mutating control at all', () => {
+    signInReadOnly();
+    render(<ModulesScreen />);
+    expect(screen.queryByTestId('modules-run-setup-again')).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
+    // The preset cards are presentation, not dead buttons.
+    expect(screen.getByTestId('preset-minimal').tagName).toBe('DIV');
+    expect(screen.queryByRole('button', { name: /Minimal/ })).toBeNull();
+  });
+
+  it('reports a module that is off using the same wording as the toggle', () => {
+    useModulesStore.setState({ intent: { reports: false } });
+    signInReadOnly();
+    render(<ModulesScreen />);
+    expect(screen.getByTestId('module-state-reports').textContent).toContain('Off');
+  });
+
+  it('does not apply a preset when the card is clicked anyway', () => {
+    signInReadOnly();
+    render(<ModulesScreen />);
+    fireEvent.click(screen.getByTestId('preset-minimal'));
+    expect(useModulesStore.getState().intent).toEqual({});
+    expect(screen.getByTestId('module-state-reports').textContent).toContain('On');
+  });
+
+  it('does not land a cascade confirmation staged before authority was lost', () => {
+    render(<ModulesScreen />);
+    chooseToggle('Contacts', 'Off');
+    expect(screen.getByRole('dialog', { name: 'Hide Contacts?' })).toBeTruthy();
+
+    // The role loses its write grant while the confirmation is open.
+    act(() => signInReadOnly());
+    fireEvent.click(screen.getByTestId('confirm-cascade'));
+
+    expect(useModulesStore.getState().intent.contacts).toBeUndefined();
+  });
+
+  it('leaves every control in place for a session that does hold modules:write', () => {
+    useSessionStore.setState({
+      authority: { mode: 'granted', grants: new Set(['modules:read', 'modules:write']) },
+    });
+    render(<ModulesScreen />);
+    expect(screen.getByTestId('modules-run-setup-again')).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Reports module' })).toBeTruthy();
+    fireEvent.click(screen.getByTestId('preset-minimal'));
+    expect(useModulesStore.getState().intent.reports).toBe(false);
   });
 });

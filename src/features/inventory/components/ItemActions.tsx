@@ -19,6 +19,7 @@ import {
 import type { Item, LocationWithCount } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useT } from '@/features/i18n';
+import { usePermission } from '@/features/users/usePermission';
 import { useFeature } from '@/features/modules/useFeature';
 import { AddItemToProjectDialog } from '@/features/projects/components/AddItemToProjectDialog';
 import { SellDialog } from '@/features/sales/components/SellDialog';
@@ -110,6 +111,10 @@ export const ItemActions = forwardRef<
   // what to set rather than the action silently not existing, so the feature is discoverable
   // from the item it applies to (the "explain, don't hide" pattern the loan row uses).
   const canWeighCount = item.isActive && item.trackingMode === 'DISCRETE' && !item.isUnlimited;
+  // "Print label…" opens the code dialog, which offers print and an SVG download — the same
+  // printing capability the inventory screen's label dialogs answer for. Left ungated it was the
+  // way around `labels:print` for a single item (issue #429).
+  const mayPrintLabels = usePermission('labels:print');
   const size = compact ? 'size-8' : '';
 
   return (
@@ -162,9 +167,11 @@ export const ItemActions = forwardRef<
         <MenuAction icon={<EditIcon className="text-glyph-edit" />} onSelect={() => setDialog('details')}>
           Edit details…
         </MenuAction>
-        <MenuAction icon={<QrCodeIcon className="text-glyph-scan" />} onSelect={() => setDialog('qr')}>
-          Print label…
-        </MenuAction>
+        {mayPrintLabels ? (
+          <MenuAction icon={<QrCodeIcon className="text-glyph-scan" />} onSelect={() => setDialog('qr')}>
+            Print label…
+          </MenuAction>
+        ) : null}
         <MenuSeparator />
         <MenuAction icon={<MoveIcon className="text-glyph-move" />} onSelect={() => setDialog('move')}>
           Move…
@@ -292,7 +299,7 @@ export const ItemActions = forwardRef<
         <WeighCountDialog item={item} open onClose={() => setDialog(null)} />
       ) : null}
       {dialog === 'details' ? <ItemDetailDialog item={item} open onClose={() => setDialog(null)} /> : null}
-      {dialog === 'qr' ? (
+      {dialog === 'qr' && mayPrintLabels ? (
         <QrCodeDialog
           itemId={item.id}
           itemName={item.name}

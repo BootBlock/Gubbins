@@ -32,6 +32,7 @@ import {
 import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
 import { useStorageStore } from '@/state/stores/useStorageStore';
+import { usePermission } from '@/features/users/usePermission';
 import {
   browserMaintenancePorts,
   checkDatabaseHealth,
@@ -77,6 +78,15 @@ export function DatabaseMaintenanceDialog({ open, onClose }: DatabaseMaintenance
   const { show } = useToast();
   const queryClient = useQueryClient();
   const busy = running !== null;
+  /**
+   * The "Optimise & reclaim" pair rewrites the database file and deletes orphaned photo files
+   * from this device, so both answer to `storage:write` (issue #429) and their whole group is
+   * hidden without it. The checks above stay: they only read.
+   *
+   * The section's own entry point in Settings already requires the same key, so this is the
+   * belt to that brace — it keeps any future host of this dialog honest.
+   */
+  const mayWrite = usePermission('storage:write');
 
   async function onStats() {
     setRunning('stats');
@@ -225,6 +235,8 @@ export function DatabaseMaintenanceDialog({ open, onClose }: DatabaseMaintenance
   }
 
   async function onCompact() {
+    // Guarded as well as hidden, so a stale handler cannot outlive a revoked grant.
+    if (!mayWrite) return;
     setRunning('compact');
     setCompactResult(null);
     try {
@@ -295,6 +307,7 @@ export function DatabaseMaintenanceDialog({ open, onClose }: DatabaseMaintenance
   }
 
   async function onSweep() {
+    if (!mayWrite) return;
     setRunning('sweep');
     setSweepResult(null);
     try {
@@ -409,36 +422,38 @@ export function DatabaseMaintenanceDialog({ open, onClose }: DatabaseMaintenance
           />
         </section>
 
-        <section aria-labelledby="maint-group-actions" className="flex flex-col gap-4">
-          <p
-            id="maint-group-actions"
-            className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-          >
-            Optimise &amp; reclaim
-          </p>
-          <MaintenanceTask
-            icon={<OptimiseIcon />}
-            title="Compact & optimise"
-            description="Merge the search index, refresh statistics and reclaim the space freed by past deletions. The database file only shrinks when you do this."
-            buttonLabel="Optimise"
-            testId="maintenance-compact"
-            running={running === 'compact'}
-            disabled={busy}
-            onRun={() => void onCompact()}
-            result={compactResult}
-          />
-          <MaintenanceTask
-            icon={<SweepIcon />}
-            title="Remove orphaned image files"
-            description="Delete raw photo files left on this device that no item refers to. Photos still attached to an item are never touched."
-            buttonLabel="Sweep"
-            testId="maintenance-sweep"
-            running={running === 'sweep'}
-            disabled={busy}
-            onRun={() => void onSweep()}
-            result={sweepResult}
-          />
-        </section>
+        {mayWrite ? (
+          <section aria-labelledby="maint-group-actions" className="flex flex-col gap-4">
+            <p
+              id="maint-group-actions"
+              className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              Optimise &amp; reclaim
+            </p>
+            <MaintenanceTask
+              icon={<OptimiseIcon />}
+              title="Compact & optimise"
+              description="Merge the search index, refresh statistics and reclaim the space freed by past deletions. The database file only shrinks when you do this."
+              buttonLabel="Optimise"
+              testId="maintenance-compact"
+              running={running === 'compact'}
+              disabled={busy}
+              onRun={() => void onCompact()}
+              result={compactResult}
+            />
+            <MaintenanceTask
+              icon={<SweepIcon />}
+              title="Remove orphaned image files"
+              description="Delete raw photo files left on this device that no item refers to. Photos still attached to an item are never touched."
+              buttonLabel="Sweep"
+              testId="maintenance-sweep"
+              running={running === 'sweep'}
+              disabled={busy}
+              onRun={() => void onSweep()}
+              result={sweepResult}
+            />
+          </section>
+        ) : null}
       </div>
     </Modal>
   );

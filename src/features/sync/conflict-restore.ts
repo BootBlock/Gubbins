@@ -14,6 +14,8 @@
 import { buildSchemaDictionary } from './schema-dictionary';
 import { decodeRowForTable } from './blob-codec';
 import { nonLwwColumns } from './conflict-detect';
+import { assertPermissions } from '@/features/users/assert-permission';
+import { currentAuthority } from '@/features/users/current-authority';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import type { SyncConflict } from './types';
 
@@ -21,8 +23,17 @@ import type { SyncConflict } from './types';
  * Re-apply a conflict's discarded local version as a fresh local edit (so it wins the next
  * sync). Throws if the row can no longer be written (e.g. a parent it referenced is gone) —
  * the caller surfaces that to the user rather than silently dropping the restore.
+ *
+ * Gated on `sync:write` (issue #429). Unlike the sync pass itself — which is device replication
+ * and deliberately ungated (see `sync-engine.ts`) — this is a user *choosing* to overturn a
+ * merge outcome: it resurrects a row a peer deleted, or overwrites the version every other
+ * device agreed on, and the re-stamped `updated_at` then pushes that decision to all of them.
+ * It composes its own SQL and hands it to the driver, so `BaseRepository.assertPermission`
+ * never sees it and the check has to live here.
  */
 export async function restoreConflictVersion(driver: IDatabaseDriver, conflict: SyncConflict): Promise<void> {
+  assertPermissions(currentAuthority(), ['sync:write']);
+
   const dictionary = await buildSchemaDictionary(driver, [conflict.tableName]);
   const columns = dictionary[conflict.tableName] ?? Object.keys(conflict.localVersion);
 

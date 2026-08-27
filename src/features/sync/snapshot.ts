@@ -878,6 +878,13 @@ function reparentHistoryStatement(itemId: string): SqlStatement {
  *
  * The storage Hard Stop for a merge is applied by `mergeSnapshot` (issue #200), not here: this
  * function runs inside the database worker (issue #173), which has no quota telemetry to consult.
+ *
+ * **Deliberately not gated on `sync:write`** (issue #429). This is the apply half of a sync
+ * pass, which `sync-engine.ts` documents as device replication rather than an action against the
+ * vault — a session that could not receive what its peers did (role changes included) would drift
+ * away from the very rules meant to bound it. It is also unreachable from a session in the first
+ * place: its only production caller is `runSnapshotMerge`, which runs in the database worker,
+ * where there is no session to resolve an authority from.
  */
 export async function applyPlan(
   driver: IDatabaseDriver,
@@ -1359,6 +1366,12 @@ export function buildCloneStatements(
  * except where this restore re-creates the very row they deleted, and the backup's tombstones
  * are adopted only for rows that are absent here — so a merge neither removes a live row nor
  * forgets a deletion made since the backup was taken.
+ *
+ * **Deliberately not gated here** (issue #429). The permission check belongs to each caller's
+ * own boundary, and every one of them already has it or cannot have one: the backup restore
+ * asserts `backup:write` before it reaches this (`features/backup/restore-backup.ts`), and the
+ * Bridge's `hydrate` runs under Node with no session store to read an authority from. Asserting
+ * in here would both duplicate the first check under the wrong key and break the second.
  */
 export async function restoreSnapshot(driver: IDatabaseDriver, snapshot: SyncSnapshot): Promise<void> {
   // A merge restore only ever adds, so it observes the storage Hard Stop (issue #200). The

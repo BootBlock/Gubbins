@@ -50,6 +50,8 @@ With the [[Users module|Users-and-Accounts]] switched on, each entry is held to 
 [[permission|Roles-and-Permissions]] as deleting one of those records by hand: *All items* needs
 **Items → Delete**, *Tags* needs **Tags → Delete**, and the **App & this device** entries need
 **Settings → Change** (or **Sync → Change** / **Bridge → Change** for the sync and bridge ones).
+*Enabled features* needs **Modules → Change** on top of Settings, because resetting it switches the
+[[Users module|Modular-UI]] back off and takes the sign-in gate with it.
 An entry that takes other records with it needs their permission too — *All items* also needs the
 permissions for the activity history, checkouts, maintenance schedules and supplier parts it
 removes. **Erase everything** needs the lot, and — because it deletes the whole database rather than a list

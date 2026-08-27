@@ -224,11 +224,57 @@ describe('ROUTE_PERMISSIONS — the promises the wiki makes', () => {
   });
 
   it('leaves the ways back from a restricted session ungated', () => {
-    // The dashboard is where the interstitial sends people, Modules is how a hidden feature
-    // comes back, and About/Settings are this device's own information and preferences. A gate
-    // on any of them could strand an account with nowhere to go.
-    for (const path of ['/', '/about', '/modules', '/settings'] as const) {
+    // The dashboard is where the interstitial sends people, and About/Settings are this device's
+    // own information and preferences. A gate on any of them could strand an account with nowhere
+    // to go.
+    for (const path of ['/', '/about', '/settings'] as const) {
       expect(ROUTE_PERMISSIONS.has(path)).toBe(false);
     }
+  });
+
+  /**
+   * Issue #429. Modules used to be in that list, on the reasoning that it is how a hidden feature
+   * comes back. That reasoning is about the *module* gate, not the permission one: no module being
+   * switched off can hide the screen, and it still carries no `feature`. But the module list is
+   * also the one control that can switch the Users module — and with it the entire sign-in gate —
+   * back off, so leaving it open to every account made every other permission advisory.
+   *
+   * Closing it strands nobody, because the way back does not run through it: the sign-in screen's
+   * own "Can't sign in?" control switches the Users module off on this device, and it is reached
+   * while signed out, where no permission applies.
+   */
+  it('gates the module manager on modules:read', () => {
+    expect(ROUTE_PERMISSIONS.get('/modules')).toEqual(['modules:read']);
+
+    pathname = '/modules';
+    grant('modules:read');
+    render(
+      <RoutePermissionGuard>
+        <Screen />
+      </RoutePermissionGuard>,
+    );
+    expect(screen.getByTestId('real-screen')).toBeTruthy();
+  });
+
+  it('refuses the module manager to a role without it', () => {
+    pathname = '/modules';
+    grant('items:read');
+    render(
+      <RoutePermissionGuard>
+        <Screen />
+      </RoutePermissionGuard>,
+    );
+    expect(screen.queryByTestId('real-screen')).toBeNull();
+  });
+
+  /**
+   * Issue #429: two off-nav screens that write rather than disclose. Neither has a nav row to
+   * hide, so the URL was the whole of their gate — and typing it was enough to merge a supplier's
+   * catalogue into thousands of records, or to seed synthetic rows into the live database and
+   * shift the clock the rest of the app reads.
+   */
+  it('gates the off-nav screens that write', () => {
+    expect(ROUTE_PERMISSIONS.get('/import')).toEqual(['import:run']);
+    expect(ROUTE_PERMISSIONS.get('/lab')).toEqual(['storage:write']);
   });
 });

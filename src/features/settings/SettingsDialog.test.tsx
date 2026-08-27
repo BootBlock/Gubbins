@@ -32,6 +32,8 @@ import SettingsDialog from './SettingsDialog';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useApplyTheme } from './useApplyTheme';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 /** Mounts the reactive appearance-sync hook (as the app's composition root does) with no UI. */
 function ThemeHost() {
@@ -47,10 +49,12 @@ function renderTab(tabName: string) {
 
 beforeEach(() => {
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 afterEach(() => {
   cleanup();
   useModulesStore.setState({ intent: {} });
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
 
 describe('SettingsDialog — all features on (default)', () => {
@@ -417,5 +421,56 @@ describe('SettingsDialog — nav-tile count pickers (A1/A2)', () => {
     expect(screen.queryByTestId('setting-nav-count-/bookings')).toBeNull();
     expect(screen.queryByTestId('setting-nav-count-/inventory')).not.toBeNull();
     expect(screen.queryByRole('heading', { name: 'Nav tile counts' })).not.toBeNull();
+  });
+});
+
+describe('SettingsDialog — permission gating (issue #429)', () => {
+  /** Grants only the keys named, so everything else is refused. */
+  function granted(...keys: readonly string[]) {
+    useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(keys) } });
+  }
+
+  it('offers the Data & storage tab to an unrestricted session', () => {
+    render(<SettingsDialog open onClose={() => {}} />);
+    expect(screen.queryByRole('tab', { name: 'Data & storage' })).not.toBeNull();
+  });
+
+  it('drops the Data & storage tab from the rail without storage:read', () => {
+    granted('settings:read');
+    render(<SettingsDialog open onClose={() => {}} />);
+    expect(screen.queryByRole('tab', { name: 'Data & storage' })).toBeNull();
+    // The tabs it does not gate are untouched — Appearance is every role's.
+    expect(screen.queryByRole('tab', { name: 'Appearance' })).not.toBeNull();
+  });
+
+  it('leaves the refused tab out of the cross-tab search too', () => {
+    granted('settings:read');
+    render(<SettingsDialog open onClose={() => {}} />);
+    fireEvent.change(screen.getByTestId('settings-search'), { target: { value: 'purge' } });
+    expect(screen.queryByTestId('setting-prune-window')).toBeNull();
+  });
+
+  it('lands on the first tab when a stored last-tab points at the refused one', () => {
+    granted('settings:read');
+    render(<SettingsDialog open onClose={() => {}} initialTab="storage" />);
+    expect(screen.getByRole('tab', { name: 'Appearance' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.queryByTestId('setting-prune-window')).toBeNull();
+  });
+
+  it('still honours a stored last-tab of Data & storage when it is permitted', () => {
+    render(<SettingsDialog open onClose={() => {}} initialTab="storage" />);
+    expect(screen.getByRole('tab', { name: 'Data & storage' }).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('hides the Manage modules row for a role that cannot open the manager', () => {
+    granted('settings:read');
+    renderTab('App');
+    expect(screen.queryByTestId('open-modules-settings')).toBeNull();
+  });
+
+  it('keeps the Manage modules row for a role that can open the manager', () => {
+    granted('settings:read', 'modules:read');
+    renderTab('App');
+    expect(screen.queryByTestId('open-modules-settings')).not.toBeNull();
   });
 });

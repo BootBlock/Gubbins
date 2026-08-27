@@ -9,6 +9,18 @@ hidden" prompt).
 
 ![The Modules screen: presets and the full list of pages and capabilities](images/modules.png)
 
+> **ℹ️ Note**
+> With the [[Users module|Users-and-Accounts]] switched on, this screen answers to a
+> [[permission|Roles-and-Permissions]] like any other: **Modules → View** opens it, and **Modules →
+> Change** is needed to switch anything. Without Change you can see which modules are on and change
+> none of them — the presets, the per-module switches, **Run setup again**, the first-run chooser
+> and the **Show this module** button on the "module hidden" prompt are all withheld. That prompt
+> keeps **Continue anyway**, so nothing becomes a dead end.
+>
+> This is the one permission that guards the others: switching **Users** off takes the sign-in gate
+> down with it, so anyone who could do it could give themselves everything. The built-in
+> **Manager** role deliberately gets View without Change for that reason.
+
 ## Two kinds of module
 
 - **Pages** — whole screens: Projects, Purchase orders, Contacts, Bookings, Reports, and more.
@@ -28,7 +40,9 @@ these. No preset switches it on — not even **Everything** — so it never arri
 > **⚠️ Heads-up**
 > Applying a preset switches *off* every module the preset doesn't list, and no preset lists
 > **Users**. So if you have sign-in turned on and then pick a preset, sign-in is switched off. Your
-> accounts and roles are kept, but you'll need to turn the module back on.
+> accounts and roles are kept, but you'll need to turn the module back on. This is exactly why
+> applying a preset needs **Modules → Change** once sign-in is on — and why the first-run chooser
+> is withheld from anyone without it.
 
 > **ℹ️ Note**
 > Turning **Users** on puts a [[sign-in screen|Signing-In]] in front of the app, so Gubbins confirms

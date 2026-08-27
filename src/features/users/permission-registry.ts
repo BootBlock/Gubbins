@@ -56,6 +56,22 @@ export interface PermissionSubjectDef {
  * `users` uses `read`/`manage` because account administration is not usefully divisible —
  * anyone who can edit an account can grant themselves a role, so a separate `users:delete`
  * would be a distinction without a security difference.
+ *
+ * `import`, `export` and `labels` are **bulk capabilities over data a role can already reach**,
+ * which is exactly why they are subjects of their own rather than actions on `items` (issue #429).
+ * Reading one item at a time and extracting the whole vault to a spreadsheet are different acts
+ * with different consequences, and so are editing one record and merging a supplier's catalogue
+ * into thousands. Their single actions are named for what they do — `run`, `print` — because
+ * "change" describes neither.
+ *
+ * `modules` gates the Modular UI screen, and is the one permission that protects the permission
+ * system: switching the Users module off takes the sign-in gate down with it, so leaving that
+ * screen open to every account made every other key here advisory.
+ *
+ * `storage` is device-level data housekeeping — vacuuming, sweeping orphaned images, downgrading
+ * photos, pruning history windows, and the developer lab's seeding and reset. It is deliberately
+ * **not** `maintenance`, which means servicing an asset, and not `settings`, which is this
+ * device's own preferences.
  */
 export const PERMISSION_SUBJECTS = {
   items: { kind: 'entity', actions: ['read', 'write', 'delete'] },
@@ -68,12 +84,17 @@ export const PERMISSION_SUBJECTS = {
   suppliers: { kind: 'entity', actions: ['read', 'write', 'delete'] },
   'purchase-orders': { kind: 'entity', actions: ['read', 'write', 'delete'] },
   bookings: { kind: 'entity', actions: ['read', 'write', 'delete'] },
-  checkouts: { kind: 'entity', actions: ['read', 'write'] },
+  checkouts: { kind: 'entity', actions: ['read', 'write', 'delete'] },
   maintenance: { kind: 'entity', actions: ['read', 'write', 'delete'] },
   wishlist: { kind: 'entity', actions: ['read', 'write', 'delete'] },
   reports: { kind: 'capability', actions: ['read'] },
   audit: { kind: 'capability', actions: ['view', 'delete'] },
+  import: { kind: 'capability', actions: ['run'] },
+  export: { kind: 'capability', actions: ['run'] },
+  labels: { kind: 'capability', actions: ['print'] },
   settings: { kind: 'capability', actions: ['read', 'write'] },
+  modules: { kind: 'capability', actions: ['read', 'write'] },
+  storage: { kind: 'capability', actions: ['read', 'write'] },
   users: { kind: 'capability', actions: ['read', 'manage'] },
   backup: { kind: 'capability', actions: ['read', 'write'] },
   sync: { kind: 'capability', actions: ['read', 'write'] },
@@ -82,6 +103,15 @@ export const PERMISSION_SUBJECTS = {
 
 /** A declared subject slug. */
 export type PermissionSubject = keyof typeof PERMISSION_SUBJECTS;
+
+/**
+ * A declared action slug, across every subject.
+ *
+ * Closed rather than `string` so a display seam keyed by action — the role editor's column
+ * labels and its help copy — is checked against the registry instead of casting a bare string
+ * into a catalog key and rendering `users.action.undefined` when the two drift.
+ */
+export type PermissionAction = (typeof PERMISSION_SUBJECTS)[PermissionSubject]['actions'][number];
 
 /** Every subject slug, in declaration order. */
 export const PERMISSION_SUBJECT_IDS = Object.keys(PERMISSION_SUBJECTS) as readonly PermissionSubject[];
@@ -151,4 +181,55 @@ export function splitGrant(value: string): readonly [subject: string, action: st
 /** Every key belonging to one subject, in declaration order. */
 export function permissionKeysFor(subject: PermissionSubject): readonly PermissionKey[] {
   return PERMISSION_SUBJECTS[subject].actions.map((action) => `${subject}:${action}` as PermissionKey);
+}
+
+/**
+ * The three columns the role editor lays its actions out in (issue #429).
+ *
+ * Actions are not uniform across subjects — the audit trail is `view`/`delete`, an account is
+ * `read`/`manage`, an import is `run` — so an editor that rendered each subject's actions in
+ * declaration order put the audit trail's **Delete** box directly beneath Items' **Change**.
+ * Every box lined up with the wrong meaning, which is precisely the mistake a permission grid
+ * must never invite.
+ *
+ * Mapping each action to a *slot* fixes the columns instead. A subject that has no action in a
+ * slot leaves that cell empty, so a column means one thing all the way down.
+ */
+export type PermissionActionSlot = 'view' | 'change' | 'delete';
+
+/** The slots, left to right. */
+export const PERMISSION_ACTION_SLOT_IDS: readonly PermissionActionSlot[] = ['view', 'change', 'delete'];
+
+/**
+ * Which column each action belongs in.
+ *
+ * Every action any subject declares must appear here, or the grid would silently drop its
+ * checkbox and the role editor would offer no way to grant it — a missing box reads as "this
+ * role cannot", not as "this build forgot". A registry test asserts the coverage.
+ */
+export const PERMISSION_ACTION_SLOTS = {
+  read: 'view',
+  view: 'view',
+  write: 'change',
+  manage: 'change',
+  run: 'change',
+  print: 'change',
+  delete: 'delete',
+} as const satisfies Record<string, PermissionActionSlot>;
+
+/** The column `action` belongs in, or `undefined` for an action this build does not place. */
+export function actionSlot(action: string): PermissionActionSlot | undefined {
+  return (PERMISSION_ACTION_SLOTS as Record<string, PermissionActionSlot | undefined>)[action];
+}
+
+/**
+ * The key `subject` declares in `slot`, or `undefined` when it has none — the empty cell that
+ * keeps the column honest.
+ */
+export function permissionKeyInSlot(
+  subject: PermissionSubject,
+  slot: PermissionActionSlot,
+): PermissionKey | undefined {
+  const action = PERMISSION_SUBJECTS[subject].actions.find((candidate) => actionSlot(candidate) === slot);
+  return action === undefined ? undefined : (`${subject}:${action}` as PermissionKey);
 }

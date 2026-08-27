@@ -10,6 +10,9 @@ import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-libra
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/components/foundry';
 import { DatabaseMaintenanceDialog } from './DatabaseMaintenanceDialog';
+import { DatabaseMaintenance } from './DatabaseMaintenance';
+import { useSessionStore } from '@/state/stores/useSessionStore';
+import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 
 const mockCompact = vi.hoisted(() => vi.fn());
 const mockHealth = vi.hoisted(() => vi.fn());
@@ -61,8 +64,17 @@ beforeEach(() => {
   mockSearch.mockReset();
   mockStock.mockReset();
   mockMissing.mockReset();
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+});
+
+/** A session that may look but not touch: read-only everywhere, no `storage:write`. */
+function readOnlySession() {
+  useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(['storage:read']) } });
+}
 
 describe('DatabaseMaintenanceDialog', () => {
   it('renders every task card', () => {
@@ -268,5 +280,30 @@ describe('DatabaseMaintenanceDialog', () => {
     await waitFor(() => {
       expect(screen.getByTestId('maintenance-missing-result').textContent).toMatch(/present/i);
     });
+  });
+});
+
+describe('Database maintenance — storage:write gating (issue #429)', () => {
+  it('hides the Optimise & reclaim group, keeping the read-only checks', () => {
+    readOnlySession();
+    renderDialog();
+    for (const id of ['stats', 'health', 'search', 'stock', 'missing']) {
+      expect(screen.getByTestId(`maintenance-${id}-run`)).toBeTruthy();
+    }
+    expect(screen.queryByTestId('maintenance-compact-run')).toBeNull();
+    expect(screen.queryByTestId('maintenance-sweep-run')).toBeNull();
+    expect(screen.queryByText(/optimise & reclaim/i)).toBeNull();
+  });
+
+  it('drops the whole Settings section without storage:write', () => {
+    readOnlySession();
+    render(<DatabaseMaintenance />);
+    expect(screen.queryByTestId('open-database-maintenance')).toBeNull();
+    expect(screen.queryByRole('heading', { name: /database maintenance/i })).toBeNull();
+  });
+
+  it('offers the Settings section to an unrestricted session', () => {
+    render(<DatabaseMaintenance />);
+    expect(screen.queryByTestId('open-database-maintenance')).not.toBeNull();
   });
 });

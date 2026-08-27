@@ -25,6 +25,14 @@
  * Everything else a sync pass does — the quota Hard Stop, the clock measurement, the provider
  * transport, `sync_meta` — stays in the orchestrator, which is where the browser-only and
  * network-only concerns belong.
+ *
+ * **Nothing here is gated on `sync:write`, deliberately** (issue #429). Two reasons, either of
+ * which would be enough. It is the apply half of a sync pass, which `./sync-engine` documents as
+ * device replication rather than an action against the vault — including the replication of the
+ * role and permission rows themselves. And it runs inside the database worker (see above), which
+ * holds no session and therefore has no authority to check; the boundary for a sync belongs on
+ * the main thread with the orchestrator, or at the Bridge's `POST /api/v1/snapshot`, which does
+ * hold `sync:write`.
  */
 // The defining module, not the `@/db/repositories` barrel — see the note in ./snapshot.
 import {

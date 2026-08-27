@@ -1,7 +1,7 @@
 /**
  * Translate-only-while-default labels for the built-in roles (issue #406).
  *
- * The four shipped roles are **persisted rows**, not static copy: they are seeded from
+ * The shipped roles are **persisted rows**, not static copy: they are seeded from
  * `builtin-roles.ts` and an operator may rename one or rewrite its description. That rules out
  * rendering them through `t()` unconditionally — doing so would silently overwrite a name someone
  * deliberately chose, in the display layer, with no way to get it back.
@@ -22,9 +22,13 @@
 import type { MessageKey } from '@/features/i18n';
 import {
   ADMINISTRATOR_ROLE_ID,
+  AUDITOR_ROLE_ID,
   BUILTIN_ROLES,
+  LOANS_DESK_ROLE_ID,
   MANAGER_ROLE_ID,
+  PURCHASER_ROLE_ID,
   STOCKER_ROLE_ID,
+  TECHNICIAN_ROLE_ID,
   VIEWER_ROLE_ID,
   type BuiltinRoleDef,
 } from './builtin-roles';
@@ -38,6 +42,10 @@ const BUILTIN_ROLE_SLUGS: Readonly<Record<string, string>> = {
   [MANAGER_ROLE_ID]: 'manager',
   [STOCKER_ROLE_ID]: 'stocker',
   [VIEWER_ROLE_ID]: 'viewer',
+  [AUDITOR_ROLE_ID]: 'auditor',
+  [PURCHASER_ROLE_ID]: 'purchaser',
+  [TECHNICIAN_ROLE_ID]: 'technician',
+  [LOANS_DESK_ROLE_ID]: 'loansDesk',
 };
 
 /** The minimum shape this seam needs — anything carrying a role's identity and its stored text. */
