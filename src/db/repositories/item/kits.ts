@@ -33,7 +33,10 @@
  *
  * The containment graph must stay acyclic (a kit cannot contain itself, directly or transitively);
  * the trivial one-hop case is a DB CHECK, deeper cycles are rejected here by walking the proposed
- * component's descendant set and letting the pure `validateKitLink` decide.
+ * component's descendant set and letting the pure `validateKitLink` decide. That guard is a read-then-write
+ * check across sibling rows, so it holds on one device only — a sync merge can still close the
+ * graph into a loop, which `reconcile` repairs post-merge and {@link readKitGraph} tolerates
+ * (issue #539).
  */
 import { DbError } from '../../errors';
 import { kitRejectionMessage, validateKitLink } from '@/features/inventory/kits';
@@ -391,9 +394,13 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
     /**
      * Build the kit containment graph rooted at `kitId` — the kit plus every item it transitively
      * contains — as a nested {@link KitTreeNode} tree (shared nodes de-duplicated so a diamond is
-     * one node), paired with a per-item {@link ItemMeta} map for the ledger dispatch. Termination
-     * is guaranteed by the acyclic-containment invariant. Discovery walks the edges level by level;
-     * the item rows are then read in one batched query.
+     * one node), paired with a per-item {@link ItemMeta} map for the ledger dispatch. Discovery
+     * walks the edges level by level; the item rows are then read in one batched query.
+     *
+     * Termination does **not** rest on the acyclic-containment invariant: that invariant is
+     * enforced per device at write time, and a sync merge can close the graph into a loop across
+     * two of them (issue #539). Both the discovery walk and the tree build therefore carry their
+     * own guard, so a corrupt graph yields a truncated tree rather than overflowing the stack.
      */
     private async readKitGraph(kitId: string): Promise<{ tree: KitTreeNode; meta: Map<string, ItemMeta> }> {
       const edgesById = new Map<string, { componentId: string; quantity: number }[]>();
@@ -417,13 +424,25 @@ export function withKits<TBase extends Constructor<ItemCoreRepository>>(Base: TB
 
       const meta = await this.loadItemMeta([...edgesById.keys()], kitIds);
       const built = new Map<string, KitTreeNode>();
+      const open = new Set<string>();
       const build = (id: string): KitTreeNode => {
         const cached = built.get(id);
         if (cached) return cached;
         const m = meta.get(id)!;
+        open.add(id);
+        // An edge back into an item still open further up this branch closes a containment loop.
+        // The write-time validator makes that unreachable on one device, but the graph is an edge
+        // table that a merge can close into a loop across two (issue #539 — repaired post-merge in
+        // `reconcile`), and recursing into one would overflow the stack inside the database worker.
+        // The back edge is therefore dropped outright rather than followed. It cannot instead be
+        // rendered as a childless stub node: `flattenKit` keys the tree by item id, so a stub would
+        // re-form the very loop this drops, and the roll-up's topological walk would then recurse
+        // on it. A merged graph is repaired within the sync that produced it, so the truncated
+        // sub-tree is what the kit reads as only until then.
         const components = (edgesById.get(id) ?? [])
-          .filter((e) => meta.has(e.componentId))
+          .filter((e) => meta.has(e.componentId) && !open.has(e.componentId))
           .map((e) => ({ quantity: e.quantity, node: build(e.componentId) }));
+        open.delete(id);
         const node: KitTreeNode = { itemId: id, name: m.name, stock: m.stock, components };
         built.set(id, node);
         return node;

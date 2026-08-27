@@ -90,6 +90,12 @@ Kit definitions travel with the rest of your data: they're included in
 > If two devices add the *same* component to the *same* kit while offline, the merge keeps one
 > line rather than duplicating it — whichever edit was made most recently sets the quantity.
 
+> **⚠️ Heads-up**
+> A kit can never end up inside itself. If two devices offline nest the same pair of kits the
+> opposite way round — one puts *Y* inside *X*, the other puts *X* inside *Y* — the merge keeps the
+> link made **first** and removes the one that closes the circle. See
+> [[Cloud sync → kits inside each other|Cloud-Sync]].
+
 ## Related pages
 
 - **[[Projects & BOM|Projects-and-BOM]]** — for one-off builds with budgets.

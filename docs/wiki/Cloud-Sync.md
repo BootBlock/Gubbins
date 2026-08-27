@@ -175,6 +175,16 @@ Gubbins keeps the one the shelves can actually account for and discards the othe
 device returns the asset, both do, or neither does, the count comes out the same as it would have
 had the whole thing happened on one device.
 
+### When two devices put kits inside each other
+
+A [[kit|Kits-and-Bundles]] can contain another kit, but never itself — not directly, and not round
+a longer chain. Gubbins refuses a link that would double back on itself, though two devices offline
+can't see each other's kit edits: one can add kit *Y* to *X* while the other adds *X* to *Y*, and
+each move is perfectly legal where it was made. When they sync, Gubbins keeps the link that was
+**made first** and removes the later one that closes the circle, so the kit keeps a sensible parts
+list on both devices. The Sync screen notes it in the summary when it happens; re-add the component
+you actually wanted on either device afterwards.
+
 ### When a borrower is deleted on another device
 
 A [[loan|Loans-Check-Out-and-In]] is always taken out against a borrower — a [[contact|Contacts]],

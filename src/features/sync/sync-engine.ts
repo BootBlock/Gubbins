@@ -69,6 +69,8 @@ export interface SyncResult {
   readonly serialisedLoansClosed: number;
   /** Issue #194: bookings the merge cancelled because they double-booked an asset (booked offline on two devices). */
   readonly bookingsCancelled: number;
+  /** Issue #539: kit component links the merge removed because they closed a containment loop (nested offline on two devices). */
+  readonly kitLinksBroken: number;
   /** Issue #542: loans the merge kept closed against a peer's newer still-open copy (returned offline). */
   readonly loanReturnsPreserved: number;
   /** Expired tombstones pruned (§7.2 TTL). */
@@ -304,6 +306,7 @@ export async function runSync(
     rejectedCycles: outcome.rejectedCycles,
     serialisedLoansClosed: outcome.serialisedLoansClosed,
     bookingsCancelled: outcome.bookingsCancelled,
+    kitLinksBroken: outcome.kitLinksBroken,
     loanReturnsPreserved: outcome.loanReturnsPreserved,
     clockOffset: offset,
     historyInserted: outcome.historyInserted,
@@ -362,6 +365,7 @@ function result(status: SyncResult['status'], partial: Partial<SyncResult>): Syn
     rejectedCycles: partial.rejectedCycles ?? 0,
     serialisedLoansClosed: partial.serialisedLoansClosed ?? 0,
     bookingsCancelled: partial.bookingsCancelled ?? 0,
+    kitLinksBroken: partial.kitLinksBroken ?? 0,
     loanReturnsPreserved: partial.loanReturnsPreserved ?? 0,
     prunedTombstones: partial.prunedTombstones ?? 0,
     clockOffset: partial.clockOffset ?? 0,
