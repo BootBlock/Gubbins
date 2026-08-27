@@ -152,6 +152,19 @@ clash with it, since the asset could only really be held by one of them. The can
 on record (marked *cancelled*) rather than vanishing, and the Sync screen notes it in the summary
 when it happens. Bookings for the same asset on dates that *don't* overlap are all kept.
 
+### When the same booking is checked out on two devices
+
+Checking a [[booking|Bookings]] out turns the reservation into a [[loan|Loans-Check-Out-and-In]],
+and a booking becomes a loan exactly once. Two devices offline can't see each other, so each *can*
+check the same booking out. When they sync, Gubbins recognises the two as the **one** hand-over they
+were meant to be and merges them into a single loan, rather than recording the asset out to two
+borrowers. The asset's on-hand count drops by the one unit that actually left, so returning the loan
+puts that unit back and the count is right again.
+
+If the two devices checked the booking out to different people, the merge keeps one of them — the
+[[most recent edit|Cloud-Sync]], as with any other detail two devices disagree on. Check the loan
+after a sync if it matters who has it.
+
 ### Reviewing overwritten edits
 
 Last-write-wins means one side's change to that same field is set aside. So you never lose that
