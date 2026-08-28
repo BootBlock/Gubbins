@@ -17,6 +17,16 @@
  * gated by the `dashboardCommandPalette` preference; when off, nothing renders and no
  * shortcut is bound.
  *
+ * **Item search reads by relevance, not alphabetically** (issue #629). The palette shows at most
+ * {@link MAX_RESULTS} rows, so which rows it *ranks* decides what it can ever offer. Reading one
+ * page of the ordinary item list gave it the alphabetically-first fifty matches, and a query
+ * matching more than that could leave the item literally named after the query outside the pool
+ * entirely — present in the database, absent from the palette, with nothing on screen to say so.
+ * It reads {@link useItemRelevanceSearch} instead: the closest matches over the *whole* match set,
+ * plus how many matched. So `rankFuzzy` now re-ranks the best candidates rather than the
+ * alphabetically first ones, and a final row discloses the rest rather than letting a full list
+ * imply there is nothing else.
+ *
  * **Quick actions** (find → act): once an item is surfaced you can act on it without leaving
  * the palette — mirroring the scanner's scan→act card. Enter still opens the item (the
  * unchanged default); a secondary affordance (ArrowRight from the input, or the row's chevron
@@ -47,7 +57,8 @@ import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
 import { usePermission, usePermissionCheck } from '@/features/users/usePermission';
 import { useErrorMessage } from '@/features/errors';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import { useInventoryItems, useItem, useLocations } from '@/features/inventory/queries';
+import { useItemRelevanceSearch, useItem, useLocations } from '@/features/inventory/queries';
+import { useT } from '@/features/i18n';
 import { useMoveItem } from '@/features/inventory/mutations';
 import { useCheckoutItem } from '@/features/contacts/contacts';
 import { QuantityStepper } from '@/features/inventory/components/QuantityStepper';
@@ -57,6 +68,17 @@ import { useCommandPaletteStore } from './useCommandPaletteStore';
 
 /** Cap on results shown — a quick picker, not a full list (that's the Inventory screen). */
 const MAX_RESULTS = 8;
+
+/**
+ * How many of the closest matches the client re-ranks before picking the rows it shows.
+ *
+ * The database already returns these best-first, so the pool is a *refinement* window, not the
+ * search itself: it gives `rankFuzzy` enough candidates to promote an exact name match that BM25
+ * scored a little below a longer one, without shipping a page of rows nobody will see. Widening it
+ * cannot rescue an item the relevance ordering ranked below the pool — that is what the disclosure
+ * row is for.
+ */
+const SEARCH_POOL = 50;
 
 /** The prefix that flips the palette from item search into screen-jump mode. */
 const SCREEN_PREFIX = '>';
@@ -79,18 +101,23 @@ export function CommandPalette() {
   return <PaletteBody onClose={() => setOpen(false)} />;
 }
 
-/** A single row in the palette — either a screen destination or a matched item. */
+/**
+ * A single row in the palette — a screen destination, a matched item, or the final row that says
+ * how many items matched altogether and hands the query to the Inventory screen (issue #629).
+ */
 type PaletteEntry =
   | { readonly kind: 'screen'; readonly dest: PaletteDestination; readonly positions: readonly number[] }
   | {
       readonly kind: 'item';
       readonly item: { readonly id: string; readonly name: string };
       readonly positions?: readonly number[];
-    };
+    }
+  | { readonly kind: 'all'; readonly total: number };
 
 /** Stable DOM id for a row, used to wire `aria-activedescendant`. */
 function optionId(entry: PaletteEntry): string {
-  return entry.kind === 'screen' ? `cmdk-screen-${entry.dest.to}` : `cmdk-opt-${entry.item.id}`;
+  if (entry.kind === 'screen') return `cmdk-screen-${entry.dest.to}`;
+  return entry.kind === 'all' ? 'cmdk-see-all' : `cmdk-opt-${entry.item.id}`;
 }
 
 function PaletteBody({ onClose }: { readonly onClose: () => void }) {
@@ -99,6 +126,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const enabledFeatures = useEnabledFeatures();
   const allows = usePermissionCheck();
   const hints = useHotkeyHints();
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const [query, setQuery] = useState('');
@@ -111,8 +139,8 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   // Focus the input once open — after the Modal's own focus effect has run (it parks
   // focus on the dialog container), so a quick timeout reliably wins it back.
   useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 0);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => inputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
   }, []);
 
   // Screen mode is decided from the live query (a tiny client-side list — no need to wait).
@@ -122,8 +150,8 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
 
   // Debounce only the item search so each keystroke doesn't hit the worker.
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(query.trim()), 200);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setDebounced(query.trim()), 200);
+    return () => clearTimeout(timer);
   }, [query]);
 
   // Typing again dismisses any open action panel and returns to browsing the results.
@@ -138,7 +166,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   const mayReadItems = usePermission('items:read');
   const itemSearch = isScreenMode || !mayReadItems ? '' : debounced;
   const hasItemQuery = itemSearch.length > 0;
-  const itemsQuery = useInventoryItems(hasItemQuery ? { search: itemSearch } : {});
+  const itemsQuery = useItemRelevanceSearch(itemSearch, SEARCH_POOL, hasItemQuery);
   const loading = hasItemQuery && itemsQuery.isPending;
 
   const entries = useMemo<readonly PaletteEntry[]>(() => {
@@ -156,7 +184,8 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
       }));
     }
     if (!hasItemQuery) return [];
-    const rows = itemsQuery.data?.pages.flatMap((p) => p.rows) ?? [];
+    const rows = itemsQuery.data?.rows ?? [];
+    const total = itemsQuery.data?.total ?? 0;
     // Re-rank the worker's hits by the fuzzy score so the closest name wins; keep any rows
     // that matched on another field (and so don't fuzzy-match the name) after them, rather
     // than dropping valid results.
@@ -165,9 +194,19 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     const rest = rows
       .filter((r) => !matched.has(r.id))
       .map((item) => ({ item, positions: undefined as readonly number[] | undefined }));
-    return [...ranked.map((r) => ({ item: r.item, positions: r.match.positions })), ...rest]
-      .slice(0, MAX_RESULTS)
+    // Say what is being left out. Without that last row, a full list reads as "there are this
+    // many", and the user's reasonable conclusion when their item isn't among them is that it
+    // isn't there. It costs one item row rather than a ninth: the list is a fixed-height scroller,
+    // so a row appended past the bottom would sit exactly where nobody looks.
+    const capped = total > MAX_RESULTS;
+    const shown: PaletteEntry[] = [
+      ...ranked.map((r) => ({ item: r.item, positions: r.match.positions })),
+      ...rest,
+    ]
+      .slice(0, capped ? MAX_RESULTS - 1 : MAX_RESULTS)
       .map(({ item, positions }) => ({ kind: 'item' as const, item, positions }));
+    if (capped) shown.push({ kind: 'all', total });
+    return shown;
   }, [isScreenMode, screenQuery, hasItemQuery, itemSearch, itemsQuery.data, enabledFeatures, allows]);
 
   // Keep the active row in range as results change.
@@ -187,11 +226,13 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     row?.scrollIntoView({ block: 'nearest' });
   }, [active, activeEntry, acting]);
 
-  // Jump to an item's full record: seed the Inventory screen's search + go there, then close
-  // the palette. The shared "open details" path — Enter's default and the panel's primary.
-  const openItem = (name: string) => {
+  // Hand a query to the Inventory screen and go there, then close the palette. Seeding its
+  // quick-search box is how the palette reaches the item list at all — the detail view is dialog
+  // state with no deep-linkable route. An item's name opens that one item ("open details", Enter's
+  // default and the panel's primary); the raw query opens the whole match set (the "see all" row).
+  const openInInventory = (search: string) => {
     onClose();
-    useInventoryEntry.getState().requestSearch(name);
+    useInventoryEntry.getState().requestSearch(search);
     void navigate({ to: '/inventory' });
   };
 
@@ -206,8 +247,10 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
         return;
       }
       void navigate({ to: entry.dest.to });
+    } else if (entry.kind === 'all') {
+      openInInventory(itemSearch);
     } else {
-      openItem(entry.item.name);
+      openInInventory(entry.item.name);
     }
   };
 
@@ -290,7 +333,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
           key={acting.id}
           item={acting}
           onBack={closeActions}
-          onOpenDetails={() => openItem(acting.name)}
+          onOpenDetails={() => openInInventory(acting.name)}
         />
       ) : (
         <>
@@ -348,6 +391,17 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
                     label={entry.item.name}
                     positions={entry.positions}
                     testid="command-palette-result"
+                  />
+                ) : entry.kind === 'all' ? (
+                  <EntryRow
+                    key="see-all"
+                    id={optionId(entry)}
+                    active={index === active}
+                    onSelect={() => select(index)}
+                    onHover={() => setActive(index)}
+                    icon={<SearchIcon aria-hidden />}
+                    label={t('commandPalette.seeAllResults', { vars: { count: entry.total } })}
+                    testid="command-palette-see-all"
                   />
                 ) : null,
               )
