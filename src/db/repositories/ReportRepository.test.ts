@@ -2895,13 +2895,22 @@ describe('ReportRepository', () => {
     /**
      * Issue #683, at the totals. A gauge's line is *quantified* by its contents — 400 g reads as
      * "400 g" on the page — but a section's "in stock" figure is a count of units, and grams are
-     * not a count. Drop the `WHEN isGauge THEN 0` arm from the summary's quantity `SUM` and the
-     * spool's 400 g is silently added to the units in stock; this is the test that goes red.
+     * not a count. Two independent ways of getting that wrong are covered here, because the
+     * summary sums quantity and value from **different** expressions and either could be made to
+     * follow the other:
+     *
+     *  - Sum the quantity through `valuedAmountSql` — the seam the *value* multiplies by, which
+     *    answers a gauge with its contents — and the spool's 400 g lands in the units in stock.
+     *  - Drop the summary's `WHEN isGauge THEN 0` arm and a gauge carrying a stray non-zero
+     *    `items.quantity` starts counting. The app never writes one (a gauge's count is pinned at
+     *    0), so the second fixture below sets the column directly: that arm is a defence against a
+     *    value arriving from a sync merge, and a defence nothing exercises is a defence that has
+     *    already been deleted in every way but the text.
      */
     it('values a gauge from its contents but keeps its measure out of the in-stock count', async () => {
       const shelf = await locations.create({ name: 'Shelf A' });
       await items.create({ name: 'Bolt', locationId: shelf.id, quantity: 3, unitCost: 2 });
-      await items.create({
+      const spool = await items.create({
         name: 'Spool',
         locationId: shelf.id,
         trackingMode: 'CONSUMABLE_GAUGE',
@@ -2915,16 +2924,24 @@ describe('ReportRepository', () => {
       });
 
       const catalogue = await readCatalogue({ kind: 'all' });
-      const spool = catalogue.groups[0].lines.find((l) => l.name === 'Spool')!;
+      const line = catalogue.groups[0].lines.find((l) => l.name === 'Spool')!;
       // The line is quantified and valued by what it holds — 400 g at 0.025 is 10.
-      expect(spool.quantity).toBe(400);
-      expect(spool.measured).toBe(true);
-      expect(spool.lineValue).toBe(10);
+      expect(line.quantity).toBe(400);
+      expect(line.measured).toBe(true);
+      expect(line.lineValue).toBe(10);
       // …and the section and document totals count the bolts only, while valuing both.
       expect(catalogue.groups[0].totalQuantity).toBe(3);
       expect(catalogue.totalQuantity).toBe(3);
       expect(catalogue.groups[0].subtotal).toBe(16);
       expect(catalogue.grandTotal).toBe(16);
+
+      // A gauge whose count column is not the 0 the app writes: still not a count of units.
+      await driver.execute('UPDATE items SET quantity = 7 WHERE id = ?;', [spool.id]);
+      const withStrayCount = await readCatalogue({ kind: 'all' });
+      expect(withStrayCount.groups[0].totalQuantity).toBe(3);
+      expect(withStrayCount.totalQuantity).toBe(3);
+      // The gauge is still valued from its contents, not from that count.
+      expect(withStrayCount.grandTotal).toBe(16);
     });
 
     it('reports a scope nothing prices as having no value at all', async () => {
