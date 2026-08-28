@@ -8,21 +8,19 @@ import { useT } from '@/features/i18n';
 import type { ItemDensity } from '@/state/stores/useLayoutStore';
 import { inventoryEmptyState, type InventoryEmptyContext } from '../inventory-empty-state';
 import { LIST_ROW_HEIGHT as ROW_HEIGHT, listRowCount, resolveListRow } from '../list-window';
-import { ItemCard } from './ItemCard';
-import { ItemRow } from './ItemRow';
+import { densityColumnWidth, densityGridStyle, densityVirtualRowClass } from '../density-layout';
 import { ItemTableHeader, ItemTableRow } from './ItemTable';
 import { tableFieldColumns, tableGridColumns } from './item-table-columns';
 import { SubLocationNav } from './SubLocationNav';
-import { cardFieldProps, itemCardProps, type CardFieldsListContext } from './card-fields-render';
+import { ItemPresentation } from './ItemPresentation';
+import { type CardFieldsListContext } from './card-fields-render';
 import type { ItemSelection } from './inventory-ui';
-
-const VISUAL_CARD_MIN_WIDTH = 280;
 
 /**
  * Virtualised item list (spec §2.1, §3). Pages from `useInventoryItems` are
  * flattened and rendered through @tanstack/react-virtual, so only on-screen rows
- * exist in the DOM even with 100,000+ items. In Visual density, items are grouped
- * into responsive multi-column virtual rows; in Data density, one item per row.
+ * exist in the DOM even with 100,000+ items. The multi-column modes (Card, Gallery)
+ * pack several items into each responsive virtual row; the rest draw one item per row.
  * Reaching the end fetches the next page.
  */
 export function ItemList({
@@ -233,7 +231,9 @@ export function ItemList({
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >
               {resident ? (
-                isTable ? (
+                // Compared against the literal rather than the hoisted `isTable`, so TypeScript
+                // narrows `density` for the per-item fork in the other arm.
+                density === 'table' ? (
                   firstItem ? (
                     <ItemTableRow
                       item={firstItem}
@@ -256,48 +256,27 @@ export function ItemList({
                 ) : (
                   <div
                     role="presentation"
-                    className={density === 'data' ? 'pb-1.5' : 'grid gap-4 pb-4'}
-                    style={
-                      density === 'data'
-                        ? undefined
-                        : { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
-                    }
+                    className={densityVirtualRowClass(density)}
+                    style={densityGridStyle(density, columns)}
                   >
-                    {rowItems.map((item, column) => {
-                      const selected = selectedIds?.has(item.id) ?? false;
-                      // 1-based absolute position: the resident window starts at `firstItemIndex`,
-                      // and `start` is this row's offset into it.
-                      const posInSet = firstItemIndex + start + column + 1;
-                      return density === 'data' ? (
-                        <ItemRow
-                          key={item.id}
-                          item={item}
-                          locations={locations}
-                          locationName={locationName(item.locationId)}
-                          locationColorClass={locationColorClass?.(item.locationId)}
-                          locationTintClass={locationTintClass?.(item.locationId)}
-                          selection={selection}
-                          selected={selected}
-                          ariaPosInSet={posInSet}
-                          ariaSetSize={setSize}
-                          {...cardFieldProps(cardFields, item)}
-                        />
-                      ) : (
-                        <ItemCard
-                          key={item.id}
-                          item={item}
-                          locations={locations}
-                          locationName={locationName(item.locationId)}
-                          locationColorClass={locationColorClass?.(item.locationId)}
-                          locationTintClass={locationTintClass?.(item.locationId)}
-                          selection={selection}
-                          selected={selected}
-                          ariaPosInSet={posInSet}
-                          ariaSetSize={setSize}
-                          {...itemCardProps(cardFields, item)}
-                        />
-                      );
-                    })}
+                    {rowItems.map((item, column) => (
+                      <ItemPresentation
+                        key={item.id}
+                        density={density}
+                        item={item}
+                        locations={locations}
+                        locationName={locationName}
+                        locationColorClass={locationColorClass}
+                        locationTintClass={locationTintClass}
+                        selection={selection}
+                        selected={selectedIds?.has(item.id) ?? false}
+                        // 1-based absolute position: the resident window starts at
+                        // `firstItemIndex`, and `start` is this row's offset into it.
+                        ariaPosInSet={firstItemIndex + start + column + 1}
+                        ariaSetSize={setSize}
+                        cardFields={cardFields}
+                      />
+                    ))}
                   </div>
                 )
               ) : (
@@ -341,7 +320,8 @@ export function ItemList({
 }
 
 /**
- * Responsive column count: 1 for Data density, width-derived for Visual.
+ * Responsive column count: 1 for the one-item-per-line modes, width-derived for the
+ * multi-column ones (Card, Gallery), each at its own minimum column width.
  *
  * The scroll element is tracked in **state** (via {@link setScrollEl}, a callback ref) rather
  * than read from a plain ref, so a scroller that mounts *after* this component's first render
@@ -369,14 +349,16 @@ function useColumns(density: ItemDensity): {
   }, []);
 
   useLayoutEffect(() => {
-    // Data and Table are one item per row; only Visual packs multiple cards per virtual row.
-    if (density !== 'visual') {
+    // Data, Compact and Table are one item per row; only Card and Gallery pack several per
+    // virtual row, and they pack at different widths.
+    const minWidth = densityColumnWidth(density);
+    if (minWidth === null) {
       setColumns(1);
       return;
     }
     if (!el) return;
     const update = () => {
-      setColumns(Math.max(1, Math.floor(el.clientWidth / VISUAL_CARD_MIN_WIDTH)));
+      setColumns(Math.max(1, Math.floor(el.clientWidth / minWidth)));
     };
     update();
     const observer = new ResizeObserver(update);

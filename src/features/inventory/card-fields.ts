@@ -330,6 +330,23 @@ export function resolveCardFields(
   return out;
 }
 
+/**
+ * The one field the caption-sized views show (issue #444) — the Gallery tile's caption line and
+ * the Compact row's trailing value.
+ *
+ * Both modes have room for exactly one field, and the user has already said which fields matter
+ * and in what order: the card-field picker (backlog E1). So "the key field" is defined as the
+ * first *visible* field that actually has a value for this item, rather than a second preference
+ * to keep in step with the first. Skipping the empties is what stops a caption reading as a row
+ * of em-dashes on items that happen not to fill the field the user put first.
+ *
+ * Returns `null` when the configuration is empty or nothing resolved — the caller then draws no
+ * caption at all, which is honest, rather than a placeholder standing in for nothing.
+ */
+export function primaryCardField(fields: readonly ResolvedCardField[]): ResolvedCardField | null {
+  return fields.find((field) => field.value.kind !== 'empty') ?? null;
+}
+
 function resolveOne(id: string, item: Item, ctx: CardFieldContext): ResolvedCardField | null {
   const customId = parseCustomCardFieldId(id);
   if (customId !== null) {

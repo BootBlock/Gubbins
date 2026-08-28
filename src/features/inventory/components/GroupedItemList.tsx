@@ -18,22 +18,21 @@ import { useItemFieldValues } from '../categories';
 import { useItemsTags } from '../tags';
 import { useLocationSectionItems } from '../queries';
 import { LIST_ROW_HEIGHT, listRowCount, resolveListRow } from '../list-window';
+import {
+  densityColumnWidth,
+  densityGridStyle,
+  densitySectionClass,
+  densitySectionGridStyle,
+  densityVirtualRowClass,
+} from '../density-layout';
 import { toItemSort } from '../sorting';
 import { LocationIcon } from './LocationIcon';
-import { ItemCard } from './ItemCard';
-import { ItemRow } from './ItemRow';
 import { ItemTableHeader, ItemTableRow } from './ItemTable';
 import { tableFieldColumns, tableGridColumns } from './item-table-columns';
-import { cardFieldProps, itemCardProps, type CardFieldsListContext } from './card-fields-render';
+import { ItemPresentation } from './ItemPresentation';
+import { type CardFieldsListContext } from './card-fields-render';
 import type { CardFieldsConfigBundle } from './useCardFieldsConfig';
 import type { ItemSelection } from './inventory-ui';
-
-/**
- * Minimum visual-card width — the responsive `auto-fill` grid packs as many columns as
- * fit at this width. Mirrors the virtualised list's constant so a card is the same size
- * whether the grid is flat or grouped.
- */
-const VISUAL_CARD_MIN_WIDTH = 280;
 
 /**
  * Item count above which a section renders through the virtualiser rather than as plain DOM
@@ -389,44 +388,25 @@ function SectionItems({
         <div
           role="list"
           aria-label={listLabel}
-          className={density === 'data' ? 'flex flex-col gap-1.5' : 'grid gap-4'}
-          style={
-            density === 'data'
-              ? undefined
-              : { gridTemplateColumns: `repeat(auto-fill, minmax(${VISUAL_CARD_MIN_WIDTH}px, 1fr))` }
-          }
+          className={densitySectionClass(density)}
+          style={densitySectionGridStyle(density)}
         >
-          {items.map((item, index) =>
-            density === 'data' ? (
-              <ItemRow
-                key={item.id}
-                item={item}
-                locations={locations}
-                locationName={locationName(item.locationId)}
-                locationColorClass={locationColorClass?.(item.locationId)}
-                locationTintClass={locationTintClass?.(item.locationId)}
-                selection={selection}
-                selected={selectedIds?.has(item.id) ?? false}
-                ariaPosInSet={index + 1}
-                ariaSetSize={sectionSetSize}
-                {...cardFieldProps(cardFields, item)}
-              />
-            ) : (
-              <ItemCard
-                key={item.id}
-                item={item}
-                locations={locations}
-                locationName={locationName(item.locationId)}
-                locationColorClass={locationColorClass?.(item.locationId)}
-                locationTintClass={locationTintClass?.(item.locationId)}
-                selection={selection}
-                selected={selectedIds?.has(item.id) ?? false}
-                ariaPosInSet={index + 1}
-                ariaSetSize={sectionSetSize}
-                {...itemCardProps(cardFields, item)}
-              />
-            ),
-          )}
+          {items.map((item, index) => (
+            <ItemPresentation
+              key={item.id}
+              density={density}
+              item={item}
+              locations={locations}
+              locationName={locationName}
+              locationColorClass={locationColorClass}
+              locationTintClass={locationTintClass}
+              selection={selection}
+              selected={selectedIds?.has(item.id) ?? false}
+              ariaPosInSet={index + 1}
+              ariaSetSize={sectionSetSize}
+              cardFields={cardFields}
+            />
+          ))}
         </div>
       )}
       <SectionPager
@@ -604,7 +584,9 @@ function VirtualSectionBody({
             {!resident ? (
               // A row whose page was trimmed off the front and is being refilled.
               <div style={{ height: LIST_ROW_HEIGHT[density] }} aria-hidden />
-            ) : isTable ? (
+            ) : // Compared against the literal rather than the hoisted `isTable`, so TypeScript
+            // narrows `density` for the per-item fork in the last arm.
+            density === 'table' ? (
               firstItem ? (
                 <ItemTableRow
                   item={firstItem}
@@ -627,44 +609,25 @@ function VirtualSectionBody({
             ) : (
               <div
                 role="presentation"
-                className={density === 'data' ? 'pb-1.5' : 'grid gap-4 pb-4'}
-                style={
-                  density === 'data'
-                    ? undefined
-                    : { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
-                }
+                className={densityVirtualRowClass(density)}
+                style={densityGridStyle(density, columns)}
               >
-                {rowItems.map((item, column) =>
-                  density === 'data' ? (
-                    <ItemRow
-                      key={item.id}
-                      item={item}
-                      locations={locations}
-                      locationName={locationName(item.locationId)}
-                      locationColorClass={locationColorClass?.(item.locationId)}
-                      locationTintClass={locationTintClass?.(item.locationId)}
-                      selection={selection}
-                      selected={selectedIds?.has(item.id) ?? false}
-                      ariaPosInSet={firstItemIndex + start + column + 1}
-                      ariaSetSize={setSize}
-                      {...cardFieldProps(cardFields, item)}
-                    />
-                  ) : (
-                    <ItemCard
-                      key={item.id}
-                      item={item}
-                      locations={locations}
-                      locationName={locationName(item.locationId)}
-                      locationColorClass={locationColorClass?.(item.locationId)}
-                      locationTintClass={locationTintClass?.(item.locationId)}
-                      selection={selection}
-                      selected={selectedIds?.has(item.id) ?? false}
-                      ariaPosInSet={firstItemIndex + start + column + 1}
-                      ariaSetSize={setSize}
-                      {...itemCardProps(cardFields, item)}
-                    />
-                  ),
-                )}
+                {rowItems.map((item, column) => (
+                  <ItemPresentation
+                    key={item.id}
+                    density={density}
+                    item={item}
+                    locations={locations}
+                    locationName={locationName}
+                    locationColorClass={locationColorClass}
+                    locationTintClass={locationTintClass}
+                    selection={selection}
+                    selected={selectedIds?.has(item.id) ?? false}
+                    ariaPosInSet={firstItemIndex + start + column + 1}
+                    ariaSetSize={setSize}
+                    cardFields={cardFields}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -706,19 +669,21 @@ function useTableColumnModel(cardFields: CardFieldsListContext, selecting: boole
 
 /**
  * Responsive column count for a virtualised section body: one item per row in Data and Table
- * density, width-derived in Visual so cards pack the same way the flat list packs them.
+ * density, width-derived in the multi-column modes so items pack the same way the flat list
+ * packs them — at each mode's own minimum column width.
  */
 function useSectionColumns(ref: React.RefObject<HTMLDivElement | null>, density: ItemDensity): number {
   const [columns, setColumns] = useState(1);
   useLayoutEffect(() => {
-    if (density !== 'visual') {
+    const minWidth = densityColumnWidth(density);
+    if (minWidth === null) {
       setColumns(1);
       return;
     }
     const el = ref.current;
     if (!el) return;
     const update = () => {
-      setColumns(Math.max(1, Math.floor(el.clientWidth / VISUAL_CARD_MIN_WIDTH)));
+      setColumns(Math.max(1, Math.floor(el.clientWidth / minWidth)));
     };
     update();
     if (typeof ResizeObserver === 'undefined') return;

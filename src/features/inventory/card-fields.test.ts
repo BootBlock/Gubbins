@@ -9,6 +9,7 @@ import {
   moveCardField,
   normaliseCardFields,
   parseCustomCardFieldId,
+  primaryCardField,
   resolveCardFields,
   setCardFieldVisible,
   visibleCardFieldIds,
@@ -689,5 +690,34 @@ describe('resolveCardFields — custom fields', () => {
         foreign: false,
       });
     });
+  });
+});
+
+/**
+ * The caption-sized views (Gallery, Compact — issue #444) show exactly one field, and this is
+ * where that field is chosen. The rule is "the first visible field that has something to say",
+ * so what earns a test is the *skipping*: without it a caption would read as an em-dash whenever
+ * the user happened to put a rarely-filled field first, which is the case the whole rule exists
+ * for.
+ */
+describe('primaryCardField', () => {
+  const field = (id: string, kind: 'text' | 'empty') =>
+    kind === 'empty'
+      ? { id, label: id, value: { kind: 'empty' } as const }
+      : { id, label: id, value: { kind: 'text', text: `${id} value` } as const };
+
+  it('takes the first field when it has a value', () => {
+    expect(primaryCardField([field('location', 'text'), field('category', 'text')])?.id).toBe('location');
+  });
+
+  it('skips past the empties rather than captioning an item with an em-dash', () => {
+    expect(
+      primaryCardField([field('location', 'empty'), field('category', 'empty'), field('value', 'text')])?.id,
+    ).toBe('value');
+  });
+
+  it('returns null when nothing resolved, so the caller draws no caption at all', () => {
+    expect(primaryCardField([])).toBeNull();
+    expect(primaryCardField([field('location', 'empty')])).toBeNull();
   });
 });

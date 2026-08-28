@@ -150,6 +150,10 @@ export {
   Rows3 as DataDensityIcon,
   LayoutGrid as VisualDensityIcon,
   Table as TableViewIcon,
+  // The photo-first and text-only per-item views (issue #444): a stack of pictures, and the
+  // thinnest possible run of lines.
+  Images as GalleryViewIcon,
+  List as CompactViewIcon,
   // Whole-collection visualisations (§3): a spatial location map + a value treemap.
   Map as MapViewIcon,
   Grid2x2 as TreemapViewIcon,

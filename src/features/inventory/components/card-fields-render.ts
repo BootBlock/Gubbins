@@ -60,6 +60,8 @@ export interface CardFieldsListContext {
   readonly categoryName: (categoryId: string | null) => string | null;
   /** Resolve a category id to its card-watermark glyph, or null (issue #83). */
   readonly categoryGlyph: (categoryId: string | null) => string | null;
+  /** The same glyph ignoring the watermark setting — the Gallery tile's photo stand-in (#444). */
+  readonly categoryGlyphUngated: (categoryId: string | null) => string | null;
   /** itemId → (fieldId → stored value + origin) for the on-screen items, or undefined while loading. */
   readonly values: ReadonlyMap<string, ReadonlyMap<string, CardFieldStoredValue>> | undefined;
   /** itemId → tag names for the on-screen items (issue #84), or undefined while loading. */
@@ -84,4 +86,14 @@ export function cardFieldProps(ctx: CardFieldsListContext, item: Item) {
  */
 export function itemCardProps(ctx: CardFieldsListContext, item: Item) {
   return { ...cardFieldProps(ctx, item), categoryGlyph: ctx.categoryGlyph(item.categoryId) };
+}
+
+/**
+ * The per-item props for a Gallery {@link ItemGalleryTile} — the shared {@link cardFieldProps}
+ * plus the *ungated* category glyph, which the tile draws in place of a missing photo (#444).
+ * Separate from {@link itemCardProps} because the two glyphs answer different questions: the
+ * card's is decoration the user can switch off, the tile's is its subject.
+ */
+export function itemGalleryProps(ctx: CardFieldsListContext, item: Item) {
+  return { ...cardFieldProps(ctx, item), categoryGlyph: ctx.categoryGlyphUngated(item.categoryId) };
 }
