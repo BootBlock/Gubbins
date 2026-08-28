@@ -149,6 +149,10 @@ const REPOSITORY_SOURCE = readFileSync(
  * Split on the class's own indentation: a method runs from its signature to the next one.
  */
 function currencyDependentMethods(source: string): ReadonlySet<string> {
+  // Direct resolution only: a read that took the base currency from a caller, or reached it
+  // through a helper, would not be classified here. Every currency-dependent read resolves it
+  // itself today — one line at the top of the method — and the scan's own sanity test below is
+  // what keeps that assumption visible if the shape ever changes.
   const signature = /^ {2}(?:private |protected |public )?(?:async )?([A-Za-z_]\w*)\(/gm;
   const starts: { name: string; at: number }[] = [];
   for (const match of source.matchAll(signature)) {
