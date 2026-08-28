@@ -30,6 +30,12 @@ Everywhere an order's money is shown — the order total in the list, and each l
 shown in **that order's** currency, so a `EUR` order reads in euros rather than under your base
 currency's symbol.
 
+An order Gubbins raises **for** you starts in a currency it works out rather than in your base one.
+An [[imported purchase list|#importing-a-purchase-list]] takes the currency from the supplier's own
+record, since that is where you have already said what you buy from them in. An order drafted from
+the [[reorder list|Reorder-and-Shopping-List]] uses the currency its supplier's parts are **quoted**
+in, falling back to the supplier's record where the quotes give no single answer.
+
 ### When a supplier quotes in a different currency
 
 A line's cost is recorded as a plain number in the **order's** currency. So if you add a line for a

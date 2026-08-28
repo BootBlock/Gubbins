@@ -381,3 +381,73 @@ describe('buildReorderPlan', () => {
     expect(plan[1]!.lines).toHaveLength(1); // b only (c skipped)
   });
 });
+
+// ---------------------------------------------------------------------------
+// currency (issue #569)
+// ---------------------------------------------------------------------------
+
+describe('buildReorderPlan — the currency a quote is in', () => {
+  /** One shortfall row quoting `currency` at `unitCost`, from `supplierId`. */
+  function row(
+    itemId: string,
+    supplierId: string,
+    unitCost: number | null,
+    currency: string | null,
+  ): ReorderShortfallRow {
+    return {
+      itemId,
+      itemName: `Part ${itemId}`,
+      shortfall: 1,
+      preferredSupplier: {
+        supplierPartId: `sp-${itemId}`,
+        supplierId,
+        supplierName: 'Alpha Supply',
+        unitCost,
+        currency,
+      },
+    };
+  }
+
+  it('carries the quoted currency onto the line, normalised', () => {
+    const plan = buildReorderPlan([row('a', 'sup-1', 12, ' eur ')]);
+    expect(plan[0]!.lines[0]!.currency).toBe('EUR');
+    expect(plan[0]!.lines[0]!.unitCost).toBe(12);
+  });
+
+  it('reads a blank or absent code as the base currency', () => {
+    const plan = buildReorderPlan([row('a', 'sup-1', 12, '   '), row('b', 'sup-1', 3, null)]);
+    expect(plan[0]!.lines.map((l) => l.currency)).toEqual([null, null]);
+    expect(plan[0]!.currency).toBeNull();
+    expect(plan[0]!.hasMixedCurrency).toBe(false);
+  });
+
+  it('gives a group quoted wholly in one foreign currency that currency', () => {
+    const plan = buildReorderPlan([row('a', 'sup-1', 12, 'EUR'), row('b', 'sup-1', 3, 'EUR')]);
+    expect(plan[0]!.currency).toBe('EUR');
+    expect(plan[0]!.hasMixedCurrency).toBe(false);
+  });
+
+  it('flags a group whose priced lines disagree, and names no currency for it', () => {
+    const plan = buildReorderPlan([row('a', 'sup-1', 12, 'EUR'), row('b', 'sup-1', 3, null)]);
+    expect(plan[0]!.hasMixedCurrency).toBe(true);
+    expect(plan[0]!.currency).toBeNull();
+    // The lines keep their own codes — only the group-level total has no answer.
+    expect(plan[0]!.lines.map((l) => l.currency)).toEqual(['EUR', null]);
+  });
+
+  it('ignores an unpriced line when judging whether a group is mixed', () => {
+    // A part quoted in EUR but carrying no price contributes no figure to a EUR/base total,
+    // so it must not make an otherwise base-currency group unaddable.
+    const plan = buildReorderPlan([row('a', 'sup-1', 5, null), row('b', 'sup-1', null, 'EUR')]);
+    expect(plan[0]!.hasMixedCurrency).toBe(false);
+    expect(plan[0]!.currency).toBeNull();
+  });
+
+  it('leaves the Unassigned group in the base currency', () => {
+    const plan = buildReorderPlan([{ itemId: 'z', itemName: 'Part Z', shortfall: 2 }]);
+    expect(plan[0]!.supplierName).toBe(UNASSIGNED_SUPPLIER_NAME);
+    expect(plan[0]!.currency).toBeNull();
+    expect(plan[0]!.hasMixedCurrency).toBe(false);
+    expect(plan[0]!.lines[0]!.currency).toBeNull();
+  });
+});

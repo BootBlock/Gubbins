@@ -1698,6 +1698,7 @@
   "reports.consumption.note": "Jede Maßeinheit wird für sich gezählt — Gubbins zählt unterschiedliche Einheiten niemals zusammen.",
   "purchasing.line.currencyMismatch.heading": "Dieser Lieferant rechnet in einer anderen Währung ab",
   "purchasing.line.currencyMismatch.body": "Die Staffelpreise unten sind in {quoted} angegeben, diese Bestellung ist jedoch in {order} erfasst, und Gubbins rechnet Währungen niemals um. Der Betrag des Lieferanten kann nicht übernommen werden — geben Sie die Kosten dieser Position in {order} ein.",
+  "purchasing.reorder.mixedCurrency": "in mehreren Währungen angegeben — keine Summe",
   "reports.spendForeignCurrency.heading.one": "{count} Bestellung ist in diesen Ausgaben nicht enthalten",
   "reports.spendForeignCurrency.heading.other": "{count} Bestellungen sind in diesen Ausgaben nicht enthalten",
   "reports.spendForeignCurrency.body.one": "Sie ist in einer anderen Währung als {currency} erfasst, und Gubbins rechnet Währungen niemals um. Ihr Betrag fehlt daher in der Gesamtsumme sowie in den Auswertungen nach Lieferant und Kategorie. Erfassen Sie die Bestellung in {currency}, damit sie mitgezählt wird.",

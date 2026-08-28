@@ -27,7 +27,7 @@
  * gated; deletes (which free space) are not and record a tombstone in the same transaction so
  * the deletion syncs (§7.2).
  */
-import { toStoredMoney } from '@/lib/money';
+import { isCurrencyMismatch, toStoredMoney } from '@/lib/money';
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { SQL_NOW_MS } from '../migrations/migration';
 import { planPoReceipt, planPoReturn } from '@/features/purchasing/po-receipt';
@@ -179,16 +179,28 @@ export class PurchaseOrderRepository extends BaseRepository {
     return row ? this.attachLines(row) : undefined;
   }
 
+  /**
+   * Raise a new DRAFT purchase order.
+   *
+   * `currency` distinguishes **omitted** from **explicitly null**: an omitted code defaults to
+   * the supplier's own `suppliers.currency`, which is the one place the intended denomination is
+   * already recorded, while `null` means the caller has decided the order is in the base currency
+   * and is not overridden (issue #569). The create dialog always sends a code or an explicit
+   * `null`, so a user's blank field still means base; the automated callers — the reorder plan
+   * and the purchase-list import — omit the key whenever they have no denomination of their own
+   * to state, and inherit the supplier's.
+   */
   async create(input: CreatePurchaseOrderInput): Promise<PurchaseOrder> {
     this.assertPermission('purchase-orders:write');
     this.assertWritable();
     // Clean the plain fields BEFORE resolving the supplier — resolving can mint a supplier row
     // outside this write, so a later rejection would strand it in the dictionary.
     const reference = cleanText(input.reference);
-    const currency = cleanText(input.currency);
     // A typed name folds onto the existing supplier (or mints one); an id is verified. The
     // order stores only the id, so a later rename carries through to its history.
     const supplierId = await this.suppliers.resolveRef(input.supplier);
+    const currency =
+      input.currency === undefined ? await this.supplierCurrency(supplierId) : cleanText(input.currency);
     const id = crypto.randomUUID();
     await this.driver.execute(
       `INSERT INTO purchase_orders (id, supplier_id, reference, currency)
@@ -561,10 +573,16 @@ export class PurchaseOrderRepository extends BaseRepository {
    *
    * Status is left at DRAFT (`derivePoStatus` is authoritative — the caller must
    * explicitly set ORDERED when the orders have been sent).
+   *
+   * Each order is raised in the currency its group is quoted in, and a line whose quote is
+   * denominated differently from the order is created **unpriced** rather than having a foreign
+   * figure copied onto it as if it were the order's own currency (issue #569). Gubbins holds no
+   * exchange rates, so copying is the one thing that cannot be done; ordering the part is not.
    */
   async createDraftFromReorderPlan(groups: readonly ReorderPlanGroup[]): Promise<PurchaseOrderWithLines[]> {
     this.assertPermission('purchase-orders:write');
     this.assertWritable();
+    const base = this.baseCurrency();
     const created: PurchaseOrderWithLines[] = [];
 
     for (const group of groups) {
@@ -573,15 +591,28 @@ export class PurchaseOrderRepository extends BaseRepository {
       if (group.lines.length === 0) continue;
 
       // The group already identifies its supplier, so pass the id straight through rather
-      // than re-resolving a name that could fold onto a different row.
-      const po = await this.create({ supplier: { supplierId: group.supplierId } });
+      // than re-resolving a name that could fold onto a different row. A group quoted wholly in
+      // one currency raises the order *in* that currency, so the costs copied below are true
+      // under it. A mixed group has no single answer, and a group that prices nothing states no
+      // denomination at all — both leave the currency to default from the supplier's own record,
+      // and the per-line guard below sorts out which quotes may be copied.
+      const statesCurrency = !group.hasMixedCurrency && group.lines.some((l) => l.unitCost !== null);
+      const po = await this.create({
+        supplier: { supplierId: group.supplierId },
+        ...(statesCurrency ? { currency: group.currency } : {}),
+      });
 
       for (const line of group.lines) {
+        // A line's `unit_cost` is a bare number meaning the *order's* currency, so a quote in
+        // another one cannot be copied across — the same refusal the manual line editor makes
+        // (issue #569). The line is still ordered; it just arrives unpriced, for the user to
+        // price in the order's own terms.
+        const copyable = !isCurrencyMismatch(line.currency, po.currency, base);
         await this.addLine(po.id, {
           itemId: line.itemId,
           supplierPartId: line.supplierPartId ?? undefined,
           orderedQty: line.orderQty,
-          unitCost: line.unitCost ?? undefined,
+          unitCost: copyable ? (line.unitCost ?? undefined) : undefined,
         });
       }
 
@@ -593,6 +624,19 @@ export class PurchaseOrderRepository extends BaseRepository {
   }
 
   // --- internals ---------------------------------------------------------------
+
+  /**
+   * A supplier's default currency (`suppliers.currency`), cleaned to `null` when blank or when
+   * the supplier is gone — the fallback denomination {@link create} stamps on an order whose
+   * caller named none.
+   */
+  private async supplierCurrency(supplierId: string): Promise<string | null> {
+    const row = await this.driver.queryOne<{ currency: string | null }>(
+      'SELECT currency FROM suppliers WHERE id = ?;',
+      [supplierId],
+    );
+    return cleanText(row?.currency);
+  }
 
   private async attachLines(row: PurchaseOrderRow): Promise<PurchaseOrderWithLines> {
     const lines = await this.listLines(row.id);
