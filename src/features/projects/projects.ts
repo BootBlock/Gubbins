@@ -77,14 +77,21 @@ export function useProjects(page = 1, pageSize = MAX_PAGE_SIZE, browse: ProjectB
  * the screen announces. Held through a filter change by the placeholder so the page strip
  * doesn't flicker between counts as the search box is typed into.
  */
-export function useProjectCount(filter: ProjectFilter = {}, options: { enabled?: boolean } = {}) {
+export function useProjectCount(
+  filter: ProjectFilter = {},
+  options: { enabled?: boolean; keepPrevious?: boolean } = {},
+) {
   return useQuery({
     queryKey: projectKeys.count(filter),
     queryFn: () => getProjectRepository().count(filter),
     // Pass `{ enabled: false }` to mount without fetching: the Dashboard's Projects tile gates it
     // so no count query runs while the tile is showing its over-budget metric instead.
     enabled: options.enabled ?? true,
-    placeholderData: (previous) => previous,
+    // `keepPrevious: false` for a caller that changes the *filter* rather than typing into one:
+    // the held-over figure is only reassuring while it is the same question being re-asked. The
+    // Dashboard tile switches between "active" and "all", so holding it would put one metric's
+    // number under the other's label until the new count lands.
+    placeholderData: (options.keepPrevious ?? true) ? (previous) => previous : undefined,
   });
 }
 

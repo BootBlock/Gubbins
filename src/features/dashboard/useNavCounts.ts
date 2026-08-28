@@ -137,7 +137,12 @@ export function useNavCounts(): Partial<Record<AppRoutePath, NavCount>> {
   // "Active" is every status bar the terminal ones, asked of the database rather than applied to a
   // page of rows — see ACTIVE_PROJECT_STATUSES, which derives the set from PROJECT_STATUSES.
   const projectFilter: ProjectFilter = projectsMetric === 'all' ? {} : { statuses: ACTIVE_PROJECT_STATUSES };
-  const projectCount = useProjectCount(projectFilter, { enabled: projectsMetric !== 'overBudget' });
+  const projectCount = useProjectCount(projectFilter, {
+    enabled: projectsMetric !== 'overBudget',
+    // Switching the tile's metric changes the filter, so a held-over figure would be the other
+    // metric's number under this one's label. The tile shows no pill until the new count lands.
+    keepPrevious: false,
+  });
   const budgetAlerts = useBudgetAlerts({ enabled: projectsMetric === 'overBudget' });
 
   const purchaseOrderCount = usePurchaseOrderCount(purchaseOrdersMetric === 'all' ? {} : { open: true });

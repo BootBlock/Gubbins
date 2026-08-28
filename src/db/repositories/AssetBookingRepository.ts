@@ -76,8 +76,11 @@ export function bookingConversionId(kind: string, bookingId: string): Promise<st
 /**
  * A **live** booking — neither cancelled nor already converted to a loan — over an enclosing
  * `asset_bookings b`. The OPEN/CANCELLED/CONVERTED state is derived from two nullable columns
- * rather than stored, so "still a booking" is a two-column test written here once: every list
- * sorts live bookings first by it, and every count that excludes terminal ones filters by it.
+ * rather than stored, so "still a booking" is a two-column test, written here once and used by
+ * every read that cares: {@link AssetBookingRepository.list} and
+ * {@link AssetBookingRepository.listForItem} sort live bookings first by it,
+ * {@link AssetBookingRepository.listUpcoming} and the overlap check filter by it, and so does any
+ * {@link AssetBookingRepository.count} that excludes terminal bookings.
  * Exported so `query-row-shape.test.ts` can resolve the span and prepare the statements that embed
  * it — nothing outside this module should use it.
  */
@@ -410,9 +413,9 @@ export class AssetBookingRepository extends BaseRepository {
    */
   private async activeRanges(itemId: string, excludeId?: string): Promise<OverlapCandidate[]> {
     const rows = await this.driver.query<{ id: string; start_date: number; end_date: number }>(
-      `SELECT id, start_date, end_date FROM asset_bookings
-       WHERE item_id = ? AND cancelled_at IS NULL AND converted_checkout_id IS NULL
-         AND (? IS NULL OR id <> ?);`,
+      `SELECT b.id, b.start_date, b.end_date FROM asset_bookings b
+       WHERE b.item_id = ? AND ${LIVE_BOOKING}
+         AND (? IS NULL OR b.id <> ?);`,
       [itemId, excludeId ?? null, excludeId ?? null],
     );
     return rows.map((r) => ({ id: r.id, start: Number(r.start_date), end: Number(r.end_date) }));

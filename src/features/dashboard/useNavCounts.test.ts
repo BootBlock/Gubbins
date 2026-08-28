@@ -93,7 +93,10 @@ describe('useNavCounts — default metrics', () => {
     });
     // "Active" is asked of the database as a status set, not filtered out of a page of rows —
     // and it is the derived set, so a new non-terminal status joins it automatically.
-    expect(projectCountMock).toHaveBeenCalledWith({ statuses: ACTIVE_PROJECT_STATUSES }, { enabled: true });
+    expect(projectCountMock).toHaveBeenCalledWith(
+      { statuses: ACTIVE_PROJECT_STATUSES },
+      { enabled: true, keepPrevious: false },
+    );
     expect(ACTIVE_PROJECT_STATUSES).toEqual(['PLANNING', 'ACTIVE']);
     // The over-budget feed is not fetched while the tile shows its default metric.
     expect(budgetAlertsMock).toHaveBeenCalledWith({ enabled: false });
@@ -139,7 +142,7 @@ describe('useNavCounts — configurable metrics', () => {
       tone: 'neutral',
     });
     // "All" drops the status filter rather than passing an empty set (which matches nothing).
-    expect(projectCountMock).toHaveBeenCalledWith({}, { enabled: true });
+    expect(projectCountMock).toHaveBeenCalledWith({}, { enabled: true, keepPrevious: false });
   });
 
   it('counts all purchase orders when the tile is re-pointed at "all"', () => {
@@ -189,7 +192,10 @@ describe('useNavCounts — configurable metrics', () => {
     const { result } = renderHook(() => useNavCounts());
     // 'active' default: the status filter is applied, and the tile is named for it.
     expect(result.current['/projects']?.noun).toBe('active project');
-    expect(projectCountMock).toHaveBeenCalledWith({ statuses: ACTIVE_PROJECT_STATUSES }, { enabled: true });
+    expect(projectCountMock).toHaveBeenCalledWith(
+      { statuses: ACTIVE_PROJECT_STATUSES },
+      { enabled: true, keepPrevious: false },
+    );
   });
 });
 
@@ -253,7 +259,10 @@ describe('useNavCounts — A2 problem metrics', () => {
     });
     expect(budgetAlertsMock).toHaveBeenCalledWith({ enabled: true });
     // The plain project count is gated off — the over-budget tile does not need it.
-    expect(projectCountMock).toHaveBeenCalledWith(expect.anything(), { enabled: false });
+    expect(projectCountMock).toHaveBeenCalledWith(expect.anything(), {
+      enabled: false,
+      keepPrevious: false,
+    });
   });
 });
 

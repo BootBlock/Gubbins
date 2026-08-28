@@ -71,7 +71,7 @@ panel) are configurable in **Settings → Dashboard**.
 
 Most collection tiles carry a small count — items, active projects, open orders, contacts,
 upcoming bookings. Each one counts your **whole** collection, not just what fits on the first page
-of the screen behind it, so a tile reading **0** means there really is nothing there.
+of the screen behind it, so a tile with **no** count really has nothing to show.
 
 Nav tiles rearrange the same way the widgets do: while **Customise** is on, drag a tile, nudge it
 with the ▲▼◀▶ cluster or the arrow keys, and pin the ones you use most to the top of their group.

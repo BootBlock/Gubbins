@@ -80,14 +80,12 @@ export function useBookings() {
  *
  * A count query rather than a filter over {@link useBookings}: that read is a single capped page
  * of a list ordered live-first-then-soonest, so a long booking history could push every upcoming
- * booking off the page and the tile then reported there was nothing coming up. Pass
- * `{ enabled: false }` to mount without fetching.
+ * booking off the page and the tile then reported there was nothing coming up.
  */
-export function useBookingCount(scope: BookingCountScope, options: { enabled?: boolean } = {}) {
+export function useBookingCount(scope: BookingCountScope) {
   return useQuery({
     queryKey: bookingKeys.count(scope),
     queryFn: () => getAssetBookingRepository().count(bookingCountFilter(scope)),
-    enabled: options.enabled ?? true,
   });
 }
 

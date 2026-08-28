@@ -130,17 +130,12 @@ export function readPurchaseOrdersPage(params: { limit: number; offset: number }
  *
  * The open count is resolved by the database rather than by filtering the page in hand: the list
  * reads newest-first, so a user whose most recent hundred orders were all received saw "0 open
- * orders" while a hundred older open ones sat past the page boundary. Pass `{ enabled: false }` to
- * mount without fetching.
+ * orders" while a hundred older open ones sat past the page boundary.
  */
-export function usePurchaseOrderCount(
-  filter: PurchaseOrderCountFilter = {},
-  options: { enabled?: boolean } = {},
-) {
+export function usePurchaseOrderCount(filter: PurchaseOrderCountFilter = {}) {
   return useQuery({
     queryKey: purchaseOrderKeys.count(filter),
     queryFn: () => getPurchaseOrderRepository().count(filter),
-    enabled: options.enabled ?? true,
   });
 }
 
@@ -233,6 +228,11 @@ export function useUpdatePurchaseOrderLine() {
       getPurchaseOrderRepository().updateLine(lineId, input),
     onSuccess: (_data, { poId }) => {
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
+      // An order's effective status is derived from its lines' totals, so raising an ordered
+      // quantity on a fully-received order makes it PARTIAL — open again. The open count hangs
+      // off the list prefix, and would otherwise keep the pre-edit figure until some other
+      // purchase-order write happened to refresh it.
+      void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
       // Editing an ordered/received quantity shifts the item's outstanding total.
       invalidateOnOrder(client);
       // The spend report totals `received_qty * unit_cost`, so correcting either on an
