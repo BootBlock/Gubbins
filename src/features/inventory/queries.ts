@@ -221,6 +221,11 @@ export const inventoryKeys = {
    *  rows (issue #622). */
   astCount: (ast: SearchAST, locationId: string | null) =>
     [...inventoryKeys.search(), 'ast-count', ast, locationId] as const,
+  /** The closest `limit` matches for a free-text query, plus the total that matched (issue #629).
+   *  Its own `'relevance'` segment keeps it clear of both page families: it caches
+   *  `{ rows, total }`, not `InfiniteData`, so the optimistic page patcher must never reach it. */
+  relevanceSearch: (search: string, limit: number) =>
+    [...inventoryKeys.search(), 'relevance', search, limit] as const,
   // Phase 8 — Universal Alias Mapping (§4 external scraping).
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
   // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`
@@ -591,6 +596,29 @@ export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DE
     getPreviousPageParam: (firstPage) =>
       firstPage.offset > 0 ? Math.max(0, firstPage.offset - firstPage.limit) : undefined,
     maxPages: MAX_LIST_PAGES,
+  });
+}
+
+/**
+ * The closest `limit` items for a free-text query, best match first, with the size of the whole
+ * match set beside them (issue #629).
+ *
+ * The read a **fixed-size picker** wants, as opposed to {@link useInventoryItems}, which a
+ * scrollable list wants: it ranks by FTS5 relevance across every match rather than returning the
+ * alphabetically-first page of them, so the closest hit is in the returned rows however many
+ * matched. `total` is what lets the picker say how many it is not showing instead of presenting a
+ * capped read as the whole set.
+ *
+ * `enabled` gates it off (default on) for an empty query or a session that may not read items.
+ */
+export function useItemRelevanceSearch(search: string, limit: number, enabled = true) {
+  return useQuery({
+    queryKey: inventoryKeys.relevanceSearch(search, limit),
+    queryFn: () => getItemRepository().searchByRelevance(search, { limit }),
+    enabled: enabled && search.trim().length > 0,
+    // Hold the previous query's matches on screen while the next loads, so each keystroke
+    // refines the list rather than blanking it to a spinner and back.
+    placeholderData: keepPreviousData,
   });
 }
 

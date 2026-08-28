@@ -2,6 +2,10 @@
  * Visual-Builder AST search concern (spec §5.1). The AST is translated by the single
  * parameterised {@link parseASTtoSQL} utility; when it filters on `capability:<key>`
  * fields, results are ranked by the summed weight of those capabilities ("best match").
+ *
+ * It also holds the free-text **relevance** read ({@link ItemSearchRepository.searchByRelevance}) —
+ * the one item read whose ordering is the FTS5 match quality itself rather than the list's
+ * favourites-then-alphabetical order.
  */
 import {
   astFiltersActiveFlag,
@@ -9,11 +13,19 @@ import {
   collectCapabilityKeys,
   parseASTtoSQL,
 } from '../../search/parseASTtoSQL';
+import { buildFtsMatch } from '../../search/fts';
 import type { SearchAST } from '../../search/ast';
 import type { SqlValue } from '../../rpc/driver';
 import { rowToItem } from '../mappers';
 import type { Item, ItemRow, Page, PageParams } from '../types';
-import { capabilityMatchScore, itemOrderByClause, ITEM_READ_COLUMNS, type ItemSort } from './sql';
+import {
+  capabilityMatchScore,
+  itemOrderByClause,
+  ITEM_READ_COLUMNS,
+  ITEM_READ_COLUMNS_NO_THUMBNAIL,
+  type ItemRowNoThumbnail,
+  type ItemSort,
+} from './sql';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 
@@ -73,6 +85,35 @@ function locationScope(ast: SearchAST, locationId: string | null | undefined): [
   return [' AND items.location_id = ?', [locationId]];
 }
 
+/** Pagination + scope for the free-text relevance search (issue #629). */
+export interface RelevanceSearchParams extends PageParams {
+  /** Include soft-deleted items. Defaults to false — active inventory only, as `list` is. */
+  readonly includeInactive?: boolean;
+}
+
+/** The best matches for a free-text query, and how many matched altogether. */
+export interface RelevanceSearch {
+  /** The `limit` closest matches, best first. */
+  readonly rows: Item[];
+  /** How many items matched in total — including the ones past `limit`. */
+  readonly total: number;
+}
+
+/**
+ * The relevance score a free-text search orders by: FTS5's BM25, weighted per indexed column so
+ * that "closest" means what a person searching an inventory means by it.
+ *
+ * The weights are positional and must stay in the `items_fts` column order (`name`, `description`,
+ * `notes`, `mpn`, `manufacturer`, `barcode`, `serial_number`). A name hit dominates; the exact
+ * identifiers (`mpn` / `barcode` / `serial_number`) rank next, since typing one is an unambiguous
+ * request for that item; `manufacturer` is weaker; the free prose (`description`, `notes`) is the
+ * weakest, so a passing mention never outranks an item actually called that.
+ *
+ * `bm25()` returns a *negative* score whose magnitude grows with match quality, so the ordering is
+ * ascending — a heavier weight makes its column's hits sort earlier, not later.
+ */
+const FTS_RELEVANCE = 'bm25(items_fts, 10.0, 1.0, 1.0, 5.0, 2.0, 5.0, 5.0)';
+
 export function withSearch<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
   return class ItemSearchRepository extends Base {
     /**
@@ -122,6 +163,51 @@ export function withSearch<TBase extends Constructor<ItemCoreRepository>>(Base: 
         [...whereParams, ...locationParams],
       );
       return Number(row?.n ?? 0);
+    }
+
+    /**
+     * The **best** `limit` items for a free-text query, ordered by FTS5 relevance, plus how many
+     * matched in total (issue #629).
+     *
+     * `list({ search })` answers a different question: it filters by the same FTS5 predicate but
+     * orders favourites-then-alphabetically, so its first page is the alphabetically-first slice of
+     * the match set, not the closest one. That is right for a browsable list the user scrolls, and
+     * wrong for a fixed-size picker like the command palette — with more matches than fit in one
+     * page, the item whose *name* is the query could sit past the cut and never be offered.
+     *
+     * So this read joins the FTS5 table instead of testing membership against it, which brings
+     * `bm25()` into scope of the outer `ORDER BY`. The column weights say what "closest" means: a
+     * hit in `name` outranks one in an identifier, which outranks one in the free prose — the same
+     * intent {@link import('@/lib/fuzzy').rankFuzzy} applies on the client, but decided over the
+     * *whole* match set rather than over whatever one page happened to contain.
+     *
+     * `total` is the size of that whole match set, taken in the same statement (`COUNT(*) OVER ()`
+     * is evaluated before `LIMIT`) so the count and the rows can never describe different sets. It
+     * is what lets the caller say "8 of 240" rather than presenting a capped read as the whole one.
+     *
+     * Relevance is the *whole* ordering here — the list's favourites-first lead is deliberately
+     * not carried over, because a picker asked "which of these is closest to what I typed" should
+     * not answer with something else. Name then id follow only as a total-order tiebreak.
+     *
+     * Text with no usable FTS tokens matches nothing, exactly as the list filter treats it.
+     */
+    async searchByRelevance(text: string, params: RelevanceSearchParams = {}): Promise<RelevanceSearch> {
+      const match = buildFtsMatch(text.trim());
+      if (match === null) return { rows: [], total: 0 };
+      const { limit } = this.resolvePage(params);
+      const rows = await this.driver.query<ItemRowNoThumbnail & { total_matches: number }>(
+        // The active scope is a *bound* flag rather than an interpolated clause, so the statement
+        // is one fixed text the read-shape guard can prepare and check (issue #356).
+        `SELECT ${ITEM_READ_COLUMNS_NO_THUMBNAIL}, COUNT(*) OVER () AS total_matches FROM items
+         JOIN (SELECT rowid AS fts_rowid, ${FTS_RELEVANCE} AS fts_score
+               FROM items_fts WHERE items_fts MATCH ?) ON fts_rowid = items.rowid
+         WHERE (? = 1 OR items.is_active = 1)
+         ORDER BY fts_score ASC, items.name COLLATE NOCASE ASC, items.id ASC
+         LIMIT ?;`,
+        [match, params.includeInactive ? 1 : 0, limit],
+      );
+      // Every row carries the same window total; no rows means nothing matched.
+      return { rows: rows.map(rowToItem), total: rows.length === 0 ? 0 : Number(rows[0]!.total_matches) };
     }
   };
 }

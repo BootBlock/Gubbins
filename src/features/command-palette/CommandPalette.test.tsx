@@ -14,21 +14,16 @@ const checkoutMutateAsync = vi.fn().mockResolvedValue(undefined);
 // test sets it to a fixture whose tracking mode drives which controls are shown.
 let actingItem: Item | null = null;
 
-// Item search returns a fixed page of rows; the palette only reads id + name for the list.
+// Item search returns a fixed set of best-match rows plus how many matched altogether; the palette
+// only reads id + name for the list. `searchTotal` is what the "see all N" disclosure row keys off,
+// so each test can set it to a number larger than the rows to exercise the capped case.
 // The quick-actions panel then loads the full record via useItem, and its location picker
 // via useLocations.
+let searchRows: { id: string; name: string }[] = [];
+let searchTotal = 0;
 vi.mock('@/features/inventory/queries', () => ({
-  useInventoryItems: () => ({
-    data: {
-      pages: [
-        {
-          rows: [
-            { id: 'i1', name: '10k resistor' },
-            { id: 'i2', name: '220 ohm resistor' },
-          ],
-        },
-      ],
-    },
+  useItemRelevanceSearch: () => ({
+    data: { rows: searchRows, total: searchTotal },
     isPending: false,
   }),
   useItem: () => ({ data: actingItem ?? undefined }),
@@ -91,6 +86,11 @@ beforeEach(() => {
   moveMutateAsync.mockReset().mockResolvedValue(undefined);
   checkoutMutateAsync.mockReset().mockResolvedValue(undefined);
   actingItem = { ...baseItem };
+  searchRows = [
+    { id: 'i1', name: '10k resistor' },
+    { id: 'i2', name: '220 ohm resistor' },
+  ];
+  searchTotal = searchRows.length;
   usePreferencesStore.setState({ dashboardCommandPalette: true });
   useCommandPaletteStore.setState({ open: false });
   useInventoryEntry.setState({ pendingSearch: null, pendingIntent: null });
@@ -174,6 +174,59 @@ describe('CommandPalette', () => {
     fireEvent.keyDown(input, { key: 'ArrowUp' });
     expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' });
     scrollSpy.mockRestore();
+  });
+
+  // Issue #629 — the palette shows a fixed few rows out of however many matched, so it has to say
+  // when it is showing a subset. Silence there reads as "these are all the matches there are".
+  describe('disclosing the matches it cannot show', () => {
+    it('offers no extra row when every match is already on screen', async () => {
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: 'resistor' } });
+      await screen.findAllByTestId('command-palette-result');
+      expect(screen.queryByTestId('command-palette-see-all')).toBeNull();
+    });
+
+    it('gives up no room at the boundary — a full list with nothing beyond it stays full', async () => {
+      searchRows = Array.from({ length: 8 }, (_, i) => ({ id: `i${i}`, name: `resistor ${i}` }));
+      searchTotal = 8;
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: 'resistor' } });
+      const results = await screen.findAllByTestId('command-palette-result');
+      expect(results).toHaveLength(8);
+      expect(screen.queryByTestId('command-palette-see-all')).toBeNull();
+    });
+
+    it('caps the rows shown and says how many matched altogether', async () => {
+      searchRows = Array.from({ length: 12 }, (_, i) => ({ id: `i${i}`, name: `resistor ${i}` }));
+      searchTotal = 240;
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: 'resistor' } });
+      const results = await screen.findAllByTestId('command-palette-result');
+      // Seven items plus the disclosure row: the list is a fixed-height scroller, so the row has
+      // to be *on screen* to disclose anything — a ninth row past the bottom would not be.
+      expect(results).toHaveLength(7);
+      expect(screen.getByTestId('command-palette-see-all').textContent).toContain(
+        'See all 240 matches in Inventory',
+      );
+    });
+
+    it('hands the query — not an item name — to Inventory when the disclosure row is chosen', async () => {
+      searchRows = [{ id: 'i1', name: '10k resistor' }];
+      searchTotal = 240;
+      useCommandPaletteStore.setState({ open: true });
+      render(<CommandPalette />);
+      const input = screen.getByTestId('command-palette-input');
+      fireEvent.change(input, { target: { value: 'resistor' } });
+      await screen.findByTestId('command-palette-see-all');
+      // One row of results, so ArrowDown lands on the disclosure row.
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(useInventoryEntry.getState().pendingSearch).toBe('resistor');
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/inventory' });
+    });
   });
 
   it('always shows the usage help, including the > hint', () => {

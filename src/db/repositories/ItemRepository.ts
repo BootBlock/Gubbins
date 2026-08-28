@@ -41,7 +41,7 @@ export {
   buildStatusFilter,
   type ItemStatusFilter,
 } from './item/status-filter';
-export type { SearchByAstParams } from './item/search';
+export type { SearchByAstParams, RelevanceSearch, RelevanceSearchParams } from './item/search';
 export type { LocationStockLine, ItemBatchPlacement, LocationBatchLine } from './item/stock';
 export type { KitComponent, AssembleOptions } from './item/kits';
 export type { ItemStatusCount } from './item/feeds';

@@ -214,6 +214,8 @@
   "routeError.details": "Technical details",
   "routeError.actions.retry": "Try again",
   "routeError.actions.dashboard": "Go to dashboard",
+  "commandPalette.seeAllResults.one": "See {count} match in Inventory",
+  "commandPalette.seeAllResults.other": "See all {count} matches in Inventory",
   "dashboard.hero.repoLabel": "Open the Gubbins GitHub repository (opens in a new tab)",
   "dashboard.hero.tagline": "Local-first inventory · your dashboard",
   "dashboard.attention.live.one": "{count} item need attention",

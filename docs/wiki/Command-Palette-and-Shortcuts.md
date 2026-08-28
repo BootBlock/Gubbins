@@ -19,6 +19,22 @@ Open the palette and start typing to:
 
 It's the quickest route around Gubbins once you know your way — no reaching for the menu.
 
+### How item results are chosen
+
+The palette is a picker, not a list, so it shows only the **closest few matches**. Closest means
+what you'd expect: an item *named* after what you typed comes first, then one matching a part
+number, barcode or serial number, and last one that merely mentions the word somewhere in its
+description or notes.
+
+When more items match than fit, the palette adds a last row saying how many there are —
+**See all 240 matches in Inventory** — and choosing it opens your inventory with that same search
+already applied. So a short list is never a claim that there is nothing else to find.
+
+> **💡 Tip**
+> Searching `screw` in a workshop full of screw-fixed brackets will match a great many items. The
+> palette still puts the item actually called *Screw, M4×20* at the top, and the last row tells you
+> how many others there were.
+
 Screens that have a keyboard shortcut show it beside their name, both here and in the navigation
 menu — so you pick the shortcut up naturally on your way to clicking the thing.
 
