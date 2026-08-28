@@ -1468,7 +1468,9 @@ const baselineStatements: SqlStatement[] = [
     sql: `ALTER TABLE maintenance_schedules ADD COLUMN accrue_checkout_hours INTEGER NOT NULL DEFAULT 0;`,
   },
   {
-    sql: `ALTER TABLE project_bom_lines ADD COLUMN received_qty INTEGER NOT NULL DEFAULT 0;`,
+    // The `CHECK` is the backstop a receipt's compare-and-swap guard trips when it loses a race
+    // (issue #485), exactly as `purchase_order_lines.received_qty` does — see `receipt-guard.ts`.
+    sql: `ALTER TABLE project_bom_lines ADD COLUMN received_qty INTEGER NOT NULL DEFAULT 0 CHECK (received_qty >= 0);`,
   },
   {
     // Per-line "picked" flag (issue #121): marks a BOM line physically gathered during

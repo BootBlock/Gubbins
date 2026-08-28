@@ -13,6 +13,7 @@ import { planReceipt } from '@/features/projects/receipts';
 import type { SqlStatement } from '../../rpc/driver';
 import type { ProcurementStatus, ReservationStatus } from '../constants';
 import { historyStatement } from '../item/history';
+import { BOM_RECEIPT_RACE_MESSAGE, receivedQtyDeltaStatement, runReceiptWrite } from '../receipt-guard';
 import { addStockStatement } from '../stock';
 import { addBatchStatement } from '../stock-batches';
 import type { InTransitLine, Page, PageParams, ProjectBomLine } from '../types';
@@ -131,12 +132,20 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
       const plan = planReceipt(line.requiredQty, line.receivedQty, opts.quantity);
       const nextStatus: ProcurementStatus = plan.fullyReceived ? 'RECEIVED' : line.procurementStatus;
 
-      const statements: SqlStatement[] = [
-        {
-          sql: 'UPDATE project_bom_lines SET received_qty = ?, procurement_status = ? WHERE id = ?;',
-          params: [plan.nextReceivedQty, nextStatus, lineId],
-        },
-      ];
+      // The cumulative total is written *relatively* and gated on the line still holding the value
+      // this plan was built from (issue #485) — the stock statement it pairs with is relative too,
+      // so an absolute write let two overlapping receipts each add their units while the second
+      // silently replaced the first's total. Receiving nothing (an already-complete line) changes
+      // no quantity, so it skips the guarded write rather than racing over a value it is not
+      // changing; the status write below still gets its chance to catch up.
+      const statements: SqlStatement[] =
+        plan.receivedDelta > 0
+          ? [receivedQtyDeltaStatement('project_bom_lines', lineId, line.receivedQty, plan.receivedDelta)]
+          : [];
+      statements.push({
+        sql: 'UPDATE project_bom_lines SET procurement_status = ? WHERE id = ?;',
+        params: [nextStatus, lineId],
+      });
 
       if (line.itemId && plan.receivedDelta > 0) {
         const item = await this.driver.queryOne<{
@@ -175,7 +184,7 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
         }
       }
 
-      await this.driver.transaction(statements);
+      await runReceiptWrite(() => this.driver.transaction(statements), BOM_RECEIPT_RACE_MESSAGE);
       return (await this.requireLine(lineId)).line;
     }
 

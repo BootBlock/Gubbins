@@ -5,11 +5,8 @@ import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
-import {
-  isReceivedQtyGuardViolation,
-  PO_RECEIPT_RACE_MESSAGE,
-  PurchaseOrderRepository,
-} from './PurchaseOrderRepository';
+import { PurchaseOrderRepository } from './PurchaseOrderRepository';
+import { isReceivedQtyGuardViolation, PO_RECEIPT_RACE_MESSAGE } from './receipt-guard';
 import { SupplierPartRepository } from './SupplierPartRepository';
 import { SupplierRepository } from './SupplierRepository';
 
