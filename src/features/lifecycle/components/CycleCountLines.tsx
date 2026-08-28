@@ -142,6 +142,15 @@ function WindowedSheet<T>({ rows, rowKey, rowHeight, testId, children }: SheetPr
               key={rowKey(row)}
               data-index={virtualRow.index}
               ref={virtualizer.measureElement}
+              // The whole sheet's size and this row's place in it, stated rather than counted.
+              // A `<li>` carries implicit `listitem` semantics, so assistive tech otherwise
+              // reports the *window* — "3 of 13" on a 400-line shelf, changing as the auditor
+              // scrolls. On a sheet whose whole point is that nothing was left off it, a spoken
+              // total an order of magnitude short is a wrong answer, not a rough one. Same
+              // treatment every other windowed list here gets (`select.tsx`, `ItemCard`,
+              // `LocationTreeItem`); `WholeSheet` needs none, as every row is in the DOM.
+              aria-setsize={rows.length}
+              aria-posinset={virtualRow.index + 1}
               className="absolute left-0 top-0 w-full pb-1.5"
               style={{ transform: `translateY(${virtualRow.start}px)` }}
             >

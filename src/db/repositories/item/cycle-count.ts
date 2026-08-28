@@ -34,9 +34,9 @@ import type { ItemCoreRepository } from './core';
 const IN_CHUNK = 400;
 
 /** Split a list of ids into `IN (…)`-sized chunks. */
-function chunked<T>(values: readonly T[], size = IN_CHUNK): T[][] {
+function chunked<T>(values: readonly T[]): T[][] {
   const chunks: T[][] = [];
-  for (let i = 0; i < values.length; i += size) chunks.push(values.slice(i, i + size));
+  for (let i = 0; i < values.length; i += IN_CHUNK) chunks.push(values.slice(i, i + IN_CHUNK));
   return chunks;
 }
 
@@ -137,15 +137,21 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       const statements: SqlStatement[] = [];
       const touched: string[] = [];
 
-      // Everything the loop below reads about an adjustment, read for the whole batch first
-      // (issue #561). Planning used to await two or three round-trips *per line* — a full
-      // `getById` plus the lot's or the placement's current quantity — so authorising a
+      // The item behind each adjustment, and the quantity its variance is measured against,
+      // read for the whole batch first (issue #561). Planning used to await both *per line* — a
+      // full `getById` plus the lot's or the placement's current quantity — so authorising a
       // bulk-storage location's count stalled for thousands of sequential worker calls with
-      // nothing on screen to say why. None of these reads write, and none of them depend on
-      // another's result, so hoisting them changes only how many times the worker is asked.
-      // The loop keeps its original order and its original failure points: a bad count, a
-      // missing item and a wrong tracking mode are still raised at the same adjustment, in the
-      // same order, because only the *source* of each fact moved.
+      // nothing on screen to say why. Neither read writes, and neither depends on the other's
+      // result, so hoisting them changes only how many times the worker is asked. The loop
+      // keeps its original order and its original failure points: a bad count, a missing item
+      // and a wrong tracking mode are still raised at the same adjustment, in the same order,
+      // because only the *source* of each fact moved.
+      //
+      // The loop is not read-free after this: a *shortfall* on the whole-placement or
+      // whole-item branch still awaits `placementDeltaStatements`, which reads the placement's
+      // lots to draw them down FEFO. That allocation depends on the delta this adjustment
+      // computes, so it cannot be hoisted with the rest — and the count sheet never reaches
+      // those branches anyway (it always names the lot).
       const targets = await this.loadCountTargets(adjustments.map((a) => a.itemId));
       const quantities = await this.loadCountedQuantities(adjustments);
 
@@ -353,10 +359,22 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       };
     }
 
-    /** Re-read the items a plan wrote, dropping any that vanished under a concurrent delete. */
+    /**
+     * Re-read the items a plan wrote, dropping any that vanished under a concurrent delete.
+     *
+     * In bulk, through {@link ItemCoreRepository.getManyById} (issue #561): a `getById` per
+     * touched item left the very cost this concern's planning was rewritten to remove sitting
+     * on the *result* path, where a count of a bulk location would pay it a few thousand times
+     * over. The list keeps one entry per id it was given, duplicates included — a count that
+     * drifted two lots of the same item wrote two adjustments, and the caller reports that
+     * total.
+     */
     private async loadTouched(ids: readonly string[]): Promise<Item[]> {
-      const updated = await Promise.all(ids.map((id) => this.getById(id)));
-      return updated.filter((i): i is Item => i !== undefined);
+      const byId = new Map<string, Item>();
+      for (const chunk of chunked([...new Set(ids)])) {
+        for (const [id, item] of await this.getManyById(chunk)) byId.set(id, item);
+      }
+      return ids.map((id) => byId.get(id)).filter((i): i is Item => i !== undefined);
     }
 
     /**

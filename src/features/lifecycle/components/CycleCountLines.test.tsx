@@ -70,10 +70,15 @@ describe('CycleCountLines', () => {
   it('renders an ordinary drawer whole', () => {
     render(<CycleCountLines count={sheet(12)} />);
     expect(countInputs()).toHaveLength(12);
+    // A short sheet keeps its old markup: the list itself, growing with the dialog. A windowed
+    // sheet of twelve rows would also have all twelve in the DOM (they fit the stubbed
+    // viewport), so the row count alone would not tell the two modes apart.
+    expect(screen.getByTestId('cycle-count-lines').tagName).toBe('UL');
   });
 
   it('windows a bulk location to what fits on screen, not what is on the shelf', () => {
     render(<CycleCountLines count={sheet(400)} />);
+    expect(screen.getByTestId('cycle-count-lines').tagName).toBe('DIV');
     const rendered = countInputs();
     // A window over a 300px viewport plus overscan — a small multiple of the rows that fit,
     // and nowhere near the 400 lines the sheet holds.
@@ -94,5 +99,14 @@ describe('CycleCountLines', () => {
     // rows that are not mounted are reachable rather than absent.
     const extent = screen.getByTestId('cycle-count-lines').querySelector('ul')!;
     expect(Number.parseFloat((extent as HTMLElement).style.height)).toBeGreaterThanOrEqual(400 * 62);
+  });
+
+  it('tells assistive tech the whole sheet’s size, not the window’s', () => {
+    render(<CycleCountLines count={sheet(400)} />);
+    const rows = screen.getAllByRole('listitem');
+    expect(rows.length).toBeLessThan(400); // windowed, so the DOM count is not the answer
+    for (const row of rows) expect(row).toHaveAttribute('aria-setsize', '400');
+    expect(rows[0]).toHaveAttribute('aria-posinset', '1');
+    expect(rows[1]).toHaveAttribute('aria-posinset', '2');
   });
 });

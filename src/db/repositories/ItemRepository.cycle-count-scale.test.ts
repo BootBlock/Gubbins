@@ -97,34 +97,42 @@ describe('ItemRepository — cycle counting a bulk location (issue #561)', () =>
   });
 
   describe('authoriseCount', () => {
-    it('plans a many-line count with a bounded number of reads', async () => {
-      const shelf = await locations.create({ name: 'Bulk store' });
-      const lines = await Promise.all(
-        Array.from({ length: 30 }, (_, i) =>
-          items.create({ name: `Part ${i}`, quantity: 10, locationId: shelf.id }),
-        ),
-      );
+    it('costs the same number of reads however many lines the count has', async () => {
+      // The assertion that matters is not a number but a *shape*: authorising must not grow a
+      // read per adjusted line, which is what two or three sequential reads per adjustment did.
+      // Counting the same shelf at two very different sizes states that directly, and cannot be
+      // satisfied by a bound that happens to be generous.
+      const small = await countAtSize(5);
+      const large = await countAtSize(60);
+      expect(large.reads).toBe(small.reads);
+      expect(small.reconciled).toBe(5);
+      expect(large.reconciled).toBe(60);
 
-      const counting = countingDriver(driver);
-      const result = await new ItemRepository(counting.driver).authoriseCount({
-        locationId: shelf.id,
-        quantityAdjustments: lines.map((item) => ({
-          itemId: item.id,
-          counted: 7,
-          locationName: 'Bulk store',
+      /** Reconcile a fresh shelf of `n` drifted lines, reporting the reads it took. */
+      async function countAtSize(n: number): Promise<{ reads: number; reconciled: number }> {
+        const shelf = await locations.create({ name: `Bulk store ${n}` });
+        const lines = await Promise.all(
+          Array.from({ length: n }, (_, i) =>
+            items.create({ name: `Part ${n}-${i}`, quantity: 10, locationId: shelf.id }),
+          ),
+        );
+
+        const counting = countingDriver(driver);
+        const result = await new ItemRepository(counting.driver).authoriseCount({
           locationId: shelf.id,
-          batch: { batchNumber: null, lotNumber: null, expiryDate: null },
-        })),
-        serialisedAdjustments: [],
-      });
+          quantityAdjustments: lines.map((item) => ({
+            itemId: item.id,
+            counted: 7,
+            locationName: `Bulk store ${n}`,
+            locationId: shelf.id,
+            batch: { batchNumber: null, lotNumber: null, expiryDate: null },
+          })),
+          serialisedAdjustments: [],
+        });
 
-      expect(result.discrete).toHaveLength(30);
-      for (const item of result.discrete) expect(item.quantity).toBe(7);
-      // Planning is three reads (the items, their lots, the system-location check) plus one
-      // `getById` per written item to report the result. The point of the assertion is the
-      // *shape*: it must not grow with the number of lines beyond that per-result read, which
-      // is what two or three sequential reads per adjustment used to do.
-      expect(counting.reads()).toBeLessThan(2 * lines.length);
+        for (const item of result.discrete) expect(item.quantity).toBe(7);
+        return { reads: counting.reads(), reconciled: result.discrete.length };
+      }
     });
 
     it('still refuses a count naming an item that no longer exists', async () => {

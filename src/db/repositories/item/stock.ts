@@ -229,7 +229,10 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
      * removed: there is no `LIMIT` here.
      *
      * Ordered by name then serial number, so two instances of the same item are counted in a
-     * predictable order and the sheet is stable across reloads.
+     * predictable order and the sheet is stable across reloads. That deliberately drops the
+     * favourites-first lead the general item list sorts by: a presence audit is walked shelf
+     * order, and floating the favourites to the top of it only makes the sheet harder to follow
+     * against what is actually in front of the auditor.
      */
     async listSerialisedAtLocation(locationId: string): Promise<LocationSerialisedLine[]> {
       const rows = await this.driver.query<{ id: string; name: string; serial_no: number | null }>(
