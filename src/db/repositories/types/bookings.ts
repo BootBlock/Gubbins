@@ -73,3 +73,27 @@ export interface ConvertBookingInput {
   readonly contactName?: string | null;
   readonly note?: string | null;
 }
+
+/**
+ * Amend an existing booking in place — the recovery path for a reservation that cannot yet be
+ * checked out (issue #659). A booking may be created with no contact at all ("hold the slot,
+ * decide later"), and `asset_bookings.contact_id` is `ON DELETE SET NULL`, so deleting a contact
+ * strips the borrower from their future bookings too. Both leave a booking that conversion
+ * refuses, and without an edit the only exits were Cancel and Delete — losing the slot.
+ *
+ * Every field is optional and means *leave unchanged* when omitted. `contactId` / `contactName`
+ * are read together: supplying either (even as `null`) re-resolves the contact exactly as
+ * {@link CreateBookingInput} does, so `contactId: null` with no name clears it.
+ */
+export interface UpdateBookingInput {
+  /** Existing contact id, `null` to clear. Omit to leave the contact untouched. */
+  readonly contactId?: string | null;
+  /** A raw name to resolve-or-create (§4 Ergonomics). Omit to leave the contact untouched. */
+  readonly contactName?: string | null;
+  /** Any instant within the new first day; snapped to the day start. Omit to keep the current one. */
+  readonly startDate?: number;
+  /** Any instant within the new last day; snapped to the day start. Omit to keep the current one. */
+  readonly endDate?: number;
+  /** Replacement note, `null` or blank to clear. Omit to leave it untouched. */
+  readonly note?: string | null;
+}

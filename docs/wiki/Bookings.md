@@ -10,14 +10,35 @@ different days.
 
 ## Reserving an item
 
-Create a booking for an item, choose the contact, and set a **start and end date**. The item is
-now spoken for over that window — a plan for the future, distinct from a
-[[loan|Loans-Check-Out-and-In]] (which is stock that's *out right now*).
+Create a booking for an item and set a **start and end date**. The item is now spoken for over
+that window — a plan for the future, distinct from a [[loan|Loans-Check-Out-and-In]] (which is
+stock that's *out right now*).
+
+Naming a **contact** is optional. Leave it blank to hold the slot before you know who it's for —
+Gubbins asks who the item is going to when you check the booking out, and you can name someone
+on the booking itself at any time before that.
 
 Bookings are grouped by status — upcoming, active, overdue and so on — with a count beside each
 heading. The screen reads as many bookings as it can at once; if you have more than that, it says
 so beneath the form rather than quietly showing you part of the picture. Cancelling or deleting
 bookings you've finished with keeps the list to a useful length.
+
+## Changing a booking
+
+Plans move. **Edit** on a booking's card changes who it's for, the dates it covers, and its note,
+without giving up the reservation. New dates are checked for clashes just like a new booking, so
+you can't move one on top of another.
+
+Editing is also how you repair a booking that has lost its contact: deleting a [[contact|Contacts]]
+clears them from their future bookings, and a booking with nobody's name on it can't be checked
+out until one is given.
+
+> **💡 Tip**
+> You don't have to edit a booking just to check it out. If it doesn't name anyone, Gubbins asks
+> who the item is going to at that moment and adds them to your contacts if they're new.
+
+Once a booking has been **checked out** or **cancelled** it's a record of what happened, so it can
+no longer be edited — the loan it became carries its own dates and note.
 
 ## Overlap detection
 
