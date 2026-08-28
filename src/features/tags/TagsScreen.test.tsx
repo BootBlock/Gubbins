@@ -274,6 +274,10 @@ describe('TagsScreen — filtering and sorting the dictionary (issue #137)', () 
     // Nothing to filter, so the box isn't offered and the genuine empty state stands.
     expect(screen.queryByTestId('tags-search')).toBeNull();
     expect(screen.getByTestId('tags-empty').textContent).toContain('No tags yet');
+    // The feature is explained here and nowhere else on the screen (issue #425), so a first-time
+    // user landing on an empty dictionary is told what tags are for.
+    expect(screen.getByTestId('tags-empty').textContent).toContain('freeform labels');
+    expect(screen.getByTestId('tags-empty').textContent).toContain('Why you might want them');
 
     // With tags present but none matching, the copy names the query instead.
     cleanup();
@@ -287,6 +291,8 @@ describe('TagsScreen — filtering and sorting the dictionary (issue #137)', () 
 
     expect(screen.getByTestId('tags-empty').textContent).toContain('zzz');
     expect(screen.getByTestId('tags-empty').textContent).not.toContain('No tags yet');
+    // A filter that matched nothing is not a first run, so the explanation stays out of the way.
+    expect(screen.getByTestId('tags-empty').textContent).not.toContain('freeform labels');
     // The filter stays reachable, or there would be no way back to the dictionary.
     expect(screen.getByTestId('tags-search')).toBeTruthy();
   });
