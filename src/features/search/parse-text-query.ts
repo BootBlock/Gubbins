@@ -78,13 +78,19 @@ class TextQueryError extends Error {
  * and every validation that matters still belong to `parseASTtoSQL`, which this file's final
  * gate re-runs, so the two layers can't disagree about what a field accepts.
  */
-type FieldKind = 'text' | 'numeric' | 'boolean' | 'date' | 'money' | 'enum';
+export type TextQueryFieldKind = 'text' | 'numeric' | 'boolean' | 'date' | 'money' | 'enum';
 
 /**
  * Alias → canonical scalar field. The canonical names mirror the §5.1 `ITEM_FIELDS`
  * the SQL translator accepts (capability is handled separately via the `cap:` form).
+ *
+ * Exported so the drift test in `field-registries.test.ts` (issue #247) can check this table
+ * against `ITEM_FIELDS` and the Visual Builder's field list. The three were hand-maintained
+ * copies of one vocabulary with nothing relating them, so a field added to one but not the
+ * others failed silently — `notes:foo` falling back to a plain text search, or a valid saved
+ * query that the Builder cannot show.
  */
-const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: FieldKind }>> = {
+export const FIELD_ALIASES: Readonly<Record<string, { field: string; kind: TextQueryFieldKind }>> = {
   name: { field: 'name', kind: 'text' },
   description: { field: 'description', kind: 'text' },
   desc: { field: 'description', kind: 'text' },
