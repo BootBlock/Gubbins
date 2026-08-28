@@ -50,7 +50,7 @@ Every copy of Gubbins starts with two accounts you can't delete:
 | **Display name** | What's shown around the app and against everything they change |
 | **Email** | Optional |
 | **Description** | Optional. A short note on what the account is for, shown on its row |
-| **Icon** | Optional. A glyph shown against the account, in this list and on the [[sign-in screen|Signing-In]]. Pick one from the icon chooser, or leave it and Gubbins uses its usual account glyph |
+| **Icon** | Optional. A glyph shown against the account, in this list and on the [[sign-in screen\|Signing-In]]. Pick one from the icon chooser, or leave it and Gubbins uses its usual account glyph |
 | **[[Role\|Roles-and-Permissions]]** | What they may do. Without one they can sign in, but nothing else |
 | **This account may sign in** | Untick to suspend an account without deleting it |
 
