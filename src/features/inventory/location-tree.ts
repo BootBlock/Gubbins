@@ -70,6 +70,24 @@ export function pruneArchivedTree<T extends { archivedAt?: number | null; childr
 }
 
 /**
+ * Is `id` archived, or does it sit beneath a location that is? {@link pruneArchivedTree} drops an
+ * archived node together with its whole subtree, so a live shelf inside an archived room loses its
+ * row too — this answers the same question for a single id, over the flat list, without walking
+ * the tree. Together they decide whether a location has a row while "Show archived" is off.
+ *
+ * The sidebar asks it of the *selected* location: a selection with no row on screen still scopes
+ * the item list, with nothing visible to explain the filter or to click away from (issue #713).
+ * `location-tree.test.ts` drives this predicate and `pruneArchivedTree` over the same tree and
+ * asserts they agree on every node, so the two cannot drift apart.
+ */
+export function withinArchivedBranch(id: string, nodes: readonly FlatSystemNode[]): boolean {
+  const byId = new Map(nodes.map((n) => [n.id, n] as const));
+  // Falsiness, not `!= null` — {@link pruneArchivedTree} drops a node on `!node.archivedAt`, so a
+  // `0` timestamp has to read as "not archived" on this side too or the two disagree on it.
+  return locationAncestry(id, nodes).some((ancestorId) => !!byId.get(ancestorId)?.archivedAt);
+}
+
+/**
  * One node of a nested tree by id, or `undefined` when nothing carries it. Depth-first, and
  * generic over any self-referential node — the tree counterpart of a `rows.find(…)` on the flat
  * list, for the callers that must read a row the *tree* read enriched (its volume totals, issue

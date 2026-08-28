@@ -1450,12 +1450,13 @@ function InventoryWorkspace() {
                 tree={tree.data}
                 flat={flatLocations}
                 selectedId={selectedLocationId}
+                onSelect={setSelectedLocationId}
                 // Picking a location is the drawer's whole purpose, so it closes on choice and
-                // hands the screen straight back to the items now in scope.
-                onSelect={(id) => {
-                  setSelectedLocationId(id);
-                  setLocationsDrawerOpen(false);
-                }}
+                // hands the screen straight back to the items now in scope. Only a *deliberate*
+                // pick closes it: the sidebar also clears the selection on the user's behalf when
+                // the selected location is deleted or archived out of view (issue #713), and
+                // taking the pane away because a filter toggle did that would be a non-sequitur.
+                onPick={() => setLocationsDrawerOpen(false)}
                 totalCount={totalCount.data ?? 0}
               />
             ) : (
