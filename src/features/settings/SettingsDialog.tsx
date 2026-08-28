@@ -70,6 +70,8 @@ import {
   CARD_CLICK_ACTION_OPTIONS,
   DEAD_STOCK_DAYS_BOUNDS,
   EXPIRY_WINDOW_BOUNDS,
+  LOCATION_SEARCH_AUTO_THRESHOLD,
+  LOCATION_SEARCH_VISIBILITY_OPTIONS,
   LOW_STOCK_GAUGE_BOUNDS,
   LOW_STOCK_QTY_BOUNDS,
   NAV_COUNT_METRIC_CONFIG,
@@ -1141,6 +1143,30 @@ export default function SettingsDialog({
                 className="h-9 w-24"
                 value={prefs.defaultPageSize}
                 onChange={(e) => prefs.setDefaultPageSize(clampPageSize(Number(e.target.value)))}
+              />
+            </SettingRow>
+            <SettingRow
+              label={t('settings.locations.search.label')}
+              description={t('settings.locations.search.description', {
+                vars: { threshold: LOCATION_SEARCH_AUTO_THRESHOLD },
+              })}
+              hintSize="md"
+              hint={t('settings.locations.search.hint', {
+                vars: { threshold: LOCATION_SEARCH_AUTO_THRESHOLD },
+              })}
+            >
+              <Select
+                aria-label={t('settings.locations.search.label')}
+                data-testid="setting-location-search-visibility"
+                className="h-9 w-40"
+                value={prefs.locationSearchVisibility}
+                onChange={(value) =>
+                  prefs.setLocationSearchVisibility(value as typeof prefs.locationSearchVisibility)
+                }
+                options={LOCATION_SEARCH_VISIBILITY_OPTIONS.map((o) => ({
+                  value: o.value,
+                  label: t(`settings.locations.search.option.${o.value}`),
+                }))}
               />
             </SettingRow>
           </SettingsSection>

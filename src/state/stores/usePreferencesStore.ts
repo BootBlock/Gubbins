@@ -27,18 +27,21 @@ import {
   DEFAULT_CARD_CLICK_ACTION,
   DEFAULT_PACKING_FACTOR,
   DEFAULT_ITEMS_PER_PAGE,
+  DEFAULT_LOCATION_SEARCH_VISIBILITY,
   DEFAULT_NAV_COUNT_METRICS,
   DEFAULT_VISUAL_CARD_METRIC,
   DEFAULT_VISUAL_CARD_METRIC_FALLBACK,
   DEFAULT_WINDOW_MONTHS,
   guessBaseCurrency,
   normaliseCardClickAction,
+  normaliseLocationSearchVisibility,
   normaliseNavCountMetric,
   normaliseNavCountMetrics,
   normaliseVisualCardMetric,
   normaliseVisualCardMetricFallback,
   normaliseWindowMonths,
   type CardClickAction,
+  type LocationSearchVisibility,
   type NavCountRoute,
   type VisualCardMetric,
   type VisualCardMetricFallback,
@@ -435,6 +438,12 @@ interface PreferencesStore {
    * editable size picker writes back here, so this is the single shared page size across lists.
    */
   readonly defaultPageSize: number;
+  /**
+   * Whether the Locations sidebar shows its search box (issue #446). `auto` (the default) shows
+   * it only once the tree is big enough to be worth searching; `on` and `off` pin it. Resolved
+   * against the live location count by `showLocationSearch`. See {@link LocationSearchVisibility}.
+   */
+  readonly locationSearchVisibility: LocationSearchVisibility;
   /** Default "older than" window (months) for history pruning (§7.6.3 A). */
   readonly pruneWindowMonths: number;
   /** Default "older than" window (months) for image downgrading (§7.6.3 B). */
@@ -681,6 +690,8 @@ interface PreferencesStore {
   /** Choose the Visual-card hero's fallback for items the chosen metric can't apply to (issue #107). */
   setVisualCardMetricFallback: (metric: VisualCardMetricFallback) => void;
   setCardClickAction: (action: CardClickAction) => void;
+  /** Choose when the Locations sidebar shows its search box (issue #446). */
+  setLocationSearchVisibility: (visibility: LocationSearchVisibility) => void;
   /** Choose what the item card/row badge slot shows (issue #117). */
   setCardBadgeContent: (content: CardBadgeContent) => void;
   /** Choose the badge slot's fallback for items the chosen content can't apply to. */
@@ -819,6 +830,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       deadStockDays: DEAD_STOCK_SINCE_DAYS,
       budgetWarnPercent: BUDGET_WARN_PERCENT,
       paginateLists: false,
+      locationSearchVisibility: DEFAULT_LOCATION_SEARCH_VISIBILITY,
       defaultPageSize: DEFAULT_ITEMS_PER_PAGE,
       pruneWindowMonths: DEFAULT_WINDOW_MONTHS,
       downgradeWindowMonths: DEFAULT_WINDOW_MONTHS,
@@ -954,6 +966,10 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setDeadStockDays: (days) => set({ deadStockDays: clampDeadStockDays(days) }),
       setBudgetWarnPercent: (percent) => set({ budgetWarnPercent: clampBudgetWarnPercent(percent) }),
       setPaginateLists: (paginateLists) => set({ paginateLists }),
+      // Normalise so a stale/unknown persisted value can never leave the sidebar in a state that
+      // is neither shown nor hidden.
+      setLocationSearchVisibility: (visibility) =>
+        set({ locationSearchVisibility: normaliseLocationSearchVisibility(visibility) }),
       // Clamp so a stale/out-of-range persisted or typed value can never reach the page maths.
       setDefaultPageSize: (size) => set({ defaultPageSize: clampPageSize(size) }),
       setPruneWindowMonths: (months) => set({ pruneWindowMonths: normaliseWindowMonths(months) }),
@@ -1131,6 +1147,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
           deadStockDays: clampDeadStockDays(p.deadStockDays),
           budgetWarnPercent: clampBudgetWarnPercent(p.budgetWarnPercent),
           paginateLists: normaliseBoolean(p.paginateLists, current.paginateLists),
+          locationSearchVisibility: normaliseLocationSearchVisibility(p.locationSearchVisibility),
           defaultPageSize: clampPageSize(p.defaultPageSize),
           pruneWindowMonths: normaliseWindowMonths(p.pruneWindowMonths),
           downgradeWindowMonths: normaliseWindowMonths(p.downgradeWindowMonths),
