@@ -155,6 +155,17 @@ use, so link it yourself: open the item it belongs to, put the code in its **Bar
 (the **Scan** button beside the field reads it straight off the label), and every later scan finds
 that item.
 
+## Leaving the scanner
+
+Three ways out, all the same: the **✕** at the top of the screen, the `Escape` key, or your
+device's **Back** button or edge swipe. On an installed app Back is usually the easiest of the
+three one-handed, and it returns you to the screen you opened the scanner from rather than
+navigating anywhere else.
+
+> **⚠️ Heads-up**
+> Leaving clears anything queued in a [[continuous scan|Continuous-Scan-and-Batch-Actions]] that
+> you haven't applied yet. Apply the batch first if you want to keep it.
+
 ## Related pages
 
 - **[[Continuous scan & batch actions|Continuous-Scan-and-Batch-Actions]]** — scan many items in

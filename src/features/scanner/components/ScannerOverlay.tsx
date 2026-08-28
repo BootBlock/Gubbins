@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { plural } from '@/lib/plural';
 import { createPortal } from 'react-dom';
 import { Button, Input, LiveRegion, Modal, Select, Surface, Tooltip } from '@/components/foundry';
+import { useDialogHistoryEntry } from '@/components/foundry/dialog-history';
+import { isTopModal, popModal, pushModal } from '@/components/foundry/modal-stack';
 import {
   AddIcon,
   CheckoutIcon,
@@ -342,10 +344,34 @@ function ScannerOverlayInner({
   });
   const nfcReady = nfcFeature && nfc.supported;
 
-  const close = () => {
+  const close = useCallback(() => {
     dispatch({ type: 'CLOSE' });
     onClose();
-  };
+  }, [onClose]);
+
+  // The two dismissals a full-screen surface is expected to have, and had neither of (issue
+  // #590): the system Back gesture — the *only* back affordance an installed PWA has, and the
+  // one that used to navigate the screen out from under a shelf's worth of queued scans — and
+  // Escape. Both run the same `close` the ✕ does.
+  useDialogHistoryEntry(true, close);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    // Registered in the modal stack so a dialog opened *from* here (the explainer, the checkout
+    // form) owns Escape while it is up, exactly as it owns it over a Modal underneath. No Tab
+    // trap: this overlay covers the viewport and its camera picker portals a menu outside it,
+    // which owns its own keyboard contract — see `BarcodeScanDialog` for that fuller treatment.
+    const token = pushModal();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !isTopModal(token)) return;
+      closeRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      popModal(token);
+    };
+  }, []);
 
   const submitManual = () => {
     const value = manual.trim();

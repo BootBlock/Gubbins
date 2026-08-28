@@ -99,6 +99,28 @@ If you're not ready to update, you have two choices on the banner:
 > your own [[backups|Backup-and-Restore]] until Gubbins reaches 1.0, after which updates will always
 > preserve your data.
 
+## Going back in the installed app
+
+Installed, Gubbins has no browser toolbar, so your device's own **Back** button or edge swipe is
+the only Back there is. It closes whatever is on top of the screen first:
+
+- A **dialog, panel or drawer** — Back closes it, exactly as its **✕** or `Escape` would.
+- The **scanner** — Back leaves the camera and returns you to the screen you opened it from.
+- Nothing open — Back goes to the previous screen, then out of the app.
+
+Dialogs close one at a time, innermost first, so a dialog opened from inside another takes you
+back to the one underneath rather than all the way out.
+
+> **ℹ️ Note**
+> Back is a *dismissal*, not a shortcut past anything. A dialog that is part-way through saving
+> still refuses to close until it finishes, and one holding an unsaved draft still asks before
+> discarding it.
+
+> **⚠️ Heads-up**
+> Closing the scanner clears anything queued in a [[continuous
+> scan|Continuous-Scan-and-Batch-Actions]] that you haven't applied yet — by Back, by `Escape` or
+> by the **✕** alike. Finish the batch before you leave.
+
 ## What next?
 
 - **[[Quick start|First-Run-and-Quick-Start]]** — add your first item.

@@ -15,12 +15,16 @@
  *   the first Tab steps into its controls rather than landing on Close.
  * - **Focus trap.** Tab cycles within the container while it is topmost.
  * - **Escape** closes.
+ * - **The system Back gesture** closes (issue #590). An open dialog is a history entry, so on an
+ *   installed PWA — where Back is the only back affordance there is — it dismisses the dialog
+ *   instead of navigating the screen out from under it. See `dialog-history.ts`.
  * - **Scroll lock.** The body cannot scroll behind the dialog; the lock is shared, so
  *   dismissing a nested dialog keeps its parent's in place.
  * - **Focus restore.** On close, focus returns to whatever opened the dialog, so a keyboard
  *   user never loses their place.
  */
 import { useEffect, useRef, type RefObject } from 'react';
+import { useDialogHistoryEntry } from './dialog-history';
 import { nextTrapIndex, trapFocusables } from './focus-trap';
 import { isTopModal, openModalCount, popModal, pushModal } from './modal-stack';
 
@@ -48,6 +52,10 @@ export function useDialogBehaviour(
   // through a ref keeps the effect's dependency list down to `open`.
   const containerRefRef = useRef(containerRef);
   containerRefRef.current = containerRef;
+
+  // Back is a dismissal like any other, so it goes through the caller's own `onClose` — which for
+  // a Modal is the request that consults the busy and unsaved-work guards first (issue #590).
+  useDialogHistoryEntry(open, onClose);
 
   useEffect(() => {
     if (!open) return;

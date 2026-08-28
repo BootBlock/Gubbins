@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Button, Input, LiveRegion, Surface } from '@/components/foundry';
+import { useDialogHistoryEntry } from '@/components/foundry/dialog-history';
 import { nextTrapIndex, trapFocusables } from '@/components/foundry/focus-trap';
 import { isTopModal, popModal, pushModal } from '@/components/foundry/modal-stack';
 import { CloseIcon, ExternalLinkIcon, LinkIcon, ScanIcon } from '@/components/icons';
@@ -90,6 +91,11 @@ function BarcodeScanDialogInner({
   // inline closure that changes every render — cf. Foundry Modal's `onCloseRef`).
   const closeRef = useRef(close);
   closeRef.current = close;
+
+  // The system Back gesture dismisses this the way Escape and the ✕ do, rather than navigating
+  // the form that opened it out from under the camera (issue #590). `Modal` gets the same
+  // through `use-dialog-behaviour`; this dialog hand-rolls that contract, so it opts in here.
+  useDialogHistoryEntry(true, close);
 
   // Open the camera once on mount; prime audio from this user gesture (§6.5). Park focus on the
   // aria-labelled container so a screen reader announces the dialog (not the Close button), and
