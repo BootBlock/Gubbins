@@ -6,6 +6,8 @@
  * floor (which must emit `stock.adjusted` + `item.low_stock`).
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { PREFERENCES_KEY } from '@/features/backup/settings-groups';
+import { LOW_STOCK_QTY_FIELD } from '@/features/settings/shared-low-stock.ts';
 import { hydrateFromJson, type HydrateResult } from '../hydrate.ts';
 import { computeGenerationEvents } from './generation.ts';
 import { createEventPipeline } from './pipeline.ts';
@@ -22,8 +24,16 @@ interface HistoryRow {
   created_at: number;
 }
 
+/** Anything the one-item snapshot builder lets a test vary beyond the quantity and the ledger. */
+interface SnapshotOptions {
+  /** The item's own reorder floor. `null` opts it out, leaving only the blanket to flag it. */
+  readonly reorderPoint?: number | null;
+  /** A blanket quantity threshold shared through the `settings` table (issue #483). */
+  readonly blanketQtyThreshold?: number;
+}
+
 /** Build a one-item synthetic snapshot at a given on-hand quantity + ledger. */
-function snapshot(quantity: number, history: HistoryRow[]): string {
+function snapshot(quantity: number, history: HistoryRow[], options: SnapshotOptions = {}): string {
   return JSON.stringify({
     formatVersion: 1,
     generatedAt: 1_751_000_000_000,
@@ -41,7 +51,7 @@ function snapshot(quantity: number, history: HistoryRow[]): string {
           category_id: null,
           tracking_mode: 'DISCRETE',
           quantity,
-          reorder_point: 5,
+          reorder_point: options.reorderPoint === undefined ? 5 : options.reorderPoint,
           mpn: null,
           manufacturer: null,
           is_active: 1,
@@ -74,6 +84,19 @@ function snapshot(quantity: number, history: HistoryRow[]): string {
         },
       ],
       capabilities: [],
+      settings:
+        options.blanketQtyThreshold === undefined
+          ? []
+          : [
+              {
+                id: `${PREFERENCES_KEY}#${LOW_STOCK_QTY_FIELD}`,
+                store_key: PREFERENCES_KEY,
+                field: LOW_STOCK_QTY_FIELD,
+                value: JSON.stringify(options.blanketQtyThreshold),
+                created_at: 1_750_000_000_000,
+                updated_at: 1_751_000_000_000,
+              },
+            ],
     },
     tombstones: [],
     gaugeHistory: [],
@@ -148,6 +171,28 @@ describe('computeGenerationEvents', () => {
       locationName: 'Shelf 2',
     });
     expect(events[1]!.id).toBe('h-adjust:low_stock');
+  });
+
+  it('judges low stock against the blanket the user shared, not this build’s defaults', async () => {
+    // The item carries no reorder point of its own, so with the shipped (opt-in, off) thresholds a
+    // drop to 3 raises `stock.adjusted` alone. The blanket the app published into the synced
+    // `settings` table is what makes it low as well (issue #483).
+    const withoutBlanket = await hydrate(snapshot(7, [created(100)], { reorderPoint: null }));
+    const before = await computeGenerationEvents(withoutBlanket.driver, null);
+    const dropped = await hydrate(
+      snapshot(3, [created(100), quantityChange('h-adjust', -4, 200)], { reorderPoint: null }),
+    );
+    expect((await computeGenerationEvents(dropped.driver, before.cursor)).events.map((e) => e.type)).toEqual([
+      'stock.adjusted',
+    ]);
+
+    const shared = { reorderPoint: null, blanketQtyThreshold: 5 } as const;
+    const baseline = await hydrate(snapshot(7, [created(100)], shared));
+    const first = await computeGenerationEvents(baseline.driver, null);
+    const next = await hydrate(snapshot(3, [created(100), quantityChange('h-adjust', -4, 200)], shared));
+    const { events } = await computeGenerationEvents(next.driver, first.cursor);
+
+    expect(events.map((e) => e.type)).toEqual(['stock.adjusted', 'item.low_stock']);
   });
 
   it('emits nothing when a generation only removes ledger rows (issue #642)', async () => {

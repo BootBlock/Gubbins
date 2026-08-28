@@ -17,6 +17,7 @@ import { migrations } from '@/db/migrations';
 import { runMigrations } from '@/db/migrations/engine';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import type { IDatabaseDriver, SqlParams } from '@/db/rpc/driver';
+import { DEFAULT_LOW_STOCK } from './events/model.ts';
 import { countStockLevels } from './inventory-scan.ts';
 import { createNodeDriver, type NodeDriver } from './node-driver.ts';
 
@@ -64,7 +65,10 @@ describe('countStockLevels', () => {
       gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 0 },
     });
 
-    expect(await countStockLevels(items)).toEqual({ lowStockItems: 2, outOfStockItems: 3 });
+    expect(await countStockLevels(items, DEFAULT_LOW_STOCK)).toEqual({
+      lowStockItems: 2,
+      outOfStockItems: 3,
+    });
   });
 
   it('excludes items with no bulk stock level, unlimited supply, and soft-deleted rows', async () => {
@@ -88,7 +92,31 @@ describe('countStockLevels', () => {
     const deleted = await items.create({ name: 'Old stock', trackingMode: 'DISCRETE', quantity: 0 });
     await items.softDelete(deleted.id);
 
-    expect(await countStockLevels(items)).toEqual({ lowStockItems: 0, outOfStockItems: 0 });
+    expect(await countStockLevels(items, DEFAULT_LOW_STOCK)).toEqual({
+      lowStockItems: 0,
+      outOfStockItems: 0,
+    });
+  });
+
+  it('counts against the blanket thresholds it is handed, not the shipped defaults', async () => {
+    const items = new ItemRepository(driver);
+    // Neither carries a reorder point, so both are invisible to low-stock under the shipped
+    // (opt-in, off) defaults and both must be counted once a blanket is in force (issue #483).
+    await items.create({ name: 'Screws', trackingMode: 'DISCRETE', quantity: 2 });
+    await items.create({
+      name: 'Solvent',
+      trackingMode: 'CONSUMABLE_GAUGE',
+      gauge: { unitOfMeasure: 'ml', grossCapacity: 1000, currentNetValue: 100 },
+    });
+
+    expect(await countStockLevels(items, DEFAULT_LOW_STOCK)).toEqual({
+      lowStockItems: 0,
+      outOfStockItems: 0,
+    });
+    expect(await countStockLevels(items, { qtyThreshold: 5, gaugePercent: 20 })).toEqual({
+      lowStockItems: 2,
+      outOfStockItems: 0,
+    });
   });
 
   it('counts the whole inventory in a single read, past any one page of items', async () => {
@@ -101,7 +129,7 @@ describe('countStockLevels', () => {
     }
 
     const counting = countingDriver(driver);
-    const counts = await countStockLevels(new ItemRepository(counting.driver));
+    const counts = await countStockLevels(new ItemRepository(counting.driver), DEFAULT_LOW_STOCK);
 
     expect(counts).toEqual({ lowStockItems: total, outOfStockItems: total });
     // One aggregate, not a walk: this is what removes the cap the counts used to truncate at.
