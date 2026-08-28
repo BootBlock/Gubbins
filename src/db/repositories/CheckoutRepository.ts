@@ -81,6 +81,19 @@ const CHECKOUT_JOIN_SELECT = `
   LEFT JOIN locations l ON l.id = k.location_id`;
 
 /**
+ * "This `checkouts` row (aliased `k`) is an **open loan whose due date has passed**" — the one
+ * definition of *overdue*, in the frame the checkouts table itself is read in. Both the
+ * item-scoped {@link overdueCheckoutExistsSql} and {@link CheckoutRepository.countOpen} embed it
+ * rather than restating it, so the inventory list's "Overdue" filter, the Dashboard's Overdue
+ * widget and the Contacts summary cannot come to disagree about which loans are late.
+ *
+ * Binds `now` (UNIX-ms) once.
+ */
+const OVERDUE_CHECKOUT_PREDICATE = `k.returned_at IS NULL
+      AND k.due_date IS NOT NULL
+      AND k.due_date < ?`;
+
+/**
  * A correlated `EXISTS` predicate that is true for an item with at least one **open**
  * checkout whose due date has passed — the SQL counterpart of the derived `isOverdue` flag
  * on {@link CheckoutWithNames} (`OPEN && dueDate !== null && dueDate < now`). Shared so the
@@ -93,9 +106,7 @@ export function overdueCheckoutExistsSql(): string {
   return `EXISTS (
     SELECT 1 FROM checkouts k
     WHERE k.item_id = items.id
-      AND k.returned_at IS NULL
-      AND k.due_date IS NOT NULL
-      AND k.due_date < ?
+      AND ${OVERDUE_CHECKOUT_PREDICATE}
   )`;
 }
 
@@ -437,6 +448,34 @@ export class CheckoutRepository extends BaseRepository {
       params,
       'k.due_date IS NULL, k.due_date ASC, k.id ASC',
     );
+  }
+
+  /**
+   * How many loans are open right now, and how many of those are overdue — the **totals**
+   * behind {@link listOpen}'s bounded page, in one round trip.
+   *
+   * The Dashboard's Overdue widget and the Contacts screen's "On loan" summary both state a
+   * figure over a feed that is read one 100-row page at a time, so counting the rows in hand
+   * capped both at the page size and made "N still on loan" the remainder of a page rather than
+   * of the loan board (issue #606). Returned together because every caller shows both, and a
+   * conditional `SUM` over one pass costs one scan rather than two.
+   *
+   * `now` decides overdue-ness and is injected, exactly as it is for the item-scoped
+   * {@link overdueCheckoutExistsSql} this shares its predicate with.
+   */
+  async countOpen(now: number): Promise<{ open: number; overdue: number }> {
+    // `overdue_count` admits null in the type because `SUM(...)` over zero rows really is SQL
+    // NULL — declaring it a number is what would let a later caller drop the guard below.
+    const row = await this.driver.queryOne<{ open_count: number; overdue_count: number | null }>(
+      `SELECT COUNT(*) AS open_count,
+              SUM(CASE WHEN ${OVERDUE_CHECKOUT_PREDICATE} THEN 1 ELSE 0 END) AS overdue_count
+       FROM checkouts k
+       WHERE k.returned_at IS NULL;`,
+      [now],
+    );
+    // `SUM(...)` over zero rows is SQL NULL, not 0 — an empty loan board would otherwise
+    // produce NaN downstream.
+    return { open: Number(row?.open_count ?? 0), overdue: Number(row?.overdue_count ?? 0) };
   }
 
   /** A single item's checkout history (open first, then newest), bounded. */

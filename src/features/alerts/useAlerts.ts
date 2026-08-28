@@ -13,7 +13,15 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getItemRepository } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
-import { useLowStockItems, useExpiringItems, useDueMaintenance } from '@/features/lifecycle/hooks';
+import {
+  useLowStockItems,
+  useExpiringItems,
+  useExpiringCount,
+  useDueMaintenance,
+  useDueMaintenanceCount,
+} from '@/features/lifecycle/hooks';
+import { useLowStockCount } from '@/features/reports/queries';
+import { getMaintenanceRepository } from '@/db/repositories';
 // From its own module rather than the barrel, matching the hooks import above: the pure helper
 // has no hook to mock, and a test that stubs the hook surface should not have to restate it.
 import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
@@ -21,7 +29,8 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePermissionCheck } from '@/features/users/usePermission';
 import { WARRANTY_EXPIRING_SOON_DAYS } from '@/features/inventory/asset-lifecycle';
-import { readAllPages } from '@/lib/read-all-pages';
+import { readAllPages, type AllPages } from '@/lib/read-all-pages';
+import type { FieldDueDate, Item, MaintenanceScheduleWithItem } from '@/db/repositories/types';
 import {
   buildAlerts,
   applyDismissals,
@@ -30,30 +39,102 @@ import {
   type Alert,
   type AlertKind,
   type AlertSources,
+  type ExpirySource,
+  type FieldDueSource,
+  type LowStockSource,
+  type MaintenanceDueSource,
+  type WarrantySource,
 } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 import { nowMs } from '@/lib/clock';
 import { useFormatters } from '@/lib/useFormatters';
 
 /**
- * Combines the four alert source feeds into a sorted, dismissal-filtered `Alert[]`.
+ * Each lane's row → alert-source projection, at module scope rather than inline in the hook.
+ *
+ * Two callers need them: the hook (which maps one bounded page per lane) and
+ * {@link useAlerts}'s `readAllAlerts` (which maps every page for the export). Written once so
+ * the file an export produces cannot describe a row differently from the card on screen.
+ */
+const toLowStockSources = (rows: readonly Item[]): LowStockSource[] =>
+  rows.map((item) => ({ id: item.id, name: item.name }));
+
+const toExpirySources = (rows: readonly Item[]): ExpirySource[] =>
+  rows.map((item) => ({
+    id: item.id,
+    name: item.name,
+    effectiveExpiryDate: effectiveExpiryDate(item.expiryDate, item.earliestBatchExpiryDate),
+  }));
+
+const toMaintenanceSources = (rows: readonly MaintenanceScheduleWithItem[]): MaintenanceDueSource[] =>
+  rows.map((sched) => ({
+    id: sched.id,
+    name: sched.name,
+    itemId: sched.itemId,
+    itemName: sched.itemName,
+    dueAtMs: maintenanceDueAtMs(sched.basis, sched.lastPerformedAt, sched.createdAt, sched.intervalDays),
+  }));
+
+const toWarrantySources = (rows: readonly Item[]): WarrantySource[] =>
+  rows.map((item) => ({
+    id: item.id,
+    name: item.name,
+    acquiredAt: item.acquiredAt,
+    warrantyExpiresAt: item.warrantyExpiresAt,
+    purchasePrice: item.purchasePrice,
+    depreciationMonths: item.depreciationMonths,
+  }));
+
+const toFieldDueSources = (rows: readonly FieldDueDate[]): FieldDueSource[] =>
+  rows.map((row) => ({
+    itemId: row.itemId,
+    itemName: row.itemName,
+    defId: row.defId,
+    fieldName: row.fieldName,
+    leadDays: row.leadDays,
+    dueAt: row.dueAt,
+  }));
+
+/** Which lanes this session may see at all — feature module on, and read permission held. */
+interface AlertLaneGates {
+  readonly lowStock: boolean;
+  readonly expiry: boolean;
+  readonly maintenance: boolean;
+  readonly warranty: boolean;
+  readonly fieldDue: boolean;
+}
+
+/**
+ * Combines the five alert source feeds into a sorted, dismissal-filtered `Alert[]`.
+ *
+ * @param options.withTotals Also read each lane's `COUNT(*)`. Off by default: the always-mounted
+ *   nav badge does not need them, and four extra queries on every screen would be pure cost.
+ *   The alert centre asks for them, because it is the surface that *states* a figure per lane.
  *
  * @returns
  *   - `alerts`     — undismissed alerts, sorted by severity then dueAt.
  *   - `allAlerts`  — all alerts before dismissal filtering (for the badge count).
  *   - `isLoading`  — true while any source query is still loading.
  *   - `isError`    — true when any source query errored.
- *   - `fieldDueTruncated` — true when the custom-field due-date read hit its ceiling, so that
- *     lane is showing a prefix rather than the whole set. Surfaced rather than swallowed: a
- *     feed that quietly stops at a page boundary reads as "that's everything" when it isn't
- *     (issues #606/#607).
+ *   - `truncatedKinds` — the lanes showing a prefix of their feed rather than the whole of it:
+ *     the four paged lanes when a further page exists, and `field-due` when its read-everything
+ *     walk hit the `readAllPages` ceiling. Surfaced rather than swallowed: a feed that quietly
+ *     stops at a page boundary reads as "that's everything" when it isn't (issues #606/#607).
+ *   - `laneTotals` — each lane's real total, or `undefined` when totals were not asked for (or
+ *     have not loaded). It is what a lane's own `COUNT(*)` says, so it counts the rows the feed
+ *     selects — a hair above the cards shown, since a lane builder re-grades each row and can
+ *     drop one whose status has moved since the page was cached.
+ *   - `readAllAlerts` — re-read **every** page of every lane and rebuild the feed, for the
+ *     export. Not a hook; call it from an export's `build` callback.
  */
-export function useAlerts(): {
+export function useAlerts(options: { withTotals?: boolean } = {}): {
   readonly alerts: Alert[];
   readonly allAlerts: Alert[];
   readonly isLoading: boolean;
   readonly isError: boolean;
-  readonly fieldDueTruncated: boolean;
+  readonly truncatedKinds: ReadonlySet<AlertKind>;
+  readonly laneTotals: Partial<Record<AlertKind, number>>;
+  readonly readAllAlerts: () => Promise<AllPages<Alert>>;
 } {
   const now = nowMs();
   // Every date in the alert copy goes through the shared formatter seam, so it reads in the user's
@@ -87,11 +168,15 @@ export function useAlerts(): {
   const enabled = useEnabledFeatures();
   const allows = usePermissionCheck();
   const itemsReadable = allows('items:read');
-  const lowStockOn = itemsReadable;
-  const perishablesOn = enabled.has('perishables') && itemsReadable;
-  const maintenanceOn = enabled.has('maintenance') && allows('maintenance:read');
-  const warrantyOn = enabled.has('warranty') && itemsReadable;
-  const customFieldsOn = enabled.has('custom-fields') && itemsReadable;
+  const gates: AlertLaneGates = {
+    lowStock: itemsReadable,
+    expiry: enabled.has('perishables') && itemsReadable,
+    maintenance: enabled.has('maintenance') && allows('maintenance:read'),
+    warranty: enabled.has('warranty') && itemsReadable,
+    fieldDue: enabled.has('custom-fields') && itemsReadable,
+  };
+  const { lowStock: lowStockOn, expiry: perishablesOn, warranty: warrantyOn } = gates;
+  const { maintenance: maintenanceOn, fieldDue: customFieldsOn } = gates;
 
   const lowStockQuery = useLowStockItems({ qtyThreshold, gaugePercent }, { enabled: lowStockOn });
   const expiringQuery = useExpiringItems(expirySoonWindowDays, { enabled: perishablesOn });
@@ -119,6 +204,32 @@ export function useAlerts(): {
     enabled: customFieldsOn,
   });
 
+  /**
+   * Each lane's real total, read only when a caller asks for one (see `withTotals`). The paged
+   * lanes above hand back at most one page, so a screen stating "N low stock" over them was
+   * stating the page size the moment an inventory grew past it (issue #606). The counts run the
+   * same predicates the feeds select with, so a total and its rows answer the same question.
+   *
+   * `field-due` has no count: that lane already walks every page, so its rows *are* its total
+   * unless the `readAllPages` ceiling stopped the walk, which it reports itself.
+   */
+  const wantTotals = options.withTotals ?? false;
+  const lowStockTotal = useLowStockCount({ enabled: wantTotals && lowStockOn });
+  const expiringTotal = useExpiringCount(expirySoonWindowDays, { enabled: wantTotals && perishablesOn });
+  const maintenanceTotal = useDueMaintenanceCount({ enabled: wantTotals && maintenanceOn });
+  const warrantyTotal = useQuery({
+    queryKey: inventoryKeys.warrantyExpiringCount(),
+    queryFn: () => getItemRepository().countWarrantyExpiring(WARRANTY_EXPIRING_SOON_DAYS, now),
+    enabled: wantTotals && warrantyOn,
+  });
+
+  const laneTotals: Partial<Record<AlertKind, number>> = {
+    'low-stock': lowStockTotal.data,
+    expiry: expiringTotal.data,
+    'maintenance-due': maintenanceTotal.data,
+    'warranty-due': warrantyTotal.data,
+  };
+
   const isLoading =
     lowStockQuery.isLoading ||
     expiringQuery.isLoading ||
@@ -136,57 +247,11 @@ export function useAlerts(): {
   // --- Build alert sources from query data ---
 
   const sources: AlertSources = {
-    lowStock: lowStockOn
-      ? (lowStockQuery.data?.rows ?? []).map((item) => ({
-          id: item.id,
-          name: item.name,
-        }))
-      : [],
-
-    expiring: perishablesOn
-      ? (expiringQuery.data?.rows ?? []).map((item) => ({
-          id: item.id,
-          name: item.name,
-          effectiveExpiryDate: effectiveExpiryDate(item.expiryDate, item.earliestBatchExpiryDate),
-        }))
-      : [],
-
-    maintenanceDue: maintenanceOn
-      ? (maintenanceDueQuery.data?.rows ?? []).map((sched) => ({
-          id: sched.id,
-          name: sched.name,
-          itemId: sched.itemId,
-          itemName: sched.itemName,
-          dueAtMs: maintenanceDueAtMs(
-            sched.basis,
-            sched.lastPerformedAt,
-            sched.createdAt,
-            sched.intervalDays,
-          ),
-        }))
-      : [],
-
-    warrantyItems: warrantyOn
-      ? (warrantyQuery.data?.rows ?? []).map((item) => ({
-          id: item.id,
-          name: item.name,
-          acquiredAt: item.acquiredAt,
-          warrantyExpiresAt: item.warrantyExpiresAt,
-          purchasePrice: item.purchasePrice,
-          depreciationMonths: item.depreciationMonths,
-        }))
-      : [],
-
-    fieldDue: customFieldsOn
-      ? (fieldDueQuery.data?.rows ?? []).map((row) => ({
-          itemId: row.itemId,
-          itemName: row.itemName,
-          defId: row.defId,
-          fieldName: row.fieldName,
-          leadDays: row.leadDays,
-          dueAt: row.dueAt,
-        }))
-      : [],
+    lowStock: lowStockOn ? toLowStockSources(lowStockQuery.data?.rows ?? []) : [],
+    expiring: perishablesOn ? toExpirySources(expiringQuery.data?.rows ?? []) : [],
+    maintenanceDue: maintenanceOn ? toMaintenanceSources(maintenanceDueQuery.data?.rows ?? []) : [],
+    warrantyItems: warrantyOn ? toWarrantySources(warrantyQuery.data?.rows ?? []) : [],
+    fieldDue: customFieldsOn ? toFieldDueSources(fieldDueQuery.data?.rows ?? []) : [],
   };
 
   /**
@@ -242,9 +307,88 @@ export function useAlerts(): {
     if (pruned) store.replace(pruned);
   }, [settled, liveIdKey, completeKindKey]);
 
-  // Only meaningful while the lane is on and has actually loaded; a disabled or still-loading
-  // lane is not "truncated", it simply has nothing to say yet.
-  const fieldDueTruncated = customFieldsOn && (fieldDueQuery.data?.truncated ?? false);
+  /**
+   * The mirror image of {@link completeKinds}: lanes showing a prefix of themselves rather than
+   * the whole of it. Only meaningful once a lane is on and has loaded — a disabled or
+   * still-loading lane is not "truncated", it simply has nothing to say yet — so `hasMore` is
+   * read strictly rather than by negating `complete`, which would grade every unloaded lane as
+   * cut short.
+   *
+   * **`hasMore` alone is not the answer.** The page envelope sets it from `rows.length === limit`
+   * (see `BaseRepository.toPage`), so a lane holding *exactly* one page reports it with nothing
+   * behind the rows. Believed on its own, that lane would be captioned "Showing the 100 most
+   * urgent of 100." and its count spoken as a floor. Where the lane's own `COUNT(*)` is in hand,
+   * that ambiguity is settled by arithmetic instead: it is truncated only when the total genuinely
+   * exceeds the rows read. Without a total — a caller that asked for none, or a count that has not
+   * answered — the conservative `hasMore` reading stands, exactly as `readAllPages` hedges a full
+   * final page.
+   */
+  const pagedTruncated = (
+    query: { data?: { rows: readonly unknown[]; hasMore: boolean } },
+    laneOn: boolean,
+    total: number | undefined,
+  ): boolean => {
+    if (!laneOn || query.data?.hasMore !== true) return false;
+    return total === undefined || total > query.data.rows.length;
+  };
 
-  return { alerts, allAlerts, isLoading, isError, fieldDueTruncated };
+  const truncatedKinds = new Set<AlertKind>();
+  if (pagedTruncated(lowStockQuery, lowStockOn, lowStockTotal.data)) truncatedKinds.add('low-stock');
+  if (pagedTruncated(expiringQuery, perishablesOn, expiringTotal.data)) truncatedKinds.add('expiry');
+  if (pagedTruncated(maintenanceDueQuery, maintenanceOn, maintenanceTotal.data)) {
+    truncatedKinds.add('maintenance-due');
+  }
+  if (pagedTruncated(warrantyQuery, warrantyOn, warrantyTotal.data)) truncatedKinds.add('warranty-due');
+  if (customFieldsOn && fieldDueQuery.data?.truncated === true) truncatedKinds.add('field-due');
+
+  /**
+   * Re-read every page of every lane and rebuild the feed — the export's read (issue #606).
+   *
+   * The alert centre's export used to serialise the array the hook is holding, under a comment
+   * claiming the hook held the whole list. It does not: four of the five lanes are one bounded
+   * page, so the file stopped at the cap while every sibling list export on the screen already
+   * re-read its list through `exportEveryPage`. This is that walk, over five feeds instead of
+   * one, and it reports its own ceiling so a file that *does* stop short says so.
+   *
+   * Dismissals are applied exactly as they are on screen: an alert the user has explicitly set
+   * aside reappearing in the file would defeat the point of setting it aside. They are read from
+   * the store at call time rather than closed over, so an alert dismissed since the last render
+   * stays out.
+   *
+   * A lane whose module is off — or whose subject this session may not read — is not fetched at
+   * all, matching the screen: the export can never contain a lane the screen would refuse to.
+   */
+  const readAllAlerts = async (): Promise<AllPages<Alert>> => {
+    const at = nowMs();
+    const none = { rows: [], truncated: false } as const;
+    const items = getItemRepository();
+    const [low, expiring, maintenance, warranty, fieldDue] = await Promise.all([
+      gates.lowStock
+        ? readAllPages((page) => items.listLowStock({ qtyThreshold, gaugePercent }, page))
+        : none,
+      gates.expiry ? readAllPages((page) => items.listExpiringWithin(expirySoonWindowDays, at, page)) : none,
+      gates.maintenance ? readAllPages((page) => getMaintenanceRepository().listDue(at, page)) : none,
+      gates.warranty
+        ? readAllPages((page) => items.listWarrantyExpiring(WARRANTY_EXPIRING_SOON_DAYS, at, page))
+        : none,
+      gates.fieldDue ? readAllPages((page) => items.listFieldDueDates(at, page)) : none,
+    ]);
+    const built = buildAlerts(
+      {
+        lowStock: toLowStockSources(low.rows),
+        expiring: toExpirySources(expiring.rows),
+        maintenanceDue: toMaintenanceSources(maintenance.rows),
+        warrantyItems: toWarrantySources(warranty.rows),
+        fieldDue: toFieldDueSources(fieldDue.rows),
+      },
+      at,
+      fmt,
+    );
+    return {
+      rows: applyDismissals(built, useDismissedAlertsStore.getState().dismissals, at),
+      truncated: [low, expiring, maintenance, warranty, fieldDue].some((lane) => lane.truncated),
+    };
+  };
+
+  return { alerts, allAlerts, isLoading, isError, truncatedKinds, laneTotals, readAllAlerts };
 }

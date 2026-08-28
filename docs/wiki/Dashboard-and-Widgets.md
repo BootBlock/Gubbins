@@ -18,6 +18,11 @@ Drag them to reorder, and arrange the board to suit how you work.
 Widgets are live: they read your current data, and many double as quick links straight to the
 thing they summarise (select the Low stock widget to jump to what's low, for instance).
 
+The big number on an attention card — Low stock, Soon to expire, Maintenance due, Overdue — is
+the count across your **whole** inventory, however large it is. The few rows underneath are the
+most urgent ones, not all of them, so the figure can be much bigger than the list. Select the
+card to work through the rest.
+
 Two of them report on the app rather than your inventory: **Storage** (how much room your data
 takes, and whether the browser has promised to keep it) and **Platform** (what your browser
 provides, including which **storage engine** holds the database — see

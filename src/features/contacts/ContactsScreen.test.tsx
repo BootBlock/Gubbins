@@ -70,11 +70,31 @@ let contactsState: { isLoading: boolean; isError?: boolean; data?: { rows: Conta
 };
 /** Overrides the contacts total when a test needs it to disagree with the rows it supplies. */
 let contactCountState: number | undefined;
+/** The same, for the loan board's totals — the case a page of loans cannot show (issue #606). */
+let openCountState: { open: number; overdue: number } | undefined;
+/** Fails the totals query while the feed itself succeeds — they are two queries, so they can. */
+let openCountErrored = false;
 const refetchOpen = vi.fn();
 const refetchContacts = vi.fn();
 
 vi.mock('./contacts', () => ({
   useOpenCheckouts: () => ({ ...openCheckoutsState, refetch: refetchOpen }),
+  /**
+   * The loan board's totals (issue #606). Defaults to what a real `COUNT(*)` would say about the
+   * fixture; a test that needs the board to be longer than the page overrides it. It tracks the
+   * feed's own loading/error state, since both come from the same bounded read on screen.
+   */
+  useOpenCheckoutCounts: () => {
+    const rows = openCheckoutsState.data?.rows ?? [];
+    if (openCountErrored) return { isLoading: false, isError: true, data: undefined };
+    return {
+      isLoading: openCheckoutsState.isLoading,
+      isError: openCheckoutsState.isError,
+      data: openCheckoutsState.data
+        ? (openCountState ?? { open: rows.length, overdue: rows.filter((r) => r.isOverdue).length })
+        : undefined,
+    };
+  },
   // The export's read-everything walk (issue #132); never invoked here, as the menu is stubbed.
   readOpenCheckoutsPage: vi.fn(),
   readContactsPage: vi.fn(),
@@ -144,6 +164,8 @@ beforeEach(() => {
   openCheckoutsState = { isLoading: true };
   contactsState = { isLoading: true };
   contactCountState = undefined;
+  openCountState = undefined;
+  openCountErrored = false;
   refetchOpen.mockClear();
   refetchContacts.mockClear();
 });
@@ -276,6 +298,64 @@ describe('ContactsScreen — list pagination (issue #20)', () => {
     expect(screen.getByTestId('contacts-pagination-summary')).toHaveTextContent('6–10 of 12');
     expect(screen.getByText('Contact 06')).toBeInTheDocument();
     expect(screen.queryByText('Contact 05')).toBeNull();
+  });
+});
+
+/**
+ * The loan board is read one bounded page at a time, exactly as the dictionary beneath it is,
+ * but it had neither a pager nor a notice — so a board longer than a page showed a hundred rows
+ * as though they were every loan, under a summary that counted them (issue #606).
+ */
+describe('ContactsScreen — a loan board longer than one read (issue #606)', () => {
+  it('states the whole board in the summary, not the page in view', () => {
+    openCheckoutsState = {
+      isLoading: false,
+      data: { rows: Array.from({ length: 100 }, (_, i) => makeCheckout(`k${i}`, i < 4)) },
+    };
+    openCountState = { open: 300, overdue: 20 };
+    render(<ContactsScreen />);
+
+    expect(screen.getByTestId('contacts-on-loan-live').textContent).toBe('300 items on loan, 20 overdue.');
+  });
+
+  it('says how many loans the capped read leaves out', () => {
+    openCheckoutsState = {
+      isLoading: false,
+      data: { rows: Array.from({ length: 100 }, (_, i) => makeCheckout(`k${i}`, false)) },
+    };
+    openCountState = { open: 300, overdue: 0 };
+    render(<ContactsScreen />);
+
+    const notice = screen.getByTestId('loans-truncated');
+    expect(notice.textContent).toContain('100');
+    expect(notice.textContent).toContain('200');
+  });
+
+  it('says nothing when the whole board fits in one read', () => {
+    openCheckoutsState = { isLoading: false, data: { rows: [makeCheckout('k1', false)] } };
+    render(<ContactsScreen />);
+
+    expect(screen.queryByTestId('loans-truncated')).toBeNull();
+  });
+});
+
+/**
+ * The board's figures and its rows come from two queries now, so the count can fail on its own.
+ * When it does the summary must fall back to the loans in hand — an understated figure over a
+ * visible list, never "nothing checked out" announced above one (the shape of issue #306).
+ */
+describe('ContactsScreen — the loan totals fail on their own', () => {
+  it('counts the rows in hand rather than announcing an empty board', () => {
+    openCheckoutsState = {
+      isLoading: false,
+      data: { rows: [makeCheckout('k1', true), makeCheckout('k2', false)] },
+    };
+    openCountErrored = true;
+    render(<ContactsScreen />);
+
+    expect(screen.getByTestId('contacts-on-loan-live').textContent).toBe('2 items on loan, 1 overdue.');
+    expect(screen.getByText('1 overdue')).toBeInTheDocument();
+    expect(screen.queryByTestId('loans-truncated')).toBeNull();
   });
 });
 

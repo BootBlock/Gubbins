@@ -22,6 +22,7 @@ import {
   type UpdateContactInput,
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
+import { nowMs } from '@/lib/clock';
 import { invalidateItems } from '@/features/inventory/invalidate';
 import { useReportWriteFailure } from '@/features/errors';
 import { checkoutKeys, contactKeys } from './keys';
@@ -60,6 +61,22 @@ export function useOpenCheckouts() {
   return useQuery({
     queryKey: checkoutKeys.open(),
     queryFn: () => getCheckoutRepository().listOpen({ limit: 100 }),
+  });
+}
+
+/**
+ * How many loans are open, and how many of those are overdue — the totals behind
+ * {@link useOpenCheckouts}'s single bounded page (issue #606).
+ *
+ * The Dashboard's Overdue widget and the Contacts "On loan" summary both state a figure over
+ * that page. Counting its rows capped both at the page size, and made "N still on loan" the
+ * remainder of a page rather than of the board. `now` decides overdue-ness and is read at fetch
+ * time, matching the sibling `now`-dependent feeds.
+ */
+export function useOpenCheckoutCounts() {
+  return useQuery({
+    queryKey: checkoutKeys.openCount(),
+    queryFn: () => getCheckoutRepository().countOpen(nowMs()),
   });
 }
 

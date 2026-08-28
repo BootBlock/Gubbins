@@ -12,7 +12,7 @@
  * ledger), the walk stops at the {@link readAllPages} ceiling — and this attaches the caveat to
  * the result so the user is *told* the file stops short. Nothing is cut short in silence.
  */
-import { readAllPages, type PagedChunk } from '@/lib/read-all-pages';
+import { readAllPages, type AllPages, type PagedChunk } from '@/lib/read-all-pages';
 import { assertPermissions } from '@/features/users/assert-permission';
 import { currentAuthority } from '@/features/users/current-authority';
 import type { TabularExportResult } from './tabular-export';
@@ -40,8 +40,26 @@ export async function exportEveryPage<T>(
   build: (rows: readonly T[]) => Promise<TabularExportResult>,
   truncatedNotice: string,
 ): Promise<TabularExportResult> {
+  return exportAllRows(() => readAllPages(read), build, truncatedNotice);
+}
+
+/**
+ * {@link exportEveryPage} for a list that is not **one** paged repository read — the alert
+ * centre, whose feed folds five separate lanes and then filters what the user has set aside
+ * (issue #606). Its caller does the walking (one `readAllPages` per lane) and hands the
+ * assembled set here, so the gate, the truncation caveat and the "an export re-reads its list"
+ * rule stay in this one seam rather than being restated at a screen.
+ *
+ * Both entry points are gated identically, and `exportEveryPage` is written in terms of this
+ * one, so no export can reach a file through a path that skips `export:run`.
+ */
+export async function exportAllRows<T>(
+  readAll: () => Promise<AllPages<T>>,
+  build: (rows: readonly T[]) => Promise<TabularExportResult>,
+  truncatedNotice: string,
+): Promise<TabularExportResult> {
   assertPermissions(currentAuthority(), ['export:run']);
-  const { rows, truncated } = await readAllPages(read);
+  const { rows, truncated } = await readAll();
   const result = await build(rows);
   return truncated ? { ...result, notice: truncatedNotice } : result;
 }

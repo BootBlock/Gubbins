@@ -290,6 +290,9 @@ export const inventoryKeys = {
   expiring: () => [...inventoryKeys.all, 'expiring'] as const,
   /** Items expiring inside one lookahead window (§3 "Expiring Soon"). */
   expiringWithin: (withinDays: number) => [...inventoryKeys.expiring(), withinDays] as const,
+  /** How many items expire inside that window — the total behind the feed's bounded page
+   *  (issue #606). Nested under {@link inventoryKeys.expiring} so one sweep refreshes both. */
+  expiringWithinCount: (withinDays: number) => [...inventoryKeys.expiring(), 'count', withinDays] as const,
   /** Active items running low — the §3 "Low Stock Alerts" dashboard widget (Phase 45) and the
    *  alert centre's low-stock lane. A **sibling** of {@link inventoryKeys.items}, so no item
    *  write reaches it by prefix: both {@link invalidateItems} and {@link invalidateItemStock}
@@ -304,6 +307,8 @@ export const inventoryKeys = {
    *  sweeps it by name (issue #623). {@link invalidateItemStock} deliberately does not: the feed
    *  reads `warranty_expires_at`, which a stock-only write cannot move. */
   warrantyExpiring: () => [...inventoryKeys.all, 'warranty-expiring'] as const,
+  /** How many items have a warranty expiring — the total behind the feed's page (issue #606). */
+  warrantyExpiringCount: () => [...inventoryKeys.warrantyExpiring(), 'count'] as const,
   /**
    * Opted-in custom-field due dates — the alert centre's `field-due` lane (W1a). The prefix,
    * so every write that can move one (an item's field value, a location's inheritable value,
@@ -325,6 +330,8 @@ export const inventoryKeys = {
   maintenance: () => [...inventoryKeys.all, 'maintenance'] as const,
   itemMaintenance: (itemId: string) => [...inventoryKeys.item(itemId), 'maintenance'] as const,
   maintenanceDue: () => [...inventoryKeys.maintenance(), 'due'] as const,
+  /** How many schedules are due — the total behind the feed's bounded page (issue #606). */
+  maintenanceDueCount: () => [...inventoryKeys.maintenanceDue(), 'count'] as const,
   // Field auto-completion — distinct existing values for a suggestible free-text field.
   fieldSuggestions: (field: SuggestionField) => [...inventoryKeys.all, 'suggestions', field] as const,
 } as const;

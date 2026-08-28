@@ -22,6 +22,10 @@ Alerts pulls together the things that are *wrong now or soon*:
 
 Each alert links straight to the thing that raised it, so you can act on it in a click.
 
+If one category has more alerts than the screen can list at once, Gubbins shows the **most urgent**
+of them and says so under that category's heading — with the full total where it has one, and
+otherwise simply that there are more. A short list is never passed off as the whole set.
+
 > **💡 Tip**
 > The inventory **status chips** mirror these categories, so you can filter your item list to just
 > the low-stock or expiring items and deal with them in bulk.
@@ -75,8 +79,9 @@ so you hear about them without opening Gubbins.
 ## Taking the list with you
 
 **Export** saves the alerts as a spreadsheet or a table — a to-do list to work through away from
-the app, or to hand to whoever does the ordering. It contains the alerts you can currently see, so
-anything you've snoozed or dismissed stays out of it. See [[Export & import|Export-and-Import]].
+the app, or to hand to whoever does the ordering. It contains **every** alert, including the ones
+a long category only summarises on screen; anything you've snoozed or dismissed stays out of it.
+See [[Export & import|Export-and-Import]].
 
 ## Related pages
 
