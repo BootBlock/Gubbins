@@ -84,7 +84,7 @@
  * Environment:
  *   SMOKE_BASE              origin + base path to drive (default http://localhost:5173/Gubbins/)
  *   SMOKE_BROWSER_CHANNEL   `msedge` (default) or `chromium` for Playwright's bundled build
- *   SMOKE_TIMEOUT_SCALE     multiplies every wait — CI uses this, a slow machine can too
+ *   SMOKE_TIMEOUT_SCALE     multiplies every wait budget — CI uses this, a slow machine can too
  *   SMOKE_PWA_ONLY          run only the self-contained PWA update-handshake block
  *
  * CI runs this nightly and on demand — see `.github/workflows/e2e.yml`.
@@ -142,15 +142,27 @@ function makePng(size = 8) {
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:5173/Gubbins/';
 const headed = process.argv.includes('--headed');
 // A hosted CI runner is markedly slower than a developer machine — the sqlite-wasm worker boot,
-// the OPFS writes and the virtualised re-renders all take longer — so every wait in the run
-// scales by `SMOKE_TIMEOUT_SCALE` there, rather than each one being relaxed individually (which
-// would blunt the suite locally, where a slow control really is a regression). Unset means 1.
+// the OPFS writes and the virtualised re-renders all take longer — so every wait *budget* in the
+// run scales by `SMOKE_TIMEOUT_SCALE` there, rather than each one being relaxed individually
+// (which would blunt the suite locally, where a slow control really is a regression). Fixed
+// `waitForTimeout` settles are not budgets and are left alone. Unset means 1.
 const timeoutScale = Number(process.env.SMOKE_TIMEOUT_SCALE ?? '1');
 if (!Number.isFinite(timeoutScale) || timeoutScale <= 0) {
   throw new Error(`SMOKE_TIMEOUT_SCALE must be a positive number (got "${process.env.SMOKE_TIMEOUT_SCALE}")`);
 }
 /** Scale a wait budget by {@link timeoutScale}. Every explicit `timeout:` in the run goes through it. */
 const ms = (budget) => Math.round(budget * timeoutScale);
+/**
+ * Scale a hand-rolled poll loop's attempt count by {@link timeoutScale}.
+ *
+ * The suite polls by hand wherever Playwright has no matcher for the condition — a Foundry
+ * combobox's displayed label, a button that enables once a worker query answers. Those budgets
+ * are `attempts × interval` rather than a `timeout:` option, so `ms()` cannot reach them; without
+ * this they would be the tightest waits in the run on exactly the machine the scale exists for,
+ * and each throws its own diagnosis rather than a timeout, so the failure would misdescribe
+ * itself too. The interval is left alone, so a fast answer is still noticed promptly.
+ */
+const attempts = (count) => Math.ceil(count * timeoutScale);
 // When set, run ONLY the self-contained §2 PWA update-handshake block (which spins up
 // its own production-build static server) and skip every dev-server-dependent step —
 // so the handshake can be verified against a `npm run build` with no dev server running.
@@ -273,7 +285,7 @@ async function chooseOption(combo, name, { exact = true } = {}) {
  * label (never the option's count meta), so an exact match is safe here.
  */
 async function expectComboLabel(combo, label) {
-  for (let i = 0; i < 25; i += 1) {
+  for (let i = 0; i < attempts(25); i += 1) {
     if (((await combo.textContent()) ?? '').trim() === label) return;
     await page.waitForTimeout(150);
   }
@@ -306,7 +318,7 @@ async function openSettingsTab(tabName) {
  */
 async function expectText(locator, substring) {
   let last = '';
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < attempts(40); i += 1) {
     last = ((await locator.textContent().catch(() => '')) ?? '').trim();
     if (last.includes(substring)) return;
     await page.waitForTimeout(100);
@@ -2765,7 +2777,7 @@ try {
     const postExtMessage = (message) =>
       page.evaluate((msg) => window.postMessage(msg, window.location.origin), message);
     const pollInputValue = async (locator, expected, label) => {
-      for (let i = 0; i < 30; i += 1) {
+      for (let i = 0; i < attempts(30); i += 1) {
         if ((await locator.inputValue()) === expected) return;
         await page.waitForTimeout(100);
       }
@@ -2789,7 +2801,7 @@ try {
       }, EXT_SOURCE);
     const scrapeRequestCount = () => page.evaluate(() => (window.__scrapeRequests || []).length);
     const waitForScrapeRequest = async (sinceCount) => {
-      for (let i = 0; i < 40; i += 1) {
+      for (let i = 0; i < attempts(40); i += 1) {
         const reqs = await page.evaluate(() => window.__scrapeRequests || []);
         if (reqs.length > sinceCount) return reqs[reqs.length - 1];
         await page.waitForTimeout(75);
@@ -3842,7 +3854,9 @@ try {
         // Wait for the candidate count to load so the button enables (avoids arming the
         // download listener against a still-disabled control).
         const pruneBtn = dialog.getByTestId('prune-history');
-        for (let i = 0; i < 40 && (await pruneBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+        for (let i = 0; i < attempts(40) && (await pruneBtn.isDisabled()); i += 1) {
+          await page.waitForTimeout(150);
+        }
         if (await pruneBtn.isDisabled()) throw new Error('no prunable history was detected');
         const before = await dialog.getByText(/entries? affected/).innerText();
 
@@ -3866,7 +3880,9 @@ try {
     await step('prunes old history once the cold-storage archive is confirmed (§7.6.3 A)', async () => {
       const dialog = page.getByRole('dialog', { name: 'Storage triage' });
       const pruneBtn = dialog.getByTestId('prune-history');
-      for (let i = 0; i < 40 && (await pruneBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+      for (let i = 0; i < attempts(40) && (await pruneBtn.isDisabled()); i += 1) {
+        await page.waitForTimeout(150);
+      }
       if (await pruneBtn.isDisabled()) throw new Error('no prunable history was detected');
       await pruneBtn.click();
       const confirmBtn = dialog.getByTestId('prune-confirm');
@@ -3888,7 +3904,9 @@ try {
     await step('downgrades old images keeping the thumbnail (§7.6.3 B)', async () => {
       const dialog = page.getByRole('dialog', { name: 'Storage triage' });
       const downgradeBtn = dialog.getByTestId('downgrade-images');
-      for (let i = 0; i < 40 && (await downgradeBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+      for (let i = 0; i < attempts(40) && (await downgradeBtn.isDisabled()); i += 1) {
+        await page.waitForTimeout(150);
+      }
       if (await downgradeBtn.isDisabled()) throw new Error('no downgradable images were detected');
       // Phase 12: confirm-before-delete guards the downgrade too.
       await downgradeBtn.click();
@@ -4201,7 +4219,7 @@ try {
         // Scroll to the tail: loads all 7 pages, trimming the leading page once the 7th
         // arrives. If absolute indexing were broken the rows would misalign and the tail
         // would never resolve into view.
-        for (let i = 0; i < 50; i += 1) {
+        for (let i = 0; i < attempts(50); i += 1) {
           if (await lastItem.count()) break;
           await container.evaluate((el) => {
             el.scrollTop = el.scrollHeight;
@@ -4212,7 +4230,7 @@ try {
 
         // Scroll back to the head: the trimmed-off prefix must refill (fetchPreviousPage),
         // proving the bounded window slides both ways without losing the start of the list.
-        for (let i = 0; i < 50; i += 1) {
+        for (let i = 0; i < attempts(50); i += 1) {
           if (await firstItem.count()) {
             if (await firstItem.first().isVisible()) break;
           }
@@ -4427,8 +4445,8 @@ try {
       }
     });
     const mpage = await mobile.newPage();
-    mpage.setDefaultTimeout(5000);
-    mpage.setDefaultNavigationTimeout(10000);
+    mpage.setDefaultTimeout(ms(5000));
+    mpage.setDefaultNavigationTimeout(ms(10000));
     mpage.on('console', (msg) => {
       if (msg.type() === 'error') recordConsoleError(`[mobile] ${msg.text()}`);
     });
@@ -4505,8 +4523,8 @@ try {
       }
     });
     const spage = await safari.newPage();
-    spage.setDefaultTimeout(5000);
-    spage.setDefaultNavigationTimeout(10000);
+    spage.setDefaultTimeout(ms(5000));
+    spage.setDefaultNavigationTimeout(ms(10000));
     spage.on('console', (msg) => {
       if (msg.type() === 'error') recordConsoleError(`[safari] ${msg.text()}`);
     });
@@ -4675,8 +4693,8 @@ try {
         // here is attributed to the PWA block and doesn't bleed into the dev-server run.
         pwaContext = await browser.newContext();
         const ppage = await pwaContext.newPage();
-        ppage.setDefaultTimeout(5000);
-        ppage.setDefaultNavigationTimeout(10000);
+        ppage.setDefaultTimeout(ms(5000));
+        ppage.setDefaultNavigationTimeout(ms(10000));
         ppage.on('console', (msg) => {
           if (msg.type() === 'error') recordConsoleError(`[pwa] ${msg.text()}`);
         });
@@ -4685,12 +4703,12 @@ try {
 
         /** Poll (in-page) for the real worker to install, activate, and control the page. */
         const waitForController = async (label) => {
-          const diag = await ppage.evaluate(async () => {
+          const diag = await ppage.evaluate(async (maxAttempts) => {
             const out = { active: null, controller: null, err: null };
             try {
               // Precaching the full app shell (incl. the SQLite WASM blob) can take a while
               // headlessly, so allow generous headroom for install→activate→claim.
-              for (let i = 0; i < 250; i += 1) {
+              for (let i = 0; i < maxAttempts; i += 1) {
                 const reg = await navigator.serviceWorker.getRegistration();
                 if (reg) {
                   out.active =
@@ -4704,7 +4722,7 @@ try {
               out.err = String(e);
             }
             return out;
-          });
+          }, attempts(250));
           if (!diag.controller || diag.active !== 'activated') {
             throw new Error(`${label}: service worker did not take control (state=${JSON.stringify(diag)})`);
           }
