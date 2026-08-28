@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { blockPrinting, capturePrintedHtml } from '@/test/print-capture';
 import { QrCodeDialog } from './QrCodeDialog';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -20,6 +21,7 @@ function installFakeReader() {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   delete (globalThis as { NDEFReader?: unknown }).NDEFReader;
   useModulesStore.setState({ intent: {} });
 });
@@ -95,17 +97,15 @@ describe('QrCodeDialog — barcode readability (issue #331)', () => {
 
 /** The printed fallback identifier on the single-item label (issue #338). */
 describe('QrCodeDialog — short code', () => {
-  it('shows the item’s short code, and prints it on the label', () => {
-    const fakeDoc = { write: vi.fn(), close: vi.fn() };
-    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+  it('shows the item’s short code, and prints it on the label', async () => {
+    const printed = capturePrintedHtml();
 
     render(<QrCodeDialog {...props} />);
     expect(screen.getByTestId('item-short-code').textContent).toBe('A1B2C3D4');
 
     fireEvent.click(screen.getByRole('button', { name: 'Print label' }));
-    expect(fakeDoc.write.mock.calls[0]![0] as string).toContain('A1B2C3D4');
-    openSpy.mockRestore();
+    await waitFor(() => expect(printed).toHaveLength(1));
+    expect(printed[0]!).toContain('A1B2C3D4');
   });
 
   it('does not repeat the code when the barcode already prints it beneath the bars', () => {
@@ -163,5 +163,19 @@ describe('QrCodeDialog — Download SVG (issue #646)', () => {
 
     vi.runAllTimers();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+  });
+});
+
+describe('QrCodeDialog — a print the browser refuses (issue #510)', () => {
+  it('says so rather than leaving the button looking broken', async () => {
+    blockPrinting();
+    render(<QrCodeDialog {...props} />);
+    expect(screen.queryByTestId('qr-print-blocked')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print label' }));
+
+    const banner = await screen.findByTestId('qr-print-blocked');
+    expect(banner.getAttribute('role')).toBe('alert');
+    expect(banner.textContent).toContain('blocked the print window');
   });
 });

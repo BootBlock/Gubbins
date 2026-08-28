@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Button, Modal, Select } from '@/components/foundry';
+import { Banner, Button, Modal, Select } from '@/components/foundry';
 import { CloseIcon, DownloadIcon, NfcIcon, PrintIcon, SuccessIcon } from '@/components/icons';
 import { download } from '@/features/export/download';
+import { printHtmlDocument } from '@/lib/print-document';
 import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { qrSvgOrNull } from '@/features/scanner/qr-code';
 import { useT } from '@/features/i18n';
@@ -50,8 +51,15 @@ export function QrCodeDialog({
   // and any stale/garbage persisted value to QR.
   const [symbology, setSymbology] = useState<LabelSymbology>(() => seedSymbology(defaultSymbology));
   const symbologyLabelId = useId();
+  /**
+   * The browser refused to print at all (issue #510). The button used to return silently here,
+   * which is indistinguishable from a broken button — say so instead.
+   */
+  const [printBlocked, setPrintBlocked] = useState(false);
   useEffect(() => {
-    if (open) setSymbology(seedSymbology(defaultSymbology));
+    if (!open) return;
+    setSymbology(seedSymbology(defaultSymbology));
+    setPrintBlocked(false);
   }, [open, defaultSymbology]);
 
   const baseUrl = useMemo(
@@ -122,10 +130,8 @@ export function QrCodeDialog({
     return barcode !== null && barcode128.value === code ? null : code;
   }, [showShortCode, itemId, barcode, barcode128]);
 
-  const print = () => {
-    const w = window.open('', '_blank', 'width=420,height=560');
-    if (!w) return;
-    w.document.write(
+  const print = async () => {
+    const outcome = await printHtmlDocument(
       `<!doctype html><title>${escapeHtml(itemName)} — label</title>` +
         `<style>body{font-family:system-ui,sans-serif;text-align:center;padding:24px}` +
         `h1{font-size:16px;margin:0 0 12px}svg{max-width:${PRINTED_BARCODE_MM}mm}` +
@@ -140,9 +146,7 @@ export function QrCodeDialog({
         (printedShortCode ? `<p class="code">${escapeHtml(printedShortCode)}</p>` : '') +
         (qr ? `<p>${escapeHtml(url)}</p>` : ''),
     );
-    w.document.close();
-    w.focus();
-    w.print();
+    setPrintBlocked(outcome === 'blocked');
   };
 
   const downloadSvg = () => {
@@ -156,6 +160,12 @@ export function QrCodeDialog({
   return (
     <Modal open={open} onClose={onClose} title="Item label" description={itemName}>
       <div className="space-y-4">
+        {printBlocked ? (
+          <Banner tone="danger" role="alert" data-testid="qr-print-blocked">
+            {t('inventory.labels.printBlocked')}
+          </Banner>
+        ) : null}
+
         <div className="flex items-center justify-center gap-2 text-xs font-medium text-muted-foreground">
           <span id={symbologyLabelId}>Code</span>
           <Select
@@ -272,7 +282,7 @@ export function QrCodeDialog({
             <DownloadIcon />
             Download SVG
           </Button>
-          <Button onClick={print} disabled={!hasCode}>
+          <Button onClick={() => void print()} disabled={!hasCode}>
             <PrintIcon />
             Print label
           </Button>

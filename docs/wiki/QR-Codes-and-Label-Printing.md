@@ -238,6 +238,16 @@ from every printed link. The preview shows what you will actually get.
 > while a warning shows are wasted — a dead link in the first case, no QR code at all in the second.
 > Fix the host and the warning clears.
 
+## If nothing happens when you press Print
+
+Gubbins builds the label sheet inside the page itself and hands it straight to your browser's own
+print dialog, so no extra window has to open. Where a browser refuses even that, the label dialog
+says so in a notice rather than leaving you pressing a button that appears to do nothing.
+
+> **⚠️ Heads-up**
+> A pop-up blocker, a content blocker or a workplace browser policy is the usual cause. Allow
+> pop-ups for the address Gubbins is served from, then press **Print** again.
+
 ## Related pages
 
 - **[[Camera scanning|Camera-Scanning]]** — scanning the codes you print, and tapping NFC tags.

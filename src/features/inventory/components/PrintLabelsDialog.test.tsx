@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { blockPrinting, capturePrintedHtml } from '@/test/print-capture';
 import { PrintLabelsDialog } from './PrintLabelsDialog';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { DEFAULT_LABEL_TEMPLATE } from '../labels/label-template';
@@ -10,7 +11,10 @@ const ITEMS = [
 ];
 
 beforeEach(() => usePreferencesStore.setState({ labelTemplate: DEFAULT_LABEL_TEMPLATE }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 /** Open a custom Select combobox by its test id and click the option with the given name. */
 function chooseOption(testId: string, optionName: string | RegExp) {
@@ -42,10 +46,8 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     });
   });
 
-  it('labels the print button with the count and prints a self-contained sheet', () => {
-    const fakeDoc = { write: vi.fn(), close: vi.fn() };
-    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+  it('labels the print button with the count and prints a self-contained sheet', async () => {
+    const printed = capturePrintedHtml();
 
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
 
@@ -53,14 +55,23 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(confirm.textContent).toContain('Print 2 labels');
 
     fireEvent.click(confirm);
-    expect(openSpy).toHaveBeenCalledOnce();
-    const written = fakeDoc.write.mock.calls[0]![0] as string;
+    await waitFor(() => expect(printed).toHaveLength(1));
+    const written = printed[0]!;
     expect(written.startsWith('<!doctype html>')).toBe(true);
     expect(written).toContain('Resistor 10k');
     expect(written).toContain('ESP32 board');
-    expect(fakeWin.print).toHaveBeenCalledOnce();
+  });
 
-    openSpy.mockRestore();
+  it('says so when the browser refuses to print, rather than doing nothing (issue #510)', async () => {
+    blockPrinting();
+    render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
+    expect(screen.queryByTestId('labels-print-blocked')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('print-labels-confirm'));
+
+    const banner = await screen.findByTestId('labels-print-blocked');
+    expect(banner.getAttribute('role')).toBe('alert');
+    expect(banner.textContent).toContain('blocked the print window');
   });
 
   it('persists the working template as the default via "Save as default"', () => {
@@ -78,10 +89,8 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(save).toBeDisabled();
   });
 
-  it('tiles a chosen sheet stock and reports the size one label works out to (issue #333)', () => {
-    const fakeDoc = { write: vi.fn(), close: vi.fn() };
-    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+  it('tiles a chosen sheet stock and reports the size one label works out to (issue #333)', async () => {
+    const printed = capturePrintedHtml();
 
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
     expect(screen.getByTestId('label-sheet-layout-cell-size').textContent).toContain('60 × 42 mm');
@@ -90,11 +99,10 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(screen.getByTestId('label-sheet-layout-cell-size').textContent).toContain('63.5 × 38.1 mm');
 
     fireEvent.click(screen.getByTestId('print-labels-confirm'));
-    const written = fakeDoc.write.mock.calls[0]![0] as string;
+    await waitFor(() => expect(printed).toHaveLength(1));
+    const written = printed[0]!;
     expect(written).toContain('grid-template-columns:repeat(3,63.5mm)');
     expect(written).toContain('grid-auto-rows:38.1mm');
-
-    openSpy.mockRestore();
   });
 
   it('reveals the columns/rows/margin/gutter fields for a custom sheet layout (issue #333)', () => {
@@ -134,10 +142,8 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(screen.queryByTestId('label-sheet-layout-rows')).toBeNull();
   });
 
-  it('switches to a die-cut size: hides the sheet-layout control and prints an exact-sized sheet', () => {
-    const fakeDoc = { write: vi.fn(), close: vi.fn() };
-    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+  it('switches to a die-cut size: hides the sheet-layout control and prints an exact-sized sheet', async () => {
+    const printed = capturePrintedHtml();
 
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
 
@@ -150,10 +156,8 @@ describe('PrintLabelsDialog — templated label sheet (spec §6, Phase 49/73)', 
     expect(screen.queryByTestId('label-sheet-layout')).toBeNull();
 
     fireEvent.click(screen.getByTestId('print-labels-confirm'));
-    const written = fakeDoc.write.mock.calls[0]![0] as string;
-    expect(written).toContain('@page{size:40mm 30mm;margin:0}');
-
-    openSpy.mockRestore();
+    await waitFor(() => expect(printed).toHaveLength(1));
+    expect(printed[0]!).toContain('@page{size:40mm 30mm;margin:0}');
   });
 
   it('cautions about the print target for a die-cut size, naming it (issue #337)', () => {
@@ -283,15 +287,13 @@ describe('PrintLabelsDialog — short-code fallback line', () => {
     expect(screen.getByText('Resistor 10k')).toBeTruthy();
   });
 
-  it('carries the line onto the printed sheet, not just the preview', () => {
-    const fakeDoc = { write: vi.fn(), close: vi.fn() };
-    const fakeWin = { document: fakeDoc, focus: vi.fn(), print: vi.fn() };
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window);
+  it('carries the line onto the printed sheet, not just the preview', async () => {
+    const printed = capturePrintedHtml();
 
     render(<PrintLabelsDialog open onClose={() => {}} items={ITEMS} />);
     fireEvent.click(screen.getByTestId('print-labels-confirm'));
 
-    expect(fakeDoc.write.mock.calls[0]![0] as string).toContain('11111111');
-    openSpy.mockRestore();
+    await waitFor(() => expect(printed).toHaveLength(1));
+    expect(printed[0]!).toContain('11111111');
   });
 });

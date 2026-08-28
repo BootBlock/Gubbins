@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { Banner, Button, Checkbox, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { printHtmlDocument } from '@/lib/print-document';
 import { resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { useT } from '@/features/i18n';
 import {
@@ -100,6 +101,12 @@ export function PrintLocationLabelDialog({
   const [sizeMode, setSizeMode] = useState<LabelSizeMode>('sheet');
   const [labelWidthMm, setLabelWidthMm] = useState(40);
   const [labelHeightMm, setLabelHeightMm] = useState(30);
+
+  /**
+   * The browser refused to print at all (issue #510). The button used to return silently here,
+   * which is indistinguishable from a broken button — say so instead.
+   */
+  const [printBlocked, setPrintBlocked] = useState(false);
   useEffect(() => {
     if (!open) return;
     const seed = normaliseLabelTemplate(storedTemplate);
@@ -111,6 +118,7 @@ export function PrintLocationLabelDialog({
     setSizeMode(seed.sizeMode);
     setLabelWidthMm(seed.labelWidthMm);
     setLabelHeightMm(seed.labelHeightMm);
+    setPrintBlocked(false);
   }, [open, storedTemplate]);
 
   const baseUrl = useMemo(
@@ -146,13 +154,9 @@ export function PrintLocationLabelDialog({
   // take, so the three can't disagree about what is being printed.
   const size: LabelSizeValue = { sizeMode, widthMm: labelWidthMm, heightMm: labelHeightMm };
 
-  const print = () => {
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) return;
-    w.document.write(buildLocationLabelHtml(location, baseUrl, template, copies));
-    w.document.close();
-    w.focus();
-    w.print();
+  const print = async () => {
+    const outcome = await printHtmlDocument(buildLocationLabelHtml(location, baseUrl, template, copies));
+    setPrintBlocked(outcome === 'blocked');
   };
 
   return (
@@ -164,6 +168,12 @@ export function PrintLocationLabelDialog({
       className="max-w-[38.4rem]"
     >
       <div className="space-y-4">
+        {printBlocked ? (
+          <Banner tone="danger" role="alert" data-testid="loc-label-print-blocked">
+            {t('inventory.labels.printBlocked')}
+          </Banner>
+        ) : null}
+
         {/* A QR's module count comes from its deep-link, so a small label divides a fixed number
             of modules into less and less space until a phone camera can't resolve them. It is
             still printed — a QR can't be shortened the way a barcode's value can, and it is
@@ -275,7 +285,7 @@ export function PrintLocationLabelDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={print} data-testid="print-location-label-confirm">
+          <Button onClick={() => void print()} data-testid="print-location-label-confirm">
             <PrintIcon />
             Print {copies > 1 ? `${copies} labels` : 'label'}
           </Button>

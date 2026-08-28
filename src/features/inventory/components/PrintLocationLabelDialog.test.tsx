@@ -1,5 +1,6 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { blockPrinting } from '@/test/print-capture';
 import { PrintLocationLabelDialog } from './PrintLocationLabelDialog';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { DEFAULT_LABEL_TEMPLATE } from '../labels/label-template';
@@ -7,7 +8,10 @@ import { DEFAULT_LABEL_TEMPLATE } from '../labels/label-template';
 const BIN = { id: '00000000-0000-4000-8000-000000000012', name: 'Bin 3', path: 'Workshop / Shelf B' };
 
 beforeEach(() => usePreferencesStore.setState({ labelTemplate: DEFAULT_LABEL_TEMPLATE }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 /** Open a custom Select combobox by its test id and click the option with the given name. */
 function chooseOption(testId: string, optionName: string | RegExp) {
@@ -133,5 +137,19 @@ describe('PrintLocationLabelDialog — short-code fallback line', () => {
     });
     render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
     expect(screen.queryByText('00000000')).toBeNull();
+  });
+});
+
+describe('PrintLocationLabelDialog — a print the browser refuses (issue #510)', () => {
+  it('says so rather than leaving the button looking broken', async () => {
+    blockPrinting();
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    expect(screen.queryByTestId('loc-label-print-blocked')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('print-location-label-confirm'));
+
+    const banner = await screen.findByTestId('loc-label-print-blocked');
+    expect(banner.getAttribute('role')).toBe('alert');
+    expect(banner.textContent).toContain('blocked the print window');
   });
 });

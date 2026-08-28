@@ -399,6 +399,7 @@
   "inventory.qr.tooLong": "Dieser Link ist zu lang für einen QR-Code. Kürzen Sie den Link-Host in den Einstellungen und versuchen Sie es erneut.",
   "inventory.qr.tooLongLabels": "Diese Links sind zu lang für einen QR-Code, die Etiketten würden ohne QR-Code gedruckt. Kürzen Sie den Link-Host in den Einstellungen.",
   "inventory.qr.tooLongCatalogue": "Diese Links sind zu lang für einen QR-Code, daher bleibt die QR-Spalte leer. Kürzen Sie den Link-Host in den Einstellungen.",
+  "inventory.labels.printBlocked": "Ihr Browser hat das Druckfenster blockiert, daher wurde nichts an den Drucker gesendet. Erlauben Sie Pop-ups für diese Seite und drücken Sie erneut auf Drucken.",
   "inventory.labels.barcodeTooNarrow": "Dieses Etikett ist zu schmal, um einen für Scanner lesbaren Barcode zu drucken. Wählen Sie eine breitere Etikettengröße, ein Bogenlayout mit breiteren Etiketten oder einen QR-Code.",
   "inventory.labels.barcodeShortenedItem": "Diese Herstellernummer ist zu lang für einen lesbaren Barcode, daher enthält der Barcode stattdessen einen kurzen Artikelcode.",
   "inventory.labels.barcodeShortenedItems": "Einige Herstellernummern sind in dieser Größe zu lang für einen lesbaren Barcode, daher enthalten diese Etiketten stattdessen einen kurzen Artikelcode.",
