@@ -620,6 +620,13 @@ export interface ImportPreviewRow {
   readonly status: 'create' | 'update' | 'error';
   /** Present when `status === 'error'`. */
   readonly message?: string;
+  /**
+   * What an `update` row will do to the matched item's on-hand count: what it holds now, and
+   * what the file asks for (issue #592). Absent whenever the import will not move the stock —
+   * the row states no quantity, states the one the item already holds, or is a create or an
+   * error — so the preview can show the raw cell for what it is rather than implying a change.
+   */
+  readonly quantityChange?: { readonly from: number; readonly to: number };
 }
 
 /** First column index whose mapping targets the given core field, or `-1`. */
@@ -632,6 +639,10 @@ function indexOfField(mapping: ColumnMapping, field: 'name' | 'quantity' | 'sku'
  * row — showing the resolved name / quantity / SKU and whether the row will create,
  * update, or be skipped as an error. This is what the "Import text" tab renders so
  * the user can confirm the extraction looks right before committing.
+ *
+ * The quantity cell is the file's own, so on a matched row it says what was *asked for*, not
+ * what will happen. `quantityChange` carries the second half of that answer — the count the item
+ * holds today — for the rows whose stock the import will actually move (issue #592).
  */
 export function buildPreviewRows(
   dataRows: readonly (readonly string[])[],
@@ -642,6 +653,14 @@ export function buildPreviewRows(
   for (const c of plan.create) status.set(c.sourceRow, { status: 'create' });
   for (const u of plan.update) status.set(u.sourceRow, { status: 'update' });
   for (const e of plan.errors) status.set(e.sourceRow, { status: 'error', message: e.message });
+
+  // Only the rows whose stock actually moves, so the preview's quantity column distinguishes
+  // "this many will be counted in" from "this is what the cell said" (issue #592).
+  const stockChanges = new Map(
+    plan.update
+      .filter((u) => u.stock !== undefined)
+      .map((u) => [u.sourceRow, { from: u.stock!.before, to: u.stock!.counted }] as const),
+  );
 
   const nameIdx = indexOfField(mapping, 'name');
   const qtyIdx = indexOfField(mapping, 'quantity');
@@ -660,6 +679,7 @@ export function buildPreviewRows(
       manufacturer: cell(row, manuIdx),
       status: outcome.status,
       ...(outcome.message ? { message: outcome.message } : {}),
+      ...(stockChanges.has(sourceRow) ? { quantityChange: stockChanges.get(sourceRow)! } : {}),
     };
   });
 }
