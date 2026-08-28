@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import type { NavGroup } from '@/components/nav/nav-destinations';
 import {
   defaultOrder,
+  mergeGated,
   moveTile,
   normaliseOrder,
   nudgeTile,
-  partitionByEnabled,
   reconcileOrder,
   setTilePinned,
   tilesInGroup,
@@ -180,11 +180,66 @@ describe('dashboard-nav-order — setTilePinned', () => {
   });
 });
 
-describe('dashboard-nav-order — partitionByEnabled', () => {
-  it('splits into enabled and gated by id predicate, preserving order', () => {
+describe('dashboard-nav-order — mergeGated', () => {
+  /** The pipeline a nav edit really goes through: hide some tiles, edit the visible ones, merge
+   *  back. Fails if any of the three steps loses a hidden tile's position. */
+  const edit = (order: NavOrder, hidden: readonly string[], op: (enabled: NavOrder) => NavOrder): NavOrder =>
+    mergeGated(order, op(order.filter((p) => !hidden.includes(p.id))), GROUPS);
+
+  /** Five tiles in one group — enough room for a move that is nowhere near the hidden tile. */
+  const WIDE: readonly NavTileDefault[] = ['p1', 'p2', 'p3', 'p4', 'p5'].map((id) => ({
+    id,
+    group: 'primary' as NavGroup,
+  }));
+
+  it('keeps a hidden tile in place when an unrelated tile moves (issue #628)', () => {
+    const base = defaultOrder(WIDE, GROUPS);
+    const next = edit(base, ['p2'], (enabled) => nudgeTile(enabled, 'p5', 'up', GROUPS));
+    expect(groupIds(next, 'primary')).toEqual(['p1', 'p2', 'p3', 'p5', 'p4']);
+  });
+
+  it('keeps a hidden tile behind the neighbour it sat behind when that neighbour moves', () => {
     const base = defaultOrder(DEFAULTS, GROUPS);
-    const { enabled, gated } = partitionByEnabled(base, (id) => id !== 'b' && id !== 'e');
-    expect(ids(enabled)).toEqual(['a', 'c', 'd', 'f']);
-    expect(ids(gated)).toEqual(['b', 'e']);
+    const next = edit(base, ['b'], (enabled) => nudgeTile(enabled, 'c', 'up', GROUPS));
+    expect(groupIds(next, 'primary')).toEqual(['c', 'a', 'b']);
+  });
+
+  it('puts a hidden head-of-group tile back at the head', () => {
+    const base = defaultOrder(DEFAULTS, GROUPS);
+    const next = edit(base, ['a'], (enabled) => nudgeTile(enabled, 'c', 'up', GROUPS));
+    expect(groupIds(next, 'primary')).toEqual(['a', 'c', 'b']);
+  });
+
+  it('survives repeated edits without drifting the hidden tile', () => {
+    const base = defaultOrder(DEFAULTS, GROUPS);
+    let order = base;
+    for (let i = 0; i < 4; i++) {
+      order = edit(order, ['b'], (enabled) => nudgeTile(enabled, 'c', 'up', GROUPS));
+      order = edit(order, ['b'], (enabled) => nudgeTile(enabled, 'c', 'down', GROUPS));
+    }
+    expect(groupIds(order, 'primary')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps a hidden tile in its group when the tile it sat behind leaves the group', () => {
+    // 'b' sits behind 'a'; moving 'a' to manage leaves 'b' at the head of primary, not at
+    // the end of it.
+    const base = defaultOrder(DEFAULTS, GROUPS);
+    const next = edit(base, ['b'], (enabled) => moveTile(enabled, 'a', 'manage', 0, GROUPS));
+    expect(groupIds(next, 'primary')).toEqual(['b', 'c']);
+    expect(groupIds(next, 'manage')).toEqual(['a', 'd', 'e']);
+  });
+
+  it('keeps a hidden pinned tile in the pinned run', () => {
+    const base = setTilePinned(defaultOrder(DEFAULTS, GROUPS), 'b', true, GROUPS);
+    expect(groupIds(base, 'primary')).toEqual(['b', 'a', 'c']);
+    const next = edit(base, ['b'], (enabled) => nudgeTile(enabled, 'c', 'up', GROUPS));
+    expect(groupIds(next, 'primary')).toEqual(['b', 'c', 'a']);
+    expect(next.find((p) => p.id === 'b')?.pinned).toBe(true);
+  });
+
+  it('leaves an order with nothing hidden exactly as the edit produced it', () => {
+    const base = defaultOrder(DEFAULTS, GROUPS);
+    const next = nudgeTile(base, 'c', 'up', GROUPS);
+    expect(mergeGated(base, next, GROUPS)).toEqual(next);
   });
 });

@@ -233,6 +233,22 @@ describe('DashboardNav — reorder & pin (backlog B1)', () => {
     expect(screen.getByTestId('nav-tile-/inventory')).toBeTruthy();
   });
 
+  it('leaves a hidden tile where it was when a visible tile moves (issue #628)', () => {
+    useModulesStore.getState().setFeatureIntent('projects', false);
+    render(<DashboardNav />);
+    customise();
+    // Projects is hidden and sits second. Nudging Reports (last) up one must not disturb it —
+    // before the fix the hidden placement was re-appended, dropping Projects to the bottom.
+    fireEvent.click(screen.getByTestId('nav-move-/reports-up'));
+    expect(persistedGroup('primary')).toEqual([
+      '/inventory',
+      '/projects',
+      '/purchase-orders',
+      '/reports',
+      '/suppliers',
+    ]);
+  });
+
   it('resolves a stale saved order safely (drops unknown ids, keeps every real tile)', () => {
     // A saved order referencing a removed route plus only a couple of real tiles — must not
     // crash, must ignore the unknown id, and must still surface every current destination.
