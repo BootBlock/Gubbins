@@ -381,8 +381,8 @@ describe('DashboardGrid — hide healthy cards (issue #111)', () => {
 
   it('never rewrites the persisted layout when it hides an all-clear card', () => {
     const seeded = [
-      { id: 'alpha', x: 0, y: 0, visible: true },
-      { id: 'gamma', x: 1, y: 0, visible: true },
+      { id: 'alpha', x: 0, y: 0, w: 1, h: 1, visible: true },
+      { id: 'gamma', x: 1, y: 0, w: 1, h: 1, visible: true },
     ];
     useLayoutStore.setState({ dashboardLayout: seeded });
     usePreferencesStore.setState({ hideHealthyDashboardCards: true });
@@ -399,8 +399,8 @@ describe('DashboardGrid — touch-friendly move controls (issue #11)', () => {
     // Alpha at (0,0), Delta at (1,0); the rest flow after. Moving Alpha right swaps it with Delta.
     useLayoutStore.setState({
       dashboardLayout: [
-        { id: 'alpha', x: 0, y: 0, visible: true },
-        { id: 'delta', x: 1, y: 0, visible: true },
+        { id: 'alpha', x: 0, y: 0, w: 1, h: 1, visible: true },
+        { id: 'delta', x: 1, y: 0, w: 1, h: 1, visible: true },
       ],
     });
     render(<DashboardGrid />);
@@ -414,7 +414,7 @@ describe('DashboardGrid — touch-friendly move controls (issue #11)', () => {
   });
 
   it('disables a move control that would push a widget off the grid', () => {
-    useLayoutStore.setState({ dashboardLayout: [{ id: 'alpha', x: 0, y: 0, visible: true }] });
+    useLayoutStore.setState({ dashboardLayout: [{ id: 'alpha', x: 0, y: 0, w: 1, h: 1, visible: true }] });
     render(<DashboardGrid />);
     enterCustomise();
     // Alpha sits in the top-left corner: it can move neither up nor left.
@@ -425,8 +425,8 @@ describe('DashboardGrid — touch-friendly move controls (issue #11)', () => {
   it('announces where a moved widget landed (issue #218)', () => {
     useLayoutStore.setState({
       dashboardLayout: [
-        { id: 'alpha', x: 0, y: 0, visible: true },
-        { id: 'delta', x: 1, y: 0, visible: true },
+        { id: 'alpha', x: 0, y: 0, w: 1, h: 1, visible: true },
+        { id: 'delta', x: 1, y: 0, w: 1, h: 1, visible: true },
       ],
     });
     render(<DashboardGrid />);
@@ -443,7 +443,7 @@ describe('DashboardGrid — touch-friendly move controls (issue #11)', () => {
   });
 
   it('says nothing when a move is clamped at an edge (nothing changed)', () => {
-    useLayoutStore.setState({ dashboardLayout: [{ id: 'alpha', x: 0, y: 0, visible: true }] });
+    useLayoutStore.setState({ dashboardLayout: [{ id: 'alpha', x: 0, y: 0, w: 1, h: 1, visible: true }] });
     render(<DashboardGrid />);
     enterCustomise();
     // The up control is disabled, so drive the clamped nudge through the keyboard path.

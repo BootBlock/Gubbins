@@ -219,8 +219,8 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
 
   // Resizing runs through the same announce-on-change path as a move, so a screen-reader
   // user is told the new span rather than only seeing the tile grow. A refused resize (it
-  // would overlap a neighbour, or run off the board) returns the same layout and says nothing
-  // — the button that offered it is disabled for the same reason.
+  // would overlap a neighbour) returns the same layout and says nothing — the button that
+  // offered it is disabled for the same reason.
   const applyResize = (id: string, w: number, h: number) => {
     const next = resizeWidget(fullLayout, id, w, h);
     if (next === fullLayout) return;

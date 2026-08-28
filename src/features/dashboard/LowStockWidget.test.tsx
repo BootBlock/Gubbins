@@ -3,7 +3,8 @@ import { render, screen, cleanup, within } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { widgetById } from './widgets';
-import { WidgetSizeProvider, listRowCount } from './widget-size';
+import { BOARD_SINGLE_COLUMN_QUERY, WidgetSizeProvider, listRowCount } from './widget-size';
+import type { MediaQueryProvider } from '@/components/foundry';
 
 /**
  * The Low Stock widget surfaces incoming ("on order") stock so a covered shortage reads as
@@ -256,5 +257,35 @@ describe('LowStockWidget — content scales with the tile size', () => {
     spies.lowStock.mockReturnValue({ data: { rows: [] }, isPending: false, isError: false });
     renderAt(2, 2);
     expect(screen.getByText(/Stock levels healthy/).closest('.grid-cols-2')).toBeNull();
+  });
+});
+
+/**
+ * Below the board's breakpoint the dashboard is a single column of full-width cards and the
+ * grid placement (and so the span) is not applied at all. The content has to make the same
+ * call: a card sized 2x2 on a tablet must not draw twenty-two rows into a phone-width card.
+ */
+describe('LowStockWidget — a span is ignored on a single-column board', () => {
+  /** A `matchMedia` stand-in reporting a viewport narrower than the board's breakpoint. */
+  const narrow: MediaQueryProvider = () => ({
+    matches: true,
+    media: BOARD_SINGLE_COLUMN_QUERY,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  });
+
+  it('draws its default rows in one column however large the card was made', () => {
+    spies.lowStock.mockReturnValue({
+      data: { rows: Array.from({ length: 12 }, (_, i) => low({ id: `n-${i}`, name: `Item ${i}` })) },
+      isPending: false,
+      isError: false,
+    });
+    render(
+      <WidgetSizeProvider w={2} h={2} mediaProvider={narrow}>
+        <LowStockWidget />
+      </WidgetSizeProvider>,
+    );
+    expect(screen.getAllByText(/^Item \d+$/)).toHaveLength(3);
+    expect(screen.getByText('Item 0').closest('.grid-cols-2')).toBeNull();
   });
 });

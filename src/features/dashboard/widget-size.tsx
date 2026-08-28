@@ -10,6 +10,7 @@
  * it and simply sit in a larger card.
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { useMediaQuery, type MediaQueryProvider } from '@/components/foundry';
 
 /** A widget's span on the board, in whole grid cells. */
 export interface WidgetSize {
@@ -18,6 +19,19 @@ export interface WidgetSize {
 }
 
 const DEFAULT_SIZE: WidgetSize = { w: 1, h: 1 };
+
+/**
+ * The viewport on which the board collapses to a single column — the complement of the `sm:`
+ * breakpoint the grid placement is applied at, so a card either has a span or it does not;
+ * there is no width at which the two disagree.
+ *
+ * The board's `PLACEMENT` and row-height classes are all `sm:`-prefixed, so below this width a
+ * card occupies one full-width cell whatever span it was given. Its *content* has to make the
+ * same call, or a card sized 2×2 on a tablet would draw twenty-two rows into a phone-width
+ * card that is one row tall. `widget-size.test.ts` reads `--breakpoint-sm` out of
+ * `src/styles/index.css` and asserts this query still matches it.
+ */
+export const BOARD_SINGLE_COLUMN_QUERY = '(width < 40rem)';
 
 const WidgetSizeContext = createContext<WidgetSize>(DEFAULT_SIZE);
 
@@ -32,13 +46,20 @@ export function useWidgetSize(): WidgetSize {
 export function WidgetSizeProvider({
   w,
   h,
+  mediaProvider,
   children,
 }: {
   readonly w: number;
   readonly h: number;
+  /** Test seam: `matchMedia` provider, mirroring the Foundry reveal/motion primitives. */
+  readonly mediaProvider?: MediaQueryProvider;
   readonly children: ReactNode;
 }) {
-  const value = useMemo(() => ({ w, h }), [w, h]);
+  // On a single-column board the span buys the card nothing, so it is reported as 1×1 and every
+  // widget draws what it always drew. Where `matchMedia` is unavailable this reads `false` — the
+  // span is honoured, and the `sm:`-prefixed CSS remains the authority on the layout either way.
+  const singleColumn = useMediaQuery(BOARD_SINGLE_COLUMN_QUERY, mediaProvider);
+  const value = useMemo(() => (singleColumn ? DEFAULT_SIZE : { w, h }), [singleColumn, w, h]);
   return <WidgetSizeContext.Provider value={value}>{children}</WidgetSizeContext.Provider>;
 }
 
@@ -51,7 +72,7 @@ export function WidgetSizeProvider({
  * choice rather than a measurement — the grid row's minimum only ever expands to fit, so a
  * widget that draws a row or two more than this costs whitespace, never clipping.
  */
-export const EXTRA_LIST_ROWS_PER_CELL = 8;
+const EXTRA_LIST_ROWS_PER_CELL = 8;
 
 /** How many columns a widget should lay its list out in at this size. */
 export function listColumns(size: WidgetSize): number {

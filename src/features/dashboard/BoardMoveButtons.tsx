@@ -10,6 +10,7 @@
  */
 import { cn } from '@/lib/utils';
 import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon } from '@/components/icons';
+import { BOARD_CONTROL_BUTTON, BOARD_CONTROL_CLUSTER } from './board-control-button';
 
 export type MoveDir = 'up' | 'down' | 'left' | 'right';
 
@@ -39,7 +40,7 @@ export function BoardMoveButtons({
   readonly className?: string;
 }) {
   return (
-    <div className={cn('flex items-center gap-0.5', className)}>
+    <div className={cn(BOARD_CONTROL_CLUSTER, className)}>
       {ORDER.map((dir) => {
         const Icon = ICONS[dir];
         return (
@@ -50,12 +51,7 @@ export function BoardMoveButtons({
             disabled={disabled[dir]}
             aria-label={labels[dir]}
             data-testid={`${testIdPrefix}-${dir}`}
-            className={cn(
-              'rounded-md p-1 text-muted-foreground transition-colors [&_svg]:size-4',
-              'hover:bg-muted hover:text-foreground',
-              'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-              'disabled:pointer-events-none disabled:opacity-40',
-            )}
+            className={cn(BOARD_CONTROL_BUTTON, '[&_svg]:size-4')}
           >
             <Icon aria-hidden />
           </button>

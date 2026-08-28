@@ -13,6 +13,8 @@
  * schema migration).
  */
 
+import { normaliseInteger } from '@/lib/persisted-state';
+
 /** Fixed column count of the dashboard grid; rows grow unbounded downward. */
 export const DASHBOARD_COLUMNS = 3;
 
@@ -62,15 +64,14 @@ interface Rect {
 }
 
 /**
- * Coerce a persisted span into range. A layout written by a build that predates resizing
- * carries no `w`/`h` at all, and the store's rehydration path hands us whatever `JSON.parse`
- * returned, so this is the one place a span is trusted (see the memory note
- * `persisted-state-reconcile-on-read`). Anything that is not a finite number resolves to 1.
+ * Coerce a persisted span into range through the app's shared read-boundary helper. A layout
+ * written by a build that predates resizing carries no `w`/`h` at all, and the store's
+ * rehydration path hands us whatever `JSON.parse` returned, so this is the one place a span is
+ * trusted (see the memory note `persisted-state-reconcile-on-read`). Anything that is not a
+ * finite number resolves to 1.
  */
 function normaliseSpan(value: unknown, max: number): number {
-  const n = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 1;
-  if (n < 1) return 1;
-  return n > max ? max : n;
+  return normaliseInteger(value, 1, { min: 1, max });
 }
 
 /** The placement's span, defaulted and clamped — never trust a stored `w`/`h` directly. */
