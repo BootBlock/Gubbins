@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_DPR_CAP, REDUCED_DPR_CAP, precipDprCap } from './device-tier';
 
 describe('precipDprCap', () => {
+  it('names two distinct, real ratios', () => {
+    // Both caps are compared symbolically below, which would hold just as well if either import
+    // resolved to `undefined` — every assertion would then be `undefined === undefined`. Pin the
+    // values once so the rest of the file cannot pass on a broken import.
+    expect(DEFAULT_DPR_CAP).toBe(2);
+    expect(REDUCED_DPR_CAP).toBe(1.5);
+  });
+
   it('leaves a device the hints say nothing about at the engine default', () => {
     expect(precipDprCap({})).toBe(DEFAULT_DPR_CAP);
   });

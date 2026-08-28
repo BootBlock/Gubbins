@@ -45,8 +45,9 @@ export function Thumbnail({
   }
   // `decoding="async"` keeps the image decode off the critical path (issue #419). A thumbnail is
   // mounted and unmounted every time the virtualised list recycles a row, so on a fast scroll the
-  // default synchronous decode lands a burst of them on the main thread mid-gesture — the frames
-  // where the device can least afford it. The box is already sized by `className`, so a late
-  // decode shifts nothing.
+  // unhinted default — `auto`, which a browser is free to resolve to a synchronous decode, and
+  // commonly does for an image entering the viewport — lands a burst of decodes on the main thread
+  // mid-gesture, in the frames where the device can least afford them. Every call site sizes the
+  // box through `className`, so a late decode shifts nothing.
   return <img src={url} alt={alt} decoding="async" className={cn('object-cover', className)} />;
 }

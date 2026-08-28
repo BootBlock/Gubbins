@@ -33,7 +33,7 @@ export const Surface = forwardRef<HTMLDivElement, SurfaceProps>(
         // Branding surface style could no longer set the panel's translucency on its own.
         'rounded-2xl border border-border bg-card shadow-2xl shadow-black/40 backdrop-surface',
         interactive &&
-          'transition-[transform,box-shadow] duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10',
+          'transition-[transform,translate,scale,rotate,box-shadow] duration-200 ease-emphasized hover:-translate-y-0.5 hover:shadow-primary/10',
         className,
       )}
       {...props}

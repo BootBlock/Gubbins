@@ -32,13 +32,18 @@ const buttonVariants = cva(
   // hover (a 10% grow) — a small, universal micro-interaction (spec §3). The reduced-motion
   // catch-all freezes the transform, so those users see the icon at rest.
   //
-  // The transition names its properties rather than saying `all` (issue #419). The list is
-  // complete for the variants below — background and text colour, the border and ring the focus
-  // state paints (a ring is a box-shadow in Tailwind, as is every variant's drop shadow), the
-  // `active:` scale, and the disabled fade — and a button is not a rare element: an item card
-  // carries half a dozen, so `all` had the browser re-checking every animatable property on each
-  // of them for every style change.
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-150 ease-emphasized select-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:transition-transform [&_svg]:duration-150 hover:[&_svg]:scale-110',
+  // The transition names its properties rather than saying `all` (issue #419) — a button is not a
+  // rare element (an item card carries half a dozen), so `all` had the browser re-checking every
+  // animatable property on each of them for every style change. The list covers background and
+  // text colour, the border and ring the focus state paints (a ring is a box-shadow in Tailwind,
+  // as is every variant's drop shadow), the `active:` press, and the disabled fade.
+  //
+  // It names the whole transform family — `transform`, `translate`, `scale`, `rotate` — and not
+  // just `transform`, because Tailwind v4 compiles `scale-*` and `translate-*` to the *individual*
+  // properties, so `active:scale-[0.98]` is a `scale` declaration that `transition-property:
+  // transform` does not cover. Tailwind's own `transition` shorthand lists all four for the same
+  // reason. Getting that wrong doesn't fail a build; the press just stops easing.
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform,translate,scale,rotate,opacity] duration-150 ease-emphasized select-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:transition-transform [&_svg]:duration-150 hover:[&_svg]:scale-110',
   {
     variants: {
       variant: {

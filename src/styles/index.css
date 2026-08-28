@@ -312,8 +312,8 @@
   --radius: 0.65rem;
 
   /*
-   * The frosted-glass backdrop every content surface wears (Foundry `Surface`, via the
-   * `backdrop-surface` utility below). A whole *filter value*, not a blur radius, because the
+   * The frosted-glass backdrop the Foundry `Surface` panel wears, via the `backdrop-surface`
+   * utility below. A whole *filter value*, not a blur radius, because the
    * only cheap setting is `none`: `blur(0px)` still promotes a compositing layer and still reads
    * back the pixels behind the element every frame, so a zeroed radius saves the blur and keeps
    * all of the cost. The `pointer: coarse` block further down swaps it out on touch hardware.
@@ -715,6 +715,13 @@
  * colour alone — every accent's `--primary` is already AA against its foreground.
  */
 [data-contrast='high'] {
+  /* Both blocks force every surface fully opaque, so there is nothing behind a card to see
+     through it — yet a `backdrop-filter` would still promote the element and read the backdrop
+     back every frame to blur pixels the card then covers. Dropping it here is free: it changes
+     nothing on screen, and high contrast is the mode most likely to be paired with modest
+     hardware. Declared in both blocks because `.dark[data-contrast='high']` does not inherit
+     from this one. */
+  --backdrop-surface: none;
   --background: oklch(1 0 0);
   --foreground: oklch(0.12 0 0);
   --card: oklch(1 0 0);
@@ -731,6 +738,8 @@
   --input: oklch(0 0 0 / 60%);
 }
 .dark[data-contrast='high'] {
+  /* See the light block above: opaque surfaces, so the frost is invisible work. */
+  --backdrop-surface: none;
   --background: oklch(0.06 0 0);
   --foreground: oklch(1 0 0);
   --card: oklch(0.1 0 0);
@@ -1523,11 +1532,6 @@
 @utility dialog-scroll {
   overflow-x: hidden;
   overflow-y: auto;
-  /* Keep a flick that reaches either end inside the dialog rather than chaining on to the page
-     behind it — which on a phone scrolls the obscured screen and rubber-bands the whole document
-     under an open dialog. Containing it also spares the browser reconciling two scrollers in one
-     gesture. */
-  overscroll-behavior: contain;
   margin-right: -1rem;
   padding-right: 1rem;
   /*
@@ -2106,9 +2110,9 @@
  *
  * Left in place on a phone it is not merely unused, it is expensive: this pseudo-element carries a
  * conic gradient behind a two-layer `mask-composite` and a live (if paused) infinite animation of a
- * registered custom property, and it exists on *every* item card in the list. `(hover: none)` is
- * the same question the `touch:` variant asks, so a touchscreen laptop — which has a mouse as its
- * primary input, and can hover — keeps the effect.
+ * registered custom property, and it exists on *every* item card in the list. `(hover: none)` asks
+ * "will a hover state ever be entered", rather than `(pointer: coarse)`'s "how precise is the
+ * pointer" — so a touchscreen laptop, which has a mouse as its primary input, keeps the effect.
  */
 @media (hover: none) {
   .gubbins-spotlight-border::before {
@@ -2139,8 +2143,9 @@
  * Because the transform is applied only under `:hover`, exactly one card is ever promoted to a 3D
  * layer at a time and an idle recycled card in the virtualised grid carries no transform — safe on
  * the list, with no per-mount entrance to re-fire. It reverts to `transform: none` on `:hover`
- * loss, and Surface's own `transition-[transform,box-shadow] … ease-emphasized` animates that
- * settle, so no bespoke easing is introduced (one motion language, [[ease-emphasized-motion-token]]).
+ * loss, and Surface's own `transition-[transform,translate,scale,rotate,box-shadow] …
+ * ease-emphasized` animates that settle, so no bespoke easing is introduced (one motion language,
+ * [[ease-emphasized-motion-token]]).
  *
  * Decoration only: the real focus ring, the hover-lift, the `selected` ring and the F5 spotlight
  * comet remain the actual focus/selection signals. The tilt (an individual `transform`) composes

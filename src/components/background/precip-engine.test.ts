@@ -321,6 +321,39 @@ describe('startPrecip control interaction (issue #68)', () => {
     ctrl.stop();
   });
 
+  it('repaints the overlay when the mound cache itself changes, not only when the lift does', () => {
+    // The resting skip has two halves: "the lift is unchanged" and "the cache is unchanged". The
+    // lift half is covered by the test below; this is the cache half, and a theme change is the
+    // sharpest way to drive it — `refresh()` re-reads the token colours and dirties the mound
+    // cache, but knocks nothing off, so the snow on screen must simply be repainted in the new
+    // colour. Drop the generation bump in `renderMounds` and this is where it shows: the overlay
+    // would hold the old colour for as long as the snow lasts, because every frame after the
+    // first would look unchanged to the guard.
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    for (let i = 1; i <= 250; i++) pump(i * 50);
+    // Settle into the quiet state first, so the assertion below cannot be satisfied by a repaint
+    // that was going to happen anyway.
+    const quietMark = orec.drawImages.length;
+    pump(250 * 50 + 50);
+    pump(250 * 50 + 100);
+    expect(orec.drawImages.slice(quietMark)).toEqual([]);
+    // Now the cache changes underneath an unchanged lift. Pump past `renderInterval` (0.15s).
+    ctrl.refresh();
+    const mark = orec.drawImages.length;
+    for (let i = 253; i <= 262; i++) pump(i * 50);
+    expect(orec.drawImages.slice(mark).length).toBeGreaterThan(0);
+    ctrl.stop();
+  });
+
   it("rides a hovered control's lift: settled snow is blitted shifted by the hover offset", () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.9);
     const rec = makeCtx();

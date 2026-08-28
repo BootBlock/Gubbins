@@ -185,7 +185,7 @@ export interface StartPrecipOptions {
   readonly kind: PrecipKind;
   /** When true (OS reduced-motion or the "Reduce effects" switch), paint one static frame only. */
   readonly reduced: boolean;
-  /** Device-pixel-ratio cap for the backing store (default 2). */
+  /** Device-pixel-ratio cap for the backing store; defaults to {@link DEFAULT_DPR_CAP}. */
   readonly dprCap?: number;
   /**
    * Optional interaction canvas stacked *above* the app content (issue #68). When given together
@@ -213,6 +213,14 @@ export interface StartPrecipOptions {
   /** Initial snow-weather override (lab); defaults to `auto`. See {@link SnowWeatherMode}. */
   readonly weather?: SnowWeatherMode;
 }
+
+/**
+ * The backing store's device-pixel-ratio ceiling when the caller names none. Exported because the
+ * caller that *does* name one derives its value from this (see {@link
+ * import('./device-tier').precipDprCap}), and a second literal there would be free to drift from
+ * this one with nothing to catch it.
+ */
+export const DEFAULT_DPR_CAP = 2;
 
 /** Per-kind tuning. `density` = viewport px² per particle (lower ⇒ denser), clamped to [min, max]. */
 const TUNING = {
@@ -1212,7 +1220,7 @@ function buildEmojiSprite(dpr: number, emoji: string): HTMLCanvasElement {
 
 export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions): PrecipController {
   const { kind, reduced } = opts;
-  const dprCap = opts.dprCap ?? 2;
+  const dprCap = opts.dprCap ?? DEFAULT_DPR_CAP;
   const ctx = canvas.getContext('2d');
   // No 2D context (very old browser or a jsdom test): nothing to do — a no-op controller keeps the
   // caller's lifecycle simple and the app fully functional without the decoration.

@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { repoPath } from '@/test/repo-path';
-import { LARGE_FORMAT_QUERY, FOLDABLE_BOOK_QUERY, isLargeFormat } from './device';
+import {
+  LARGE_FORMAT_QUERY,
+  FOLDABLE_BOOK_QUERY,
+  HOVER_NONE_QUERY,
+  COARSE_POINTER_QUERY,
+  isLargeFormat,
+} from './device';
 
 const realMatchMedia = globalThis.matchMedia;
 
@@ -51,6 +57,55 @@ describe('device large-format detection (spec §2.4.2 / §3)', () => {
     // The CSS `large-format:` variant remains the authority in this case.
     (globalThis as { matchMedia?: typeof matchMedia }).matchMedia = undefined;
     expect(isLargeFormat()).toBe(false);
+  });
+});
+
+/**
+ * Guards the JS↔CSS parity behind the touch-hardware performance tier (issue #419).
+ *
+ * The stylesheet drops the surface frost under `(pointer: coarse)`; the weather layer trims its
+ * backing-store resolution for the same devices, reading `COARSE_POINTER_QUERY`. They are one
+ * decision — "this is touch hardware, spend less on decoration" — written once in CSS and once in
+ * TypeScript. Let them drift and a device gets one half of the tier and not the other, which is
+ * both a look nobody designed and a performance profile nobody measured.
+ */
+describe('coarse-pointer CSS/JS parity', () => {
+  /** The media condition of the block that clears `--backdrop-surface`. */
+  const BACKDROP_SURFACE_BLOCK = /@media\s+([^{]+?)\s*\{\s*:root\s*\{\s*--backdrop-surface:\s*none;/;
+
+  it('drops the surface frost under exactly COARSE_POINTER_QUERY', () => {
+    const css = readFileSync(repoPath(import.meta.dirname, 'src', 'styles', 'index.css'), 'utf8');
+    const match = BACKDROP_SURFACE_BLOCK.exec(css);
+
+    expect(
+      match,
+      'no `@media … { :root { --backdrop-surface: none; …` block found in src/styles/index.css',
+    ).not.toBeNull();
+    expect(match?.[1]).toBe(COARSE_POINTER_QUERY);
+  });
+});
+
+describe('hover-less CSS/JS parity', () => {
+  /**
+   * The `touch:` variant's media condition, in the same block form the `large-format:` guard below
+   * matches. `HOVER_NONE_QUERY` and this variant are, again, two independent copies of one
+   * condition in two languages — and the JS copy now decides whether the weather layer installs
+   * its hover-follow listeners at all (`components/background/surface-map.ts`), while the CSS copy
+   * decides whether the hover-only decoration those listeners follow is even drawn. Let them drift
+   * and the app polls a control's lift on a device that never lifts it, or stops polling on one
+   * that does — neither of which shows up anywhere but on real hardware.
+   */
+  const TOUCH_VARIANT = /@custom-variant\s+touch\s*\{\s*@media\s+([^{]+?)\s*\{/;
+
+  it('declares the same media condition in the stylesheet as HOVER_NONE_QUERY', () => {
+    const css = readFileSync(repoPath(import.meta.dirname, 'src', 'styles', 'index.css'), 'utf8');
+    const match = TOUCH_VARIANT.exec(css);
+
+    expect(
+      match,
+      'no `@custom-variant touch { @media … {` block found in src/styles/index.css',
+    ).not.toBeNull();
+    expect(match?.[1]).toBe(HOVER_NONE_QUERY);
   });
 });
 
