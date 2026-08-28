@@ -79,6 +79,22 @@ import { zipInVaultWorker } from './zip-in-worker';
 
 const PAGE = 100;
 
+/**
+ * How many Activity Log entries a vault note inlines per item (issue #610).
+ *
+ * An item's ledger is unbounded, and the vault reads it for *every* exported item at once, so
+ * this is a ceiling rather than a whole-set read: the note is a document to keep, not a backup,
+ * and a hundred-thousand-row table helps nobody. It is deliberately far above what a real item
+ * accumulates — a consumable adjusted weekly takes about twenty years to reach it — where the
+ * old cap of one page was passed inside two.
+ *
+ * Reaching it is never silent: the read asks for one entry more than this, and an item that
+ * returns the extra is written out with `historyTruncated`, which puts a line in the note
+ * saying what it holds. That is the whole point — the previous read stopped at 100 and rendered
+ * a full-looking table.
+ */
+const VAULT_HISTORY_LIMIT = 1000;
+
 export interface ExportOptions {
   readonly includeInactive: boolean;
   /** §4.5 granularity. Defaults to the whole inventory. */
@@ -524,16 +540,21 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   for (const bucket of bucketIds(items)) {
     const ids = bucket.map((i) => i.id);
     const [historyByItem, imagesByItem, attachmentsByItem] = await Promise.all([
-      itemRepo.getHistoryForItems(ids, PAGE),
+      // One more than the cap, so a longer log is *detected* rather than assumed: the extra entry
+      // is the only difference between an item with exactly the cap and one with more.
+      itemRepo.getHistoryForItems(ids, VAULT_HISTORY_LIMIT + 1),
       imageRepo.listForItems(ids),
       attachmentRepo.listForItems(ids),
     ]);
     for (const item of bucket) {
       const id = item.id;
       const images = imagesByItem.get(id) ?? [];
+      const history = historyByItem.get(id) ?? [];
+      const historyTruncated = history.length > VAULT_HISTORY_LIMIT;
       vaultItems.push({
         item,
-        history: historyByItem.get(id) ?? [],
+        history: historyTruncated ? history.slice(0, VAULT_HISTORY_LIMIT) : history,
+        historyTruncated,
         locationName: locationNames.get(item.locationId) ?? 'Unfiled',
         categoryName: item.categoryId ? (categoryNames.get(item.categoryId) ?? null) : null,
         // The full-resolution bytes are resolved *here*, before the note is written, so the note

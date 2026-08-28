@@ -364,6 +364,14 @@ export interface VaultAttachment {
 export interface VaultItem {
   readonly item: Item;
   readonly history: readonly ItemHistoryEntry[];
+  /**
+   * True when `history` is the newest slice of a longer Activity Log rather than the whole of
+   * it (issue #610). An item's ledger is unbounded — every receipt, move, count, sale and
+   * reconciliation writes a row — so the vault caps what it inlines into a note. The note then
+   * *says* it was capped: a table that is short because the item is quiet and one that is short
+   * because the export stopped reading look identical, and the second is a wrong answer.
+   */
+  readonly historyTruncated?: boolean;
   readonly locationName: string;
   readonly categoryName: string | null;
   readonly images?: readonly VaultImage[];
@@ -653,7 +661,16 @@ function renderItemMarkdown(entry: VaultItem, imageNames: readonly string[]): st
   }
 
   if (entry.history.length > 0) {
-    lines.push('## Activity', '', '| When | Action | Note |', '| --- | --- | --- |');
+    lines.push('## Activity', '');
+    // The count comes from the rows actually written, so the sentence cannot drift from the
+    // table beneath it however the cap is chosen (issue #610).
+    if (entry.historyTruncated) {
+      lines.push(
+        `> Showing the most recent ${entry.history.length} entries. Older activity exists in Gubbins but is not included in this export.`,
+        '',
+      );
+    }
+    lines.push('| When | Action | Note |', '| --- | --- | --- |');
     for (const h of entry.history) {
       const when = new Date(h.createdAt).toISOString().slice(0, 10);
       lines.push(`| ${when} | ${h.action} | ${escapeCell(h.note ?? '')} |`);
