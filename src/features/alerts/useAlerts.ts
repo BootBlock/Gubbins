@@ -33,6 +33,7 @@ import {
 } from './alerts';
 import { useDismissedAlertsStore } from './useDismissedAlertsStore';
 import { nowMs } from '@/lib/clock';
+import { useFormatters } from '@/lib/useFormatters';
 
 /**
  * Combines the four alert source feeds into a sorted, dismissal-filtered `Alert[]`.
@@ -55,6 +56,10 @@ export function useAlerts(): {
   readonly fieldDueTruncated: boolean;
 } {
   const now = nowMs();
+  // Every date in the alert copy goes through the shared formatter seam, so a due/expiry/warranty
+  // date reads in the user's locale and on the same day the agenda, the item editor and the
+  // calendar feed give it (issue #497).
+  const fmt = useFormatters();
 
   // --- Source queries ---
   //
@@ -212,7 +217,7 @@ export function useAlerts(): {
 
   const dismissals = useDismissedAlertsStore((s) => s.dismissals);
 
-  const allAlerts = buildAlerts(sources, now);
+  const allAlerts = buildAlerts(sources, now, fmt);
   const alerts = applyDismissals(allAlerts, dismissals, now);
 
   // Keep the dismissal records bounded (issue #134). Reconciling them against the live feed on

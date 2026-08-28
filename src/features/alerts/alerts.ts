@@ -4,8 +4,8 @@
  * Folds five existing data sources — low stock, perishable expiry, maintenance-due,
  * warranty-due and opted-in custom-field due dates (W1a) — into a single sorted, typed
  * `Alert[]`. All functions are pure
- * (no DB access, no side-effects, `now` injected) so they are exhaustively
- * unit-testable in isolation, following the same "logic out of glue" seam as
+ * (no DB access, no side-effects, `now` and the date formatters injected) so they are
+ * exhaustively unit-testable in isolation, following the same "logic out of glue" seam as
  * `reorder-policy.ts`, `expiry.ts` and `asset-lifecycle.ts`.
  *
  * **Warranty gate**: the warranty lane is conditional on Phase-66 fields. An item
@@ -201,6 +201,34 @@ export interface AlertSources {
 }
 
 // ---------------------------------------------------------------------------
+// Formatting seam
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders the dates that appear in an alert's human copy. Injected — the way `buildAgenda` takes
+ * an `AgendaDateFormatter` — rather than sliced from an ISO string here, so every date the alert
+ * centre names reads exactly as the same field does on every other screen: in the user's locale,
+ * and on the right day (issue #497). Kept a pure parameter so this seam stays free of React and
+ * preferences, and stays exhaustively unit-testable.
+ *
+ * The two members are not interchangeable, and picking the wrong one is precisely the bug this
+ * replaced. `Formatters` satisfies the shape structurally, so a caller passes `useFormatters()`.
+ */
+export interface AlertDateFormatters {
+  /**
+   * A genuine instant that carries a real local time-of-day — the maintenance lane's `dueAtMs`,
+   * which `addCalendarDays` anchors to the wall-clock time the service was logged at (#325).
+   * Rendered in the host zone, so an evening service west of UTC keeps its own calendar day.
+   */
+  readonly date: (ms: number) => string;
+  /**
+   * A **day-grained** value stored at midnight UTC — expiry, warranty and custom-field due
+   * dates. Rendered in UTC, so the day the user picked is the day shown in every timezone.
+   */
+  readonly calendarDate: (ms: number) => string;
+}
+
+// ---------------------------------------------------------------------------
 // Severity helpers
 // ---------------------------------------------------------------------------
 
@@ -227,7 +255,7 @@ function buildLowStockAlerts(sources: readonly LowStockSource[]): Alert[] {
   }));
 }
 
-function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert[] {
+function buildExpiryAlerts(sources: readonly ExpirySource[], now: number, fmt: AlertDateFormatters): Alert[] {
   const alerts: Alert[] = [];
   for (const item of sources) {
     // An item with no date grades NONE and is skipped either way; settling it here also settles
@@ -240,8 +268,11 @@ function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert
     const expired = status === 'EXPIRED';
     const severity: AlertSeverity = expired ? 'critical' : 'warning';
     const dueAt = new Date(item.effectiveExpiryDate).toISOString();
+    // The ISO day still keys the alert's identity — it must not vary with locale or timezone —
+    // but the copy reads the shared formatter's rendering of the same day.
     const day = dueAt.slice(0, 10);
-    const detail = expired ? `Expiry date has passed (${day}).` : `Expires soon on ${day}.`;
+    const shown = fmt.calendarDate(item.effectiveExpiryDate);
+    const detail = expired ? `Expiry date has passed (${shown}).` : `Expires soon on ${shown}.`;
 
     alerts.push({
       // The stored day and the status band both belong to the identity: "expiring soon" and the
@@ -259,7 +290,11 @@ function buildExpiryAlerts(sources: readonly ExpirySource[], now: number): Alert
   return alerts;
 }
 
-function buildMaintenanceDueAlerts(sources: readonly MaintenanceDueSource[], now: number): Alert[] {
+function buildMaintenanceDueAlerts(
+  sources: readonly MaintenanceDueSource[],
+  now: number,
+  fmt: AlertDateFormatters,
+): Alert[] {
   return sources.map((schedule) => {
     const dueAt = schedule.dueAtMs != null ? new Date(schedule.dueAtMs).toISOString() : null;
     const overdue = schedule.dueAtMs != null && schedule.dueAtMs < now;
@@ -272,14 +307,22 @@ function buildMaintenanceDueAlerts(sources: readonly MaintenanceDueSource[], now
       kind: 'maintenance-due',
       severity: overdue ? 'critical' : 'warning',
       title: `Maintenance due — ${schedule.itemName}`,
-      detail: `Schedule: "${schedule.name}"${dueAt ? `. Due ${dueAt.slice(0, 10)}.` : '.'}`,
+      // `dueAtMs` is a wall-clock instant, not a day-grained one, so the copy goes through
+      // `date` and not `calendarDate` — reading its UTC components named the wrong day for a
+      // service logged near midnight outside UTC, one day off the agenda and the calendar feed
+      // for the very same schedule (issue #497).
+      detail: `Schedule: "${schedule.name}"${schedule.dueAtMs != null ? `. Due ${fmt.date(schedule.dueAtMs)}.` : '.'}`,
       dueAt,
       target: { route: '/inventory', itemId: schedule.itemId, itemName: schedule.itemName },
     };
   });
 }
 
-function buildWarrantyAlerts(sources: readonly WarrantySource[], now: number): Alert[] {
+function buildWarrantyAlerts(
+  sources: readonly WarrantySource[],
+  now: number,
+  fmt: AlertDateFormatters,
+): Alert[] {
   const alerts: Alert[] = [];
   for (const item of sources) {
     // Gate: items without warrantyExpiresAt produce no warranty alert (P66 field).
@@ -292,10 +335,11 @@ function buildWarrantyAlerts(sources: readonly WarrantySource[], now: number): A
     const dueAt = Number.isFinite(dueAtMs) ? new Date(dueAtMs).toISOString() : null;
 
     const severity: AlertSeverity = status === 'expired' ? 'critical' : 'warning';
+    const shown = dueAt !== null ? fmt.calendarDate(dueAtMs) : null;
     const detail =
       status === 'expired'
-        ? `Warranty expired${dueAt ? ` on ${dueAt.slice(0, 10)}` : ''}.`
-        : `Warranty expires soon${dueAt ? ` on ${dueAt.slice(0, 10)}` : ''} (within ${WARRANTY_EXPIRING_SOON_DAYS} days).`;
+        ? `Warranty expired${shown ? ` on ${shown}` : ''}.`
+        : `Warranty expires soon${shown ? ` on ${shown}` : ''} (within ${WARRANTY_EXPIRING_SOON_DAYS} days).`;
 
     alerts.push({
       // The status band joins the stored date for the same reason the expiry lane carries it:
@@ -328,7 +372,11 @@ function buildWarrantyAlerts(sources: readonly WarrantySource[], now: number): A
  * "Renewal date" must not stay silent once the renewal is a year later, or (worse) once it is
  * brought forward, and dismissing "due soon" must not silence the overdue alert it becomes.
  */
-function buildFieldDueAlerts(sources: readonly FieldDueSource[], now: number): Alert[] {
+function buildFieldDueAlerts(
+  sources: readonly FieldDueSource[],
+  now: number,
+  fmt: AlertDateFormatters,
+): Alert[] {
   const alerts: Alert[] = [];
   for (const source of sources) {
     const status = fieldDueStatus(source.dueAt, source.leadDays, now);
@@ -336,15 +384,17 @@ function buildFieldDueAlerts(sources: readonly FieldDueSource[], now: number): A
 
     const overdue = status === 'OVERDUE';
     const dueAt = new Date(source.dueAt).toISOString();
+    // As in the expiry lane: the ISO day keys the identity, the formatter writes the copy.
     const day = dueAt.slice(0, 10);
+    const shown = fmt.calendarDate(source.dueAt);
     alerts.push({
       id: `field-due:${source.itemId}:${source.defId}:${day}:${overdue ? 'overdue' : 'due-soon'}`,
       kind: 'field-due',
       severity: overdue ? 'critical' : 'warning',
       title: `${source.fieldName} ${overdue ? 'passed' : 'due soon'} — ${source.itemName}`,
       detail: overdue
-        ? `"${source.fieldName}" was due on ${day}.`
-        : `"${source.fieldName}" is due on ${day} (within ${source.leadDays} ${plural(source.leadDays, 'day')}).`,
+        ? `"${source.fieldName}" was due on ${shown}.`
+        : `"${source.fieldName}" is due on ${shown} (within ${source.leadDays} ${plural(source.leadDays, 'day')}).`,
       dueAt,
       target: { route: '/inventory', itemId: source.itemId, itemName: source.itemName },
     });
@@ -366,14 +416,15 @@ function buildFieldDueAlerts(sources: readonly FieldDueSource[], now: number): A
  *
  * @param sources - The five pre-fetched source arrays.
  * @param now     - Current wall-clock instant (UNIX-ms). Injected for testability.
+ * @param fmt     - Date renderers for the human copy; see {@link AlertDateFormatters}.
  */
-export function buildAlerts(sources: AlertSources, now: number): Alert[] {
+export function buildAlerts(sources: AlertSources, now: number, fmt: AlertDateFormatters): Alert[] {
   const all: Alert[] = [
     ...buildLowStockAlerts(sources.lowStock),
-    ...buildExpiryAlerts(sources.expiring, now),
-    ...buildMaintenanceDueAlerts(sources.maintenanceDue, now),
-    ...buildWarrantyAlerts(sources.warrantyItems, now),
-    ...buildFieldDueAlerts(sources.fieldDue, now),
+    ...buildExpiryAlerts(sources.expiring, now, fmt),
+    ...buildMaintenanceDueAlerts(sources.maintenanceDue, now, fmt),
+    ...buildWarrantyAlerts(sources.warrantyItems, now, fmt),
+    ...buildFieldDueAlerts(sources.fieldDue, now, fmt),
   ];
 
   return all.slice().sort((a, b) => {
