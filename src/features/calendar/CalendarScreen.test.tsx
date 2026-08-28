@@ -162,4 +162,12 @@ describe('CalendarScreen — the look-back bound on the dated item lanes', () =>
     render(<CalendarScreen />);
     expect(screen.queryByTestId('agenda-lookback')).toBeNull();
   });
+
+  it('says nothing when the agenda holds no warranty or expiry entry at all', () => {
+    // Both chips are on by default, so a note gated on the chips alone would appear here and
+    // describe a boundary on nothing the reader can see.
+    events = [FIELD_DUE_EVENT];
+    render(<CalendarScreen />);
+    expect(screen.queryByTestId('agenda-lookback')).toBeNull();
+  });
 });

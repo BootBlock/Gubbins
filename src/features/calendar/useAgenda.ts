@@ -48,13 +48,15 @@ const AGENDA_LOOKAHEAD_DAYS = 36_500;
  * any age fills its Overdue bucket with dates from a decade ago, and before the feeds walked
  * their pages that history was all a lane returned.
  *
- * The other lanes need no such bound. Maintenance stays due until performed, an open loan stays
- * open, the booking feed is already cut at today, and a reorder shortfall carries no date at all
- * — none of them accumulates a tail of settled history the way a lapsed warranty does.
+ * Only these two lanes carry it. Maintenance stays due until performed, an open loan stays open,
+ * the booking feed is already cut at today, and a reorder shortfall carries no date at all. The
+ * custom-field due-date lane is unbounded too, deliberately: a due date is opted in one field
+ * *definition* at a time (`field_defs.due_lead_days`), so it never accumulates the way a date
+ * carried by every dated asset and every perishable does.
  *
  * A year is deliberately generous: long enough that an annual review still finds what lapsed,
- * short enough that the set stays agenda-sized. `CalendarScreen` names the bound on screen
- * whenever an Overdue section is showing, so nothing is dropped in silence.
+ * short enough that the set stays agenda-sized. `CalendarScreen` states the bound on screen
+ * whenever one of the two lanes has an entry showing, so nothing is dropped in silence.
  */
 const AGENDA_LOOKBACK_DAYS = 365;
 

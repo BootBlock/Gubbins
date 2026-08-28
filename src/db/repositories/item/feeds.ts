@@ -53,8 +53,10 @@ import { nowMs } from '@/lib/clock';
 export type DatedFeedParams = PageParams & {
   /**
    * Lower bound on the selected date, inclusive, as a UNIX-ms instant. Expressed in ms for both
-   * feeds even though warranty dates are stored as TEXT — the caller thinks in instants, and the
-   * warranty feed converts to its own 'YYYY-MM-DD' frame exactly as it does for the cutoff.
+   * feeds even though warranty dates are stored as TEXT — the caller thinks in instants, and each
+   * feed compares `since` in exactly the frame it already compares its cutoff in: the warranty
+   * feed converts to 'YYYY-MM-DD', the expiry feed compares raw ms. The two therefore round a
+   * boundary date the same way their cutoffs do, which can differ by a day at the very edge.
    */
   readonly since?: number;
 };

@@ -32,7 +32,7 @@ vi.mock('@/db/repositories', () => repos);
 
 import { useAgenda } from './useAgenda';
 import type { AgendaKind } from './agenda';
-import { MAX_PAGE_SIZE } from '@/db/repositories/constants';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '@/db/repositories/constants';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
@@ -298,7 +298,7 @@ describe('useAgenda — every paginated lane reads past the page ceiling', () =>
   /** A feed of `TOTAL` rows that clamps `limit` exactly as `BaseRepository.resolvePage` does. */
   function fakeFeed(lane: string) {
     return (params: { limit?: number; offset?: number; since?: number } = {}) => {
-      const limit = Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(params.limit ?? 50)));
+      const limit = Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(params.limit ?? DEFAULT_PAGE_SIZE)));
       const offset = Math.max(0, Math.floor(params.offset ?? 0));
       (pagesByLane[lane] ??= []).push({ limit, offset });
       if ('since' in params) sinceByLane[lane] = params.since;

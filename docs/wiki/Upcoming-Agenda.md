@@ -39,16 +39,19 @@ Each entry links to the item or record behind it.
 ## How far back Overdue reaches
 
 Overdue entries are things that have already passed their date but are still worth acting on, so
-the agenda keeps them at the top of the list. Two kinds of entry need a limit, because they never
-get "done" and would otherwise pile up forever:
+the agenda keeps them at the top of the list. Two kinds of entry carry a limit on how far back that
+reaches:
 
 - **Warranty expiries** and **expiry dates** are listed while they are still in the future, and for
   **one year** after they pass. Anything that lapsed longer ago than that is history, and Upcoming
-  says so under the Overdue section rather than filling it with dates from years back.
+  says so in a note under the list rather than filling Overdue with dates from years back. Every
+  dated asset carries a warranty date and every perishable carries an expiry date, so without the
+  limit those two kinds alone would crowd out everything else.
 
-Everything else is bounded by its own lifecycle instead of by a date window. Servicing stays listed
-until you record it as done, a loan stays listed until it comes back, and a booking drops off after
-its last booked day.
+Nothing else is trimmed by date. Servicing stays listed until you record it as done, a loan stays
+listed until it comes back, a booking drops off after its last booked day, and your own
+**[[due-date fields|Custom-Fields-and-Capabilities]]** stay listed however long ago they passed —
+you opt those in one field at a time, so they do not pile up the same way.
 
 > **ℹ️ Note**
 > To see an older warranty or expiry date, open the item itself — the date is always on the item,
@@ -58,9 +61,9 @@ its last booked day.
 
 Upcoming reads every entry it has, but a very large inventory can hold more of one kind than the
 screen can list. When that happens Upcoming names the kinds it had to cut short, just under the
-filter chips, so a short list is never mistaken for a complete one. Use the chips to narrow the
-agenda to the kind you care about, or the source screen — **[[Alerts]]**,
-**[[Maintenance & servicing|Maintenance-and-Servicing]]**, **[[Bookings]]** — for the full picture.
+filter chips, so a short list is never mistaken for a complete one. The chips only hide and show
+what is already on the list, so to see the rest of a cut-short kind, open the screen it comes from
+— **[[Alerts]]**, **[[Maintenance & servicing|Maintenance-and-Servicing]]**, **[[Bookings]]**.
 
 ## On your calendar
 

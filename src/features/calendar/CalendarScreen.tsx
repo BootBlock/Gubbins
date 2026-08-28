@@ -32,7 +32,7 @@ import {
   MaintenanceIcon,
   NotificationIcon,
 } from '@/components/icons';
-import { useT } from '@/features/i18n';
+import { useT, type MessageKey } from '@/features/i18n';
 import { assertExhaustive } from '@/lib/exhaustive';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
@@ -50,14 +50,20 @@ import { useAgenda } from './useAgenda';
 // Kind metadata — labels & icons
 // ---------------------------------------------------------------------------
 
-const KIND_LABEL: Record<AgendaKind, string> = {
-  maintenance: 'Maintenance',
-  warranty: 'Warranty',
-  expiry: 'Expiry',
-  'checkout-due': 'Loans due',
-  reorder: 'Reorder',
-  booking: 'Bookings',
-  'field-due': 'Field dates',
+/**
+ * Catalog key per lane, rather than the English label itself. The filter chips and the truncation
+ * caveat both name a lane, and the caveat splices those names into a translated sentence — an
+ * English map would have produced a half-German notice. The `en.json` values are byte-identical
+ * to the labels they replace, which is what keeps the existing chip assertions honest.
+ */
+const KIND_LABEL_KEY: Record<AgendaKind, MessageKey> = {
+  maintenance: 'agenda.kind.maintenance',
+  warranty: 'agenda.kind.warranty',
+  expiry: 'agenda.kind.expiry',
+  'checkout-due': 'agenda.kind.checkoutDue',
+  reorder: 'agenda.kind.reorder',
+  booking: 'agenda.kind.booking',
+  'field-due': 'agenda.kind.fieldDue',
 };
 
 function KindIcon({ kind }: { kind: AgendaKind }) {
@@ -153,6 +159,7 @@ function KindFilter({
   enabled: ReadonlySet<AgendaKind>;
   onToggle: (kind: AgendaKind) => void;
 }) {
+  const t = useT();
   return (
     <div
       className="flex flex-wrap items-center gap-1 rounded-lg bg-secondary/60 p-0.5"
@@ -173,7 +180,7 @@ function KindFilter({
             }`}
           >
             <KindIcon kind={kind} />
-            {KIND_LABEL[kind]}
+            {t(KIND_LABEL_KEY[kind])}
           </button>
         );
       })}
@@ -209,11 +216,14 @@ export function CalendarScreen() {
   // caveat reads in the same sequence as the filter row above it.
   const truncatedLabels = AGENDA_KINDS.filter(
     (kind) => truncatedKinds.has(kind) && enabledKinds.has(kind),
-  ).map((kind) => KIND_LABEL[kind]);
+  ).map((kind) => t(KIND_LABEL_KEY[kind]));
 
-  // The look-back bound belongs to the two dated item lanes, so it is worth stating exactly while
-  // one of them is on screen — including when it is *why* the Overdue section looks short.
-  const showsBoundedLanes = events.length > 0 && (enabledKinds.has('warranty') || enabledKinds.has('expiry'));
+  // The look-back bound belongs to the two dated item lanes, so the note is shown exactly when one
+  // of those lanes has an entry on screen — including when the bound is *why* that lane looks
+  // short. Read off `visible` rather than `events`, for the same reason the truncation caveat
+  // checks the chips: a note about a lane the user has filtered away describes nothing they can
+  // see, and would sit above "No items match the selected kinds." contradicting it.
+  const showsBoundedLanes = visible.some((e) => e.kind === 'warranty' || e.kind === 'expiry');
 
   // Announce the pending count once loading completes (WCAG 4.1.3), once only.
   const [announcement, setAnnouncement] = useState('');
@@ -308,11 +318,10 @@ export function CalendarScreen() {
           </div>
         )}
 
-        {/* The two dated item lanes reach back a bounded distance (issue #607), so their Overdue
-            entries are "what lapsed recently", not "everything that ever lapsed". A footnote
-            under the agenda rather than a caveat above it: it bounds what the list can hold, so
-            it reads once the reader has seen the list, and it is stated only while one of the two
-            lanes it describes is actually showing. */}
+        {/* The two dated item lanes reach back a bounded distance (issue #607), so their overdue
+            entries are "what lapsed recently", not "everything that ever lapsed". A footnote under
+            the agenda rather than a caveat above it: it bounds what the list can hold, so it reads
+            once the reader has seen the list. */}
         {!isLoading && !isError && showsBoundedLanes && (
           <p className="text-xs text-muted-foreground" data-testid="agenda-lookback">
             {t('agenda.lookback', { vars: { days: lookbackDays } })}

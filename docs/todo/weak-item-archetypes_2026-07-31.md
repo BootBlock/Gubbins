@@ -498,7 +498,8 @@ report it when they cannot, rather than showing one page as the whole set.
   `AGENDA_FETCH_LIMIT` of 500 that `MAX_PAGE_SIZE` silently clamps to 100, with `hasMore` never
   read). That predates this work and is filed as
   [#607](https://github.com/BootBlock/Gubbins/issues/607); the due-date lanes do not repeat it, but
-  fixing the other six is that issue's job, not this one's.
+  fixing the other six is that issue's job, not this one's. **Since shipped:** #607 landed, so
+  every paginated lane now reads every page and reports its own truncation.
 
 **One defect met while building this, already filed.** `buildWarrantyEvents` and
 `buildExpiryEvents` feed a day-grained **midnight-UTC** value straight into `bucketForDueAt` and
