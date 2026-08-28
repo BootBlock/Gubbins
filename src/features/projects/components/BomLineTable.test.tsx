@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ProjectBomLine } from '@/db/repositories';
+import type { ProjectBomLine, TrackingMode } from '@/db/repositories';
 import type { ItemAvailability } from '@/features/projects/reservations';
 
 /**
@@ -40,6 +40,8 @@ const h = vi.hoisted(() => ({
   removeMutate: vi.fn(),
   /** Stock availability per matched item (issue #653); undefined = the read has not landed. */
   availabilityByItem: undefined as Map<string, ItemAvailability> | undefined,
+  /** Tracking mode per matched item (issue #608); undefined = the read has not landed. */
+  trackingModeByItem: undefined as Map<string, TrackingMode> | undefined,
 }));
 
 vi.mock('../projects', () => ({
@@ -51,6 +53,7 @@ vi.mock('../projects', () => ({
 vi.mock('@/features/inventory/queries', () => ({
   useItemsRelations: () => ({ data: h.relationsByItem }),
   useItemsAvailability: () => ({ data: h.availabilityByItem }),
+  useItemsTrackingModes: () => ({ data: h.trackingModeByItem }),
 }));
 
 import { BomLineTable } from './BomLineTable';
@@ -124,6 +127,7 @@ function availability(overrides: Partial<ItemAvailability> = {}, backing = new M
 beforeEach(() => {
   h.relationsByItem = new Map();
   h.availabilityByItem = undefined;
+  h.trackingModeByItem = undefined;
   h.receive = { isPending: false, variables: undefined };
   h.remove = { isPending: false, variables: undefined };
   h.reservationPending = false;
@@ -338,5 +342,49 @@ describe('BomLineTable — in-flight guard (issue #303)', () => {
     // whole bill of materials were being deleted.
     expect(first.querySelector('.animate-spin')).toBeNull();
     expect(second.querySelector('.animate-spin')).not.toBeNull();
+  });
+});
+
+/**
+ * A receive control for an item with no counted quantity (issue #608). The control used to offer
+ * a batch number and an expiry the write discarded, under a tooltip promising "Receive N into
+ * stock" for a receipt that added none.
+ */
+describe('BomLineTable — receiving an item that cannot hold counted stock', () => {
+  const inTransit = () => makeLine({ procurementStatus: 'IN_TRANSIT', requiredQty: 5, itemId: 'ap' });
+
+  it('renames the action and drops the batch and expiry fields', () => {
+    h.trackingModeByItem = new Map<string, TrackingMode>([['ap', 'SERIALISED']]);
+    render(<BomLineTable projectId="proj-1" lines={[inTransit()]} />);
+
+    expect(screen.getByLabelText('Record as received (no stock added)')).toBeEnabled();
+    expect(screen.queryByLabelText('Receive into stock')).toBeNull();
+    expect(screen.queryByTestId('receive-batch-line-1')).toBeNull();
+    expect(screen.queryByTestId('receive-expiry-line-1')).toBeNull();
+    // The instalment quantity stays: a partial delivery is still a partial delivery.
+    expect(screen.getByLabelText('Quantity to receive')).toBeInTheDocument();
+  });
+
+  it('receives as before for a bulk item, and while the batched read is still in flight', () => {
+    h.trackingModeByItem = new Map<string, TrackingMode>([['ap', 'DISCRETE']]);
+    render(<BomLineTable projectId="proj-1" lines={[inTransit()]} />);
+    expect(screen.getByLabelText('Receive into stock')).toBeInTheDocument();
+    expect(screen.getByTestId('receive-batch-line-1')).toBeInTheDocument();
+
+    cleanup();
+    // Undefined = the read has not landed. Warning on a value it does not have yet would show a
+    // caution the next render takes back.
+    h.trackingModeByItem = undefined;
+    render(<BomLineTable projectId="proj-1" lines={[inTransit()]} />);
+    expect(screen.getByLabelText('Receive into stock')).toBeInTheDocument();
+  });
+
+  it('still sends the instalment quantity, with no batch identity', async () => {
+    h.trackingModeByItem = new Map<string, TrackingMode>([['ap', 'UNTRACKED']]);
+    const user = userEvent.setup();
+    render(<BomLineTable projectId="proj-1" lines={[inTransit()]} />);
+
+    await user.click(screen.getByLabelText('Record as received (no stock added)'));
+    expect(h.receiveMutate).toHaveBeenCalledWith({ lineId: 'line-1', quantity: 5, batch: undefined });
   });
 });

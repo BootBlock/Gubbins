@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Banner, Button, FormField, InfoHint, Input, Modal, Money, SelectField } from '@/components/foundry';
 import { WarningIcon } from '@/components/icons';
-import type { CreatePurchaseOrderLineInput, PriceBreak } from '@/db/repositories';
+import type { CreatePurchaseOrderLineInput, PriceBreak, TrackingMode } from '@/db/repositories';
 import { useT } from '@/features/i18n';
+import { TRACKING_MODE_LABELS } from '@/features/inventory/components/inventory-ui';
 import { effectiveUnitCostForQty } from '@/features/inventory/supplier-cost';
+import { receiptLandingFor } from '@/features/projects/receipts';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { isCurrencyMismatch, normaliseCurrencyCode } from '@/lib/money';
@@ -25,6 +27,8 @@ export interface LineItemOption {
   readonly priceBreaks: readonly PriceBreak[];
   /** The preferred supplier part's currency for the price display; null ⇒ the base currency. */
   readonly currency: string | null;
+  /** How the item is tracked — what decides whether receiving this line can move stock. */
+  readonly trackingMode: TrackingMode;
 }
 
 /**
@@ -218,7 +222,7 @@ export function PurchaseOrderLineDialog({
       open={open}
       onClose={onClose}
       title="Add line"
-      description="A part to order. Link an inventory item so received stock lands automatically."
+      description="A part to order. Link a bulk-tracked inventory item so received stock lands automatically."
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="po-line-form">
         <SelectField
@@ -229,7 +233,17 @@ export function PurchaseOrderLineDialog({
           data-testid="po-line-item"
           options={[
             { value: '', label: '— Unlinked —' },
-            ...items.map((i) => ({ value: i.id, label: i.name })),
+            // An item whose tracking mode holds no counted quantity is named as such in the list
+            // (issue #608). It stays linkable — recording the spend and the supplier against a
+            // serialised tool is an ordinary thing to want — but the label stops the picker
+            // implying a receipt against it will move stock, which it will not.
+            ...items.map((i) => ({
+              value: i.id,
+              label:
+                receiptLandingFor(i.trackingMode) === 'RECORD_ONLY'
+                  ? `${i.name} · ${TRACKING_MODE_LABELS[i.trackingMode]} — no stock movement`
+                  : i.name,
+            })),
           ]}
         />
 

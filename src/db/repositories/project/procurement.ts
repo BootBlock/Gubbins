@@ -9,9 +9,9 @@
  * *derived projection* of the BOM lines, never a stored counter.
  */
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
-import { planReceipt } from '@/features/projects/receipts';
+import { planReceipt, receiptLandingFor, recordOnlyReceiptReason } from '@/features/projects/receipts';
 import type { SqlStatement } from '../../rpc/driver';
-import type { ProcurementStatus, ReservationStatus } from '../constants';
+import type { ProcurementStatus, ReservationStatus, TrackingMode } from '../constants';
 import { historyStatement } from '../item/history';
 import { BOM_RECEIPT_RACE_MESSAGE, receivedQtyDeltaStatement, runReceiptWrite } from '../receipt-guard';
 import { addStockStatement } from '../stock';
@@ -117,8 +117,16 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
      * requirement, otherwise it stays IN_TRANSIT so the remainder keeps surfacing as
      * incoming stock (`inTransitQtyForItem`). For a matched DISCRETE item the received
      * delta is added to its on-hand stock and, if a destination is given, it is moved
-     * there — both logged to the ledger. Non-discrete / unmatched lines just track the
-     * received progress and transition to RECEIVED when complete.
+     * there — both logged to the ledger.
+     *
+     * A matched item whose tracking mode holds no counted quantity — serialised, consumable
+     * or untracked — is **record-only** (issue #608): the line's progress and status advance
+     * as before and no stock moves, but the receipt is still written to the item's Activity
+     * Log saying so. It used to write nothing at all, which made the whole flow a silent
+     * no-op with no entry to explain the unchanged on-hand figure. Which modes land stock is
+     * {@link receiptLandingFor}'s decision, shared with the receive dialogs so the two cannot
+     * promise different things. An *unmatched* line (no `itemId`) has no item to log against,
+     * so it still only tracks the received progress.
      */
     async receiveLine(
       lineId: string,
@@ -149,11 +157,12 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
 
       if (line.itemId && plan.receivedDelta > 0) {
         const item = await this.driver.queryOne<{
-          tracking_mode: string;
+          tracking_mode: TrackingMode;
           quantity: number;
           location_id: string;
         }>('SELECT tracking_mode, quantity, location_id FROM items WHERE id = ?;', [line.itemId]);
-        if (item && item.tracking_mode === 'DISCRETE') {
+        const landing = item ? receiptLandingFor(item.tracking_mode) : null;
+        if (item && landing === 'COUNT') {
           const qty = plan.receivedDelta;
           const nextQty = item.quantity + qty;
           // Received stock lands at the destination location in the per-location ledger
@@ -179,6 +188,19 @@ export function withProcurement<TBase extends Constructor<ProjectCoreRepository>
                 ? `Received ${qty} from procurement (now ${nextQty})${batchNote}.`
                 : `Received ${qty} of ${line.requiredQty} from procurement (now ${nextQty}; ${plan.outstandingQty} still arriving)${batchNote}.`,
               metadata: targetLocation !== item.location_id ? { toLocationId: targetLocation } : undefined,
+            }),
+          );
+        } else if (item && landing === 'RECORD_ONLY') {
+          // The delivery happened even though no stock could move, so it is logged against the
+          // item rather than left invisible (issue #608). `quantity_delta` stays null for the
+          // same reason `setReservation` leaves it null: the movement reports sum that column
+          // without filtering on `action`, so a delta here would be counted as a real arrival
+          // that never took place.
+          const qty = plan.receivedDelta;
+          statements.push(
+            historyStatement(line.itemId, 'RECEIVED', this.actorId(), {
+              note: `Received ${qty} of ${line.requiredQty} from procurement. No stock was added: ${recordOnlyReceiptReason(item.tracking_mode)}.`,
+              metadata: { lineId, quantity: qty, trackingMode: item.tracking_mode },
             }),
           );
         }

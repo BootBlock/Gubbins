@@ -42,6 +42,7 @@ const withBreaks: LineItemOption = {
     { qty: 100, unitCost: 0.075 },
   ],
   currency: null,
+  trackingMode: 'DISCRETE',
 };
 
 /** A part with a manual valuation override that must win over the supplier's breaks. */
@@ -52,6 +53,7 @@ const overridden: LineItemOption = {
   supplierUnitCost: 0.1,
   priceBreaks: [{ qty: 100, unitCost: 0.075 }],
   currency: null,
+  trackingMode: 'DISCRETE',
 };
 
 function renderDialog(items: LineItemOption[] = [withBreaks], orderCurrency: string | null = null) {
@@ -138,6 +140,7 @@ describe('PurchaseOrderLineDialog — quantity price breaks (issue #37)', () => 
         { qty: 100, unitCost: 0.06 },
       ],
       currency: null,
+      trackingMode: 'DISCRETE',
     };
     renderDialog([breakAtOne]);
     selectItem('Fuse');
@@ -271,5 +274,36 @@ describe('PurchaseOrderLineDialog — supplier/order currency mismatch (issue #2
       orderedQty: 1,
       unitCost: 0.085,
     });
+  });
+});
+
+/**
+ * Naming the items a receipt cannot move stock for (issue #608). The picker offered every item
+ * under a description promising "received stock lands automatically", though only a bulk-tracked
+ * item has a counted quantity for it to land in.
+ */
+describe('PurchaseOrderLineDialog — items with no counted quantity', () => {
+  it('names the tracking mode, and says the link moves no stock', () => {
+    const wrench: LineItemOption = {
+      ...withBreaks,
+      id: 'wr',
+      name: 'Torque wrench',
+      trackingMode: 'SERIALISED',
+    };
+    renderDialog([withBreaks, wrench]);
+    fireEvent.click(screen.getByRole('combobox', { name: 'Item' }));
+
+    expect(
+      screen.getByRole('option', { name: 'Torque wrench · Serialised — no stock movement' }),
+    ).toBeInTheDocument();
+    // …and it stays selectable: recording the spend and the supplier against a serialised tool
+    // is an ordinary thing to want, and it is only the stock half that cannot happen.
+    expect(screen.getByRole('option', { name: /Torque wrench/ })).toBeEnabled();
+  });
+
+  it('leaves a bulk item’s label alone', () => {
+    renderDialog();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Item' }));
+    expect(screen.getByRole('option', { name: withBreaks.name })).toBeInTheDocument();
   });
 });

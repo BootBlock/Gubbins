@@ -90,6 +90,13 @@ quantity would be meaningless. No number at all.
 > There's also an **unlimited supply** option for a Bulk-style item you always have on
 > tap (mains power, tap water) — it shows as ∞ with no counter.
 
+> **ℹ️ Note**
+> Only **Bulk** has a quantity that stock can be added to or taken from. That is why adjusting a
+> count, moving stock between locations and counting on a scale are all offered for Bulk alone —
+> and why receiving a [[purchase order|Purchase-Orders]] or a [[BOM line|Projects-and-BOM]] against
+> any other mode records the delivery without changing stock. Consumables have their own gauge
+> controls instead, and serialised units are counted by how many records exist.
+
 > **⚠️ Heads-up**
 > Changing an item's tracking mode after the fact is limited on purpose — switching freely
 > between, say, Serialised and Consumable would make its existing stock history meaningless.

@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import type { PurchaseOrderLine } from '@/db/repositories';
+import type { PurchaseOrderLine, TrackingMode } from '@/db/repositories';
 import { ReceiveLineDialog } from './ReceiveLineDialog';
 
 const onSubmit = vi.fn();
@@ -24,12 +24,13 @@ const line = {
   receivedQty: 0,
 } as unknown as PurchaseOrderLine;
 
-function renderDialog() {
+function renderDialog(itemTrackingMode?: TrackingMode) {
   return render(
     <ReceiveLineDialog
       open
       line={line}
       locationOptions={[]}
+      itemTrackingMode={itemTrackingMode}
       isSaving={false}
       onSubmit={onSubmit}
       onClose={onClose}
@@ -82,5 +83,47 @@ describe('ReceiveLineDialog — batch identity', () => {
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(submittedBatch()).toBeUndefined();
+  });
+});
+
+/**
+ * A receipt against an item with no counted quantity (issue #608). The dialog used to promise
+ * "Receiving lands the units in your inventory" and collect a destination, batch, lot and expiry
+ * for a write that discarded all four and moved no stock at all.
+ */
+describe('ReceiveLineDialog — an item that cannot hold counted stock', () => {
+  it('says the receipt will not change stock, and why', () => {
+    renderDialog('SERIALISED');
+    expect(screen.getByTestId('po-receive-record-only')).toHaveTextContent('No stock will be added');
+    expect(screen.getByTestId('po-receive-record-only')).toHaveTextContent('serialised');
+  });
+
+  it('drops the destination, batch, lot and expiry fields the write would discard', () => {
+    renderDialog('CONSUMABLE_GAUGE');
+    expect(screen.queryByTestId('po-receive-batch')).toBeNull();
+    expect(screen.queryByTestId('po-receive-expiry')).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /destination location/i })).toBeNull();
+    // The instalment quantity is still the user's to choose — a partial delivery is a partial
+    // delivery whether or not it moves stock.
+    expect(screen.getByTestId('po-receive-qty')).toBeInTheDocument();
+  });
+
+  it('submits a bare quantity, never a placement the units did not take', () => {
+    renderDialog('UNTRACKED');
+    fireEvent.click(screen.getByTestId('po-receive-save'));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0]![0]).toEqual({ quantity: 10 });
+  });
+
+  it('promises stock as before for a bulk item, and while the mode is still unknown', () => {
+    renderDialog('DISCRETE');
+    expect(screen.queryByTestId('po-receive-record-only')).toBeNull();
+    cleanup();
+    // Undefined = the item read has not landed (or the line is unlinked). Warning on a value it
+    // does not have yet would show a caution that the next render takes back.
+    renderDialog(undefined);
+    expect(screen.queryByTestId('po-receive-record-only')).toBeNull();
+    expect(screen.getByTestId('po-receive-batch')).toBeInTheDocument();
   });
 });

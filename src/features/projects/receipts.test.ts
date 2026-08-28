@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { planReceipt, outstandingQty } from './receipts';
+import { TRACKING_MODES } from '@/db/repositories';
+import { planReceipt, outstandingQty, receiptLandingFor, recordOnlyReceiptReason } from './receipts';
 
 describe('planReceipt (spec §4 partial / split receipts)', () => {
   it('defaults an unspecified quantity to the full outstanding remainder', () => {
@@ -79,5 +80,55 @@ describe('outstandingQty', () => {
     expect(outstandingQty({ requiredQty: 5, receivedQty: 5 })).toBe(0);
     // Defensive: a received figure beyond the requirement never goes negative.
     expect(outstandingQty({ requiredQty: 5, receivedQty: 7 })).toBe(0);
+  });
+});
+
+describe('receiptLandingFor (issue #608)', () => {
+  it('lands stock for a bulk item, the one mode with a countable quantity', () => {
+    expect(receiptLandingFor('DISCRETE')).toBe('COUNT');
+  });
+
+  it('is record-only for every mode that holds no counted quantity', () => {
+    expect(receiptLandingFor('SERIALISED')).toBe('RECORD_ONLY');
+    expect(receiptLandingFor('CONSUMABLE_GAUGE')).toBe('RECORD_ONLY');
+    expect(receiptLandingFor('UNTRACKED')).toBe('RECORD_ONLY');
+  });
+
+  // Adding a tracking mode to the SSOT must not silently make its receipts land stock: anything
+  // this seam has not been taught about is record-only, which under-promises rather than
+  // inventing a movement the write cannot perform. Asserting the mode-by-mode answer, not merely
+  // that the answer is one of the two, is what would actually catch a new mode defaulting to
+  // COUNT.
+  it('lands stock for DISCRETE and nothing else, across every declared mode', () => {
+    for (const mode of TRACKING_MODES) {
+      expect(receiptLandingFor(mode)).toBe(mode === 'DISCRETE' ? 'COUNT' : 'RECORD_ONLY');
+    }
+  });
+});
+
+describe('recordOnlyReceiptReason (issue #608)', () => {
+  it('gives every record-only mode its own reason, and none to the mode that moves stock', () => {
+    expect(recordOnlyReceiptReason('DISCRETE')).toBeNull();
+    for (const mode of TRACKING_MODES.filter((m) => m !== 'DISCRETE')) {
+      expect(recordOnlyReceiptReason(mode)).toBeTruthy();
+    }
+  });
+
+  // The dialogs read "is there a reason?" as "is this receipt record-only?" and render the clause
+  // unconditionally on that branch. That is only sound while the two functions agree for every
+  // mode, so the agreement is pinned here rather than re-guarded at each call site.
+  it('gives a reason exactly when the receipt is record-only', () => {
+    for (const mode of TRACKING_MODES) {
+      expect(recordOnlyReceiptReason(mode) !== null).toBe(receiptLandingFor(mode) === 'RECORD_ONLY');
+    }
+  });
+
+  it('reads as a clause, so one string serves both the ledger note and the dialogs', () => {
+    // "No stock was added: <reason>." and "…no stock is added, because <reason>" must both scan.
+    for (const mode of TRACKING_MODES.filter((m) => m !== 'DISCRETE')) {
+      const reason = recordOnlyReceiptReason(mode)!;
+      expect(reason[0]).toBe(reason[0]!.toLowerCase());
+      expect(reason.endsWith('.')).toBe(false);
+    }
   });
 });

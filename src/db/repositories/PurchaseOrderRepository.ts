@@ -31,9 +31,11 @@ import { isCurrencyMismatch, toStoredMoney } from '@/lib/money';
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { SQL_NOW_MS } from '../migrations/migration';
 import { planPoReceipt, planPoReturn } from '@/features/purchasing/po-receipt';
+import { receiptLandingFor, recordOnlyReceiptReason } from '@/features/projects/receipts';
 import { derivePoStatus, type PoStatusLine } from '@/features/purchasing/po-status';
 import { type ReorderPlanGroup } from '@/features/purchasing/reorder-plan';
 import { DbError } from '../errors';
+import { type TrackingMode } from './constants';
 import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import { historyStatement } from './item/history';
 import { rowToPurchaseOrder, rowToPurchaseOrderLine } from './mappers';
@@ -395,11 +397,12 @@ export class PurchaseOrderRepository extends BaseRepository {
 
     if (line.itemId && plan.receivedDelta > 0) {
       const item = await this.driver.queryOne<{
-        tracking_mode: string;
+        tracking_mode: TrackingMode;
         quantity: number;
         location_id: string;
       }>('SELECT tracking_mode, quantity, location_id FROM items WHERE id = ?;', [line.itemId]);
-      if (item && item.tracking_mode === 'DISCRETE') {
+      const landing = item ? receiptLandingFor(item.tracking_mode) : null;
+      if (item && landing === 'COUNT') {
         const qty = plan.receivedDelta;
         const nextQty = item.quantity + qty;
         // Received stock lands at the destination location in the per-location ledger
@@ -425,6 +428,22 @@ export class PurchaseOrderRepository extends BaseRepository {
               ? `Received ${qty} from a purchase order (now ${nextQty})${batchNote}.`
               : `Received ${qty} of ${line.orderedQty} from a purchase order (now ${nextQty}; ${plan.outstandingQty} still arriving)${batchNote}.`,
             metadata: targetLocation !== item.location_id ? { toLocationId: targetLocation } : undefined,
+          }),
+        );
+      } else if (item && landing === 'RECORD_ONLY') {
+        // The delivery still happened, and the item is still the thing that arrived — so the
+        // receipt is logged against it even though no stock can move (issue #608). Without this
+        // the whole procurement flow ends in a silent no-op: the order flips to RECEIVED and the
+        // item's Activity Log shows nothing at all to explain why its on-hand figure did not
+        // change. The entry deliberately carries **no** `quantityDelta`, for the same reason
+        // `setReservation` leaves it null (issue #652): the movement and valuation reports sum
+        // that column without filtering on `action`, so a delta here would be counted as a real
+        // arrival that never took place.
+        const qty = plan.receivedDelta;
+        statements.push(
+          historyStatement(line.itemId, 'RECEIVED', this.actorId(), {
+            note: `Received ${qty} of ${line.orderedQty} from a purchase order. No stock was added: ${recordOnlyReceiptReason(item.tracking_mode)}.`,
+            metadata: { poId: line.poId, lineId, quantity: qty, trackingMode: item.tracking_mode },
           }),
         );
       }
@@ -465,11 +484,12 @@ export class PurchaseOrderRepository extends BaseRepository {
     ];
 
     if (line.itemId) {
-      const item = await this.driver.queryOne<{ tracking_mode: string; location_id: string }>(
+      const item = await this.driver.queryOne<{ tracking_mode: TrackingMode; location_id: string }>(
         'SELECT tracking_mode, location_id FROM items WHERE id = ?;',
         [line.itemId],
       );
-      if (item && item.tracking_mode === 'DISCRETE') {
+      const landing = item ? receiptLandingFor(item.tracking_mode) : null;
+      if (item && landing === 'COUNT') {
         const qty = plan.returnedDelta;
         const targetLocation = opts.locationId ?? item.location_id;
 
@@ -500,6 +520,26 @@ export class PurchaseOrderRepository extends BaseRepository {
               unitCost: line.unitCost,
               quantity: qty,
               fromLocationId: targetLocation,
+            },
+          }),
+        );
+      } else if (item && landing === 'RECORD_ONLY') {
+        // The mirror of the record-only receipt above (issue #608): the refund reverses a
+        // receipt that moved no stock, so it removes none either — but it is still logged, or
+        // the item's Activity Log would keep a receipt it never shows being undone. No
+        // `quantityDelta`, for the same reason as the receipt.
+        const qty = plan.returnedDelta;
+        const supplierName = await this.supplierNameFor(line.poId);
+        statements.push(
+          historyStatement(line.itemId, 'RETURNED_TO_SUPPLIER', this.actorId(), {
+            note: `Returned ${qty} to ${supplierName ?? 'the supplier'} (PO refund). No stock was removed: ${recordOnlyReceiptReason(item.tracking_mode)}.`,
+            metadata: {
+              poId: line.poId,
+              lineId,
+              supplierName,
+              unitCost: line.unitCost,
+              quantity: qty,
+              trackingMode: item.tracking_mode,
             },
           }),
         );

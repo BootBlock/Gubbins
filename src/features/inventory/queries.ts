@@ -263,6 +263,11 @@ export const inventoryKeys = {
   // by prefix, and so a reservation write's `invalidateItems` sweep reaches it too.
   itemsAvailability: (itemIds: readonly string[]) =>
     [...inventoryKeys.items(), 'availability-batch', itemIds] as const,
+  // Issue #608 — the tracking mode of a set of on-screen items in one round-trip, so a screen can
+  // say whether an action on each will actually move stock. Under items() so an item edit that
+  // converts Bulk ↔ Untracked refreshes it by prefix.
+  itemsTrackingModes: (itemIds: readonly string[]) =>
+    [...inventoryKeys.items(), 'tracking-modes-batch', itemIds] as const,
   // Feature-gap G7 — an item's test/calibration/service records; under item() so an `items()`
   // invalidation refreshes it by prefix.
   itemTestRecords: (itemId: string) => [...inventoryKeys.item(itemId), 'test-records'] as const,
@@ -414,6 +419,23 @@ export function useItemsById(itemIds: readonly string[]) {
   return useQuery({
     queryKey: inventoryKeys.itemsById(sortedIds),
     queryFn: () => getItemRepository().getManyById(sortedIds),
+    enabled: sortedIds.length > 0,
+  });
+}
+
+/**
+ * The tracking mode of a whole set of items in one round-trip (issue #608) — the BOM table asks
+ * it of every in-transit line at once so each receive control can say whether it will move stock.
+ * Reads only the enum, never the item rows, so a table never pays for thumbnails it does not
+ * render. The ids are sorted into the cache key so a re-ordered but otherwise identical set hits
+ * the same entry. Resolves to a `Map` keyed by item id (a key is absent when the id matches no
+ * item); disabled for an empty set.
+ */
+export function useItemsTrackingModes(itemIds: readonly string[]) {
+  const sortedIds = [...itemIds].sort();
+  return useQuery({
+    queryKey: inventoryKeys.itemsTrackingModes(sortedIds),
+    queryFn: () => getItemRepository().getTrackingModes(sortedIds),
     enabled: sortedIds.length > 0,
   });
 }

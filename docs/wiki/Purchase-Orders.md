@@ -84,8 +84,9 @@ Everything is **previewed before anything is written**, so you can see exactly w
 
 > **ℹ️ Note**
 > Lines carrying an **MPN** or a supplier **order code** are matched to items you already track, so
-> receiving them moves the right item's stock. Anything unmatched is still added — just as a plain
-> line with its description.
+> receiving them moves the right item's stock (where that item is counted by quantity — see
+> *Lines that record a delivery without moving stock* below). Anything unmatched is still added —
+> just as a plain line with its description.
 
 ## Receiving stock
 
@@ -99,6 +100,27 @@ When a delivery arrives, **receive** it against the PO. Gubbins supports:
   [[batch|Batches-and-Lots]].
 
 Received stock lands in your inventory and the in-transit figure drops accordingly.
+
+### Lines that record a delivery without moving stock
+
+Only a **Bulk** item has a counted quantity for a receipt to land in. Link a
+**Serialised**, **Consumable** or **Untracked** item and there is nothing to add units to — a
+serialised record *is* one unit, a consumable is measured by how full it is, and an untracked item
+is never counted. See [[Tracking modes|Tracking-Modes]].
+
+Such a line is still worth ordering: the spend, the supplier and the delivery are all recorded.
+Gubbins is simply plain about what receiving it does:
+
+- The item picker names the tracking mode on the line — *"Torque wrench · Serialised — no stock
+  movement"*.
+- The receive dialog says no stock will be added, and why, and doesn't ask for a destination
+  location or a batch and expiry it would have nothing to tag.
+- The receipt is written to the item's [[activity log|Activity-Log]] anyway, saying how many
+  arrived and why none of them landed — so the unchanged on-hand figure is explained rather than
+  silent. A refund back to the supplier is logged the same way.
+
+To count what arrives, order against a **Bulk** item. For individually-tracked units, add each one
+as its own serialised record — see [[Items]].
 
 > **💡 Tip**
 > Recording the expiry date on a perishable delivery is what lets Gubbins use that batch first and

@@ -4,7 +4,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { AutocompleteField, Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
+import { TRACKING_MODE_LABELS } from '@/features/inventory/components/inventory-ui';
 import { useFieldSuggestions } from '@/features/inventory/queries';
+import { receiptLandingFor } from '../receipts';
 import { useAddBomLine } from '../projects';
 
 /**
@@ -98,9 +100,17 @@ export function AddBomLineDialog({
                 onChange={field.onChange}
                 options={[
                   { value: '', label: '— Manual / unmatched —' },
+                  // An item whose tracking mode holds no counted quantity is named as such
+                  // (issue #608): it stays matchable, so the BOM can still require a serialised
+                  // tool or a consumable, but the picker no longer implies that receiving the
+                  // line will move that item's stock — it cannot.
                   ...items.map((item) => ({
                     value: item.id,
-                    label: `${item.name}${item.mpn ? ` · ${item.mpn}` : ''}`,
+                    label:
+                      `${item.name}${item.mpn ? ` · ${item.mpn}` : ''}` +
+                      (receiptLandingFor(item.trackingMode) === 'RECORD_ONLY'
+                        ? ` · ${TRACKING_MODE_LABELS[item.trackingMode]} — no stock movement`
+                        : ''),
                   })),
                 ]}
               />

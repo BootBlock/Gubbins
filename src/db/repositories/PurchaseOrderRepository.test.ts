@@ -688,6 +688,104 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     expect((await pos.getById(po.id))?.status).toBe('RECEIVED');
   });
 
+  // --- receipts against an item with no counted quantity (issue #608) ------------
+
+  describe('a receipt whose linked item cannot hold counted stock', () => {
+    // Every one of these used to write *nothing at all*: the order flipped to RECEIVED, the
+    // spend was recorded, and the item's ledger stayed empty — so the only way to notice the
+    // stock had not moved was to compare it against a delivery note. The receipt is now logged
+    // against the item, saying what arrived and why none of it landed.
+
+    it('records a serialised receipt in the ledger and adds no stock', async () => {
+      const [tool] = await items.createSerialised({ name: 'Torque wrench', count: 1 });
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const po = await pos.create({ supplier: { supplierName: 'Farnell' } });
+      const line = await pos.addLine(po.id, { itemId: tool!.id, orderedQty: 5 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      const received = await pos.receiveLine(line.id, { locationId: shelf.id, quantity: 5 });
+
+      // The order still completes — the delivery genuinely arrived.
+      expect(received.receivedQty).toBe(5);
+      expect((await pos.getById(po.id))?.status).toBe('RECEIVED');
+      // A serialised row is pinned at quantity 1 by a CHECK, so nothing could have been added.
+      expect((await items.getById(tool!.id))?.quantity).toBe(1);
+      // …and no placement was created at the destination the dialog would have collected.
+      expect((await items.listStock(tool!.id)).find((p) => p.locationId === shelf.id)).toBeUndefined();
+
+      const entry = (await items.getHistory(tool!.id)).rows.find((h) => h.action === 'RECEIVED');
+      expect(entry).toBeDefined();
+      expect(entry!.note).toContain('Received 5 of 5 from a purchase order');
+      expect(entry!.note).toContain('No stock was added');
+      expect(entry!.note).toContain('serialised');
+      // The movement reports sum quantity_delta without filtering on action, so an entry that
+      // moved nothing must not claim a delta.
+      expect(entry!.quantityDelta).toBeNull();
+      expect(entry!.metadata).toMatchObject({ poId: po.id, lineId: line.id, quantity: 5 });
+    });
+
+    it('records a consumable receipt without touching the gauge', async () => {
+      const spool = await items.create({
+        name: 'PLA filament',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 400 },
+      });
+      const po = await pos.create({ supplier: { supplierName: 'Farnell' } });
+      const line = await pos.addLine(po.id, { itemId: spool.id, orderedQty: 2 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      await pos.receiveLine(line.id, { quantity: 2 });
+
+      expect((await items.getById(spool.id))?.gauge?.currentNetValue).toBe(400);
+      const entry = (await items.getHistory(spool.id)).rows.find((h) => h.action === 'RECEIVED');
+      expect(entry?.note).toContain('how full it is');
+      expect(entry?.quantityDelta).toBeNull();
+    });
+
+    it('records an untracked receipt without moving its hidden quantity', async () => {
+      const jig = await items.create({ name: 'Drilling jig', quantity: 3 });
+      await items.update(jig.id, { trackingMode: 'UNTRACKED' });
+      const po = await pos.create({ supplier: { supplierName: 'Farnell' } });
+      const line = await pos.addLine(po.id, { itemId: jig.id, orderedQty: 1 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      await pos.receiveLine(line.id);
+
+      // UNTRACKED shares DISCRETE's storage, so the stock is *there* — it simply is not counted,
+      // and a receipt must not start counting it behind the user's back.
+      expect((await items.getById(jig.id))?.quantity).toBe(3);
+      const entry = (await items.getHistory(jig.id)).rows.find((h) => h.action === 'RECEIVED');
+      expect(entry?.note).toContain('never counted');
+    });
+
+    it('logs the refund too, so the ledger never keeps a receipt it never undoes', async () => {
+      const [tool] = await items.createSerialised({ name: 'Torque wrench', count: 1 });
+      const po = await pos.create({ supplier: { supplierName: 'Farnell' } });
+      const line = await pos.addLine(po.id, { itemId: tool!.id, orderedQty: 4 });
+      await pos.setStatus(po.id, 'ORDERED');
+      await pos.receiveLine(line.id);
+
+      const returned = await pos.returnLine(line.id, { quantity: 4 });
+
+      expect(returned.receivedQty).toBe(0);
+      expect((await items.getById(tool!.id))?.quantity).toBe(1);
+      const entry = (await items.getHistory(tool!.id)).rows.find((h) => h.action === 'RETURNED_TO_SUPPLIER');
+      expect(entry?.note).toContain('Returned 4 to Farnell');
+      expect(entry?.note).toContain('No stock was removed');
+      expect(entry?.quantityDelta).toBeNull();
+    });
+
+    it('still writes nothing for an unmatched line, which has no item to log against', async () => {
+      const po = await pos.create({ supplier: { supplierName: 'Farnell' } });
+      const line = await pos.addLine(po.id, { description: 'Nameplate, engraved', orderedQty: 2 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      const received = await pos.receiveLine(line.id);
+      expect(received.receivedQty).toBe(2);
+      expect((await pos.getById(po.id))?.status).toBe('RECEIVED');
+    });
+  });
+
   describe('isReceivedQtyGuardViolation', () => {
     // The three drivers report this identical failure under different codes, so the predicate
     // keys on the message alone — see its doc comment.
