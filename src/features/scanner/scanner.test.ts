@@ -3,6 +3,7 @@ import {
   asOpenableLink,
   buildItemQrUrl,
   buildLocationQrUrl,
+  isInsecureLabelBaseUrl,
   isShortItemCode,
   isStructuredQrPayload,
   isUuid,
@@ -173,18 +174,55 @@ describe('resolveLabelBaseUrl (Link host override)', () => {
     );
   });
 
-  it('assumes http:// for a scheme-less host, keeping any port', () => {
+  // Issue #509: the old guess was `http://`, which is not a secure context — Gubbins cannot boot
+  // there, so every label printed against it scanned to the boot-failure screen.
+  it('assumes https:// for a scheme-less host, keeping any port', () => {
     expect(resolveLabelBaseUrl('gubbins.local', 'http://localhost:5173', '/Gubbins/')).toBe(
-      'http://gubbins.local/',
+      'https://gubbins.local/',
     );
     expect(resolveLabelBaseUrl('gubbins.local:8080', 'http://localhost:5173', '/Gubbins/')).toBe(
-      'http://gubbins.local:8080/',
+      'https://gubbins.local:8080/',
+    );
+  });
+
+  it('keeps http:// for a scheme-less loopback host, which is a secure context', () => {
+    expect(resolveLabelBaseUrl('localhost:5173', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'http://localhost:5173/',
+    );
+    expect(resolveLabelBaseUrl('127.0.0.1:5173', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'http://127.0.0.1:5173/',
+    );
+  });
+
+  // `127.example.com` is an ordinary registrable name, not the loopback block — a prefix
+  // test would have handed it the one scheme the app cannot boot from.
+  it('treats a name that merely starts with 127. as any other host', () => {
+    expect(resolveLabelBaseUrl('127.example.com', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'https://127.example.com/',
+    );
+    expect(isInsecureLabelBaseUrl('http://127.example.com/')).toBe(true);
+  });
+
+  it('leaves an explicit scheme alone, even the one the app cannot boot from', () => {
+    expect(resolveLabelBaseUrl('http://gubbins.local/', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'http://gubbins.local/',
     );
   });
 
   it('feeds a parseable deep-link so the override round-trips through the scanner', () => {
     const base = resolveLabelBaseUrl('gubbins.local', 'http://localhost:5173', '/Gubbins/');
     expect(parseScannedItemId(buildItemQrUrl(UUID, base))).toBe(UUID);
+  });
+
+  it('flags only a non-loopback plain-http base as unbootable', () => {
+    expect(isInsecureLabelBaseUrl('http://gubbins.local/')).toBe(true);
+    expect(isInsecureLabelBaseUrl('http://192.168.1.20:5173/')).toBe(true);
+    expect(isInsecureLabelBaseUrl('https://gubbins.local/')).toBe(false);
+    expect(isInsecureLabelBaseUrl('http://localhost:5173/')).toBe(false);
+    expect(isInsecureLabelBaseUrl('http://127.0.0.1:5173/')).toBe(false);
+    expect(isInsecureLabelBaseUrl('http://[::1]:5173/')).toBe(false);
+    // A hash-only fallback base is not a URL at all, and is nothing to warn about.
+    expect(isInsecureLabelBaseUrl('#')).toBe(false);
   });
 
   it('falls back to the derived default on an unparseable override', () => {

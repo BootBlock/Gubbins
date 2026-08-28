@@ -311,10 +311,11 @@ interface PreferencesStore {
   /**
    * Optional base URL that printable QR codes / barcodes should link to (spec §6). Empty
    * means "derive from the address this app is opened from" (`origin` + Vite base path).
-   * Set it to a stable name every device can reach — e.g. `http://gubbins.local` — so a
+   * Set it to a stable name every device can reach — e.g. `https://gubbins.local` — so a
    * label printed from a `localhost` dev server still resolves from a phone. A printing/network
    * concern, so it lives here rather than in the database and travels only with the *Scanning &
-   * labels* group; resolved by `resolveLabelBaseUrl`.
+   * labels* group; resolved by `resolveLabelBaseUrl`, which assumes `https://` for a
+   * scheme-less value because the app cannot boot from a plain-`http://` origin.
    */
   readonly labelBaseUrl: string;
   /**

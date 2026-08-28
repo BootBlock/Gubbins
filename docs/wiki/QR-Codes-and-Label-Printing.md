@@ -219,13 +219,24 @@ won't open on a phone.
 
 **Settings → Labels & QR codes → Link host** sets the address printed codes point to instead. Leave
 it blank to use the current address, or enter a stable name every device can reach — for example
-`http://gubbins.local`. The preview underneath shows the exact link a code will carry, so you can
+`https://gubbins.local`. The preview underneath shows the exact link a code will carry, so you can
 check it before printing anything.
 
+The address has to be an `https://` one — or `localhost` while you are testing on the same machine.
+Browsers only grant Gubbins the storage it needs on a secure address, so the app cannot open from a
+plain `http://` one at all, and a code pointing there would scan to an error rather than to the
+item. If you leave the `https://` off, Gubbins fills it in for you — except for `localhost`,
+where it fills in `http://`, because that is the one address a browser trusts without it.
+
+Enter the **whole** address, including any folder the app is served from — `https://example.com/Gubbins/`,
+not just `example.com`. The Link host replaces the address entirely, so a missing folder is dropped
+from every printed link. The preview shows what you will actually get.
+
 > **⚠️ Heads-up**
-> A QR code can only hold so much text. If the host you enter is long enough to push the link past
-> that limit, Gubbins says so directly under the field — shorten the name or address and the
-> warning clears. Labels printed while the warning shows would come out without a QR code.
+> Gubbins warns you under the field in two cases: the address is a plain `http://` one the app can
+> never open, or it is long enough to push the link past what a QR code can hold. Labels printed
+> while a warning shows are wasted — a dead link in the first case, no QR code at all in the second.
+> Fix the host and the warning clears.
 
 ## Related pages
 
