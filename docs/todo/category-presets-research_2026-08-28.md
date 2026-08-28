@@ -73,8 +73,9 @@ Three are untouched across all 72 presets:
   into the name (`Capacity (mAh)`, `Spool weight (g)`). New presets below follow the existing
   spelling for consistency, but converting the library to `unit` is a worthwhile separate change.
 
-`hiddenCapabilities`, by contrast, is already well used: 28 of the 72 presets set it, almost always
-`['maintenance', 'batches', 'perishables']` on a collectible. New presets should keep that up.
+`hiddenCapabilities`, by contrast, is already well used: 28 of the 72 presets set it. Twenty-seven
+of those start from `['maintenance', 'batches', 'perishables']` on a collectible, 13 of which also
+add `'kits'`; `Food` is the odd one out at `['maintenance']`. New presets should keep that up.
 
 ## 3. One constraint governs every field name (and the library already breaks it)
 
@@ -293,7 +294,7 @@ which a built-in facet holds. `Fabric` is the nearest existing preset and does n
 Worth adding, and each defensible on its own, but none is the gap a new user notices on day one.
 Fields are given compactly; every one was name-checked against §3 and against tier 1, which is why
 several read more specifically than they otherwise would. Glyphs avoid the ones the library already
-uses, with one deliberate exception: `Jigsaw puzzle` takes 🧩, which `LEGO sets` also uses, because
+uses, with one deliberate exception: `Jigsaw puzzle` takes 🧩, which `Model kit` also uses, because
 the jigsaw is the more literal owner and the library already tolerates a repeated glyph (🔥 and 🎬
 each appear twice).
 
