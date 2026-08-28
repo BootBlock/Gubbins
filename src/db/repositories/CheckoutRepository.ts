@@ -132,6 +132,12 @@ export class CheckoutRepository extends BaseRepository {
     if (!item) {
       throw new DbError('SQLITE_CONSTRAINT', `Item "${input.itemId}" does not exist.`);
     }
+    if (item.is_active !== 1) {
+      // Decommissioned stock has left active inventory, so it is not lendable — the same refusal
+      // the booking path already makes (`AssetBookingRepository.create`). The inventory UI hides
+      // the action, but a booking that outlived the decommission, and the bridge, both reach here.
+      throw new DbError('SQLITE_CONSTRAINT', 'A decommissioned item cannot be checked out.');
+    }
     if (item.tracking_mode === 'CONSUMABLE_GAUGE') {
       throw new DbError(
         'SQLITE_CONSTRAINT',

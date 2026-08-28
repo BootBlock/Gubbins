@@ -95,6 +95,16 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       );
     });
 
+    it('refuses to lend an item that has been removed from active inventory (#661)', async () => {
+      const itemId = await makeItem('Retired drill', 1);
+      await items.softDelete(itemId);
+
+      await expect(checkouts.checkout({ itemId, contactName: 'Bob' })).rejects.toThrow(/decommissioned/i);
+      // The refusal is a guard, not a partial write: stock is untouched and no loan was opened.
+      expect((await items.getById(itemId))?.quantity).toBe(1);
+      expect((await checkouts.listOpen()).rows).toHaveLength(0);
+    });
+
     it('lends a serialised item as one whole unit without breaking its quantity pin', async () => {
       const serial = await items.create({ name: 'Scope', trackingMode: 'SERIALISED' });
       const checkout = await checkouts.checkout({ itemId: serial.id, contactName: 'Bob', quantity: 5 });

@@ -83,6 +83,9 @@ function makeItem(overrides: Partial<Item> = {}): Item {
     locationId: 'loc-1',
     trackingMode: 'DISCRETE',
     quantity: 3,
+    // Every real row carries this, and the prerequisite panel reads it — spelled out so a
+    // fixture is never accidentally "removed from inventory" by omission.
+    isActive: true,
     // Not a serialised clone — spelled out so a label that appends `#serial` reads correctly
     // rather than picking up an `undefined` the real row can never hold.
     serialNo: null,
@@ -418,6 +421,26 @@ describe('CheckoutDialog — prerequisites', () => {
     expect(box).toBeDisabled();
     expect(box).not.toBeChecked();
     expect(screen.getByTestId('checkout-prerequisites')).toHaveTextContent('none on hand');
+
+    fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
+    fireEvent.click(checkoutButton());
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(h.mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('neither ticks nor lends a prerequisite removed from inventory, whatever its stock (#661)', async () => {
+    // Stock says two, but the item is decommissioned — the repository refuses to lend it, so the
+    // panel must show the gap rather than pre-tick a row whose loan is certain to fail.
+    requireInjector(2);
+    h.itemsById = new Map([
+      ['injector', makeItem({ id: 'injector', name: '48V PoE injector', quantity: 2, isActive: false })],
+    ]);
+    renderDialog();
+
+    const box = screen.getByTestId('checkout-prerequisite-injector');
+    expect(box).toBeDisabled();
+    expect(box).not.toBeChecked();
+    expect(screen.getByTestId('checkout-prerequisites')).toHaveTextContent('removed from inventory');
 
     fireEvent.change(borrowerInput(), { target: { value: 'Ada' } });
     fireEvent.click(checkoutButton());

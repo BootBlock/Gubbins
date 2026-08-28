@@ -417,6 +417,22 @@ describe('ScannerOverlay — Discrete card ± quantity', () => {
   });
 });
 
+describe('ScannerOverlay — Discrete card Check out', () => {
+  it('offers Check out for an active item', async () => {
+    await scan(baseItem);
+    expect(screen.queryByRole('button', { name: 'Check out' })).not.toBeNull();
+  });
+
+  it('withholds Check out for an item removed from active inventory (#661)', async () => {
+    // The loan itself is refused for such an item, so the scanner must not offer a dialog that
+    // can only fail — the same gate the item card's action already applies.
+    await scan({ ...baseItem, isActive: false });
+    expect(screen.queryByRole('button', { name: 'Check out' })).toBeNull();
+    // The rest of the card is untouched — only the loan action goes.
+    expect(screen.queryByRole('button', { name: 'Scan again' })).not.toBeNull();
+  });
+});
+
 describe('ScannerOverlay — Discrete card Move', () => {
   it('moves the scanned item to the chosen location via useMoveItem', async () => {
     await scan(baseItem);
