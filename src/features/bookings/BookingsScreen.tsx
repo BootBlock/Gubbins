@@ -26,17 +26,19 @@ import {
   Spinner,
   Surface,
 } from '@/components/foundry';
-import { BookingIcon, CheckoutIcon, InfoIcon, SuccessIcon } from '@/components/icons';
+import { BookingIcon, CheckoutIcon, EditIcon, InfoIcon, SuccessIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
 import { nowMs } from '@/lib/clock';
 import { fromDateInputValue } from '@/lib/date-input';
-import { useContacts } from '@/features/contacts/contacts';
 import type { AssetBookingWithNames } from '@/db/repositories';
 import { useErrorMessage } from '@/features/errors';
 import { useT } from '@/features/i18n';
 import { TabularExportMenu } from '@/features/export/TabularExportMenu';
 import { exportEveryPage } from '@/features/export/export-every-page';
 import { bookingsExportFilename, buildBookingsExport } from './bookings-export';
+import { BookingCheckoutDialog } from './BookingCheckoutDialog';
+import { BookingEditDialog } from './BookingEditDialog';
+import { ContactNameField } from './ContactNameField';
 import {
   BOOKING_STATUS_BADGE,
   BOOKING_STATUS_LABEL,
@@ -97,8 +99,8 @@ function describeBookingsLoadError(error: unknown): { reason: string; guidance: 
 // ---------------------------------------------------------------------------
 
 function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean) => void }) {
+  const t = useT();
   const assets = useBookableAssets();
-  const contacts = useContacts();
   const create = useCreateBooking();
 
   const [itemId, setItemId] = useState('');
@@ -187,29 +189,13 @@ function NewBookingForm({ onResult }: { onResult: (message: string, ok: boolean)
           ) : null}
         </div>
 
-        <div>
-          <FormField
-            label="Booked for (optional)"
-            hintSize="md"
-            hint={
-              'Who the asset is being held for. Start typing to pick an existing contact, or enter a ' +
-              '**new name** — it’s added to your contacts automatically.\n\n' +
-              'Leave blank if you’re only reserving the slot.'
-            }
-          >
-            <Input
-              list="booking-contact-suggestions"
-              value={contactName}
-              onChange={(e) => setContactName(e.target.value)}
-              placeholder="Type a name — new names are added automatically"
-            />
-          </FormField>
-          <datalist id="booking-contact-suggestions">
-            {contacts.data?.rows.map((c) => (
-              <option key={c.id} value={c.name} />
-            ))}
-          </datalist>
-        </div>
+        <ContactNameField
+          label={t('bookings.form.contactLabel')}
+          hint={t('bookings.form.contactHint')}
+          value={contactName}
+          onChange={setContactName}
+          data-testid="booking-contact"
+        />
 
         <FormField
           label="From"
@@ -285,14 +271,24 @@ function BookingCard({
   status: BookingStatus;
   onResult: (message: string, ok: boolean) => void;
 }) {
+  const t = useT();
   const f = useFormatters();
   const cancel = useCancelBooking();
   const convert = useConvertBooking();
   const remove = useDeleteBooking();
   const describeError = useErrorMessage();
+  const [editing, setEditing] = useState(false);
+  const [namingBorrower, setNamingBorrower] = useState(false);
 
   const isOpen = status === 'upcoming' || status === 'active' || status === 'overdue';
   const busy = cancel.isPending || convert.isPending || remove.isPending;
+  /*
+   * A booking need not name anyone: the form invites a blank contact for a slot-only
+   * reservation, and `contact_id` is ON DELETE SET NULL, so deleting a contact clears it from
+   * their future bookings too. Converting needs a borrower, so rather than let the button fail
+   * with an instruction nothing could carry out, it asks for one first (issue #659).
+   */
+  const needsBorrower = booking.contactId === null;
 
   /** Shared success/error reporter for a booking mutation. */
   const report = (okMessage: string, failMessage: string) => ({
@@ -313,7 +309,11 @@ function BookingCard({
       </div>
       <p className="text-xs text-muted-foreground">
         {f.calendarDate(booking.startDate)} – {f.calendarDate(booking.endDate)}
-        {booking.contactName ? ` · for ${booking.contactName}` : ''}
+        {booking.contactName
+          ? ` · for ${booking.contactName}`
+          : isOpen
+            ? ` · ${t('bookings.card.noContact')}`
+            : ''}
       </p>
       {booking.note ? <p className="text-xs text-muted-foreground">{booking.note}</p> : null}
 
@@ -324,16 +324,30 @@ function BookingCard({
               variant="outline"
               size="sm"
               disabled={busy}
-              onClick={() =>
+              onClick={() => {
+                if (needsBorrower) {
+                  setNamingBorrower(true);
+                  return;
+                }
                 convert.mutate(
                   { id: booking.id },
                   report('Booking checked out.', 'Could not check the booking out.'),
-                )
-              }
+                );
+              }}
               data-testid={`booking-convert-${booking.id}`}
             >
               <CheckoutIcon />
               Check out
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => setEditing(true)}
+              data-testid={`booking-edit-${booking.id}`}
+            >
+              <EditIcon />
+              {t('bookings.card.edit')}
             </Button>
             <Button
               variant="ghost"
@@ -361,6 +375,18 @@ function BookingCard({
           </Button>
         )}
       </div>
+
+      {editing ? (
+        <BookingEditDialog booking={booking} open onClose={() => setEditing(false)} onResult={onResult} />
+      ) : null}
+      {namingBorrower ? (
+        <BookingCheckoutDialog
+          booking={booking}
+          open
+          onClose={() => setNamingBorrower(false)}
+          onResult={onResult}
+        />
+      ) : null}
     </Surface>
   );
 }
