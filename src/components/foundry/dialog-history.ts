@@ -10,9 +10,9 @@
  *
  * The treatment is the usual one: push a state on open, dismiss on `popstate`, and hand the
  * entry back when the surface is closed by any other route (Close, Escape, backdrop, a
- * successful submit) so the stack stays balanced. Wired once into `use-dialog-behaviour`, it
- * covers {@link Modal}, {@link RailModal} and {@link Drawer}; the two full-screen camera
- * surfaces, which predate that seam and hand-roll their own, opt in by calling the hook.
+ * successful submit) so the stack stays balanced. It is wired once into `use-dialog-behaviour`,
+ * so every surface that takes that contract gets this for free: {@link Modal}, {@link RailModal},
+ * {@link Drawer}, and the two full-screen camera takeovers.
  *
  * ## What makes this fiddly
  *

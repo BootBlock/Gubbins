@@ -571,7 +571,7 @@ function WidgetTile({
       <Link
         ref={nodeRef}
         to={def.to}
-        onClick={def.onLinkClick}
+        search={def.search}
         style={cellStyle(x, y)}
         className={cn(PLACEMENT, 'block')}
       >

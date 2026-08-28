@@ -93,7 +93,7 @@ beforeEach(() => {
   searchTotal = searchRows.length;
   usePreferencesStore.setState({ dashboardCommandPalette: true });
   useCommandPaletteStore.setState({ open: false });
-  useInventoryEntry.setState({ pendingSearch: null, pendingIntent: null });
+  useInventoryEntry.setState({ pendingIntent: null });
   useModulesStore.setState({ intent: {} });
 });
 afterEach(() => {
@@ -123,15 +123,14 @@ describe('CommandPalette', () => {
     expect(results[0].textContent).toContain('10k resistor');
   });
 
-  it('selecting a result hands the name to inventory and navigates there', async () => {
+  it('selecting a result navigates to inventory filtered to that name', async () => {
     useCommandPaletteStore.setState({ open: true });
     render(<CommandPalette />);
     const input = screen.getByTestId('command-palette-input');
     fireEvent.change(input, { target: { value: 'resistor' } });
     await screen.findAllByTestId('command-palette-result');
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(useInventoryEntry.getState().pendingSearch).toBe('10k resistor');
-    expect(navigateMock).toHaveBeenCalledWith({ to: '/inventory' });
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/inventory', search: { q: '10k resistor' } });
     // The palette closes itself on select.
     await waitFor(() => expect(screen.queryByTestId('command-palette-input')).toBeNull());
   });
@@ -157,7 +156,7 @@ describe('CommandPalette', () => {
     await screen.findAllByTestId('command-palette-result');
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(useInventoryEntry.getState().pendingSearch).toBe('220 ohm resistor');
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/inventory', search: { q: '220 ohm resistor' } });
   });
 
   it('scrolls the newly highlighted row into view, including on wrap-around (issue #450)', async () => {
@@ -224,8 +223,7 @@ describe('CommandPalette', () => {
       // One row of results, so ArrowDown lands on the disclosure row.
       fireEvent.keyDown(input, { key: 'ArrowDown' });
       fireEvent.keyDown(input, { key: 'Enter' });
-      expect(useInventoryEntry.getState().pendingSearch).toBe('resistor');
-      expect(navigateMock).toHaveBeenCalledWith({ to: '/inventory' });
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/inventory', search: { q: 'resistor' } });
     });
   });
 
@@ -257,8 +255,8 @@ describe('CommandPalette', () => {
       expect(screens[0].textContent).toContain('Sync');
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(navigateMock).toHaveBeenCalledWith({ to: '/sync' });
-      // Screen jump must not touch the inventory search intent.
-      expect(useInventoryEntry.getState().pendingSearch).toBeNull();
+      // Screen jump must not carry an item query with it.
+      expect(navigateMock).toHaveBeenCalledTimes(1);
     });
 
     it('shows an empty state when no screen matches', () => {
@@ -385,7 +383,6 @@ describe('CommandPalette', () => {
       expect(await screen.findByTestId('command-palette-action-panel')).toBeTruthy();
       // Opening actions must not fire the default open/navigate.
       expect(navigateMock).not.toHaveBeenCalled();
-      expect(useInventoryEntry.getState().pendingSearch).toBeNull();
     });
 
     it('± adjust calls useAdjustQuantity with the right delta for an active DISCRETE item', async () => {
@@ -474,11 +471,10 @@ describe('CommandPalette', () => {
       expect(screen.getByTestId('command-palette-open-details')).toBeTruthy();
     });
 
-    it('Open details hands the name to inventory and navigates (jump-to-item)', async () => {
+    it('Open details navigates to inventory filtered to that item (jump-to-item)', async () => {
       await openActions();
       fireEvent.click(screen.getByTestId('command-palette-open-details'));
-      expect(useInventoryEntry.getState().pendingSearch).toBe('10k resistor');
-      expect(navigateMock).toHaveBeenCalledWith({ to: '/inventory' });
+      expect(navigateMock).toHaveBeenCalledWith({ to: '/inventory', search: { q: '10k resistor' } });
     });
 
     it('Back returns to the results without closing the palette', async () => {

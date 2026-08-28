@@ -20,7 +20,7 @@ import { useModulesStore } from '@/state/stores/useModulesStore';
 beforeEach(() => {
   useModulesStore.setState({ intent: {} });
   usePreferencesStore.setState({ dashboardGettingStarted: true });
-  useInventoryEntry.setState({ pendingSearch: null, pendingIntent: null });
+  useInventoryEntry.setState({ pendingIntent: null });
   itemCountMock.mockReturnValue({ data: 0, isPending: false });
 });
 afterEach(() => {

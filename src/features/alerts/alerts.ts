@@ -30,6 +30,7 @@ import {
   type AssetLifecycleItem,
 } from '@/features/inventory/asset-lifecycle';
 import { expiryStatus } from '@/features/lifecycle/expiry';
+import { inventorySearchFor, type InventorySearchParams } from '@/features/inventory/view-params';
 import { fieldDueStatus } from '@/features/lifecycle/field-due';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { plural } from '@/lib/plural';
@@ -57,6 +58,25 @@ export interface AlertTarget {
   readonly itemId?: string;
   /** The item's name — seeds the destination search so the item is loaded & on-screen. */
   readonly itemName?: string;
+}
+
+/**
+ * The router destination an alert's "View" link navigates to: its route, plus the search params
+ * that put the item on screen when it names one.
+ *
+ * The Inventory screen's whole view lives in its URL (issue #574), so an item alert is an
+ * ordinary link to a filtered list rather than a handover the destination has to consume — the
+ * link can be copied, opened in a new tab, and undone with Back like any other.
+ */
+export function alertTargetLink(target: AlertTarget): {
+  readonly to: string;
+  readonly search?: InventorySearchParams;
+} {
+  // Only the Inventory screen reads a search of this shape, so the name is spliced in for that
+  // destination alone — and through the screen's own builder, never a literal here.
+  return target.route === '/inventory' && target.itemName
+    ? { to: target.route, search: inventorySearchFor(target.itemName) }
+    : { to: target.route };
 }
 
 /**

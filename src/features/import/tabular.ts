@@ -60,6 +60,13 @@ const DELIMITERS: Partial<Record<ImportFormat, string>> = {
   tsv: '\t',
 };
 
+/**
+ * The delimited formats {@link detectDelimited} tries, strongest paste signal first, so a tie on
+ * column count falls to the tab. Every delimiter character in this module is read back out of
+ * {@link DELIMITERS} through this list rather than spelled a second time.
+ */
+const DELIMITER_PRIORITY = ['tsv', 'ssv', 'csv'] as const;
+
 /** Formats whose input is delimiter-separated (and so support a header toggle). */
 export function isDelimitedFormat(format: ImportFormat): boolean {
   return format === 'csv' || format === 'ssv' || format === 'tsv';
@@ -282,11 +289,7 @@ function detectDelimited(text: string): ImportFormat | null {
   const sample = allLines.slice(0, DETECTION_SAMPLE_SIZE).join('\n');
   const truncated = allLines.length > DETECTION_SAMPLE_SIZE;
   if (sample.trim().length === 0) return null;
-  const candidates: ReadonlyArray<readonly [ImportFormat, string]> = [
-    ['tsv', '\t'],
-    ['ssv', ';'],
-    ['csv', ','],
-  ];
+  const candidates = DELIMITER_PRIORITY.map((format) => [format, DELIMITERS[format]!] as const);
   let best: ImportFormat | null = null;
   let bestColumns = 1;
   let blindBest: ImportFormat | null = null;
@@ -351,17 +354,53 @@ function looksLikeHtmlTable(text: string): boolean {
   return /<table[\s>]/i.test(text) && /<tr[\s>]/i.test(text);
 }
 
+/** Options for {@link detectImportFormat}. */
+export interface DetectFormatOptions {
+  /**
+   * Does this cell read as one of the caller's column headers? A **single-column** file
+   * carries no delimiter, so it is indistinguishable from a free-form line list by shape
+   * alone — the only signal left is whether its first line names a column the importer
+   * knows. Callers that have a synonym table supply it here; without it a one-column file
+   * stays a line list, and its header row imports as an item (issue #408).
+   */
+  readonly isHeaderCell?: (cell: string) => boolean;
+}
+
+/**
+ * Is this a single-column delimited file — one whose first line names a column — rather than a
+ * free-form line list? Two things have to hold, and the second is what keeps it safe: the first
+ * line must name a column the caller knows, and **no** line may carry a delimiter at all.
+ *
+ * A delimiter anywhere means the file is not one column. {@link detectDelimited} has already
+ * refused it, so its widths are ragged, and reading it as a one-column CSV would run the codec
+ * over lines it cannot see: `Widget, the big one` under a `name` header would split, map its
+ * first cell and drop the rest without a word. A line list keeps the whole line as the name.
+ *
+ * At least one data line is required, so a lone header does not extract to nothing.
+ */
+function looksLikeSingleColumnTable(text: string, isHeaderCell: (cell: string) => boolean): boolean {
+  const lines = nonEmptyLines(text);
+  if (lines.length < 2) return false;
+  const delimiters = DELIMITER_PRIORITY.map((format) => DELIMITERS[format]!);
+  if (lines.some((line) => delimiters.some((d) => line.includes(d)))) return false;
+  return isHeaderCell(lines[0]!.trim());
+}
+
 /**
  * Sniff the most likely {@link ImportFormat} for a block of text. Structured shapes
  * (JSON, HTML tables, Markdown tables) are recognised first; then the strongest
- * consistent delimiter; and anything else falls back to the forgiving line list.
+ * consistent delimiter; then a single named column (only when `options.isHeaderCell`
+ * says so); and anything else falls back to the forgiving line list.
  */
-export function detectImportFormat(text: string): ImportFormat {
+export function detectImportFormat(text: string, options: DetectFormatOptions = {}): ImportFormat {
   if (text.trim().length === 0) return 'lines';
   if (looksLikeJson(text)) return 'json';
   if (looksLikeHtmlTable(text)) return 'html';
   if (looksLikeMarkdownTable(text)) return 'markdown';
-  return detectDelimited(text) ?? 'lines';
+  const delimited = detectDelimited(text);
+  if (delimited) return delimited;
+  if (options.isHeaderCell && looksLikeSingleColumnTable(text, options.isHeaderCell)) return 'csv';
+  return 'lines';
 }
 
 // ---------------------------------------------------------------------------

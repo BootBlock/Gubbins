@@ -116,7 +116,9 @@ export { useReportDialogBusy, useDialogIsBusy } from './dialog-busy';
 // Off-canvas panel for a master pane that can't sit beside its detail pane on a compact
 // viewport. It shares Modal's `aria-modal` contract through `use-dialog-behaviour`, which is
 // deliberately *not* re-exported: a feature needing a modal surface composes one of these two
-// primitives rather than hand-rolling a third from the hook.
+// primitives rather than hand-rolling a third from the hook. The exception is a surface that
+// genuinely cannot be either — the two full-screen camera takeovers, which must own the whole
+// viewport and paint no panel — and those import the hook by path rather than restate it.
 export { Drawer, type DrawerProps } from './drawer';
 // The open-dialog count, so app-global keyboard handling can stand aside while a modal owns
 // the keyboard (issue #32) — the same LIFO registry Modal itself uses to arbitrate Escape.
