@@ -10,10 +10,22 @@ import { widgetById } from './widgets';
  * and a quiet footer acknowledging loans still out but not yet due. The single open-checkouts
  * feed is mocked so this exercises only the widget's rendering of that escalation.
  */
-const spies = vi.hoisted(() => ({ openCheckouts: vi.fn() }));
+const spies = vi.hoisted(() => ({ openCheckouts: vi.fn(), openCounts: vi.fn() }));
 
 vi.mock('@/features/contacts/contacts', () => ({
   useOpenCheckouts: () => spies.openCheckouts(),
+  // Both figures the widget states come from the repository's own count over every open loan,
+  // not from the page in hand (issue #606). Unless a test overrides it, this answers what a real
+  // count would say for the mocked page, so the escalation cases below read unchanged.
+  useOpenCheckoutCounts: () => {
+    const override = spies.openCounts();
+    const rows = (spies.openCheckouts().data?.rows ?? []) as { isOverdue: boolean }[];
+    return {
+      data: override ?? { open: rows.length, overdue: rows.filter((r) => r.isOverdue).length },
+      isPending: false,
+      isError: false,
+    };
+  },
 }));
 
 const NOW = Date.now();
@@ -55,6 +67,24 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   spies.openCheckouts.mockReset();
+  spies.openCounts.mockReset();
+});
+
+/**
+ * The tile states two figures over a feed that is read one bounded page at a time, so both come
+ * from the repository's count rather than the rows (issue #606). Before that, a board of 300
+ * loans with 20 late read "80 still on loan" — the remainder of a page, not of the board.
+ */
+describe('OverdueWidget — the figures are the whole board, not the page', () => {
+  it('states the real overdue total and the real remainder still on loan', () => {
+    mockOpen([loan({ id: 'k1', dueDate: NOW - 3 * MS_PER_DAY, isOverdue: true })]);
+    spies.openCounts.mockReturnValue({ open: 300, overdue: 20 });
+
+    render(<OverdueWidget />);
+
+    expect(screen.getByText('20')).toBeInTheDocument();
+    expect(screen.getByText('280 more on loan, not yet due.')).toBeInTheDocument();
+  });
 });
 
 describe('OverdueWidget — days-overdue affordance', () => {

@@ -248,6 +248,30 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
     }
 
     /**
+     * How many active perishables are expiring on or before `before` — the **total** behind
+     * {@link listExpiring}'s bounded page.
+     *
+     * The feed is read one page at a time, and the "Soon to Expire" widget and the alert centre
+     * both print a figure above those rows. Counting the rows in hand made that figure the page
+     * size once a catalogue held more than a page of them — a 4,000-item problem reported as
+     * "100" (issue #606). The predicate is the same fragment {@link listExpiring} selects with,
+     * so the total and the rows can never answer different questions;
+     * `attention-count-parity.test.ts` drives both over one dataset and compares.
+     */
+    async countExpiring(before: number): Promise<number> {
+      const row = await this.driver.queryOne<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM items WHERE is_active = 1 AND ${expiringPredicateSql()};`,
+        [before],
+      );
+      return Number(row?.n ?? 0);
+    }
+
+    /** {@link countExpiring} over the same calendar-day window {@link listExpiringWithin} uses. */
+    async countExpiringWithin(withinDays: number, now: number): Promise<number> {
+      return this.countExpiring(localDayWindowCutoff(now, withinDays));
+    }
+
+    /**
      * Active items running low — the §3 dashboard "Low Stock Alerts" feed, most
      * depleted first. A DISCRETE item is low when on-hand `quantity` is at/below its
      * effective quantity floor; a CONSUMABLE_GAUGE item is low when its percentage
@@ -338,6 +362,21 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
         [cutoff, since, since, limit, offset],
       );
       return this.toPage(rows.map(rowToItem), limit, offset);
+    }
+
+    /**
+     * How many active items have a warranty already expired or expiring within `withinDays` —
+     * the **total** behind {@link listWarrantyExpiring}'s bounded page, for the same reason
+     * {@link countExpiring} exists (issue #606). Same predicate, same cutoff derivation, so the
+     * figure and the rows cannot diverge.
+     */
+    async countWarrantyExpiring(withinDays: number, now: number): Promise<number> {
+      const cutoff = toDateInputValue(localDayWindowCutoff(now, withinDays));
+      const row = await this.driver.queryOne<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM items WHERE is_active = 1 AND ${warrantyExpiringPredicateSql()};`,
+        [cutoff],
+      );
+      return Number(row?.n ?? 0);
     }
 
     /**

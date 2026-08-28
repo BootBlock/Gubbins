@@ -27,6 +27,12 @@ export const contactKeys = {
 export const checkoutKeys = {
   all: ['checkouts'] as const,
   open: () => [...checkoutKeys.all, 'open'] as const,
+  /**
+   * How many loans are open, and how many of those are overdue — the totals behind
+   * {@link checkoutKeys.open}'s bounded page (issue #606). Nested under it so every existing
+   * sweep of the open-loans feed refreshes the figures stated over it as well.
+   */
+  openCount: () => [...checkoutKeys.open(), 'count'] as const,
   forItem: (itemId: string) => [...checkoutKeys.all, 'item', itemId] as const,
   forProject: (projectId: string) => [...checkoutKeys.all, 'project', projectId] as const,
   forLocation: (locationId: string) => [...checkoutKeys.all, 'location', locationId] as const,

@@ -20,7 +20,6 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-import { plural } from '@/lib/plural';
 import { Link } from '@tanstack/react-router';
 import {
   Button,
@@ -52,6 +51,7 @@ import { addCalendarDays } from '@/lib/calendar-days';
 import { nowMs } from '@/lib/clock';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { TabularExportMenu } from '@/features/export/TabularExportMenu';
+import { exportAllRows } from '@/features/export/export-every-page';
 import { alertsExportFilename, buildAlertsExport } from './alerts-export';
 import {
   groupByKind,
@@ -217,6 +217,42 @@ function AlertCard({
   );
 }
 
+/**
+ * "This lane is showing a prefix" — the caveat under a section whose feed stopped short.
+ *
+ * A lane that quietly stops at a page boundary reads as "that is everything" when it is not
+ * (issue #606). Where the lane has its own `COUNT(*)` the notice quotes it, so the user is told
+ * exactly how many rows sit behind the cards; the custom-field lane walks every page and has no
+ * total to quote, so its ceiling gets the wording it already had. A truncated lane whose total
+ * has not arrived — or whose count query failed — still gets a notice, just without the figure:
+ * the caveat is the load-bearing half.
+ */
+function LaneTruncationNotice({
+  kind,
+  shown,
+  total,
+  truncated,
+}: {
+  kind: AlertKind;
+  shown: number;
+  total: number | undefined;
+  truncated: boolean;
+}) {
+  const t = useT();
+  if (!truncated) return null;
+  const copy =
+    kind === 'field-due'
+      ? t('alerts.fieldDue.truncated')
+      : total !== undefined
+        ? t('alerts.lane.truncatedOf', { vars: { shown, total } })
+        : t('alerts.lane.truncated', { vars: { shown } });
+  return (
+    <p className="mb-3 text-xs text-muted-foreground" data-testid={`alerts-truncated-${kind}`}>
+      {copy}
+    </p>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
@@ -227,7 +263,11 @@ function AlertCard({
  */
 export function AlertsScreen() {
   const t = useT();
-  const { alerts, allAlerts, isLoading, isError, fieldDueTruncated } = useAlerts();
+  // `withTotals` — this is the screen that states a figure per lane, so it pays for the four
+  // `COUNT(*)` reads the always-mounted nav badge does not need (issue #606).
+  const { alerts, allAlerts, isLoading, isError, truncatedKinds, laneTotals, readAllAlerts } = useAlerts({
+    withTotals: true,
+  });
   const { dismiss, snooze, clearAll } = useDismissedAlertsStore();
 
   // Count what is hidden *right now* rather than how many records the store holds: a record for
@@ -261,20 +301,30 @@ export function AlertsScreen() {
   // Announce the alert count once loading completes (WCAG 4.1.3).
   const [announcement, setAnnouncement] = useState('');
   const announcedRef = useRef(false);
+  // A lane showing a prefix makes the spoken figure a floor rather than a total, so the copy
+  // hedges to match — a screen-reader user is told "at least N", never a page size dressed up
+  // as the whole (issue #606). Threaded as a boolean so the effect re-runs when it changes.
+  const anyTruncated = truncatedKinds.size > 0;
   useEffect(() => {
     if (isLoading || announcedRef.current) return;
     announcedRef.current = true;
     if (isError) {
-      setAnnouncement('Alerts failed to load.');
+      setAnnouncement(t('alerts.announce.error'));
     } else {
       const count = alerts.length;
       setAnnouncement(
         count === 0
-          ? 'No active alerts — all looks good.'
-          : `${count} ${plural(count, 'alert')} require your attention.`,
+          ? t('alerts.announce.none')
+          : t(anyTruncated ? 'alerts.announce.atLeast' : 'alerts.announce.count', {
+              vars: { count },
+            }),
       );
     }
-  }, [isLoading, isError, alerts.length]);
+    // `t` is stable for a given language and deliberately not a dependency: the announcement
+    // fires once per load (`announcedRef`), and re-running it on a language switch would
+    // re-announce a count the user has already heard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, isError, alerts.length, anyTruncated]);
 
   return (
     <PageContainer>
@@ -292,11 +342,19 @@ export function AlertsScreen() {
             {/*
              * Exports the alerts as shown — snoozed and dismissed ones stay out, because an
              * alert the user has explicitly set aside reappearing in the file would defeat the
-             * point of setting it aside. `useAlerts` already holds the whole list, so unlike the
-             * paged lists this needs no re-read.
+             * point of setting it aside. Like every sibling list export on this screen's
+             * pattern, it re-reads its source rather than serialising the page in hand: four of
+             * the five lanes are one bounded page, so the file used to stop at the cap under a
+             * comment claiming the hook held the whole list (issue #606).
              */}
             <TabularExportMenu
-              build={(format) => buildAlertsExport(format, alerts)}
+              build={(format) =>
+                exportAllRows(
+                  readAllAlerts,
+                  (rows) => buildAlertsExport(format, rows),
+                  t('export.list.truncated'),
+                )
+              }
               filename={alertsExportFilename}
               triggerLabel={t('export.list.trigger')}
               menuLabel={t('export.alerts.menuLabel')}
@@ -354,17 +412,18 @@ export function AlertsScreen() {
                       {kindAlerts.length}
                     </span>
                   </h2>
-                  {/* Named to this lane rather than shown as a page-wide caveat: only the
-                      custom-field feed is capped, and a general "this list may be short" would
-                      cast doubt on four lanes that are complete. */}
-                  {kind === 'field-due' && fieldDueTruncated ? (
-                    <p
-                      className="mb-3 text-xs text-muted-foreground"
-                      data-testid="alerts-field-due-truncated"
-                    >
-                      {t('alerts.fieldDue.truncated')}
-                    </p>
-                  ) : null}
+                  {/* Named to the lane it belongs to rather than shown as a page-wide caveat:
+                      a general "this list may be short" would cast doubt on every lane that is
+                      complete. The four paged lanes can say how many rows are behind the ones
+                      listed, since each has its own `COUNT(*)`; the custom-field lane walks
+                      every page, so its only short read is the `readAllPages` ceiling and it has
+                      no total to quote (issue #606). */}
+                  <LaneTruncationNotice
+                    kind={kind}
+                    shown={kindAlerts.length}
+                    total={laneTotals[kind]}
+                    truncated={truncatedKinds.has(kind)}
+                  />
                   <div className="flex flex-col gap-3">
                     {kindAlerts.map((alert) => (
                       <AlertCard

@@ -10,10 +10,21 @@ import { widgetById } from './widgets';
  * low-stock feed and the batched on-order read are both mocked so this exercises only the
  * widget's rendering of the affordance and the de-emphasis of fully-covered rows.
  */
-const spies = vi.hoisted(() => ({ lowStock: vi.fn(), onOrder: vi.fn() }));
+const spies = vi.hoisted(() => ({ lowStock: vi.fn(), lowStockCount: vi.fn(), onOrder: vi.fn() }));
 
 vi.mock('@/features/lifecycle/hooks', () => ({
   useLowStockItems: () => spies.lowStock(),
+}));
+
+// The headline figure is the repository's `COUNT(*)`, not the rows in hand (issue #606). Here it
+// answers with the length of the mocked feed, which is what a real count would say for a set this
+// small — the two are held to agree on real data by `attention-count-parity.test.ts`.
+vi.mock('@/features/reports/queries', () => ({
+  useLowStockCount: () => ({
+    data: spies.lowStockCount() ?? spies.lowStock().data?.rows.length ?? 0,
+    isPending: false,
+    isError: false,
+  }),
 }));
 
 vi.mock('@/features/purchasing/queries', () => ({
@@ -70,6 +81,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   spies.lowStock.mockReset();
+  spies.lowStockCount.mockReset();
   spies.onOrder.mockReset();
 });
 

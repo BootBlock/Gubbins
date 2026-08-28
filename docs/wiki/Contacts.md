@@ -16,7 +16,9 @@ A contact is a lightweight record of a person or organisation. Once you have one
 - **[[Bookings|Bookings]]** — reserve items for a contact over a date range.
 
 The Contacts screen shows what each person currently holds on loan, so you can see at a glance who
-has what.
+has what. The **On loan** heading counts every open loan and every overdue one, however many there
+are. If there are more loans than the list can show at once, it shows the ones due soonest and says
+how many are left over; **Export** beside the heading still saves the lot.
 
 If you build up a lot of contacts, the list splits into pages using the same
 [[pagination control|Inventory-Views]] as the rest of the app — turn it on with **Paginate list**

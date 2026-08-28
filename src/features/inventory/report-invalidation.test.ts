@@ -49,10 +49,15 @@ describe('invalidateItems', () => {
     // The `projects` prefix joined for the same reason as the reports one: a project's shopping
     // list now reads stock, because a reservation only reduces what a line has to buy to the
     // extent stock backs it (issue #653).
+    // The low-stock and warranty feeds are siblings too, and had to be named for a plainer
+    // reason: nothing swept them at all, so both showed pre-write rows under counts that had
+    // already refreshed (issue #606).
     expect(invalidated).toEqual([
       [...inventoryKeys.items()],
       [...inventoryKeys.itemAttention()],
       [...inventoryKeys.expiring()],
+      [...inventoryKeys.lowStock()],
+      [...inventoryKeys.warrantyExpiring()],
       [...reportKeys.all],
       [...agendaKeys.all],
       [...inventoryKeys.fieldDueDates()],

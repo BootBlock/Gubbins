@@ -102,7 +102,7 @@ import {
   type PartsCatalogueSummary,
 } from '@/features/reports/parts-catalogue';
 import { THUMBNAIL_SUBQUERY } from './item/sql';
-import { notAVariantParentSql } from './item/attention-sql';
+import { lowStockPredicateSql, notAVariantParentSql } from './item/attention-sql';
 import { inBaseCurrencySql, preferredSupplierCostSql } from './supplier-cost-sql';
 import { MONEY_STORAGE_DECIMALS, fromStoredMoney, roundMoney } from '@/lib/money';
 import {
@@ -1398,18 +1398,11 @@ export class ReportRepository extends BaseRepository {
     const qty = thresholds.qtyThreshold ?? LOW_STOCK_QTY_THRESHOLD;
     const pct = thresholds.gaugePercent ?? LOW_STOCK_GAUGE_PERCENT;
     const row = await this.driver.queryOne<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM items
-        WHERE is_active = 1
-          AND is_unlimited = 0
-          AND ${notAVariantParent('items.id')}
-          AND (
-            (tracking_mode = 'DISCRETE'
-               AND COALESCE(reorder_point, ?) > 0
-               AND quantity <= COALESCE(reorder_point, ?))
-            OR (tracking_mode = 'CONSUMABLE_GAUGE' AND gross_capacity > 0
-                AND COALESCE(reorder_gauge_percent, ?) > 0
-                AND current_net_value <= gross_capacity * COALESCE(reorder_gauge_percent, ?) / 100.0)
-          );`,
+      // The predicate is the SSOT fragment `ItemRepository.listLowStock` selects rows with, not a
+      // restatement of it: this count is the headline figure printed *above* that feed's rows on
+      // the dashboard widget and the nav tile, so a divergence would show as a total that
+      // disagrees with the list under it (issue #606). It used to be spelled out here.
+      `SELECT COUNT(*) AS n FROM items WHERE is_active = 1 AND ${lowStockPredicateSql()};`,
       [qty, qty, pct, pct],
     );
     return row?.n ?? 0;

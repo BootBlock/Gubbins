@@ -52,6 +52,12 @@ export function invalidateItems(client: QueryClient): void {
   // due-date feed named below. It moves on an expiry-date edit *and* on a stock write that
   // receives or empties a dated lot, since the feed reads the effective expiry (issue #684).
   void client.invalidateQueries({ queryKey: inventoryKeys.expiring() });
+  // The other two attention feeds are siblings of `items()` in exactly the same way, and were
+  // swept by nothing at all: a stock write left the Low Stock widget and the alert centre's
+  // low-stock and warranty lanes showing pre-write rows until the screen was remounted, while
+  // the reports prefix below refreshed the *counts* printed over them (issue #606).
+  void client.invalidateQueries({ queryKey: inventoryKeys.lowStock() });
+  void client.invalidateQueries({ queryKey: inventoryKeys.warrantyExpiring() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
   void client.invalidateQueries({ queryKey: agendaKeys.all });
   // Named rather than delegated to `invalidateFieldDueDates`, which would sweep the agenda
@@ -106,6 +112,9 @@ export function invalidateFieldDueDates(client: QueryClient): void {
 export function invalidateItemStock(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
   void client.invalidateQueries({ queryKey: inventoryKeys.expiring() });
+  // Low stock *is* stock-dependent — a stepper tap can cross a reorder point — so its feed is
+  // swept here too. The warranty feed is not: no stock write can move a warranty date.
+  void client.invalidateQueries({ queryKey: inventoryKeys.lowStock() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
   void client.invalidateQueries({ queryKey: agendaKeys.all });
   invalidateProjectsForStock(client);
