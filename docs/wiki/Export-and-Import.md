@@ -144,9 +144,11 @@ going through the item importer first.
 > **ℹ️ Note**
 > Once you've pressed import and the rows are actually being written, the dialog stays put until
 > it's done — pressing Escape, clicking outside it and the ✕ all wait. It finishes on a summary:
-> how many items were created, how many updated, and how many rows were skipped with the reason
-> for each. That summary is the only place those reasons appear, and closing part-way through
-> wouldn't have stopped the import — only hidden what it did.
+> how many items were created, how many updated, and how many were skipped, followed by every row
+> that hit a problem with the reason for it. That includes a row that landed only in part — its
+> details saved but its quantity, location or tags refused — so a partial success is never dressed
+> up as a clean one. That summary is the only place those reasons appear, and closing part-way
+> through wouldn't have stopped the import — only hidden what it did.
 
 > **ℹ️ Note**
 > A chosen file is checked *before* anything is read from it, because a file picker's "All files"
@@ -170,6 +172,32 @@ going through the item importer first.
 > a fractional one such as `2.5`, or a cell like `n/a` leaves its row out too. Every row left out
 > is listed in the review with its row number and the value your file gave, so a quantity is never
 > quietly changed on the way in.
+
+> **ℹ️ Note**
+> A row that matches an item you already have **updates** it, and that includes its **quantity**
+> and its **location** — so "export the catalogue, edit the counts in a spreadsheet, import it
+> back" works as a stock-take. The quantity in your file is the **count on hand**, not an amount
+> to add: a row reading `250` leaves the item holding 250 whatever it held before. The change is
+> recorded in the [[item's history|Activity-Log]] like any other stock movement, so you can see
+> what an import moved and when. A row whose quantity already matches changes nothing and logs
+> nothing, which is what re-importing an untouched export does.
+>
+> A **location** cell moves the item there, gathering any stock split across other places into
+> it. The **Location** dropdown above the preview is different — it only says where *new* items
+> go, and never moves an item you already have.
+>
+> Only a [[bulk item|Tracking-Modes]] has a count an import can set. A serialised, consumable or
+> untracked item is flagged in the review instead, with the reason, rather than showing a number
+> that would never land.
+>
+> One more count an import won't guess at: if an item's stock is **[[split across more than one
+> location|Locations-and-Stock]]** and the file asks for a *lower* figure without saying where the
+> units went, the row is reported and the stock left alone. A single number can't say which drawer
+> emptied. Add a location column, or count each place with a
+> [[stock-take|Cycle-Counts-and-Audit-Day]].
+>
+> The preview's **Qty** column shows what each row will do: a new item shows the figure from your
+> file, and a matched one shows the new count with the current one beside it (`250 (was 200)`).
 
 > **⚠️ Heads-up**
 > A **serialised** item is a single tracked instance, so its quantity is always 1. If a row says

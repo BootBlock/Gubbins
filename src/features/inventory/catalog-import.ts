@@ -785,6 +785,27 @@ export interface CatalogCreate {
   readonly tags?: readonly string[];
 }
 
+/**
+ * The on-hand quantity change one update row asks for (issue #592).
+ *
+ * Quantity is deliberately absent from {@link CatalogUpdate.input}: `items.quantity` is derived
+ * from the `item_stock` ledger by trigger, so no column write can move it. The figure is carried
+ * here instead and applied through `ItemRepository.adjustQuantity`, which moves the ledger and
+ * logs the change to the item's history.
+ */
+export interface CatalogStockChange {
+  /** What the matched item held when the plan was built — what the preview compares against. */
+  readonly before: number;
+  /** The absolute on-hand quantity the file states. */
+  readonly counted: number;
+  /**
+   * The item's home placement at plan time — the one `adjustQuantity` absorbs the change at.
+   * Carried so the apply step can tell whether a *decrease* fits there before writing anything;
+   * a whole-item figure says nothing about which drawer the missing units left.
+   */
+  readonly atLocationId: string;
+}
+
 /** A fully-validated row destined for {@link ItemRepository.update}. */
 export interface CatalogUpdate {
   readonly sourceRow: number;
@@ -795,6 +816,23 @@ export interface CatalogUpdate {
   readonly fieldValues?: CustomFieldValues;
   /** The item's whole tag set — see {@link CatalogCreate.tags}. */
   readonly tags?: readonly string[];
+  /**
+   * The row's on-hand quantity, when it differs from what the matched item already holds
+   * (issue #592). Absent when the row states no quantity or states the one the item is already
+   * at — an import that changes nothing must not write a history entry saying it did.
+   */
+  readonly stock?: CatalogStockChange;
+  /**
+   * Where the row asks the item to be moved to, when its own location cell resolved to somewhere
+   * other than where the item is (issue #592). Applied through `ItemRepository.move`, which
+   * consolidates the item's placements at the target — `location_id` is not a field on
+   * {@link UpdateItemInput} either.
+   *
+   * A row that states no location of its own never moves the item, **even when the dialog
+   * supplies a batch default location**: that default answers "where do the new items go?", not
+   * "gather the whole catalogue here".
+   */
+  readonly moveToLocationId?: string;
 }
 
 /** A row that failed validation or had a duplicate match key (never thrown). */
@@ -897,6 +935,29 @@ function serialisedQuantityError(data: CatalogRowData, mode: TrackingMode): stri
 }
 
 /**
+ * Why the matched item's on-hand quantity cannot be changed by an import, or `null` when it can.
+ *
+ * The quantity lands through `ItemRepository.adjustQuantity`, which reconciles DISCRETE stock
+ * only, so this repeats that method's tracking-mode guard at dry-run time — the same treatment
+ * the unlimited-supply and serialised-quantity invariants get above. Reported per row rather than
+ * applied and lost: the preview shows the figure, so the row must either move the stock or say
+ * why it will not (issue #592). Held to `adjustQuantity`'s real behaviour by the drift test in
+ * `catalog-import-stock.test.ts`.
+ */
+function updateQuantityError(existing: Item): string | null {
+  switch (existing.trackingMode) {
+    case 'DISCRETE':
+      return null;
+    case 'SERIALISED':
+      return `"${existing.name}" is serialised, so it is one instance and its quantity is always 1 — import one row per unit rather than a count.`;
+    case 'CONSUMABLE_GAUGE':
+      return `"${existing.name}" is a consumable gauge, so its level is measured rather than counted — set it from the item's gauge, not an imported quantity.`;
+    case 'UNTRACKED':
+      return `"${existing.name}" is untracked, so it has no on-hand count for an import to change — switch it to Bulk first.`;
+  }
+}
+
+/**
  * Mirror the gauge DB CHECK at dry-run time (issue #341): a `CONSUMABLE_GAUGE` item's unit of
  * measure and gross capacity are mandatory, the capacity must be above zero, and — the one part
  * the CHECK itself misses — the net remaining cannot exceed the capacity, an invariant every
@@ -962,6 +1023,12 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   if (data.reorderQty !== undefined) Object.assign(result, { reorderQty: data.reorderQty ?? null });
   if (data.categoryId !== undefined) Object.assign(result, { categoryId: data.categoryId ?? null });
   if (data.isUnlimited !== undefined) Object.assign(result, { isUnlimited: data.isUnlimited });
+  // Quantity and location are deliberately absent too, and for a harder reason than choice:
+  // `items.quantity` is derived from the `item_stock` ledger by trigger, and `location_id` moves
+  // only alongside the placements it summarises, so neither is a field on `UpdateItemInput` at
+  // all. They ride beside this input on the plan entry instead — see `CatalogUpdate.stock` and
+  // `CatalogUpdate.moveToLocationId` (issue #592).
+  //
   // The gauge columns are deliberately absent (issue #341): an update never rewrites an item's
   // gauge configuration — that is the gauge editor's job, which re-bases the level rather than
   // overwriting it — so they are read only when *creating*. Reporting them here instead would
@@ -1322,6 +1389,11 @@ export function buildImportPlanFromRows(
     // locations; otherwise the batch default (if any) applies. An unresolvable name is
     // a row error so the item is never silently created in the wrong place.
     const rawLocation = raw.core.locationId ?? null;
+    // Whether the *row itself* named a location, remembered before the batch default fills the
+    // gap. A matched item is moved only when its own cell says so (issue #592) — the default is
+    // "where do the new items go?", and letting it move every matched item would relocate a whole
+    // catalogue on an import that never mentioned locations.
+    const locationStatedByRow = rawLocation !== null;
     if (rawLocation !== null && resolveLocations) {
       const resolved = resolveLocationId(rawLocation, locationById, locationIdsByName);
       if (resolved.kind === 'unknown') {
@@ -1434,12 +1506,42 @@ export function buildImportPlanFromRows(
         errors.push({ sourceRow, message: unlimitedError });
         continue;
       }
+      // A stated quantity that already matches the item is not a change — it is what an exported
+      // catalogue looks like coming back in — so it plans nothing and is never reported.
+      const wantsStock = data.quantity !== undefined && data.quantity !== existingItem.quantity;
+      if (wantsStock) {
+        const quantityError = updateQuantityError(existingItem);
+        if (quantityError) {
+          errors.push({ sourceRow, message: quantityError });
+          continue;
+        }
+      }
+      // A move needs a location the plan actually *resolved*. With no known locations supplied
+      // the cell passes through verbatim (the legacy behaviour documented on
+      // {@link BuildPlanOptions.locations}), and handing a raw spreadsheet name to `move` as an
+      // id would only trade a dropped cell for a foreign-key error. Every production caller
+      // supplies them.
+      const wantsMove =
+        resolveLocations &&
+        locationStatedByRow &&
+        data.locationId !== undefined &&
+        data.locationId !== existingItem.locationId;
       updates.push({
         sourceRow,
         itemId: existingItem.id,
         input: toUpdateInput(data),
         ...withFieldValues(fieldValues),
         ...withTags(data.tags),
+        ...(wantsStock
+          ? {
+              stock: {
+                before: existingItem.quantity,
+                counted: data.quantity!,
+                atLocationId: existingItem.locationId,
+              },
+            }
+          : {}),
+        ...(wantsMove ? { moveToLocationId: data.locationId! } : {}),
       });
     } else {
       // No match → create. A name is required for creates.
@@ -1484,6 +1586,24 @@ export interface CatalogItemRepository {
    * back to per-row {@link create}.
    */
   createMany?(inputs: readonly CreateItemInput[]): Promise<Item[]>;
+  /**
+   * Move an item wholesale to another location, consolidating its placements there (issue #592).
+   * Optional so the lightweight test doubles that never map a location column keep compiling; a
+   * plan that *does* ask for a move through a repository without it reports the row rather than
+   * dropping the move silently — which is the defect this whole seam exists to fix.
+   */
+  move?(id: string, locationId: string): Promise<Item>;
+  /**
+   * Move a DISCRETE item's on-hand stock by a signed delta, logging the change (issue #592).
+   * Optional on the same terms as {@link move}.
+   */
+  adjustQuantity?(id: string, delta: number, note?: string): Promise<Item>;
+  /**
+   * Where an item's stock currently sits, per location (issue #592). Read before a *decrease*, to
+   * check the draw fits the placement {@link adjustQuantity} will take it from. Optional on the
+   * same terms as {@link move}; without it a decrease is refused rather than risked.
+   */
+  listStock?(itemId: string): Promise<readonly { readonly locationId: string; readonly quantity: number }[]>;
 }
 
 /**
@@ -1544,6 +1664,11 @@ export interface CatalogApplyResult {
  *
  * Rows that appear in `plan.errors` are already invalid and are NOT applied; only
  * the valid `create` and `update` entries are processed.
+ *
+ * An `update` entry's on-hand quantity and location are applied through `move` /
+ * `adjustQuantity` (issue #592) rather than the item row, because neither is a column the row
+ * owns; a failure there is recorded against the row's `error` and still counts as an update,
+ * since the item's own fields did land.
  *
  * Custom-field values (Phase 72) on a `create`/`update` entry are persisted through
  * the supplied `categories.setItemFieldValues` — the existing custom-field write path
@@ -1629,11 +1754,16 @@ export async function applyCatalogImportPlan(
   for (const entry of plan.update) {
     try {
       await repo.update(entry.itemId, entry.input);
+      // The move runs before the count: a shortfall is drawn out of the item's primary location
+      // alone, so an item split across drawers has to be gathered first or the draw asks that
+      // one placement for units it does not hold.
+      const stockError = await applyStockAndLocation(repo, entry);
       const sideError = await applyRowSideEffects(categories, tags, entry.itemId, entry, false);
+      const error = [stockError, sideError].filter((m): m is string => m !== undefined).join(' ');
       rows.push({
         sourceRow: entry.sourceRow,
         kind: 'updated',
-        ...(sideError ? { error: sideError } : {}),
+        ...(error.length > 0 ? { error } : {}),
       });
     } catch (err) {
       rows.push({
@@ -1649,6 +1779,108 @@ export async function applyCatalogImportPlan(
   const skipped = rows.filter((r) => r.kind === 'skipped').length;
 
   return { created, updated, skipped, rows };
+}
+
+/**
+ * Apply the two parts of an update row that are not columns on the item at all — where it lives
+ * and how much of it there is (issue #592).
+ *
+ * Both go through the repository methods that already own them: `move` consolidates the item's
+ * per-location placements at the target, and `adjustQuantity` moves the stock ledger by the
+ * variance and logs it to the item's history. Neither can be expressed as an `UpdateItemInput`
+ * field — `items.quantity` is trigger-derived from the ledger — which is precisely why the
+ * importer used to show both and write neither.
+ *
+ * The delta is measured from the quantity the plan was built against, so it applies as the
+ * relative movement the preview described. Like the whole-item branch of a cycle count, it is
+ * **not** captured as an absolute assertion, so the same import run on two devices before they
+ * sync applies the correction twice — the hazard `withAssertedCount` describes
+ * (`db/repositories/stock-batches.ts`). An assertion is per `stock_batches` row, and a
+ * whole-item figure does not name a lot.
+ *
+ * `ItemRepository.reconcile` states an absolute count and composes its own note from live
+ * figures, which would be the better fit but for the note itself: it reads "Cycle count of
+ * <location>: …", and a spreadsheet arriving in the importer is not a cycle count of anywhere.
+ * Writing that would be a false ledger entry of exactly the kind this issue is about, so the
+ * change goes through `adjustQuantity`, whose note the caller supplies.
+ *
+ * The move is attempted first — see the caller — because `adjustQuantity` draws a shortfall from
+ * the item's primary location only. Where there is no move to gather the item, a decrease the
+ * home placement cannot cover is refused outright — see {@link drawTooWideToLand}.
+ *
+ * Like {@link applyRowSideEffects} this never throws: a failure is returned as a message so the
+ * item's own update is not rolled back, and both halves are attempted so a row that got the
+ * location wrong *and* the count wrong says so once.
+ */
+/**
+ * Why a decrease cannot be applied, or `null` when it can (issue #592).
+ *
+ * `adjustQuantity` checks the delta against the item's grand total and then draws it from the
+ * home placement alone, discarding whatever that placement could not cover. On an item split
+ * across drawers a whole-item count would therefore empty the home placement, leave the rest
+ * where it was, and still write the full variance to the ledger — a figure the item never
+ * reached, recorded as though it had.
+ *
+ * A row that names a location never gets here: its move gathers every placement at the target
+ * first, so the draw always fits. Nor does an *increase*, which lands in one place regardless.
+ */
+async function drawTooWideToLand(
+  repo: CatalogItemRepository,
+  entry: CatalogUpdate,
+  draw: number,
+): Promise<string | null> {
+  const stock = entry.stock;
+  if (stock === undefined) return null;
+  // A gathered item is a single placement by construction — see the caller's ordering.
+  if (entry.moveToLocationId !== undefined) return null;
+  if (!repo.listStock) {
+    return 'The quantity was not changed: this repository cannot check where the stock sits.';
+  }
+  const placements = await repo.listStock(entry.itemId);
+  const atHome = placements.find((p) => p.locationId === stock.atLocationId)?.quantity ?? 0;
+  if (atHome >= draw) return null;
+  return "The quantity was not changed: this item's stock sits in more than one location, and an imported count says nothing about which one lost units. Count each location with a stock-take, or add a location column to the file.";
+}
+
+async function applyStockAndLocation(
+  repo: CatalogItemRepository,
+  entry: CatalogUpdate,
+): Promise<string | undefined> {
+  const messages: string[] = [];
+
+  if (entry.moveToLocationId !== undefined) {
+    if (!repo.move) {
+      messages.push('The location was ignored: this repository cannot move items.');
+    } else {
+      try {
+        await repo.move(entry.itemId, entry.moveToLocationId);
+      } catch (err) {
+        messages.push(err instanceof Error ? err.message : 'Unknown error moving the item.');
+      }
+    }
+  }
+
+  if (entry.stock !== undefined) {
+    const delta = entry.stock.counted - entry.stock.before;
+    const unlandable = delta < 0 ? await drawTooWideToLand(repo, entry, -delta) : null;
+    if (!repo.adjustQuantity) {
+      messages.push('The quantity was ignored: this repository cannot adjust stock.');
+    } else if (unlandable !== null) {
+      messages.push(unlandable);
+    } else {
+      try {
+        await repo.adjustQuantity(
+          entry.itemId,
+          delta,
+          `Quantity set to ${entry.stock.counted} by an import (was ${entry.stock.before}).`,
+        );
+      } catch (err) {
+        messages.push(err instanceof Error ? err.message : 'Unknown error adjusting the quantity.');
+      }
+    }
+  }
+
+  return messages.length > 0 ? messages.join(' ') : undefined;
 }
 
 /**
