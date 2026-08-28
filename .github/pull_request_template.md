@@ -11,4 +11,4 @@
 - [ ] User-facing strings go through `t()`, with translations added to **every** shipped catalog.
 - [ ] Accessibility is wired up — roles, labels, keyboard handlers, live regions, `aria-hidden` on decorative icons.
 - [ ] No secrets or personal data in the diff (self-audited with `git diff`).
-- [ ] Typecheck passes (`npm run type-check` — covers the app *and* the bridge) and the relevant tests are updated and green.
+- [ ] Typecheck passes (`npm run type-check` — covers the app, the bridge *and* the browser extension) and the relevant tests are updated and green.

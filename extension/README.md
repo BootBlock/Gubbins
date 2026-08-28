@@ -103,6 +103,13 @@ present, the currency correct, and there is no bot challenge. See
 npm run build:extension      # → extension/dist/ (git-ignored)
 ```
 
+The build bundles with Vite in library mode, which strips types without checking them, so it is
+**not** a type-check. `extension/tsconfig.json` is — `npm run type-check` runs it alongside the
+app's and the bridge's, CI builds the extension as well, and the pre-push hook type-checks it
+whenever a push touches `src/`, `bridge/` or `extension/`. That gate matters because the three
+entry points import the app's real `src/features/scraping/**` modules, so an app-side change can
+break this extension without an extension file being touched.
+
 Then in Chrome/Edge: `chrome://extensions` → enable *Developer mode* → *Load unpacked* →
 select `extension/dist`. Open the Gubbins PWA; the "Scrape Supplier" control appears once
 the content script announces itself. To add an Amazon item, open a product page and click the

@@ -37,6 +37,7 @@ import { buildProductLookupUrl, parseOpenFoodFactsProduct } from '../../src/feat
 import { GUBBINS_APP_URL_PATTERNS, isGubbinsAppUrl } from '../../src/features/scraping/app-origins';
 import { isAmazonHost } from '../../src/features/inventory/asin';
 import { parseGtin } from '../../src/features/scanner/gtin';
+import { assertExhaustive } from '../../src/lib/exhaustive';
 
 interface FetchRequest {
   kind: 'FETCH';
@@ -54,6 +55,9 @@ interface DataFetchRequest {
   kind: 'DATA_FETCH';
   url: string;
 }
+
+/** Every request this worker serves on behalf of the app's content script. */
+type BackgroundRequest = FetchRequest | LookupRequest | DataFetchRequest;
 
 type FetchResponse = { ok: true; text: string } | { ok: false; errorType: ScrapeErrorType; reason: string };
 
@@ -457,6 +461,37 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === CONTEXT_MENU_ID && tab) void scrapeAmazonTab(tab);
 });
 
+/**
+ * Read an inbound runtime message as a bag of unknown fields, or `null` if it is not an object.
+ *
+ * Anything on the page can send a runtime message, so the payload is genuinely `unknown` and
+ * {@link asBackgroundRequest} narrows it field by field. Describing it as unknown fields is what
+ * makes those `typeof` guards mean something: the fields were previously typed by
+ * `message as Partial<FetchRequest & LookupRequest & DataFetchRequest>`, and because the three
+ * `kind` literals are mutually exclusive that intersection reduces to `never` — so the cast
+ * typed nothing at all, and nothing noticed because the extension was never type-checked
+ * (issue #557).
+ */
+function asMessageBag(message: unknown): Record<string, unknown> | null {
+  return typeof message === 'object' && message !== null ? (message as Record<string, unknown>) : null;
+}
+
+/**
+ * Narrow a message bag to one of the three {@link BackgroundRequest}s, or `null` if it is none.
+ *
+ * This is where the untrusted fields become typed ones: a request is rebuilt from the values
+ * that passed their `typeof` check rather than asserted over the bag, so the union the handler
+ * switches on describes data that was actually validated.
+ */
+function asBackgroundRequest(bag: Record<string, unknown> | null): BackgroundRequest | null {
+  if (bag === null) return null;
+  const { kind, url, gtin } = bag;
+  if (kind === 'FETCH' && typeof url === 'string') return { kind, url };
+  if (kind === 'LOOKUP' && typeof gtin === 'string') return { kind, gtin };
+  if (kind === 'DATA_FETCH' && typeof url === 'string') return { kind, url };
+  return null;
+}
+
 /** The refusal returned to a sender that is not the Gubbins app (issue #493). */
 const FOREIGN_SENDER: FetchResponse = {
   ok: false,
@@ -465,43 +500,43 @@ const FOREIGN_SENDER: FetchResponse = {
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  const req = message as Partial<FetchRequest & LookupRequest & DataFetchRequest> | null;
+  const bag = asMessageBag(message);
   const fromApp = isAppSender(sender);
-  if (req?.kind === 'FETCH' && typeof req.url === 'string') {
+  const request = asBackgroundRequest(bag);
+  if (request !== null) {
     if (!fromApp) {
       sendResponse(FOREIGN_SENDER);
       return false;
     }
-    void fetchPage(req.url).then(sendResponse);
-    return true; // keep the message channel open for the async response
-  }
-  if (req?.kind === 'LOOKUP' && typeof req.gtin === 'string') {
-    if (!fromApp) {
-      sendResponse(FOREIGN_SENDER);
-      return false;
+    switch (request.kind) {
+      case 'FETCH':
+        void fetchPage(request.url).then(sendResponse);
+        return true; // keep the message channel open for the async response
+      case 'LOOKUP':
+        void fetchProduct(request.gtin).then(sendResponse);
+        return true;
+      case 'DATA_FETCH':
+        void fetchDataUrl(request.url).then(sendResponse);
+        return true;
+      default:
+        // A request kind added to the union without a case here would otherwise be dropped in
+        // silence; the guard makes that a compile error (issue #355).
+        assertExhaustive(request);
+        return false;
     }
-    void fetchProduct(req.gtin).then(sendResponse);
-    return true;
-  }
-  if (req?.kind === 'DATA_FETCH' && typeof req.url === 'string') {
-    if (!fromApp) {
-      sendResponse(FOREIGN_SENDER);
-      return false;
-    }
-    void fetchDataUrl(req.url).then(sendResponse);
-    return true;
   }
   // The injected active-tab bundle reporting a live-DOM scrape outcome (Path A2). It runs on the
   // Amazon tab, not the app, so it is checked against the marketplace hosts instead.
-  const active = message as { kind?: string; outcome?: ActiveTabOutcome } | null;
-  if (active?.kind === 'ACTIVE_TAB_SCRAPE' && active.outcome) {
-    if (!isForeignAmazonSender(sender)) void deliverToPwa(active.outcome);
+  if (bag?.kind === 'ACTIVE_TAB_SCRAPE' && bag.outcome) {
+    // Shape-checked by the injected bundle that produced it, not here: it is our own code, and
+    // `isForeignAmazonSender` is what decides whether to believe this message at all.
+    if (!isForeignAmazonSender(sender)) void deliverToPwa(bag.outcome as ActiveTabOutcome);
     return false; // fire-and-forget
   }
   // A Gubbins PWA tab announcing it is ready to receive queued scrapes. Verified against the
   // app's own origin: a queued payload is handed to the *first* tab that says PWA_READY, so
   // trusting the claim would let any injected page collect a scrape it never triggered (#493).
-  if (active?.kind === 'PWA_READY' && sender.tab?.id !== undefined && fromApp) {
+  if (bag?.kind === 'PWA_READY' && sender.tab?.id !== undefined && fromApp) {
     void flushQueueTo(sender.tab.id);
     return false;
   }

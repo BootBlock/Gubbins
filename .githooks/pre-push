@@ -8,8 +8,16 @@
 # bridge file being touched. This repo pushes straight to `main` with no branch protection,
 # so a red CI run blocks nothing — this hook is the gate that keeps the bridge green.
 #
-# It runs the bridge type-check, tests and boot-smoke before a push, but ONLY when the commits
-# touch `src/**` or `bridge/**` (a docs-only or config-only push skips it and stays fast).
+# The companion browser extension (`extension/`) is the same blind spot for the same reason: it
+# is in no tsconfig the ordinary checks build, and its Vite library-mode build strips types
+# without checking them — yet its three entry points import the app's real
+# `src/features/scraping/**` modules, including the allow-list gate that keeps the privileged
+# background worker from fetching for an arbitrary origin (issue #557). So the hook
+# type-checks it too.
+#
+# It runs the bridge type-check, tests and boot-smoke, plus the extension type-check, before a
+# push, but ONLY when the commits touch `src/**`, `bridge/**` or `extension/**` (a docs-only or
+# config-only push skips it and stays fast).
 # Any failure aborts the push. In a genuine emergency, bypass with `git push --no-verify`.
 #
 # Auto-wired by the "prepare" npm script (sets core.hooksPath = .githooks) on `npm install`.
@@ -55,16 +63,16 @@ done
 [ "$saw_ref" -eq 0 ] && run_checks=1
 
 if [ "$run_checks" -ne 1 ]; then
-  if printf '%s\n' "$changed" | grep -qE '^(src|bridge)/'; then
+  if printf '%s\n' "$changed" | grep -qE '^(src|bridge|extension)/'; then
     run_checks=1
   fi
 fi
 
 if [ "$run_checks" -ne 1 ]; then
-  exit 0  # Nothing touching the app source or the bridge — skip the bridge gate.
+  exit 0  # Nothing touching the app source, the bridge or the extension — skip the gate.
 fi
 
-note 'pre-push: app/bridge changes detected — running the bridge type-check + tests…'
+note 'pre-push: app/bridge/extension changes detected — running the bridge + extension checks…'
 
 if ! npm run --silent type-check:bridge; then
   err 'bridge type-check failed (tsc -p bridge/tsconfig.json) — push aborted.'
@@ -93,6 +101,16 @@ if ! npm run --silent smoke:bridge; then
   note 'If instead it failed to bind a port, something local is already on the smoke port —'
   note 'set GUBBINS_SMOKE_PORT to a free one and re-push.'
   note 'Fix the offending syntax (or bypass with `git push --no-verify`).'
+  exit 1
+fi
+
+# The extension's own gate. Nothing can execute it outside a browser, so there is no suite or
+# boot-smoke to run here (the source-text guards it does have belong to the app's suite) — the
+# type-check is the whole of it, and it is fast: a single `tsc --noEmit`.
+if ! npm run --silent type-check:extension; then
+  err 'extension type-check failed (tsc -p extension/tsconfig.json) — push aborted.'
+  note 'The extension imports the app source by relative path, so an app-side change can break it.'
+  note 'Fix the type error (or bypass with `git push --no-verify`).'
   exit 1
 fi
 

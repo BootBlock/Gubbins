@@ -14,9 +14,9 @@ import globals from 'globals';
 // the bridge, a Node server that runs for days) that `tsc` alone won't catch. Kept as a focused
 // set, not the full type-checked preset, so real findings aren't buried in stylistic noise.
 //
-// Shared by the two type-aware blocks below — the app's and the bridge's — so the two can never
-// drift apart. Both need type information, so each points the parser at its own tsconfig via the
-// project service.
+// Shared by the three type-aware blocks below — the app's, the bridge's and the extension's — so
+// they can never drift apart. Each needs type information, so each points the parser at its own
+// tsconfig via the project service.
 const asyncSafetyRules = {
   '@typescript-eslint/no-floating-promises': 'error',
   // JSX event handlers are legitimately `async` (React ignores the returned promise), so exempt
@@ -205,12 +205,23 @@ export default tseslint.config(
     },
   },
 
-  // Browser-context extension code (content script + background/service worker).
+  // Browser-context extension code (content script + background/service worker), with the same
+  // type-aware async-safety rules as the app and the bridge. It could not have them before
+  // `extension/tsconfig.json` existed — the project service had no program to point at, which is
+  // the only reason this block used to set globals alone (#557, #601). The background worker is
+  // the strongest case for them: an unhandled rejection there is invisible, since nobody has a
+  // service-worker console open.
   {
     files: ['extension/src/**/*.ts'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.worker, chrome: 'readonly' },
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+        warnOnUnsupportedTypeScriptVersion: false,
+      },
     },
+    rules: { ...asyncSafetyRules },
   },
 
   // Node-side tooling: Vite config, build/test scripts, extension build.
