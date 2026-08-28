@@ -32,6 +32,12 @@ same day.
 > [[Cloud sync → overlapping bookings|Cloud-Sync]]. The same goes for *checking a booking out* on
 > two offline devices: the two are merged into one loan rather than lending the asset twice.
 
+> **⚠️ Heads-up**
+> A booking outlives the item it reserves. If the asset is **removed from inventory** after the
+> booking was made — by hand, or by a [[cycle count|Cycle-Counts-and-Audit-Day]] that couldn't find
+> it — the reservation stays in the list, but checking it out is refused. Cancel the booking, or
+> restore the item, whichever matches what actually happened.
+
 > **💡 Tip**
 > Bookings turn Gubbins into a simple shared-equipment scheduler. Reserve the good camera for a
 > shoot next week, and anyone else booking it sees it's taken.

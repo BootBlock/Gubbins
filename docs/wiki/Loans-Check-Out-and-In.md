@@ -15,6 +15,12 @@ back. The stock leaves your available count while it's out, so your numbers stay
 If the contact doesn't exist yet, you can create them right from the checkout — no need to set up
 the [[contact|Contacts]] first.
 
+> **ℹ️ Note**
+> An item you've **removed from inventory** can't be lent out. The **Check out** action is hidden
+> on such an item, and any other route to it — an older [[booking|Bookings]], or the
+> [[bridge|Bridge-Overview]] — is refused too. Restore the item first (tick **Show removed** in the
+> inventory view) if you do want to lend it.
+
 ### Prerequisites go with it
 
 If the item you're lending **requires** another one — an access point that needs its power

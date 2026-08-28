@@ -28,8 +28,11 @@ function lotLabel(b: ItemBatchPlacement): string {
 /**
  * How much of `item` is lendable, in the unit its tracking mode counts in — the same figure the
  * dialog shows for the item being checked out. A gauge item is a single vessel, so it lends as one.
+ * An item removed from active inventory lends as nothing, whatever its stock says: the repository
+ * refuses to check it out (issue #661), so offering it would only invite a failure.
  */
 function lendableQty(item: Item): number {
+  if (!item.isActive) return 0;
   return item.trackingMode === 'DISCRETE' ? item.quantity : 1;
 }
 
@@ -436,7 +439,11 @@ export function CheckoutDialog({ open, onClose, item }: { open: boolean; onClose
                       {itemDisplayName(required.name, required.serialNo)}
                     </span>
                     <span className="shrink-0 text-xs tabular-nums">
-                      {available > 0 ? `${available} on hand` : 'none on hand'}
+                      {available > 0
+                        ? `${available} on hand`
+                        : required.isActive
+                          ? 'none on hand'
+                          : 'removed from inventory'}
                     </span>
                   </label>
                 </li>

@@ -138,6 +138,17 @@ describe('AssetBookingRepository (Phase 78 — time-based asset booking)', () =>
     expect(checkout.itemId).toBe(itemId);
   });
 
+  it('refuses to convert a booking whose asset has since been decommissioned (#661)', async () => {
+    const itemId = await serialisedAsset();
+    const booking = await bookings.create({ itemId, startDate: day(1), endDate: day(3), contactName: 'Ada' });
+    // The booking outlives the decommission, so its check-out action still reaches the repository.
+    await items.softDelete(itemId);
+
+    await expect(bookings.convertToCheckout(booking.id)).rejects.toThrow(/decommissioned/i);
+    // The booking stays open and unstamped, so it can still be cancelled — or converted after a restore.
+    expect((await bookings.getById(booking.id))?.convertedCheckoutId).toBeNull();
+  });
+
   it('listUpcoming excludes cancelled, converted and fully-past bookings', async () => {
     const a = await serialisedAsset('Printer A');
     const b = await serialisedAsset('Printer B');

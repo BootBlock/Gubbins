@@ -533,9 +533,14 @@ function ScannerOverlayInner({
               ) : null}
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => setCheckoutItem(discreteResult)}>
-                  <CheckoutIcon /> Check out
-                </Button>
+                {/* Gated on `isActive` exactly as the item card's action is: an item removed from
+                    active inventory cannot be lent (issue #661), so offering the action here would
+                    only open a dialog that fails on submit. */}
+                {scanned.isActive ? (
+                  <Button onClick={() => setCheckoutItem(discreteResult)}>
+                    <CheckoutIcon /> Check out
+                  </Button>
+                ) : null}
                 {onViewItem ? (
                   <Button variant="outline" onClick={viewScanned} data-testid="scanner-view-item">
                     <EditIcon /> View details
