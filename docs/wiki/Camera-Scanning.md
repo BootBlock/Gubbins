@@ -80,6 +80,12 @@ camera actually offers it, so you'll never see a switch that does nothing.
 > only a warning: you can still save whatever you typed, and codes that aren't retail barcodes
 > (an internal shelf code, say) are left alone.
 
+> **💡 Tip**
+> If the code you enter is already recorded against another item, the field says which one — and
+> how many, when it's more than one. It's only a warning, because sharing a barcode is often
+> deliberate; it saves normally. It's there so you know in advance why a later scan of that code
+> will stop and ask which item you meant.
+
 > **ℹ️ Note**
 > Some packaging carries a **marketing QR code** (a website link) next to the real barcode. If
 > you scan one into the **Barcode** field, Gubbins spots that it's a link rather than a barcode
@@ -140,6 +146,30 @@ location, exactly as scanning would have. See
 > **ℹ️ Note**
 > Very occasionally two records start with the same eight characters. Gubbins says so rather than
 > opening one of them and hoping — reach for the QR code, or search by name, in that case.
+
+## When two items share a barcode
+
+Nothing stops two items carrying the same barcode, and often it's deliberate — an opened tub and a
+sealed one kept as separate items, a multipack that shares its unit's code, or two copies of a
+product stored in different places. When you scan a code more than one item carries, Gubbins lists
+the items that have it and asks which one you meant, rather than picking one for you. Each row
+names the item's **location** and its **short code**, so two variants with the same name are still
+easy to tell apart. Tap the one you meant and the scan carries on exactly as usual — the result
+card in a single scan, or straight back to the viewfinder with it added to a
+[[continuous scan|Continuous-Scan-and-Batch-Actions]].
+
+> **ℹ️ Note**
+> The list shows up to ten items. If a code is somehow shared by more than that, Gubbins says so —
+> **at least** that many carry it — and you can [[search|Search-Overview]] for the code itself to
+> see every one of them.
+
+> **⚠️ Heads-up**
+> This is why it matters: adjusting stock by scanning is the quickest way to keep counts right,
+> and if Gubbins quietly chose one of two items every time, the other one's count would drift
+> further from reality with every scan.
+
+The **Barcode** field also warns you before it comes to that: enter a code another item already
+has and it says so, without stopping you saving it. See **How it works**, above.
 
 ## When a code isn't found
 

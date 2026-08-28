@@ -4,6 +4,7 @@ import { ScanIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useFeature } from '@/features/modules/useFeature';
 import { describeGtinConcern } from '@/features/scanner/gtin';
+import { useBarcodeCarriers } from '../queries';
 
 export interface BarcodeFieldProps {
   readonly value: string;
@@ -14,6 +15,11 @@ export interface BarcodeFieldProps {
   readonly onScan: () => void;
   readonly inputTestId: string;
   readonly scanTestId: string;
+  /**
+   * The item being edited, so the duplicate advisory never reports the item against itself.
+   * Omitted when the field is on the Add-item form, where there is no record to exclude yet.
+   */
+  readonly itemId?: string;
 }
 
 /**
@@ -27,6 +33,12 @@ export interface BarcodeFieldProps {
  * the pure {@link describeGtinConcern}, surfaced as an **advisory warning** rather than a
  * validation error — the field legitimately holds non-retail codes, so the entry always
  * saves; the user simply gets told it looks wrong.
+ *
+ * It also says when the barcode is **already recorded against another item** (issue #513). That
+ * is legitimate — two variants of one product, a multipack sharing its unit's GTIN — so it is an
+ * advisory in the same non-blocking style, not a rejection. What it buys the user is knowing in
+ * advance why a later scan of that code will stop and ask which item was meant, instead of
+ * meeting the question with no idea where the duplicate came from.
  *
  * The warning waits for **blur**, because a half-typed GTIN is transiently wrong at almost
  * every keystroke (`400638133393` is a valid UPC-A *width* on the way to a 13-digit EAN) and
@@ -43,6 +55,7 @@ export function BarcodeField({
   onScan,
   inputTestId,
   scanTestId,
+  itemId,
 }: BarcodeFieldProps) {
   const t = useT();
   const scannerEnabled = useFeature('scanner');
@@ -52,12 +65,21 @@ export function BarcodeField({
   const [editing, setEditing] = useState(false);
 
   const concern = editing ? null : describeGtinConcern(value);
+  // Judged on the same beat as the check-digit concern — a blank value mid-keystroke disables the
+  // read, so a half-typed GTIN costs no round-trip and the two advisories never disagree about
+  // when they apply.
+  const carriers = useBarcodeCarriers(editing ? '' : value);
+  const alsoCarrying = (carriers.data ?? []).filter((other) => other.id !== itemId);
   const warning =
     concern === 'check-digit'
       ? t('inventory.barcode.warning.checkDigit')
       : concern === 'length'
         ? t('inventory.barcode.warning.length')
-        : '';
+        : alsoCarrying.length > 0
+          ? t('inventory.barcode.warning.duplicate', {
+              vars: { count: alsoCarrying.length, name: alsoCarrying[0]!.name },
+            })
+          : '';
 
   // The Scan button sits beside the field (issues #8/#52) but *outside* the FormField's
   // `<label>` — so it never folds into the input's accessible name and clicking it can't be
