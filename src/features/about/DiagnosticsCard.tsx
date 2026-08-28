@@ -94,7 +94,7 @@ export function DiagnosticsCard() {
   return (
     // Matches the translucent, non-blurred tint of the sibling About cards so it sits in the same
     // starfield layer (see AboutScreen's AboutSection for why the blur is dropped).
-    <Surface className="bg-card/60 p-5 backdrop-blur-none">
+    <Surface className="bg-card/60 p-5 [--backdrop-surface:none]">
       <h2>
         <button
           type="button"

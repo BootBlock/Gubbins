@@ -134,7 +134,11 @@ export function effectiveExpirySql(): string {
  * NULL, which both the `WHERE` clause and `applicableStatuses`' `CASE WHEN … THEN 1 ELSE 0 END`
  * read as not-matched.
  *
- * Binds, in order: `[cutoffMs]` — a UNIX-ms instant, typically `now + windowDays·MS_PER_DAY`.
+ * Binds, in order: `[cutoffMs]` — the midnight-UTC stamp of the last calendar day the window
+ * covers, from `localDayWindowCutoff(now, windowDays)`. It must come from that seam and not from a
+ * wall-clock instant: `expiry_date` names a *day*, so a cutoff carrying a time of day makes the
+ * window a function of when the query ran (issue #498), and it is the same value `expiryStatus`
+ * classifies against, which is what keeps the pre-filter and the badge in step.
  */
 export function expiringPredicateSql(): string {
   return `(${effectiveExpirySql()} <= ?)`;
@@ -166,8 +170,10 @@ export function outOfStockPredicateSql(): string {
  * Already-expired warranties are included (≤ cutoff). Assets without a warranty date, and
  * abstract variant parents, never match.
  *
- * Binds, in order: `[cutoffDate]` — a `YYYY-MM-DD` string, typically
- * `date(now + WARRANTY_SOON_WINDOW_DAYS days)`.
+ * Binds, in order: `[cutoffDate]` — a `YYYY-MM-DD` string naming the last calendar day the window
+ * covers, from `toDateInputValue(localDayWindowCutoff(now, WARRANTY_SOON_WINDOW_DAYS))`. Derive it
+ * from that seam rather than from a wall-clock instant, which made the cutoff day depend on the
+ * time of day the query ran (issue #498); it is the boundary `warrantyStatus` classifies against.
  */
 export function warrantyExpiringPredicateSql(): string {
   return `(${notAVariantParentSql('items.id')}

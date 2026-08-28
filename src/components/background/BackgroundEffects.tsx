@@ -37,6 +37,13 @@
  *   settles into slowly-growing mounds on control tops and rain splashes off them, driven by the
  *   {@link trackSurfaces} per-column surface map. The overlay is pure motion, so it isn't rendered
  *   at all when the decoration-motion gate asks for a static frame.
+ * - **Each canvas contains its own invalidation (issue #419).** Both carry `contain: layout paint
+ *   style`, so the `z-40` overlay's repaint — which happens whenever settled snow changes, on top
+ *   of all the app's content — is bounded to the canvas rather than treated as dirtying whatever
+ *   it overlaps. No `will-change` or `translateZ(0)` goes with it: an accelerated 2D canvas is
+ *   already its own compositing layer, so forcing promotion buys nothing and costs a layer that
+ *   can never be given back. The layer also caps its backing-store ratio on hardware the browser's
+ *   hints call weak (see {@link precipDprCap}).
  */
 import { useEffect, useMemo, useRef } from 'react';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -46,6 +53,7 @@ import { useDecorationMotionReduced } from '@/components/foundry/decoration-moti
 import { useReducedMotion } from '@/components/foundry/useReducedMotion';
 import { suppressesAmbient } from '@/features/settings/theme-registry';
 import { startPrecip, type PrecipController } from './precip-engine';
+import { precipDprCap, readDeviceTier } from './device-tier';
 import { resolveOccasion } from './seasonal';
 import { trackSurfaces } from './surface-map';
 
@@ -108,6 +116,10 @@ export function BackgroundEffects() {
       // Read once at start (a ref, not a dep — changes flow through setWeather below, so the
       // layer isn't torn down and restarted just to change the weather).
       weather: useLabStore.getState().weatherMode,
+      // Trim the backing store on hardware the browser's hints call weak (issue #419). Read here
+      // rather than in the engine so the engine stays framework- *and* environment-agnostic, and
+      // read at start because none of the hints can change while the layer runs.
+      dprCap: precipDprCap(readDeviceTier()),
     });
     controllerRef.current = controller;
     return () => {
@@ -156,14 +168,14 @@ export function BackgroundEffects() {
         ref={canvasRef}
         aria-hidden
         data-testid="background-effects"
-        className="print-hide pointer-events-none fixed inset-0 -z-10 h-full w-full"
+        className="print-hide pointer-events-none fixed inset-0 -z-10 h-full w-full [contain:layout_paint_style]"
       />
       {!reduced && (
         <canvas
           ref={overlayRef}
           aria-hidden
           data-testid="background-effects-overlay"
-          className="print-hide pointer-events-none fixed inset-0 z-40 h-full w-full"
+          className="print-hide pointer-events-none fixed inset-0 z-40 h-full w-full [contain:layout_paint_style]"
         />
       )}
     </>

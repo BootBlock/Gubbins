@@ -5,7 +5,7 @@
  * are UNIX epoch milliseconds, matching `items.expiry_date`.
  */
 import { EXPIRY_SOON_WINDOW_DAYS, MS_PER_DAY } from '@/db/repositories/constants';
-import { addCalendarDays, startOfLocalDay, utcDayToLocalDay } from '@/lib/calendar-days';
+import { localDayWindowCutoff, startOfLocalDay, utcDayToLocalDay } from '@/lib/calendar-days';
 
 /**
  * Expiry classification of a perishable item:
@@ -49,10 +49,14 @@ export function expiryStatus(
   // issue #323) and compare local days, so a best-before "20 July" is still fresh all through 20 July
   // local.
   if (utcDayToLocalDay(expiryDate) < startOfLocalDay(now)) return 'EXPIRED';
-  // Calendar-day window (issue #325): "expires within N days" measures whole calendar days from
-  // now, matching the `expiringPredicateSql` cutoff the repository binds, so the pure classifier
-  // and the SQL pre-filter agree even across a DST change.
-  if (expiryDate <= addCalendarDays(now, windowDays)) return 'EXPIRING_SOON';
+  // Calendar-day window (issues #325, #498): "expires within N days" measures whole calendar days
+  // from *today*, not from this moment — `localDayWindowCutoff` anchors at local midnight and hands
+  // back the boundary day in the midnight-UTC frame `expiryDate` is stored in, so the two sides of
+  // this comparison name days rather than instants. The same call binds the `expiringPredicateSql`
+  // cutoff, so the pure classifier and the SQL pre-filter agree by construction, and
+  // `expiryStatus(...) === 'EXPIRING_SOON'` is exactly `daysUntilExpiry(...) <= windowDays` for a
+  // non-expired item.
+  if (expiryDate <= localDayWindowCutoff(now, windowDays)) return 'EXPIRING_SOON';
   return 'FRESH';
 }
 

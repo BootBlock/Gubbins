@@ -250,11 +250,11 @@ describe('per-source date frame across a UTC boundary (America/New_York)', () =>
 //
 // `calendarModifiedAt` promises a subscriber that the calendar cannot change between day
 // rollovers, and the whole `304` posture rests on it. The warranty read is the one source that
-// could break that promise: its cut-off is the UTC date of `addCalendarDays(now, horizon)`, which
-// preserves *local* wall-clock time — so across a decade-wide horizon a zone whose offset differs
-// between now and the target rolls the cut-off an hour or so off UTC midnight. Under
-// Europe/London that is 01:00Z on the days spanning a DST change; a subscriber polling in the
-// 00:00–01:00Z window would then be told `304` all day while holding the pre-roll document.
+// could break that promise: its cut-off is the horizon measured from the *local* calendar day of
+// whatever instant the feed hands it (`localDayWindowCutoff`, issue #498), so an unsnapped `now`
+// rolls the cut-off at **local** midnight rather than the UTC one `calendarModifiedAt` reasons
+// about. Under Europe/London that is 01:00Z through British Summer Time; a subscriber polling in
+// the 00:00–01:00Z window would then be told `304` all day while holding the pre-roll document.
 //
 // Pinned to a child process, like the date-frame test above, because the bridge's worker pool
 // can't re-seat the zone.

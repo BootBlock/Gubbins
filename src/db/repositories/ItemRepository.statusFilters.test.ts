@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
+import { localDayWindowCutoff, startOfUtcDay } from '@/lib/calendar-days';
 import { MS_PER_DAY } from './constants';
 import { ItemRepository, buildStatusFilter, ITEM_STATUS_FILTERS } from './ItemRepository';
 import { ContactRepository } from './ContactRepository';
@@ -436,8 +437,14 @@ describe('buildStatusFilter — pure composer', () => {
       now: 1_000,
       expirySoonWindowDays: 30,
     });
-    // expiring cutoff (now + 30d), then overdue now, then maintenance now×2.
-    expect(params).toEqual([1_000 + 30 * MS_PER_DAY, 1_000, 1_000, 1_000]);
+    // Expiring cutoff first, then overdue now, then maintenance now×2. The cutoff is the stored
+    // midnight-UTC stamp of the day 30 local calendar days on — not `now + 30 × MS_PER_DAY`, which
+    // carried `now`'s time of day and made the window a function of when the query ran (issue #498).
+    expect(params).toEqual([localDayWindowCutoff(1_000, 30), 1_000, 1_000, 1_000]);
+    // Pin what that means rather than restating the call: a day-grained boundary 30 whole days on
+    // from today, holding in any host zone (a UTC day is always exactly MS_PER_DAY).
+    expect(params[0] as number).toBe(startOfUtcDay(params[0] as number));
+    expect((params[0] as number) - localDayWindowCutoff(1_000, 0)).toBe(30 * MS_PER_DAY);
   });
 
   it('composes the parameter-free statuses with the warranty date cutoff', () => {

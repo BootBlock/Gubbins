@@ -106,3 +106,32 @@ export function addCalendarDays(ms: number, days: number): number {
   d.setDate(d.getDate() + Math.trunc(days));
   return d.getTime();
 }
+
+/**
+ * The **stored-frame** cutoff for a "within `days` calendar days" window: the midnight-UTC stamp of
+ * the last local calendar day the window includes (issue #498).
+ *
+ * A rolling window has to be measured between two values in the same frame, and the two frames in
+ * play disagree. A day-grained column (`items.expiry_date`, `warranty_expires_at`, a lot's expiry)
+ * is a midnight-UTC stamp naming a calendar day (issue #320); `now` is a wall-clock instant.
+ * Stepping the window off `now` directly — `addCalendarDays(now, days)` — keeps `now`'s *time of
+ * day*, so the boundary sits hours either side of the stored midnight and the window silently grows
+ * and shrinks as the day goes on: west of UTC a 30-day window admits a 31-days-out item by
+ * tea-time, east of UTC it drops a 30-days-out one until mid-morning. Neither the item nor the
+ * calendar changed — only the wall clock did.
+ *
+ * Anchoring at {@link startOfLocalDay} first makes the window whole calendar days from *today*, and
+ * re-emitting the boundary's local calendar fields at midnight UTC — the inverse of
+ * {@link utcDayToLocalDay} — puts it back in the frame the stored values and the SQL predicates
+ * use. The result is a pure function of the viewer's calendar day, so it moves only at local
+ * midnight.
+ *
+ * This is the one boundary `expiryStatus`, `warrantyStatus`, the "Soon to Expire" and warranty
+ * feeds and the inventory status chips all measure against, so the pure classifiers and the SQL
+ * pre-filters agree by construction rather than by comment. For a `YYYY-MM-DD` TEXT column, pass
+ * the result through `toDateInputValue` — it names the same day.
+ */
+export function localDayWindowCutoff(now: number, days: number): number {
+  const boundary = new Date(addCalendarDays(startOfLocalDay(now), days));
+  return Date.UTC(boundary.getFullYear(), boundary.getMonth(), boundary.getDate());
+}

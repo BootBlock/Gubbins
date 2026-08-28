@@ -59,6 +59,31 @@ export const LARGE_FORMAT_QUERY = '(min-width: 768px) and (min-height: 600px) an
 export const COMPACT_LAYOUT_QUERY = '(width < 48rem)';
 
 /**
+ * The media query for a touch device — the primary input is a finger, not a mouse.
+ *
+ * It is the term `LARGE_FORMAT_QUERY` and the `handset:` variant both use to ask "is this real
+ * touch hardware", and it is also the closest thing the platform offers to "is this a GPU that
+ * cannot afford an expensive effect": no capability media feature exists, so the app leans on the
+ * correlation. The weather layer's backing-store cap
+ * ({@link import('@/components/background/device-tier').precipDprCap}) and the stylesheet's
+ * `--backdrop-surface` block are that same decision taken in two languages, so `device.test.ts`
+ * asserts the two still agree.
+ */
+export const COARSE_POINTER_QUERY = '(pointer: coarse)';
+
+/**
+ * The media query for a device whose primary input **cannot hover at all** — a phone or tablet,
+ * but not a touchscreen laptop, whose mouse answers `hover: hover`. Kept identical to the
+ * `touch:` custom variant in `styles/index.css`, which asks the same question in CSS; the parity
+ * is asserted by `device.test.ts` rather than trusted to these two comments.
+ *
+ * Deliberately *not* `(pointer: coarse)` — see the variant's own note. Those ask "how precise is
+ * the pointer", to size and lay things out; this asks "will a hover state ever be entered", which
+ * is the question to ask before doing work that only a hover can make visible.
+ */
+export const HOVER_NONE_QUERY = '(hover: none)';
+
+/**
  * A foldable held open like a book — two side-by-side viewport segments with the hinge
  * between them (the Viewport Segments media feature; Edge stable, Chrome origin trial).
  * Used only as a progressive enhancement to keep content clear of the hinge; layout must
