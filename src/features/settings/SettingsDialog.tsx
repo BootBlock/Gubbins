@@ -488,7 +488,8 @@ export default function SettingsDialog({
             hint={
               'The unit every item **weight** is displayed and entered in. Weights are stored ' +
               'independently of this, so changing it **re-displays** the same weights in the new ' +
-              'unit — nothing is converted or lost. Pick grams, kilograms, ounces or pounds.'
+              'unit — nothing is converted or lost. Pick milligrams, grams or kilograms, ' +
+              'ounces, pounds or stones — or a specialist unit: troy ounces, grains or carats.'
             }
           >
             <Select
@@ -509,7 +510,7 @@ export default function SettingsDialog({
               'The unit every item **dimension** (width, height and depth) is displayed and ' +
               'entered in. Dimensions are stored independently of this, so changing it ' +
               '**re-displays** the same sizes in the new unit — nothing is converted or lost. ' +
-              'Pick millimetres, centimetres, metres, inches or feet.'
+              'Pick anything from micrometres or thousandths of an inch up to metres or yards.'
             }
           >
             <Select
