@@ -399,6 +399,7 @@
   "inventory.qr.tooLong": "This link is too long to fit in a QR code. Shorten the link host in Settings, then try again.",
   "inventory.qr.tooLongLabels": "These links are too long to fit in a QR code, so the labels would print without one. Shorten the link host in Settings.",
   "inventory.qr.tooLongCatalogue": "These links are too long to fit in a QR code, so the QR column is empty. Shorten the link host in Settings.",
+  "inventory.labels.printBlocked": "Your browser blocked the print window, so nothing was sent to the printer. Allow pop-ups for this site, then press Print again.",
   "inventory.labels.barcodeTooNarrow": "This label is too narrow to print a barcode a scanner could read. Choose a wider label size, a sheet layout with wider labels, or switch to a QR code.",
   "inventory.labels.barcodeShortenedItem": "This part number is too long to print as a readable barcode, so the barcode carries a short item code instead.",
   "inventory.labels.barcodeShortenedItems": "Some part numbers are too long to print as a readable barcode at this size, so those labels carry a short item code instead.",

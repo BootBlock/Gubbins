@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { plural } from '@/lib/plural';
+import { printHtmlDocument } from '@/lib/print-document';
 import { Banner, Button, Checkbox, InfoHint, Modal, Select, type SelectProps } from '@/components/foundry';
 import { PrintIcon } from '@/components/icons';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -62,10 +63,18 @@ export function PrintLabelsDialog({
   const setLabelTemplate = usePreferencesStore((s) => s.setLabelTemplate);
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
 
+  /**
+   * The browser refused to print at all (issue #510). The button used to return silently here,
+   * which is indistinguishable from a broken button — say so instead.
+   */
+  const [printBlocked, setPrintBlocked] = useState(false);
+
   // Editable working copy, re-seeded from the saved default each time the dialog opens.
   const [template, setTemplate] = useState<LabelTemplate>(() => normaliseLabelTemplate(storedTemplate));
   useEffect(() => {
-    if (open) setTemplate(normaliseLabelTemplate(storedTemplate));
+    if (!open) return;
+    setTemplate(normaliseLabelTemplate(storedTemplate));
+    setPrintBlocked(false);
   }, [open, storedTemplate]);
 
   const baseUrl = useMemo(
@@ -110,13 +119,9 @@ export function PrintLabelsDialog({
   const set = <K extends keyof LabelTemplate>(key: K, value: LabelTemplate[K]) =>
     setTemplate((t) => ({ ...t, [key]: value }));
 
-  const print = () => {
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) return;
-    w.document.write(buildLabelSheetHtml(items, baseUrl, template));
-    w.document.close();
-    w.focus();
-    w.print();
+  const print = async () => {
+    const outcome = await printHtmlDocument(buildLabelSheetHtml(items, baseUrl, template));
+    setPrintBlocked(outcome === 'blocked');
   };
 
   return (
@@ -127,6 +132,12 @@ export function PrintLabelsDialog({
       description={`${cells.length} ${plural(cells.length, 'label')}`}
     >
       <div className="space-y-4">
+        {printBlocked ? (
+          <Banner tone="danger" role="alert" data-testid="labels-print-blocked">
+            {t('inventory.labels.printBlocked')}
+          </Banner>
+        ) : null}
+
         {truncated ? (
           <Banner tone="warning">
             {items.length} items selected — printing the first {MAX_LABELS}.
@@ -260,7 +271,11 @@ export function PrintLabelsDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={print} disabled={cells.length === 0} data-testid="print-labels-confirm">
+          <Button
+            onClick={() => void print()}
+            disabled={cells.length === 0}
+            data-testid="print-labels-confirm"
+          >
             <PrintIcon />
             Print {cells.length} {plural(cells.length, 'label')}
           </Button>
