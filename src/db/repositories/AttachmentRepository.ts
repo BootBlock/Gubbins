@@ -31,14 +31,45 @@ export interface UpdateAttachmentInput {
   readonly originDeviceId?: string | null;
 }
 
+/**
+ * The order an item's attachments are returned in, written once so the single-item read and the
+ * batched one cannot come to disagree about it. The batched read only prefixes `item_id` to
+ * group its rows; everything that decides the order *within* an item is this.
+ */
+const ITEM_ATTACHMENT_ORDER = 'position ASC, created_at ASC';
+
 export class AttachmentRepository extends BaseRepository {
   async listForItem(itemId: string): Promise<ItemAttachment[]> {
     const rows = await this.driver.query<ItemAttachmentRow>(
       `SELECT * FROM item_attachments WHERE item_id = ?
-       ORDER BY position ASC, created_at ASC;`,
+       ORDER BY ${ITEM_ATTACHMENT_ORDER};`,
       [itemId],
     );
     return rows.map(rowToItemAttachment);
+  }
+
+  /**
+   * Attachments for a **set** of items, keyed by item id (issue #527) — the batch companion to
+   * {@link listForItem}, so the Markdown-vault export reads one query per bucket of items
+   * instead of one per item. An item with no attachments is simply absent from the map; an
+   * empty input queries nothing.
+   */
+  async listForItems(itemIds: readonly string[]): Promise<Map<string, ItemAttachment[]>> {
+    const byItem = new Map<string, ItemAttachment[]>();
+    const unique = [...new Set(itemIds)];
+    if (unique.length === 0) return byItem;
+    const rows = await this.driver.query<ItemAttachmentRow>(
+      `SELECT * FROM item_attachments WHERE item_id IN (${unique.map(() => '?').join(', ')})
+       ORDER BY item_id, ${ITEM_ATTACHMENT_ORDER};`,
+      unique,
+    );
+    for (const row of rows) {
+      const attachment = rowToItemAttachment(row);
+      const list = byItem.get(attachment.itemId);
+      if (list) list.push(attachment);
+      else byItem.set(attachment.itemId, [attachment]);
+    }
+    return byItem;
   }
 
   async add(input: CreateAttachmentInput): Promise<ItemAttachment> {

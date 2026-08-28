@@ -87,15 +87,21 @@ const itemRepo = {
     ],
     hasMore: false,
   })),
-  getHistory: vi.fn(async () => ({ rows: [], hasMore: false })),
+  getHistoryForItems: vi.fn(async () => new Map()),
 };
 
-/** One image per item, both pointing at a full-resolution OPFS file (present or not per test). */
+/** One image for `i1`, pointing at a full-resolution OPFS file (present or not per test). */
 const imageRepo = {
-  listForItem: vi.fn(async (itemId: string) =>
-    itemId === 'i1'
-      ? [{ id: 'img1', fullResOpfsPath: 'images/abc.webp', thumbnailBlob: new Uint8Array([1, 2, 3]) }]
-      : [],
+  listForItems: vi.fn(
+    async (itemIds: readonly string[]) =>
+      new Map(
+        itemIds
+          .filter((id) => id === 'i1')
+          .map((id) => [
+            id,
+            [{ id: 'img1', fullResOpfsPath: 'images/abc.webp', thumbnailBlob: new Uint8Array([1, 2, 3]) }],
+          ]),
+      ),
   ),
 };
 
@@ -132,8 +138,8 @@ const locationRepo = {
 
 vi.mock('@/db/repositories', () => ({
   getReportRepository: () => reportRepo,
-  getAttachmentRepository: () => ({ listForItem: async () => [] }),
-  getCheckoutRepository: () => ({ listForItem: async () => ({ rows: [], hasMore: false }) }),
+  getAttachmentRepository: () => ({ listForItems: async () => new Map() }),
+  getCheckoutRepository: () => ({ listForItems: async () => [] }),
   getCategoryRepository: () => ({ listAll: async () => [] }),
   getContactRepository: () => ({ list: async () => ({ rows: [], hasMore: false }) }),
   getImageRepository: () => imageRepo,

@@ -819,6 +819,53 @@ export class ItemCoreRepository extends BaseRepository {
   }
 
   /**
+   * The newest `perItemLimit` Activity Log entries for each of a **set** of items, keyed by item
+   * id (issue #527) — the batch companion to {@link getHistory}, so the Markdown-vault export
+   * reads one query per bucket of items instead of one per item.
+   *
+   * The per-item cap is applied inside the query by ranking each item's entries with a window
+   * function, rather than by trimming a whole-set read afterwards: an item's log is unbounded,
+   * so a read that fetched every entry for every exported item and then threw most of them away
+   * would trade one problem for a larger one. The ranking orders exactly as {@link getHistory}
+   * does — `created_at DESC` with `rowid DESC` as the insertion-order tiebreak. The two orderings
+   * are written out separately because one is a window function and the other an `ORDER BY`, so
+   * what holds the claim up is a drift test that drives both reads over one log and compares:
+   * `batched-item-reads.test.ts`, "returns the same newest entries, in the same order, as the
+   * single-item read".
+   *
+   * An item with no history is simply absent from the map; an empty input queries nothing.
+   */
+  async getHistoryForItems(
+    itemIds: readonly string[],
+    perItemLimit: number,
+  ): Promise<Map<string, ItemHistoryEntry[]>> {
+    const byItem = new Map<string, ItemHistoryEntry[]>();
+    const unique = [...new Set(itemIds)];
+    if (unique.length === 0 || perItemLimit < 1) return byItem;
+    const rows = await this.driver.query<ItemHistoryRow>(
+      `SELECT * FROM (
+         SELECT item_history.*,
+                ROW_NUMBER() OVER (
+                  PARTITION BY item_history.item_id
+                  ORDER BY item_history.created_at DESC, item_history.rowid DESC
+                ) AS entry_rank
+         FROM item_history
+         WHERE item_history.item_id IN (${unique.map(() => '?').join(', ')})
+       )
+       WHERE entry_rank <= ?
+       ORDER BY item_id, entry_rank;`,
+      [...unique, perItemLimit] as SqlValue[],
+    );
+    for (const row of rows) {
+      const entry = rowToHistoryEntry(row);
+      const list = byItem.get(entry.itemId);
+      if (list) list.push(entry);
+      else byItem.set(entry.itemId, [entry]);
+    }
+    return byItem;
+  }
+
+  /**
    * Clear one item's Activity Log (issue #620), leaving a single `HISTORY_CLEARED` entry
    * that records who cleared it and how many entries went. The ledger is append-only, and
    * this is the only operation that removes **one item's** entries — the §7.6.3-A retention
