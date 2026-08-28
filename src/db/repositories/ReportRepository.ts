@@ -1401,7 +1401,7 @@ export class ReportRepository extends BaseRepository {
       // The predicate is the SSOT fragment `ItemRepository.listLowStock` selects rows with, not a
       // restatement of it: this count is the headline figure printed *above* that feed's rows on
       // the dashboard widget and the nav tile, so a divergence would show as a total that
-      // disagrees with the list under it (issue #606). It used to be spelled out here.
+      // disagrees with the list under it (issue #606).
       `SELECT COUNT(*) AS n FROM items WHERE is_active = 1 AND ${lowStockPredicateSql()};`,
       [qty, qty, pct, pct],
     );

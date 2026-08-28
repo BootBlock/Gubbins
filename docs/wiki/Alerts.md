@@ -23,8 +23,8 @@ Alerts pulls together the things that are *wrong now or soon*:
 Each alert links straight to the thing that raised it, so you can act on it in a click.
 
 If one category has more alerts than the screen can list at once, Gubbins shows the **most urgent**
-of them and says, under that category's heading, how many there are in total. Nothing is hidden
-without being counted.
+of them and says so under that category's heading — with the full total where it has one, and
+otherwise simply that there are more. A short list is never passed off as the whole set.
 
 > **💡 Tip**
 > The inventory **status chips** mirror these categories, so you can filter your item list to just

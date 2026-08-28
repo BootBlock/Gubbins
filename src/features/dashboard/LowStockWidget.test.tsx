@@ -172,6 +172,23 @@ describe('LowStockWidget — on-order affordance', () => {
     }
   });
 
+  it('states the whole catalogue as the headline, not the page of rows it lists', () => {
+    // The tile reads one bounded page and lists three of it, so counting the rows in hand made
+    // the headline the page size on any inventory with more than a page of low items (issue
+    // #606). Driving the count apart from the feed is what makes that visible here: with the
+    // old `rows.length` the tile would read 3.
+    spies.lowStock.mockReturnValue({
+      data: { rows: [low({ id: 'a', name: 'Aaa' }), low({ id: 'b', name: 'Bbb' })] },
+      isPending: false,
+      isError: false,
+    });
+    spies.lowStockCount.mockReturnValue(4231);
+
+    renderWidget();
+    expect(screen.getByText('4,231')).toBeInTheDocument();
+    expect(screen.queryByText('2')).toBeNull();
+  });
+
   it('renders healthy state (no on-order query fired) when nothing is low', () => {
     spies.lowStock.mockReturnValue({ data: { rows: [] }, isPending: false, isError: false });
     spies.onOrder.mockReturnValue({ data: undefined });

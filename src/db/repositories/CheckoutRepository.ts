@@ -464,7 +464,9 @@ export class CheckoutRepository extends BaseRepository {
    * {@link overdueCheckoutExistsSql} this shares its predicate with.
    */
   async countOpen(now: number): Promise<{ open: number; overdue: number }> {
-    const row = await this.driver.queryOne<{ open_count: number; overdue_count: number }>(
+    // `overdue_count` admits null in the type because `SUM(...)` over zero rows really is SQL
+    // NULL — declaring it a number is what would let a later caller drop the guard below.
+    const row = await this.driver.queryOne<{ open_count: number; overdue_count: number | null }>(
       `SELECT COUNT(*) AS open_count,
               SUM(CASE WHEN ${OVERDUE_CHECKOUT_PREDICATE} THEN 1 ELSE 0 END) AS overdue_count
        FROM checkouts k

@@ -303,7 +303,7 @@ export function AlertsScreen() {
   const announcedRef = useRef(false);
   // A lane showing a prefix makes the spoken figure a floor rather than a total, so the copy
   // hedges to match — a screen-reader user is told "at least N", never a page size dressed up
-  // as the whole (issue #606). Threaded as a boolean so the effect re-runs when it changes.
+  // as the whole (issue #606). Taken as a boolean because the Set is a fresh identity each render.
   const anyTruncated = truncatedKinds.size > 0;
   useEffect(() => {
     if (isLoading || announcedRef.current) return;
@@ -320,11 +320,7 @@ export function AlertsScreen() {
             }),
       );
     }
-    // `t` is stable for a given language and deliberately not a dependency: the announcement
-    // fires once per load (`announcedRef`), and re-running it on a language switch would
-    // re-announce a count the user has already heard.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, isError, alerts.length, anyTruncated]);
+  }, [t, isLoading, isError, alerts.length, anyTruncated]);
 
   return (
     <PageContainer>

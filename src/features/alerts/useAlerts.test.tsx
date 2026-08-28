@@ -258,6 +258,45 @@ describe('useAlerts — Warranty off', () => {
  * `alerts.test.ts`; what matters here is the wiring — that the hook actually reconciles the
  * store against the live feed, and that it holds off while the feed can't be trusted.
  */
+/**
+ * Which lanes are reported as showing a prefix of themselves (issue #606).
+ *
+ * The page envelope sets `hasMore` from `rows.length === limit`, so a lane holding *exactly* one
+ * page raises it with nothing behind the rows. Believed alone that lane gets a notice reading
+ * "Showing the 100 most urgent of 100." and has its count spoken as a floor, so the lane's own
+ * `COUNT(*)` settles the ambiguity where one has been read.
+ */
+describe('useAlerts — truncation is decided by the total, not by a full page', () => {
+  /** The hook with totals on, its low-stock lane holding `rows` out of a stated `total`. */
+  function truncatedKinds(rows: number, total: number | undefined): Set<AlertKind> {
+    h.useLowStockItems.mockReturnValue({
+      data: {
+        rows: Array.from({ length: rows }, (_, i) => ({ id: `low-${i}`, name: `Low ${i}` })),
+        hasMore: true,
+      },
+      isLoading: false,
+      isError: false,
+    });
+    h.useLowStockCount.mockReturnValue({ data: total, isLoading: false, isError: false });
+    const { result } = renderHook(() => useAlerts({ withTotals: true }));
+    return new Set(result.current.truncatedKinds);
+  }
+
+  it('does not call a lane truncated when its total is the page it returned', () => {
+    expect(truncatedKinds(100, 100).has('low-stock')).toBe(false);
+  });
+
+  it('calls it truncated when the total genuinely exceeds the rows read', () => {
+    expect(truncatedKinds(100, 4231).has('low-stock')).toBe(true);
+  });
+
+  it('falls back to the full page when no total has been read', () => {
+    // Conservative on purpose: with nothing to compare against, a full page may or may not have
+    // more behind it, and saying so beats claiming completeness the hook cannot prove.
+    expect(truncatedKinds(100, undefined).has('low-stock')).toBe(true);
+  });
+});
+
 describe('useAlerts — dismissal pruning', () => {
   const LONG_AGO = Date.now() - 60 * DAY_MS;
 

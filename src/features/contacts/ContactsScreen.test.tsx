@@ -72,6 +72,8 @@ let contactsState: { isLoading: boolean; isError?: boolean; data?: { rows: Conta
 let contactCountState: number | undefined;
 /** The same, for the loan board's totals — the case a page of loans cannot show (issue #606). */
 let openCountState: { open: number; overdue: number } | undefined;
+/** Fails the totals query while the feed itself succeeds — they are two queries, so they can. */
+let openCountErrored = false;
 const refetchOpen = vi.fn();
 const refetchContacts = vi.fn();
 
@@ -84,6 +86,7 @@ vi.mock('./contacts', () => ({
    */
   useOpenCheckoutCounts: () => {
     const rows = openCheckoutsState.data?.rows ?? [];
+    if (openCountErrored) return { isLoading: false, isError: true, data: undefined };
     return {
       isLoading: openCheckoutsState.isLoading,
       isError: openCheckoutsState.isError,
@@ -162,6 +165,7 @@ beforeEach(() => {
   contactsState = { isLoading: true };
   contactCountState = undefined;
   openCountState = undefined;
+  openCountErrored = false;
   refetchOpen.mockClear();
   refetchContacts.mockClear();
 });
@@ -331,6 +335,26 @@ describe('ContactsScreen — a loan board longer than one read (issue #606)', ()
     openCheckoutsState = { isLoading: false, data: { rows: [makeCheckout('k1', false)] } };
     render(<ContactsScreen />);
 
+    expect(screen.queryByTestId('loans-truncated')).toBeNull();
+  });
+});
+
+/**
+ * The board's figures and its rows come from two queries now, so the count can fail on its own.
+ * When it does the summary must fall back to the loans in hand — an understated figure over a
+ * visible list, never "nothing checked out" announced above one (the shape of issue #306).
+ */
+describe('ContactsScreen — the loan totals fail on their own', () => {
+  it('counts the rows in hand rather than announcing an empty board', () => {
+    openCheckoutsState = {
+      isLoading: false,
+      data: { rows: [makeCheckout('k1', true), makeCheckout('k2', false)] },
+    };
+    openCountErrored = true;
+    render(<ContactsScreen />);
+
+    expect(screen.getByTestId('contacts-on-loan-live').textContent).toBe('2 items on loan, 1 overdue.');
+    expect(screen.getByText('1 overdue')).toBeInTheDocument();
     expect(screen.queryByTestId('loans-truncated')).toBeNull();
   });
 });

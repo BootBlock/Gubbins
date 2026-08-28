@@ -86,11 +86,12 @@ export function ContactsScreen() {
   const onLoan = open.data?.rows ?? [];
   // Both figures come from the repository's own count over every open loan, not from the rows in
   // hand: the list is one bounded page, so counting it stated the page size as the board (issue
-  // #606) — the same defect the dictionary below was given a notice for in #149. `?? 0` while the
-  // count is in flight; the summary is only read once it settles.
+  // #606) — the same defect the dictionary below was given a notice for in #149. When the count
+  // is unavailable they fall back to the rows, exactly as `totalContacts` does below: an
+  // understated figure over a visible list beats announcing "nothing checked out" above one.
   const loanCounts = useOpenCheckoutCounts();
-  const overdueCount = loanCounts.data?.overdue ?? 0;
-  const onLoanCount = loanCounts.data?.open ?? 0;
+  const overdueCount = loanCounts.data?.overdue ?? onLoan.filter((c) => c.isOverdue).length;
+  const onLoanCount = loanCounts.data?.open ?? onLoan.length;
   // How many open loans the page leaves unreachable — the "On loan" list has no pager of its
   // own, so this is a notice rather than a control, exactly like the unpaginated dictionary.
   const hiddenLoans = Math.max(0, onLoanCount - onLoan.length);

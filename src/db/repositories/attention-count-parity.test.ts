@@ -136,26 +136,54 @@ describe('attention feeds — every total counts what its feed returns (issue #6
     await maintenance.logPerformed(service.id, at - 30 * DAY, 'overdue by weeks');
     await maintenance.logPerformed(sharpen.id, at - DAY, 'done yesterday');
 
+    // A USAGE schedule is due on its logged counter rather than a date. Both bases are seeded, so
+    // an edit to either arm of the shared due-ness predicate shows up here.
+    const press = await items.create({ name: 'Press', quantity: 1, locationId: drawerId });
+    const lathe = await items.create({ name: 'Lathe', quantity: 1, locationId: drawerId });
+    const grease = await maintenance.create({
+      itemId: press.id,
+      name: 'Grease',
+      basis: 'USAGE',
+      intervalUsage: 10,
+      usageUnit: 'cycles',
+    });
+    await maintenance.create({
+      itemId: lathe.id,
+      name: 'Calibrate',
+      basis: 'USAGE',
+      intervalUsage: 10_000,
+      usageUnit: 'cycles',
+    });
+    await maintenance.addUsage(grease.id, 25);
+
     const page = await maintenance.listDue(at, { limit: 100 });
     await expect(maintenance.countDue(at)).resolves.toBe(page.rows.length);
-    expect(page.rows.map((r) => r.itemName)).toEqual(['Drill']);
+    expect(page.rows.map((r) => r.itemName).sort()).toEqual(['Drill', 'Press']);
   });
 
-  it('countOpen matches listOpen, and its overdue arm matches the same rule the rows carry', async () => {
+  it('countOpen matches listOpen, and its overdue arm matches the flag the rows carry', async () => {
+    // `listOpen` derives each row's `isOverdue` against the real clock (it injects no `now`), so
+    // the due dates and the count are both anchored there — comparing a fixed instant against a
+    // live one would make the two disagree by construction rather than by drift.
+    const at = Date.now();
     const late = await items.create({ name: 'Late tool', quantity: 3, locationId: drawerId });
     const soon = await items.create({ name: 'Due later', quantity: 3, locationId: drawerId });
     const undated = await items.create({ name: 'No due date', quantity: 3, locationId: drawerId });
-    await checkouts.checkout({ itemId: late.id, contactName: 'Ada', quantity: 1, dueDate: NOW - DAY });
-    await checkouts.checkout({ itemId: soon.id, contactName: 'Ada', quantity: 1, dueDate: NOW + DAY });
+    await checkouts.checkout({ itemId: late.id, contactName: 'Ada', quantity: 1, dueDate: at - DAY });
+    await checkouts.checkout({ itemId: soon.id, contactName: 'Ada', quantity: 1, dueDate: at + DAY });
     await checkouts.checkout({ itemId: undated.id, contactName: 'Ada', quantity: 1 });
     // A returned loan is not open, so neither figure may include it.
     const returned = await checkouts.checkout({ itemId: soon.id, contactName: 'Grace', quantity: 1 });
     await checkouts.checkIn(returned.id);
 
     const page = await checkouts.listOpen({ limit: 100 });
-    const counts = await checkouts.countOpen(NOW);
+    const counts = await checkouts.countOpen(at);
     expect(counts.open).toBe(page.rows.length);
-    expect(counts.overdue).toBe(page.rows.filter((r) => r.dueDate !== null && r.dueDate < NOW).length);
+    // Against `isOverdue` — the flag the Overdue widget and the Contacts list actually render —
+    // rather than the rule restated here. The SQL count is the tile's headline and the flag
+    // decides which rows carry a "days overdue" badge beneath it, so those two are the pair that
+    // must not drift; recomputing the rule here would leave the flag free to change alone.
+    expect(counts.overdue).toBe(page.rows.filter((r) => r.isOverdue).length);
     expect(counts).toEqual({ open: 3, overdue: 1 });
   });
 

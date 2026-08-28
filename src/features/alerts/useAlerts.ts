@@ -308,17 +308,37 @@ export function useAlerts(options: { withTotals?: boolean } = {}): {
   }, [settled, liveIdKey, completeKindKey]);
 
   /**
-   * The mirror image of {@link completeKinds}: lanes that have answered and said there is more
-   * behind what they returned. Only meaningful once a lane is on and has loaded — a disabled or
+   * The mirror image of {@link completeKinds}: lanes showing a prefix of themselves rather than
+   * the whole of it. Only meaningful once a lane is on and has loaded — a disabled or
    * still-loading lane is not "truncated", it simply has nothing to say yet — so `hasMore` is
-   * again read strictly rather than negating `complete`, which would grade every unloaded lane
-   * as cut short.
+   * read strictly rather than by negating `complete`, which would grade every unloaded lane as
+   * cut short.
+   *
+   * **`hasMore` alone is not the answer.** The page envelope sets it from `rows.length === limit`
+   * (see `BaseRepository.toPage`), so a lane holding *exactly* one page reports it with nothing
+   * behind the rows. Believed on its own, that lane would be captioned "Showing the 100 most
+   * urgent of 100." and its count spoken as a floor. Where the lane's own `COUNT(*)` is in hand,
+   * that ambiguity is settled by arithmetic instead: it is truncated only when the total genuinely
+   * exceeds the rows read. Without a total — a caller that asked for none, or a count that has not
+   * answered — the conservative `hasMore` reading stands, exactly as `readAllPages` hedges a full
+   * final page.
    */
+  const pagedTruncated = (
+    query: { data?: { rows: readonly unknown[]; hasMore: boolean } },
+    laneOn: boolean,
+    total: number | undefined,
+  ): boolean => {
+    if (!laneOn || query.data?.hasMore !== true) return false;
+    return total === undefined || total > query.data.rows.length;
+  };
+
   const truncatedKinds = new Set<AlertKind>();
-  if (lowStockOn && lowStockQuery.data?.hasMore === true) truncatedKinds.add('low-stock');
-  if (perishablesOn && expiringQuery.data?.hasMore === true) truncatedKinds.add('expiry');
-  if (maintenanceOn && maintenanceDueQuery.data?.hasMore === true) truncatedKinds.add('maintenance-due');
-  if (warrantyOn && warrantyQuery.data?.hasMore === true) truncatedKinds.add('warranty-due');
+  if (pagedTruncated(lowStockQuery, lowStockOn, lowStockTotal.data)) truncatedKinds.add('low-stock');
+  if (pagedTruncated(expiringQuery, perishablesOn, expiringTotal.data)) truncatedKinds.add('expiry');
+  if (pagedTruncated(maintenanceDueQuery, maintenanceOn, maintenanceTotal.data)) {
+    truncatedKinds.add('maintenance-due');
+  }
+  if (pagedTruncated(warrantyQuery, warrantyOn, warrantyTotal.data)) truncatedKinds.add('warranty-due');
   if (customFieldsOn && fieldDueQuery.data?.truncated === true) truncatedKinds.add('field-due');
 
   /**
