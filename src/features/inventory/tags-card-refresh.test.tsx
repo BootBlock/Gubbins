@@ -37,10 +37,10 @@ vi.mock('@/db/repositories', async (importOriginal) => ({
 
 const { useItemsTags, useSetItemTags } = await import('./tags');
 
+/** One client per test, so a wrapper re-render can never discard the cache mid-assertion. */
+let client: QueryClient;
+
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
@@ -52,6 +52,9 @@ function useCardAndEditor() {
 beforeEach(() => {
   stored = ['fragile'];
   vi.clearAllMocks();
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
 });
 
 describe('on-card Tags field after a tag write', () => {

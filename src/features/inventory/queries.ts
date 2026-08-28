@@ -173,7 +173,8 @@ export const inventoryKeys = {
    *  write names this prefix rather than trying to name each window's ids. */
   itemsTagsAll: () => [...inventoryKeys.items(), 'tags-batch'] as const,
   /** Tags for a set of on-screen items in one round-trip (the item-card Tags field, issue #84);
-   *  under items() so any item/tag write refreshes it by prefix. */
+   *  under items() so any *item* write refreshes it by prefix. A *tag* write touches no item row,
+   *  so it names `itemsTagsAll()` explicitly (see `useSetItemTags`). */
   itemsTags: (itemIds: readonly string[]) => [...inventoryKeys.itemsTagsAll(), itemIds] as const,
   /** One location's assigned tags (issue #84); under locations() so a tag/location write
    *  refreshes it by prefix. */
