@@ -589,14 +589,6 @@ export function toCatalogueLine(item: CatalogueItemInput, now: number, decimals:
   };
 }
 
-/** How the catalogue's sections are grouped and how lines are ordered inside them. */
-export interface CatalogueViewOptions {
-  /** How sections are grouped (default `location`). */
-  readonly groupBy?: CatalogueGroupBy;
-  /** How lines are ordered within a section (default `name`). */
-  readonly sortBy?: CatalogueSortBy;
-}
-
 /** A running merge of the tallies that fold into one printed section. */
 interface SectionAccumulator {
   itemCount: number;

@@ -2892,6 +2892,41 @@ describe('ReportRepository', () => {
       }
     });
 
+    /**
+     * Issue #683, at the totals. A gauge's line is *quantified* by its contents — 400 g reads as
+     * "400 g" on the page — but a section's "in stock" figure is a count of units, and grams are
+     * not a count. Drop the `WHEN isGauge THEN 0` arm from the summary's quantity `SUM` and the
+     * spool's 400 g is silently added to the units in stock; this is the test that goes red.
+     */
+    it('values a gauge from its contents but keeps its measure out of the in-stock count', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      await items.create({ name: 'Bolt', locationId: shelf.id, quantity: 3, unitCost: 2 });
+      await items.create({
+        name: 'Spool',
+        locationId: shelf.id,
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: {
+          unitOfMeasure: 'g',
+          grossCapacity: 1000,
+          tareWeight: 0,
+          currentNetValue: 400,
+          costPerUnitOfMeasure: 0.025,
+        },
+      });
+
+      const catalogue = await readCatalogue({ kind: 'all' });
+      const spool = catalogue.groups[0].lines.find((l) => l.name === 'Spool')!;
+      // The line is quantified and valued by what it holds — 400 g at 0.025 is 10.
+      expect(spool.quantity).toBe(400);
+      expect(spool.measured).toBe(true);
+      expect(spool.lineValue).toBe(10);
+      // …and the section and document totals count the bolts only, while valuing both.
+      expect(catalogue.groups[0].totalQuantity).toBe(3);
+      expect(catalogue.totalQuantity).toBe(3);
+      expect(catalogue.groups[0].subtotal).toBe(16);
+      expect(catalogue.grandTotal).toBe(16);
+    });
+
     it('reports a scope nothing prices as having no value at all', async () => {
       const shelf = await locations.create({ name: 'Shelf A' });
       await items.create({ name: 'Plain', locationId: shelf.id, quantity: 2 });

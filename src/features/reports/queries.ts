@@ -392,16 +392,58 @@ export function useInsuranceSchedulePage(
 }
 
 /**
- * Load **every** line of the insurance schedule, room by room, for printing.
+ * Load **every** line of a grouped, paged document, section by section, for printing.
  *
  * Deliberately not a cached query. A full document is the one read whose size scales with the
  * inventory, so it is materialised only when the reader explicitly asks to print, reported on
- * while it loads, abortable, and dropped as soon as the print is done — rather than sat in the
- * query cache holding megabytes of thumbnails alive (issue #163).
+ * while it loads, abortable, and dropped as soon as the print is over — rather than sat in the
+ * query cache holding megabytes of rows (and, with photos on, their thumbnails) alive (issue
+ * #163).
  *
- * Rooms are walked in the summary's order and each is paged at the repository ceiling, so no
+ * Sections are walked in the summary's order and each is paged at the repository ceiling, so no
  * single read is unbounded even though the assembled result is the whole document.
+ *
+ * Both printable documents load this way, so there is one implementation rather than two that
+ * would have to be proved equivalent — the same reason `scheduleSlices` and the catalogue's
+ * paging share {@link sliceGroupsForPage} (issue #410). A caller supplies only what differs:
+ * how to fetch one section's page, what to key the assembled sections by, and what the abort
+ * says it cancelled.
  */
+async function loadFullDocumentLines<TGroup extends { readonly itemCount: number }, TLine>(
+  groups: readonly TGroup[],
+  options: {
+    /** Fetch one bounded page of `group`, starting at `offset`. */
+    readonly fetchPage: (group: TGroup, offset: number, limit: number) => Promise<readonly TLine[]>;
+    /** The key the assembled document is addressed by — the section's own stable id. */
+    readonly keyOf: (group: TGroup) => string | null;
+    /** What an abort reports it cancelled, for the reader's status line. */
+    readonly cancelledMessage: string;
+  },
+  onProgress: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<Map<string | null, TLine[]>> {
+  const total = groups.reduce((sum, g) => sum + g.itemCount, 0);
+  const byGroup = new Map<string | null, TLine[]>();
+  let loaded = 0;
+
+  for (const group of groups) {
+    const lines: TLine[] = [];
+    while (lines.length < group.itemCount) {
+      if (signal?.aborted) throw new DOMException(options.cancelledMessage, 'AbortError');
+      const rows = await options.fetchPage(group, lines.length, MAX_PAGE_SIZE);
+      // A section that shrank mid-read would otherwise spin forever waiting for rows that no
+      // longer exist; the count came from a summary read a moment earlier, not this instant.
+      if (rows.length === 0) break;
+      lines.push(...rows);
+      loaded += rows.length;
+      onProgress(Math.min(loaded, total), total);
+    }
+    byGroup.set(options.keyOf(group), lines);
+  }
+  return byGroup;
+}
+
+/** Load every line of the insurance schedule, room by room, for printing (issue #163). */
 export async function loadFullScheduleLines(
   groups: readonly ScheduleGroupSummary[],
   includePhotos: boolean,
@@ -409,29 +451,17 @@ export async function loadFullScheduleLines(
   signal?: AbortSignal,
 ): Promise<Map<string | null, ScheduleLine[]>> {
   const repo = getReportRepository();
-  const total = groups.reduce((sum, g) => sum + g.itemCount, 0);
-  const byLocation = new Map<string | null, ScheduleLine[]>();
-  let loaded = 0;
-
-  for (const group of groups) {
-    const lines: ScheduleLine[] = [];
-    while (lines.length < group.itemCount) {
-      if (signal?.aborted) throw new DOMException('Schedule preparation cancelled', 'AbortError');
-      const page = await repo.insuranceScheduleGroupPage(
-        group.locationId,
-        { limit: MAX_PAGE_SIZE, offset: lines.length },
-        { includePhotos },
-      );
-      // A room that shrank mid-read would otherwise spin forever waiting for rows that no
-      // longer exist; the count came from a summary read a moment earlier, not this instant.
-      if (page.rows.length === 0) break;
-      lines.push(...page.rows);
-      loaded += page.rows.length;
-      onProgress(Math.min(loaded, total), total);
-    }
-    byLocation.set(group.locationId, lines);
-  }
-  return byLocation;
+  return loadFullDocumentLines(
+    groups,
+    {
+      fetchPage: async (group, offset, limit) =>
+        (await repo.insuranceScheduleGroupPage(group.locationId, { limit, offset }, { includePhotos })).rows,
+      keyOf: (group) => group.locationId,
+      cancelledMessage: 'Schedule preparation cancelled',
+    },
+    onProgress,
+    signal,
+  );
 }
 
 /**
@@ -501,17 +531,7 @@ export function usePartsCataloguePage(
   });
 }
 
-/**
- * Load **every** line of the catalogue, section by section, for printing.
- *
- * Deliberately not a cached query. A full document is the one read whose size scales with the
- * scope, so it is materialised only when the reader explicitly asks to print, reported on while
- * it loads, abortable, and dropped once the print is over — rather than sat in the query cache
- * holding a whole inventory (and, with the Photo column on, its thumbnails) alive.
- *
- * Sections are walked in the summary's order and each is paged at the repository ceiling, so no
- * single read is unbounded even though the assembled result is the whole document.
- */
+/** Load every line of the parts catalogue, section by section, for printing (issue #410). */
 export async function loadFullCatalogueLines(
   scope: CatalogueScope,
   groups: readonly CatalogueGroupSummary[],
@@ -520,30 +540,17 @@ export async function loadFullCatalogueLines(
   signal?: AbortSignal,
 ): Promise<Map<string | null, CatalogueLine[]>> {
   const repo = getReportRepository();
-  const total = groups.reduce((sum, g) => sum + g.itemCount, 0);
-  const byGroup = new Map<string | null, CatalogueLine[]>();
-  let loaded = 0;
-
-  for (const group of groups) {
-    const lines: CatalogueLine[] = [];
-    while (lines.length < group.itemCount) {
-      if (signal?.aborted) throw new DOMException('Catalogue preparation cancelled', 'AbortError');
-      const page = await repo.partsCatalogueGroupPage(
-        scope,
-        group.ref,
-        { limit: MAX_PAGE_SIZE, offset: lines.length },
-        options,
-      );
-      // A section that shrank mid-read would otherwise spin forever waiting for rows that no
-      // longer exist; the count came from a summary read a moment earlier, not this instant.
-      if (page.rows.length === 0) break;
-      lines.push(...page.rows);
-      loaded += page.rows.length;
-      onProgress(Math.min(loaded, total), total);
-    }
-    byGroup.set(group.groupId, lines);
-  }
-  return byGroup;
+  return loadFullDocumentLines(
+    groups,
+    {
+      fetchPage: async (group, offset, limit) =>
+        (await repo.partsCatalogueGroupPage(scope, group.ref, { limit, offset }, options)).rows,
+      keyOf: (group) => group.groupId,
+      cancelledMessage: 'Catalogue preparation cancelled',
+    },
+    onProgress,
+    signal,
+  );
 }
 
 /**

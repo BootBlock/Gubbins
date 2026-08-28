@@ -85,8 +85,9 @@ const WIDGET = {
 };
 
 /** The bounded summary read: one section, one line, priced — so the totals show. */
-const summaryState: { isError: boolean; data?: Record<string, unknown> } = {
+const summaryState: { isError: boolean; isPlaceholderData?: boolean; data?: Record<string, unknown> } = {
   isError: false,
+  isPlaceholderData: false,
   data: {
     groups: [
       {
@@ -155,6 +156,7 @@ afterEach(() => {
   useCatalogueLaunch.setState({ pendingScope: null });
   (summaryState.data as { itemCount: number }).itemCount = 1;
   summaryState.isError = false;
+  summaryState.isPlaceholderData = false;
   pageArgs = [];
   loadFull.mockClear();
   qrSvgOrNull.mockClear();
@@ -413,6 +415,24 @@ describe('CatalogueScreen', () => {
       data.itemCount = 500;
       render(<CatalogueScreen />);
       expect(screen.getByTestId('catalogue-pagination')).toBeTruthy();
+    });
+
+    /**
+     * The summary read keeps the previous document on screen while a new one loads, so
+     * `summary.data` can describe the scope the reader has just *left*. A page is addressed
+     * through that document's section refs, so slicing the stale one would fetch rows for
+     * sections the new headings do not contain — a request that succeeds, caches under the new
+     * key, and leaves the reader on a blank document nothing will correct.
+     */
+    it('leaves the page read idle while the summary still describes the previous scope', () => {
+      summaryState.isPlaceholderData = true;
+      render(<CatalogueScreen />);
+
+      // (scope, groups, …) — no sections handed over, so the hook's own `enabled` gate holds it.
+      expect(pageArgs[1]).toBeUndefined();
+      // …and nothing may speak for a scope whose size is not known yet.
+      expect(screen.getByTestId('print-catalogue').hasAttribute('disabled')).toBe(true);
+      expect(screen.queryByTestId('catalogue-print-size')).toBeNull();
     });
 
     it('says so when a section is only partly on the page', () => {

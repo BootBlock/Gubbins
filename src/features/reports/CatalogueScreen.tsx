@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { assertExhaustive } from '@/lib/exhaustive';
 import {
@@ -64,6 +64,7 @@ import {
 } from './parts-catalogue';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { loadFullCatalogueLines, usePartsCatalogueSummary, usePartsCataloguePage } from './queries';
+import { usePreparedDocumentPrint } from './usePreparedDocumentPrint';
 import { useCatalogueLaunch } from './useCatalogueLaunch';
 
 /** Render context threaded to {@link renderField} — the formatters plus the per-item QR SVGs. */
@@ -264,30 +265,53 @@ export function CatalogueScreen() {
       : []),
   ];
 
-  // The concrete scope to query — null while the reader hasn't finished choosing (no location /
-  // project picked, or a "selection" scope with nothing handed in), which keeps the query idle.
-  const scope: CatalogueScope | null =
-    scopeKind === 'all'
-      ? { kind: 'all' }
-      : scopeKind === 'location'
-        ? locationId
-          ? { kind: 'location', locationId }
-          : null
-        : scopeKind === 'project'
-          ? projectId
-            ? { kind: 'project', projectId }
+  /**
+   * The concrete scope to query — null while the reader hasn't finished choosing (no location /
+   * project picked, or a "selection" scope with nothing handed in), which keeps the query idle.
+   *
+   * Memoised because its **identity** is load-bearing, not just its contents: a prepared print
+   * document is dropped whenever the settings it was built under change, and those settings are
+   * carried by the identity of the loader closed over this. A fresh object each render would
+   * drop the document in the same commit that loaded it, and the Print button would never reach
+   * the printer. (The query keys hash structurally, so they never minded either way.)
+   */
+  const scope: CatalogueScope | null = useMemo(
+    () =>
+      scopeKind === 'all'
+        ? { kind: 'all' }
+        : scopeKind === 'location'
+          ? locationId
+            ? { kind: 'location', locationId }
             : null
-          : selectionIds.length > 0
-            ? { kind: 'items', itemIds: selectionIds }
-            : null;
+          : scopeKind === 'project'
+            ? projectId
+              ? { kind: 'project', projectId }
+              : null
+            : selectionIds.length > 0
+              ? { kind: 'items', itemIds: selectionIds }
+              : null,
+    [scopeKind, locationId, projectId, selectionIds],
+  );
 
   // The document's shape and totals: one bounded read, whatever the scope's size (issue #410).
   // Section headings, per-section counts and every total come from here; the lines beneath them
   // are fetched a page at a time below.
   const summary = usePartsCatalogueSummary(scope, groupBy);
+  /**
+   * The summary describes the scope and grouping **currently chosen**, rather than the previous
+   * one still on screen.
+   *
+   * The read keeps the previous document visible while a new one loads (`keepPreviousData`), so
+   * `summary.data` alone cannot be trusted to speak for the new choice — and everything below
+   * either speaks for it or reads from it. A page is addressed *through* this document's section
+   * refs, so slicing the previous document's sections would fetch rows for sections the new
+   * headings do not contain: the request succeeds, caches under the new key, and leaves the
+   * reader on a blank document that nothing will correct.
+   */
+  const summaryReady = !summary.isPlaceholderData && summary.data !== undefined;
   const itemCount = summary.data?.itemCount ?? 0;
   const printLimit = cataloguePrintLimit(fields);
-  const tooLarge = itemCount > printLimit;
+  const tooLarge = summaryReady && itemCount > printLimit;
 
   const [page, setPage] = useState(1);
   const totalPages = pageCount(itemCount, defaultPageSize);
@@ -303,7 +327,8 @@ export function CatalogueScreen() {
   const photosOn = fields.has('photo');
   const pageQuery = usePartsCataloguePage(
     scope,
-    summary.data?.groups,
+    // Withheld until the sections belong to the chosen scope — the hook stays idle without them.
+    summaryReady ? summary.data!.groups : undefined,
     (page - 1) * defaultPageSize,
     defaultPageSize,
     { includePhotos: photosOn, groupBy, sortBy },
@@ -345,7 +370,14 @@ export function CatalogueScreen() {
   // rendering a silently blank column.
   const qrTooLong = qrColumnOn && qrByLine !== null && pageLines.length > 0 && qrByLine.size === 0;
 
-  const print = usePreparedCataloguePrint(scope, summary.data, { includePhotos: photosOn, sortBy }, t);
+  const print = usePreparedCataloguePrint(
+    scope,
+    // Same reason: a full document assembled from the previous scope's sections would print as a
+    // complete catalogue holding none of the chosen scope's items.
+    summaryReady ? summary.data : undefined,
+    { includePhotos: photosOn, sortBy },
+    t,
+  );
 
   // The @page running header + page-number CSS, injected as a <style> only when enabled.
   const pageStyle = buildCataloguePageStyle({
@@ -363,11 +395,19 @@ export function CatalogueScreen() {
     });
   };
 
-  const empty = scope !== null && summary.data != null && summary.data.itemCount === 0;
+  const empty = summaryReady && itemCount === 0;
   const needsChoice = scope === null;
+  /**
+   * The chosen scope's shape is not known yet.
+   *
+   * While it isn't, any document on screen belongs to the *previous* scope, and nothing can say
+   * how long the new one is or whether it is printable — so neither the size readout nor the
+   * Print button may speak for it (issue #338).
+   */
+  const sizing = !needsChoice && !summaryReady;
   // The size of the print job, stated before the browser's own dialog can open. Only meaningful
   // once the document's shape is known — there is nothing to print until then.
-  const showPrintSize = !needsChoice && !empty && summary.data != null;
+  const showPrintSize = !needsChoice && !sizing && !empty;
 
   // A long print asks first (issue #338), then the whole document is loaded before the browser's
   // print dialog is raised — see `usePreparedCataloguePrint`.
@@ -403,7 +443,7 @@ export function CatalogueScreen() {
                   "Add item" on the Inventory screen) so the next action is obvious. */}
               <Button
                 onClick={requestPrint}
-                disabled={needsChoice || empty || tooLarge || print.busy || !summary.data}
+                disabled={needsChoice || sizing || empty || tooLarge || print.busy}
                 aria-busy={print.busy}
                 data-testid="print-catalogue"
               >
@@ -832,15 +872,12 @@ function useQrByLine(
 }
 
 /**
- * Drive the "prepare the whole document, then print" flow.
+ * Drive the Print button for the catalogue: assemble the whole document, then print it.
  *
- * The document is loaded into state and `window.print()` is called from an effect once React has
- * committed it — never synchronously from the click handler, which would raise the print dialog
- * against a half-built page. When the Photo column is on, every image is decoded first or the
- * thumbnails print blank. `afterprint` drops the document again so a whole catalogue's rows are
- * not held alive once the print is over, and a prepared document is dropped whenever the columns,
- * the sort or the underlying summary change — a document that no longer matches the settings it
- * was built under is a wrong document, not a stale one.
+ * The mechanics — printing from an effect after the commit, decoding images first, dropping the
+ * document on `afterprint` — are {@link usePreparedDocumentPrint}, shared with the insurance
+ * schedule. This only says what a catalogue's document *is*, and memoises that on every setting
+ * it depends on, which is what lets the shared hook drop a document that no longer matches them.
  */
 function usePreparedCataloguePrint(
   scope: CatalogueScope | null,
@@ -848,74 +885,25 @@ function usePreparedCataloguePrint(
   options: { readonly includePhotos: boolean; readonly sortBy: CatalogueSortBy },
   t: ReturnType<typeof useT>,
 ) {
-  const [lines, setLines] = useState<Map<string | null, CatalogueLine[]> | null>(null);
-  const [status, setStatus] = useState('');
-  const [busy, setBusy] = useState(false);
-  const abort = useRef<AbortController | null>(null);
   const { includePhotos, sortBy } = options;
-
-  // A prepared document is only valid for the settings it was prepared under.
-  useEffect(() => {
-    setLines(null);
-  }, [includePhotos, sortBy, summary]);
-
-  useEffect(() => {
-    const drop = () => setLines(null);
-    window.addEventListener('afterprint', drop);
-    return () => window.removeEventListener('afterprint', drop);
-  }, []);
-
-  // Print only once the full document has actually been committed to the DOM.
-  useEffect(() => {
-    if (lines === null) return;
-    let cancelled = false;
-    void (async () => {
-      // Thumbnails are decoded before the dialog opens, or they print as blanks.
-      const images = Array.from(document.querySelectorAll<HTMLImageElement>('.catalogue-print-doc img'));
-      await Promise.all(images.map((img) => img.decode().catch(() => undefined)));
-      if (!cancelled) window.print();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [lines]);
-
-  const start = useCallback(async () => {
-    if (scope === null || summary === undefined) return;
-    const controller = new AbortController();
-    abort.current = controller;
-    setBusy(true);
-    setStatus(t('reports.catalogue.print.preparing'));
-    try {
-      const loaded = await loadFullCatalogueLines(
-        scope,
-        summary.groups,
-        { includePhotos, sortBy },
-        (done, total) =>
-          setStatus(
-            t('reports.catalogue.print.progress', {
-              vars: { done: String(done), total: String(total) },
-            }),
-          ),
-        controller.signal,
-      );
-      setLines(loaded);
-      setStatus(t('reports.catalogue.print.ready'));
-    } catch (err) {
-      setStatus(
-        (err as Error)?.name === 'AbortError'
-          ? t('reports.catalogue.print.cancelled')
-          : t('reports.catalogue.print.failed'),
-      );
-    } finally {
-      setBusy(false);
-      abort.current = null;
-    }
-  }, [scope, summary, includePhotos, sortBy, t]);
-
-  const cancel = useCallback(() => abort.current?.abort(), []);
-
-  return { lines, status, busy, start, cancel };
+  const load = useCallback(
+    (onProgress: (done: number, total: number) => void, signal: AbortSignal) =>
+      loadFullCatalogueLines(scope!, summary!.groups, { includePhotos, sortBy }, onProgress, signal),
+    [scope, summary, includePhotos, sortBy],
+  );
+  return usePreparedDocumentPrint<CatalogueLine>({
+    printDocSelector: '.catalogue-print-doc',
+    load,
+    enabled: scope !== null && summary !== undefined,
+    messages: {
+      preparing: t('reports.catalogue.print.preparing'),
+      progress: (done, total) =>
+        t('reports.catalogue.print.progress', { vars: { done: String(done), total: String(total) } }),
+      ready: t('reports.catalogue.print.ready'),
+      cancelled: t('reports.catalogue.print.cancelled'),
+      failed: t('reports.catalogue.print.failed'),
+    },
+  });
 }
 
 /**

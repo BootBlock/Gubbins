@@ -502,8 +502,11 @@ function preferredSupplierNameSql(col: string): string {
  *    for an item that no column of its own prices — rather than paying for it on every row, on
  *    top of the evaluation {@link effectiveUnitValueSql} already makes in the same statement.
  *
- * `ReportRepository.test.ts` pins this against `hasValuationSource` over randomised fixtures, so
- * the third statement of the precedence cannot quietly drift from the other two.
+ * `ReportRepository.test.ts`'s "agrees with the pure `hasValuationSource` seam on what counts as
+ * priced" pins this against that seam: one fixture per branch, each read as a scope of *one* item,
+ * so the summary's `hasValue` is this predicate's verdict and the page's `unitCost` is the pure
+ * seam's, on the same row. Both sides are driven; neither is restated. Add a branch here and the
+ * fixture list is where it has to be covered.
  */
 function hasValuationSourceSql(alias: string, baseCurrency: string | null): string {
   return `CASE
@@ -1119,9 +1122,14 @@ export class ReportRepository extends BaseRepository {
    * Lines are ordered **in SQL**, which is what lets a section be read a page at a time at all.
    * `name` collates `NOCASE` where the ordering used to be a `localeCompare`, so two names
    * differing only by an accent may swap places against the old whole-document read; the
-   * insurance schedule's paged read made the same trade (issue #163). The `value` and `quantity`
-   * orders sort by the very expressions the totals are summed from, so a page and its subtotal
-   * cannot disagree about what a line is worth.
+   * insurance schedule's paged read made the same trade (issue #163). The `value` order sorts by
+   * {@link scheduleLineMinorUnitsSql} — the very expression the section's subtotal is summed from,
+   * so a page and the subtotal above it cannot disagree about what a line is worth.
+   *
+   * The `quantity` order sorts by {@link valuedAmountSql}, which is the amount each *line* shows:
+   * a count, or a gauge's contents (issue #683). That is deliberately **not** the expression the
+   * section's "in stock" figure sums, which floors a gauge at 0 — grams are not a count, so a
+   * gauge belongs in the ordering of what a reader sees on the line and out of a total of units.
    *
    * The thumbnail BLOB and the correlated supplier-name lookup are per-row costs, and both are
    * now paid for a page rather than for a whole inventory; the thumbnail is additionally fetched
