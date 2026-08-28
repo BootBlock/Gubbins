@@ -17,9 +17,10 @@
  * ## What makes this fiddly
  *
  * - **A dismissal can be refused or absorbed.** `Modal` turns Escape down while work is in
- *   flight, asks first when an editor below it holds a draft, and the command palette backs out
- *   of its quick-actions panel before it closes at all. The entry is spent either way, so the
- *   hook simply pushes a fresh one whenever the surface is still open afterwards.
+ *   flight, raises a question first when an editor below it holds a draft, and the command
+ *   palette backs out of its quick-actions panel before it closes at all. The entry is spent
+ *   either way, so the hook pushes its replacement *before* telling the surface — otherwise a
+ *   dismissal that answers by opening something new ends up underneath it in the stack.
  * - **Dialogs nest, and a stack can unwind all at once.** Closing a parent unmounts its child in
  *   the same commit, so two releases land in one tick. `history.back()` twice in a tick is not
  *   reliably two steps, so releases are batched into a single `history.go(-n)`.
@@ -31,7 +32,7 @@
  * The ordering logic is in the pure {@link resolveDismissals}, split out so the LIFO rules are
  * unit-testable without a session history (the `modal-stack.ts` seam pattern).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * The key our marker lives under inside a history entry's `state`. Namespaced because the state
@@ -201,22 +202,33 @@ export function openDialogHistoryCount(): number {
  * uses, so Back is refused while work is in flight and asks before discarding a draft, exactly
  * as every other route out does.
  *
- * When the dismissal does not actually close the surface — it was refused, or it only backed out
- * of a sub-view — the effect re-runs and pushes a fresh entry, so the next Back has one to spend.
+ * **The replacement entry is pushed before the surface is told, not after.** A dismissal need not
+ * close anything — it can be refused outright, or *answered* by opening something new, which is
+ * what a dirty dialog does when it raises "Discard unsaved changes?". Re-pushing afterwards, from
+ * an effect, puts this surface's entry above the question's: React runs a child's effects before
+ * its parent's, so the question registers first and every later Back then resolves to the dialog
+ * underneath and re-asks a question already on screen — Back stops working entirely, with no way
+ * out on a device where it is the only back affordance. Pushing first keeps the stack in the order
+ * the surfaces are actually in. When the dismissal *does* close the surface, unmounting releases
+ * the replacement straight away and the stack ends up level.
  */
 export function useDialogHistoryEntry(open: boolean, onDismiss: () => void): void {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
-  // Bumped by a dismissal, purely to re-run the effect below. A surface that closed in response
-  // unmounts before that matters; one that stayed open gets its entry replaced.
-  const [generation, setGeneration] = useState(0);
+  const entryRef = useRef<DialogHistoryEntry | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const entry = pushDialogHistoryEntry(() => {
-      setGeneration((n) => n + 1);
-      onDismissRef.current();
-    });
-    return () => releaseDialogHistoryEntry(entry);
-  }, [open, generation]);
+    const register = (): void => {
+      entryRef.current = pushDialogHistoryEntry(() => {
+        register();
+        onDismissRef.current();
+      });
+    };
+    register();
+    return () => {
+      if (entryRef.current) releaseDialogHistoryEntry(entryRef.current);
+      entryRef.current = null;
+    };
+  }, [open]);
 }

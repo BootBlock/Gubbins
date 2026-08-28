@@ -21,6 +21,7 @@ import {
   resolveDismissals,
 } from './dialog-history';
 import { Modal } from './modal';
+import { useReportUnsavedChanges } from './unsaved-changes';
 
 /** The marker key `dialog-history.ts` writes into `history.state`. */
 const STATE_KEY = '__gubbinsDialog';
@@ -229,6 +230,21 @@ function BusyModalHarness({ busy }: { readonly busy: boolean }) {
   );
 }
 
+/** A dialog whose editor is holding a draft, so a dismissal raises the discard question. */
+function DirtyModalHarness() {
+  const [open, setOpen] = useState(true);
+  return (
+    <Modal open={open} onClose={() => setOpen(false)} title="Edit item">
+      <DirtyEditor />
+    </Modal>
+  );
+}
+
+function DirtyEditor() {
+  useReportUnsavedChanges(true);
+  return <p>Half-typed</p>;
+}
+
 describe('Modal — the Back gesture', () => {
   it('closes the dialog instead of navigating the screen behind it', async () => {
     render(<BusyModalHarness busy={false} />);
@@ -251,6 +267,21 @@ describe('Modal — the Back gesture', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
     await waitFor(() => expect(marker()).toBeTypeOf('string'));
     expect(marker()).not.toBe(first);
+  });
+
+  it('reaches the discard question it raises, rather than trapping Back behind it', async () => {
+    render(<DirtyModalHarness />);
+    await waitFor(() => expect(marker()).toBeTypeOf('string'));
+
+    await pressBack();
+    // The dismissal was answered by opening a question, not by closing. The replacement entry
+    // has to sit *under* that question's, or the next press resolves to this dialog again and
+    // re-asks a question already on screen — with Back the only way out, that is a trap.
+    expect(screen.getByTestId('unsaved-keep-editing')).toBeTruthy();
+
+    await pressBack();
+    expect(screen.queryByTestId('unsaved-keep-editing')).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Edit item' })).toBeTruthy();
   });
 
   it('hands its entry back when closed by the ✕', async () => {

@@ -4,7 +4,7 @@ import { plural } from '@/lib/plural';
 import { createPortal } from 'react-dom';
 import { Button, Input, LiveRegion, Modal, Select, Surface, Tooltip } from '@/components/foundry';
 import { useDialogHistoryEntry } from '@/components/foundry/dialog-history';
-import { isTopModal, popModal, pushModal } from '@/components/foundry/modal-stack';
+import { openModalCount } from '@/components/foundry/modal-stack';
 import {
   AddIcon,
   CheckoutIcon,
@@ -357,20 +357,24 @@ function ScannerOverlayInner({
   const closeRef = useRef(close);
   closeRef.current = close;
   useEffect(() => {
-    // Registered in the modal stack so a dialog opened *from* here (the explainer, the checkout
-    // form) owns Escape while it is up, exactly as it owns it over a Modal underneath. No Tab
-    // trap: this overlay covers the viewport and its camera picker portals a menu outside it,
-    // which owns its own keyboard contract — see `BarcodeScanDialog` for that fuller treatment.
-    const token = pushModal();
+    // Deferring to the modal stack by *reading* it rather than joining it. Every dialog this
+    // overlay opens — the explainer, the checkout form — is a Modal above it, so "no Modal is
+    // open" is exactly "this overlay is the topmost surface", and nothing else can be open
+    // beneath it (the overlay is launched from a screen, never from a dialog).
+    //
+    // Registering a token instead would be wrong twice over: the shared body scroll-lock is
+    // released only when the last Modal closes, so a permanent token from a non-Modal would
+    // strand `overflow: hidden` on the document after the explainer and the scanner had both
+    // gone; and the count also gates the global hotkeys, which this change has no business
+    // turning off. No Tab trap either: the overlay covers the viewport, and its camera picker
+    // portals a menu outside it that owns its own keyboard contract — see `BarcodeScanDialog`
+    // for that fuller treatment.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !isTopModal(token)) return;
+      if (e.key !== 'Escape' || openModalCount() > 0) return;
       closeRef.current();
     };
     document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      popModal(token);
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, []);
 
   const submitManual = () => {

@@ -44,6 +44,26 @@ export function viewTransitionsSupported(): boolean {
 }
 
 /**
+ * `true` when this environment can select on a view transition's *type*
+ * (`:active-view-transition-type()`).
+ *
+ * This is not a nicety — it decides whether {@link resolveRouteViewTransitionTypes} is consulted
+ * at all. TanStack Router only reads a `defaultViewTransition` **object** (the form that carries a
+ * `types` resolver) where that selector is supported; everywhere else it falls through to a plain
+ * `document.startViewTransition(update)`, cross-fading the whole document with no gate in front of
+ * it. So on such a browser the object form does not mean "transition, gated" — it means
+ * "transition, always", including for a same-path change that this app has decided should never
+ * cross-fade. `src/app/router.tsx` therefore asks this before choosing which form to configure,
+ * and turns route transitions off outright rather than let an ungated one through.
+ */
+export function viewTransitionTypesSupported(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.CSS?.supports?.('selector(:active-view-transition-type(a))') === true
+  );
+}
+
+/**
  * The pure gate: should the given (decoration-)reduced state permit a view-transition? Kept
  * pure (state in, boolean out) so the imperative reader ({@link shouldViewTransition}) and the
  * reactive hook ({@link useViewTransitionsEnabled}) can't drift.

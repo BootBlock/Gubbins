@@ -1,6 +1,9 @@
 import { createRouter } from '@tanstack/react-router';
 import { routeTree } from '@/routeTree.gen';
-import { resolveRouteViewTransitionTypes } from '@/components/foundry/view-transition';
+import {
+  resolveRouteViewTransitionTypes,
+  viewTransitionTypesSupported,
+} from '@/components/foundry/view-transition';
 import { NotFoundScreen } from '@/features/not-found/NotFoundScreen';
 import { RouteErrorScreen } from '@/features/not-found/RouteErrorScreen';
 
@@ -22,6 +25,26 @@ export function resolveBasepath(baseUrl: string): string | undefined {
   return baseUrl === '/' ? undefined : baseUrl.replace(/\/+$/, '');
 }
 
+/**
+ * Choose which `defaultViewTransition` form to configure, given whether this browser understands
+ * `:active-view-transition-type()`.
+ *
+ * TanStack Router reads the object form's `types` resolver — the app's single ON/OFF gate,
+ * {@link resolveRouteViewTransitionTypes} — only where that selector is supported. Everywhere
+ * else the very same object means `document.startViewTransition(update)` with nothing in front of
+ * it: a full-document cross-fade on *every* location change, including the same-path ones the gate
+ * exists to refuse, and including every dialog opened or Back-dismissed now that an open dialog is
+ * a history entry (issue #590). Off is the honest answer there — those browsers lose a decorative
+ * cross-fade rather than gain one nobody asked for.
+ *
+ * @internal Exported for unit tests only — the live value is read from the browser once, at import.
+ */
+export function resolveDefaultViewTransition(
+  typesSupported: boolean,
+): { types: typeof resolveRouteViewTransitionTypes } | false {
+  return typesSupported ? { types: resolveRouteViewTransitionTypes } : false;
+}
+
 const basepath = resolveBasepath(import.meta.env.BASE_URL);
 
 export const router = createRouter({
@@ -35,7 +58,10 @@ export const router = createRouter({
   // API is unavailable or the user prefers reduced motion, and only cross-fades on an actual
   // pathname change (not an in-screen search/hash update). The cross-fade itself is styled on
   // the `::view-transition-*` pseudo-elements in `styles/index.css`.
-  defaultViewTransition: { types: resolveRouteViewTransitionTypes },
+  //
+  // Which *form* that gate can be configured in depends on the browser — see
+  // {@link resolveDefaultViewTransition}.
+  defaultViewTransition: resolveDefaultViewTransition(viewTransitionTypesSupported()),
   // A URL that resolves to no route renders the styled 404 screen (issue #41) inside the normal
   // app chrome, with fuzzy "did you mean…?" suggestions, rather than the router's bare fallback.
   defaultNotFoundComponent: NotFoundScreen,

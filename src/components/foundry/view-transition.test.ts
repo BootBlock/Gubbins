@@ -10,6 +10,7 @@ import {
   ROUTE_VIEW_TRANSITION_TYPE,
   shouldViewTransition,
   viewTransitionsSupported,
+  viewTransitionTypesSupported,
   withViewTransition,
 } from './view-transition';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -51,6 +52,33 @@ describe('viewTransitionsSupported', () => {
   it('is true when document exposes startViewTransition', () => {
     stubViewTransitions();
     expect(viewTransitionsSupported()).toBe(true);
+  });
+});
+
+describe('viewTransitionTypesSupported', () => {
+  const realSupports = window.CSS?.supports;
+
+  afterEach(() => {
+    if (window.CSS) window.CSS.supports = realSupports as typeof window.CSS.supports;
+  });
+
+  /** Stand in for a browser's `CSS.supports`, answering only the selector we ask about. */
+  const stubSupports = (answer: boolean) => {
+    window.CSS = { ...(window.CSS ?? {}), supports: vi.fn(() => answer) } as unknown as typeof window.CSS;
+  };
+
+  it('is true only where the view-transition-type selector is understood', () => {
+    stubSupports(true);
+    expect(viewTransitionTypesSupported()).toBe(true);
+    stubSupports(false);
+    expect(viewTransitionTypesSupported()).toBe(false);
+  });
+
+  it('is false on a browser with no CSS.supports at all', () => {
+    const saved = window.CSS;
+    (window as { CSS?: unknown }).CSS = undefined;
+    expect(viewTransitionTypesSupported()).toBe(false);
+    (window as { CSS?: unknown }).CSS = saved;
   });
 });
 
