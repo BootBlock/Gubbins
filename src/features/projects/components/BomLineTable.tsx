@@ -7,12 +7,13 @@ import {
   type ProcurementStatus,
   type ProjectBomLine,
   type ReservationStatus,
+  type TrackingMode,
 } from '@/db/repositories';
-import { useItemsAvailability, useItemsRelations } from '@/features/inventory/queries';
+import { useItemsAvailability, useItemsRelations, useItemsTrackingModes } from '@/features/inventory/queries';
 import { useT } from '@/features/i18n';
 import { missingRequirementsByLine } from '@/features/inventory/item-requirements';
 import { useRemoveBomLine, useSetProcurement, useSetReservation, useReceiveLine } from '../projects';
-import { outstandingQty } from '../receipts';
+import { outstandingQty, receiptLandingFor, recordOnlyReceiptReason } from '../receipts';
 import { PROCUREMENT_STATUS_LABELS, RESERVATION_STATUS_LABELS } from './projects-ui';
 
 /** An optional batch/lot identity entered on a receipt (Phase 28). */
@@ -29,11 +30,17 @@ export interface ReceiveBatch {
  * so each accepted instalment re-seeds the field with the new remainder. An optional batch
  * number + expiry tags the arriving units with their lot, so they enter their own
  * `stock_batches` row (FEFO-tracked); left blank, the units fall into the untracked remainder.
+ *
+ * Where the matched item's tracking mode holds no counted quantity (issue #608) the receipt is
+ * *record-only*: the line's progress advances and the item's Activity Log records the delivery,
+ * but no stock moves. The control drops the batch and expiry fields there — the write discards
+ * both on that path — and says so in its tooltip instead of promising stock it cannot add.
  */
 function ReceiveControl({
   line,
   pending,
   busy,
+  trackingMode,
   onReceive,
 }: {
   line: ProjectBomLine;
@@ -41,16 +48,26 @@ function ReceiveControl({
   pending: boolean;
   /** …and *this* is the line being received, so only this control shows the wait. */
   busy: boolean;
+  /**
+   * The matched item's tracking mode, or undefined while the batched read is in flight. Undefined
+   * is treated as the ordinary stock-landing case, so a slow read never shows a warning that
+   * turns out to be wrong — it only delays one.
+   */
+  trackingMode: TrackingMode | undefined;
   onReceive: (qty: number, batch?: ReceiveBatch) => void;
 }) {
   const outstanding = outstandingQty(line);
+  const recordOnly = trackingMode !== undefined && receiptLandingFor(trackingMode) === 'RECORD_ONLY';
+  const recordOnlyReason = trackingMode ? recordOnlyReceiptReason(trackingMode) : null;
   const [qty, setQty] = useState(outstanding);
   const [batchNumber, setBatchNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const clamped = Math.min(Math.max(1, qty || 1), outstanding);
 
+  // A record-only receipt sends no batch identity: the write discards it, so offering it would
+  // ask for something nothing reads.
   const batch: ReceiveBatch | undefined =
-    batchNumber.trim() || expiry
+    !recordOnly && (batchNumber.trim() || expiry)
       ? {
           batchNumber: batchNumber.trim() || null,
           lotNumber: null,
@@ -71,29 +88,39 @@ function ReceiveControl({
         className="h-8 w-16 text-xs"
         onChange={(e) => setQty(Math.floor(Number(e.target.value)))}
       />
-      <Input
-        type="text"
-        value={batchNumber}
-        aria-label="Batch number (optional)"
-        placeholder="batch"
-        data-testid={`receive-batch-${line.id}`}
-        className="h-8 w-20 text-xs"
-        onChange={(e) => setBatchNumber(e.target.value)}
-      />
-      <Input
-        type="date"
-        value={expiry}
-        aria-label="Expiry date (optional)"
-        data-testid={`receive-expiry-${line.id}`}
-        className="h-8 w-32 text-xs"
-        onChange={(e) => setExpiry(e.target.value)}
-      />
-      <Tooltip content={`Receive ${clamped} into stock${batch ? ' (batch tracked)' : ''}`}>
+      {!recordOnly && (
+        <>
+          <Input
+            type="text"
+            value={batchNumber}
+            aria-label="Batch number (optional)"
+            placeholder="batch"
+            data-testid={`receive-batch-${line.id}`}
+            className="h-8 w-20 text-xs"
+            onChange={(e) => setBatchNumber(e.target.value)}
+          />
+          <Input
+            type="date"
+            value={expiry}
+            aria-label="Expiry date (optional)"
+            data-testid={`receive-expiry-${line.id}`}
+            className="h-8 w-32 text-xs"
+            onChange={(e) => setExpiry(e.target.value)}
+          />
+        </>
+      )}
+      <Tooltip
+        content={
+          recordOnly
+            ? `Record ${clamped} as received${recordOnlyReason === null ? '' : ` — no stock is added, because ${recordOnlyReason}`}`
+            : `Receive ${clamped} into stock${batch ? ' (batch tracked)' : ''}`
+        }
+      >
         <Button
           size="icon"
           variant="outline"
           className="size-8"
-          aria-label="Receive into stock"
+          aria-label={recordOnly ? 'Record as received (no stock added)' : 'Receive into stock'}
           disabled={pending}
           onClick={() => onReceive(clamped, batch)}
         >
@@ -148,6 +175,10 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
   // the dependency check above — because a reservation is a claim on stock two projects can make
   // at once, and a claim nobody honoured is what puts a "reserved" line back on the shopping list.
   const { data: availabilityByItem } = useItemsAvailability(lineItemIds);
+  // What each matched line's receive control may promise (issue #608): only a bulk-tracked item
+  // has a counted quantity a receipt can add to. One batched read of the enum alone for the whole
+  // table, matching the two reads above rather than an N+1 fan-out.
+  const { data: trackingModeByItem } = useItemsTrackingModes(lineItemIds);
   const missingByItem = useMemo(
     () => missingRequirementsByLine(lineItemIds, relationsByItem ?? new Map()),
     [lineItemIds, relationsByItem],
@@ -306,6 +337,7 @@ export function BomLineTable({ projectId, lines }: { projectId: string; lines: r
                         line={line}
                         pending={receiveLine.isPending}
                         busy={receiveLine.isPending && receiveLine.variables?.lineId === line.id}
+                        trackingMode={trackingModeByItem?.get(line.itemId)}
                         onReceive={(quantity, batch) =>
                           receiveLine.mutate({ lineId: line.id, quantity, batch })
                         }

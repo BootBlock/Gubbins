@@ -452,6 +452,30 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(received).toHaveLength(2); // one ledger entry per instalment
   });
 
+  it('records a receipt against an item with no counted quantity, rather than nothing (#608)', async () => {
+    const p = await projects.create({ name: 'P' });
+    const [tool] = await items.createSerialised({ name: 'Torque wrench', count: 1 });
+    const shelf = await locations.create({ name: 'Shelf A' });
+    const line = await projects.addLine(p.id, { itemId: tool!.id, requiredQty: 3 });
+    await projects.setProcurement(line.id, 'IN_TRANSIT');
+
+    const received = await projects.receiveLine(line.id, { locationId: shelf.id });
+
+    // The line still completes — the parts did arrive; only the stock half cannot happen.
+    expect(received.procurementStatus).toBe('RECEIVED');
+    expect(received.receivedQty).toBe(3);
+    expect((await items.getById(tool!.id))?.quantity).toBe(1);
+    expect((await items.listStock(tool!.id)).find((s) => s.locationId === shelf.id)).toBeUndefined();
+
+    // The receipt used to leave no trace at all, so nothing explained the unchanged on-hand.
+    const entry = (await items.getHistory(tool!.id)).rows.find((h) => h.action === 'RECEIVED');
+    expect(entry).toBeDefined();
+    expect(entry!.note).toContain('Received 3 of 3 from procurement');
+    expect(entry!.note).toContain('No stock was added');
+    expect(entry!.quantityDelta).toBeNull();
+    expect(entry!.metadata).toMatchObject({ lineId: line.id, quantity: 3 });
+  });
+
   it('clamps an over-receipt to the outstanding remainder (never overshoots)', async () => {
     const p = await projects.create({ name: 'P' });
     const item = await items.create({ name: 'IC', quantity: 0 });

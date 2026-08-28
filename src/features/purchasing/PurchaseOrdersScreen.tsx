@@ -34,7 +34,12 @@ import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { moneyDecimals } from '@/lib/money';
-import { useInventoryItems, useLocations, useSupplierPartsForItems } from '@/features/inventory/queries';
+import {
+  useInventoryItems,
+  useItem,
+  useLocations,
+  useSupplierPartsForItems,
+} from '@/features/inventory/queries';
 import { preferredSupplierPart } from '@/features/inventory/supplier-cost';
 import type { LocationOption } from '@/features/inventory/components/LocationSelect';
 import type { PurchaseOrderLine, PurchaseOrderWithLines } from '@/db/repositories';
@@ -477,6 +482,12 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const [lineOpen, setLineOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [receiving, setReceiving] = useState<PurchaseOrderLine | null>(null);
+  // The receiving line's item, read only while its dialog is open (issue #608): the tracking mode
+  // decides whether the receipt can land stock at all, and therefore what the dialog may promise.
+  // Read by id rather than looked up in `pickableItems`, which is only the first page of the
+  // inventory — a line linked to an item outside that page would otherwise silently read as
+  // stock-landing.
+  const receivingItemQuery = useItem(receiving?.itemId ?? undefined);
   const [returning, setReturning] = useState<PurchaseOrderLine | null>(null);
   // Deleting an order — and removing one of its lines — is a hard delete that reaches every
   // synced device and has no restore path, so each is confirmed in its own dialog rather than
@@ -513,6 +524,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
         supplierUnitCost: preferred?.unitCost ?? null,
         priceBreaks: preferred?.priceBreaks ?? [],
         currency: preferred?.currency ?? null,
+        trackingMode: item.trackingMode,
       };
     });
   }, [pickableItems, supplierPartsQuery.data]);
@@ -909,6 +921,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           open={receiving !== null}
           line={receiving}
           locationOptions={locationOptions}
+          itemTrackingMode={receivingItemQuery.data?.trackingMode}
           isSaving={receiveLine.isPending}
           onClose={() => setReceiving(null)}
           onSubmit={(input) => {

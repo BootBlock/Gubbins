@@ -105,6 +105,13 @@ Reservations are released when a project is completed or archived.
 > changes the figures behind the stock-movement chart, the [[turnover|ABC-Turnover-and-Aging]]
 > ratios and the valuation trend.
 
+> **⚠️ Heads-up**
+> A receipt only adds stock where the matched item is counted by quantity — a **Bulk** item. Match
+> a **Serialised**, **Consumable** or **Untracked** part and receiving records the delivery against
+> the line and in the item's [[activity log|Activity-Log]], but moves no stock, because there is no
+> count to add to. The receive control says so and drops its batch and expiry fields. See
+> [[Tracking modes|Tracking-Modes]].
+
 **Where to find it:** the item's **Reservations** panel is on the **Supplier & ops** tab of the
 item's detail screen.
 

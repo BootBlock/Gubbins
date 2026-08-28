@@ -115,6 +115,10 @@ vi.mock('@/features/inventory/queries', () => ({
   useInventoryItems: () => ({ data: { pages: [] } }),
   useLocations: () => ({ data: { rows: [] } }),
   useSupplierPartsForItems: () => ({ data: new Map() }),
+  // Issue #608 — the receiving line's item, read for its tracking mode so the receive dialog
+  // knows whether the receipt can land stock. Unresolved by default, as it is before the read
+  // lands; a test that cares seeds it.
+  useItem: () => ({ data: undefined }),
 }));
 
 /** Currency-code → symbol for the formatter stub; anything unmapped renders as the base £. */

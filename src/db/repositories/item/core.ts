@@ -12,7 +12,12 @@ import { isShortItemCode } from '@/features/scanner/scan-payload';
 import { DbError } from '../../errors';
 import type { SqlStatement, SqlValue } from '../../rpc/driver';
 import { buildFtsMatch } from '../../search/fts';
-import { isConvertibleTrackingChange, isValidSerialisedCount, SERIALISED_COUNT_BOUNDS } from '../constants';
+import {
+  isConvertibleTrackingChange,
+  isValidSerialisedCount,
+  SERIALISED_COUNT_BOUNDS,
+  type TrackingMode,
+} from '../constants';
 import { BaseRepository } from '../base';
 import { consolidateStockStatements } from '../stock';
 import { tombstoneStatement } from '../tombstone';
@@ -140,6 +145,24 @@ export class ItemCoreRepository extends BaseRepository {
       unique as SqlValue[],
     );
     return new Map(rows.map((row) => [row.id, rowToItem(row)]));
+  }
+
+  /**
+   * Just the tracking mode of a set of items, keyed by id (issue #608) — what a screen needs to
+   * know whether an action on each item will actually move stock, without asking for the items
+   * themselves. Deliberately **not** {@link getManyById}: that projects `ITEM_READ_COLUMNS`,
+   * which carries every item's thumbnail BLOB, and a table full of rows would pay for images it
+   * never renders in order to read one enum. Missing ids are absent from the map; an empty set
+   * short-circuits.
+   */
+  async getTrackingModes(ids: readonly string[]): Promise<Map<string, TrackingMode>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+    const rows = await this.driver.query<{ id: string; tracking_mode: TrackingMode }>(
+      `SELECT id, tracking_mode FROM items WHERE id IN (${unique.map(() => '?').join(', ')});`,
+      unique as SqlValue[],
+    );
+    return new Map(rows.map((row) => [row.id, row.tracking_mode]));
   }
 
   /**
