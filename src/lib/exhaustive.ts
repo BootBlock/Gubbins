@@ -10,6 +10,27 @@
  * Call this from the `default:` branch and the switch stops compiling the moment a variant is
  * added without a case: TypeScript narrows `value` to `never` only when every member is
  * handled, so an unhandled one fails to be assignable to the `never` parameter.
+ *
+ * ## When a switch needs the guard
+ *
+ * A switch is already protected *only* when it is the body of a function whose declared return
+ * type **excludes `undefined`**. A missing case then makes the end point of the function
+ * reachable, and `strictNullChecks` fires TS2366 ("function lacks ending return statement").
+ *
+ * "Has an explicit return type" is **not** the test — the return type has to exclude
+ * `undefined`, and three common shapes do not (issue #562):
+ *
+ * - **A React component**, which is written without a return-type annotation at all. An
+ *   unhandled variant just renders nothing.
+ * - **A `: ReactNode` return**, which *includes* `undefined`, so the annotation looks
+ *   protective and is not. TS2366 never fires.
+ * - **A `: void` handler** — an event handler that acts on a union rather than returning a
+ *   value. An unhandled member is silently ignored, and where the handler has already called
+ *   `preventDefault()` the key is swallowed rather than reaching the browser.
+ *
+ * Each of those needs the explicit call. Guarding the *pure seam* over a union without
+ * guarding the component or handler that consumes it only inverts the asymmetry, so when
+ * adding a guard, find every switch over that union first.
  */
 
 /**

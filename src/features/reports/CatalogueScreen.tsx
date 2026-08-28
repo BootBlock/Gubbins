@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { assertExhaustive } from '@/lib/exhaustive';
 import {
   Button,
   buttonVariants,
@@ -999,6 +1000,13 @@ function renderField(line: CatalogueLine, key: CatalogueFieldKey, ctx: RenderCtx
       );
     case 'notes':
       return line.notes ?? <Blank />;
+    default:
+      // `ReactNode` *includes* `undefined`, so the explicit return type does not make the
+      // end point unreachable and TS2366 never fires — the guard has to be explicit
+      // (issue #355). Without it a new `CatalogueFieldKey` would print an empty cell in
+      // every row, with nothing to say the column exists but goes unrendered.
+      assertExhaustive(key);
+      return <Blank />;
   }
 }
 
