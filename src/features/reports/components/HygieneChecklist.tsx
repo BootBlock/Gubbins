@@ -13,15 +13,12 @@ import type { HygieneReport, HygieneSample, HygieneSection } from '../data-hygie
  * inventory directly. Design tokens only.
  */
 /**
- * Hand the Inventory screen the intent to open this item's detail card, seed its search with the
- * item name (so the item is in the list behind the dialog once closed) and flag it for the
- * call-to-attention flash. Runs as the `<Link to="/inventory">` navigates, mirroring the command
- * palette / scanner jump-to-item path.
+ * Hand the Inventory screen the intent to open this item's detail card and flag it for the
+ * call-to-attention flash. Runs as the link navigates; the link itself carries `?q=<name>` so the
+ * item is in the list behind the dialog once it is closed.
  */
 function openInInventory(sample: HygieneSample): void {
-  const entry = useInventoryEntry.getState();
-  entry.requestSearch(sample.name);
-  entry.requestOpenItem(sample.id);
+  useInventoryEntry.getState().requestOpenItem(sample.id);
   requestHighlight(sample.id);
 }
 
@@ -64,6 +61,7 @@ function HygieneRow({ section, formatters }: { section: HygieneSection; formatte
           <li key={sample.id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
             <Link
               to="/inventory"
+              search={{ q: sample.name }}
               onClick={() => openInInventory(sample)}
               className="font-medium text-primary underline-offset-2 hover:underline"
             >

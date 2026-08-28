@@ -50,10 +50,10 @@ import { requestHighlight } from '@/lib/highlight';
 import { useT, type MessageKey } from '@/features/i18n';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { nowMs } from '@/lib/clock';
-import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { TabularExportMenu } from '@/features/export/TabularExportMenu';
 import { alertsExportFilename, buildAlertsExport } from './alerts-export';
 import {
+  alertTargetLink,
   groupByKind,
   ALERT_KIND_LABEL as KIND_LABEL,
   ALERT_SEVERITY_LABEL as SEVERITY_LABEL,
@@ -198,14 +198,13 @@ function AlertCard({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">{alert.detail}</p>
-      {/* Deep-link: seed the inventory search so the target item is loaded and on-screen,
-          then ask the global highlight service to scroll it into view and flash it — the
+      {/* Deep-link: the link itself carries the inventory search that loads the target item, and
+          the click asks the global highlight service to scroll it into view and flash it — the
           user lands on a filtered list with their item unmistakably called out. */}
       <Link
-        to={alert.target.route}
+        {...alertTargetLink(alert.target)}
         onClick={() => {
-          const { itemId, itemName } = alert.target;
-          if (itemName) useInventoryEntry.getState().requestSearch(itemName);
+          const { itemId } = alert.target;
           if (itemId) requestHighlight(itemId);
         }}
         className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"

@@ -61,7 +61,7 @@ import { CycleCountDialog } from '@/features/lifecycle/components/CycleCountDial
 import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import type { ProductLookupResultPayload } from '@/features/scraping';
 import { ExportWizard } from '@/features/export/ExportWizard';
-import { ITEM_STATUS_FILTERS, type Item, type ItemStatusFilter } from '@/db/repositories';
+import type { Item, ItemStatusFilter } from '@/db/repositories';
 import { SORT_DIRECTIONS, useLayoutStore } from '@/state/stores/useLayoutStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFeature } from '@/features/modules/useFeature';
@@ -87,6 +87,7 @@ import { requestHighlight } from '@/lib/highlight';
 import { useFullscreen } from '@/lib/useFullscreen';
 import { useHotkeyScope } from '@/features/hotkeys/useHotkeyScope';
 import { useInventoryEntry } from './useInventoryEntry';
+import { useInventoryView } from './useInventoryView';
 import { ItemDragProvider } from './item-drag';
 import { DENSITY_MODES } from './view-modes';
 import { GROUP_MODES } from './grouping';
@@ -172,7 +173,18 @@ function InventoryWorkspace() {
   const { supported: fullscreenSupported, isFullscreen, toggle: toggleFullscreen } = useFullscreen();
   const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
-  const [page, setPage] = useState(1);
+  // Every axis this screen filters on — the location scope, the quick search, the attention
+  // chips, the category/tag facets, "Show removed" and the page — is the `/inventory` URL
+  // (issue #574). So a navigation away and back, a reload or a PWA update all land on the list
+  // the user left, Back undoes the last narrowing, and a filtered view can be bookmarked or sent
+  // to someone. The screen keeps no filter state of its own; `useInventoryView` decodes the URL
+  // and its setters navigate.
+  const { view, setView } = useInventoryView();
+  const page = view.page;
+  const setPage = useCallback(
+    (next: number, options?: { readonly replace?: boolean }) => setView({ page: next }, options),
+    [setView],
+  );
   // Live camera scanning is the `scanner` capability (modular-ui-plan §4, Phase 6): with it
   // off the Scan entry point disappears. Printed QR/Code-128 labels are unaffected — they
   // stay regardless — and manually reachable flows are untouched.
@@ -201,7 +213,8 @@ function InventoryWorkspace() {
   const mayPrintLabels = usePermission('labels:print');
   const mayReadReports = usePermission('reports:read');
   const navigate = useNavigate();
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const selectedLocationId = view.locationId;
+  const setSelectedLocationId = useCallback((id: string | null) => setView({ locationId: id }), [setView]);
   // Compact viewport (issue #147): below the tablet floor the fixed 256px location pane would
   // eat two thirds of a phone's width, so it moves into an off-canvas drawer opened from a
   // trigger above the list. A structural swap, not a style — the pane can only exist once
@@ -213,24 +226,27 @@ function InventoryWorkspace() {
   useEffect(() => {
     if (!compact) setLocationsDrawerOpen(false);
   }, [compact]);
-  const [searchInput, setSearchInput] = useState('');
+  // The box's own text is local so typing stays instant; the debounced result below is what
+  // reaches the URL (and therefore the query).
+  const [searchInput, setSearchInput] = useState(view.search);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [search, setSearch] = useState('');
+  const search = view.search;
   // Saved searches, surfaced on the quick-search box itself rather than only two levels down
   // inside the Visual search panel (issue #136). The strip below the header holds the same
   // save/recall/forget controls the power box has, revealed by the bookmark toggle in the box.
   const [savedSearchesOpen, setSavedSearchesOpen] = useState(false);
   const savedSearchesId = useId();
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const includeInactive = view.includeInactive;
+  const setIncludeInactive = useCallback((on: boolean) => setView({ includeInactive: on }), [setView]);
   // The active §3/§4 "attention" status filters (low stock / expiring / overdue / maintenance
-  // due). Additive to the location scope + search; OR-combined server-side. Session-local.
-  const [statusFilters, setStatusFilters] = useState<ReadonlySet<ItemStatusFilter>>(
-    () => new Set<ItemStatusFilter>(),
-  );
+  // due). Additive to the location scope + search; OR-combined server-side. The URL holds them;
+  // the set is only the membership lookup the filter bar's chips want.
+  const statusFilters = useMemo<ReadonlySet<ItemStatusFilter>>(() => new Set(view.statuses), [view.statuses]);
   // Attribute facets (spec §3 filter axis): a single category plus a set of tags. Facets AND
-  // with the status filters, the location scope and search. Session-local like the sidebar.
-  const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [tagIds, setTagIds] = useState<readonly string[]>([]);
+  // with the status filters, the location scope and search.
+  const categoryId = view.categoryId;
+  const setCategoryId = useCallback((id: string | null) => setView({ categoryId: id }), [setView]);
+  const tagIds = view.tagIds;
   const [addOpen, setAddOpen] = useState(false);
   // A retail barcode scanned for an item that doesn't exist yet — seeds the add-item form
   // (recommendation point 1). Cleared when the dialog closes.
@@ -290,11 +306,26 @@ function InventoryWorkspace() {
   // whole-collection visualisations, or a Visual-Builder result set (each is its own presentation).
   const paginated = paginateLists && !grouped && !isVizMode && !astActive;
 
-  // Debounce the quick-search box so each keystroke doesn't hit the worker.
+  // Debounce the quick-search box so each keystroke doesn't hit the worker, then commit the
+  // settled query into the URL.
+  //
+  // **Starting** a search is one narrowing and pushes, so Back returns to the list as it was
+  // before it. **Refining** or clearing one replaces, so typing "resistor" leaves a single entry
+  // rather than eight, and Back from it does not walk back through the word a letter at a time.
+  // The test is what the URL held a moment ago, not what is being typed now.
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 250);
-    return () => clearTimeout(t);
-  }, [searchInput]);
+    const trimmed = searchInput.trim();
+    if (trimmed === search) return;
+    const refining = search !== '';
+    const timer = setTimeout(() => setView({ search: trimmed }, { replace: refining }), 250);
+    return () => clearTimeout(timer);
+  }, [searchInput, search, setView]);
+  // Adopt a query that arrived from outside the box — a Back press, a deep link, a saved search
+  // recalled into it. Compared trimmed so a half-typed "drill " isn't yanked back mid-word by
+  // the very commit it just made.
+  useEffect(() => {
+    setSearchInput((current) => (current.trim() === search ? current : search));
+  }, [search]);
 
   // Recall a saved search from the quick-search box (issue #136). A saved query made only of
   // bare words means exactly what it would mean typed here, so it simply fills this box; one
@@ -323,20 +354,14 @@ function InventoryWorkspace() {
     [builderDispatch, t],
   );
 
-  // Consume a one-shot intent handed over from the dashboard (command palette "jump to
-  // item", or the hero's Add/Scan quick actions): seed the search or open the relevant
-  // dialog, then clear it. Driven off the store so it fires whether this screen is
-  // mounting fresh from the navigation or is already on screen.
-  const pendingSearch = useInventoryEntry((s) => s.pendingSearch);
+  // Consume a one-shot intent handed over from elsewhere (the dashboard hero's Add/Scan quick
+  // actions, the command palette, a hotkey): open the relevant dialog, then clear it. Driven off
+  // the store so it fires whether this screen is mounting fresh from the navigation or is already
+  // on screen. The *view* axes a caller used to hand over the same way — a search to seed, a
+  // location to scope to — are URL search params now (issue #574), so those callers simply link
+  // to `/inventory?q=…` and need nothing from this store.
   const pendingIntent = useInventoryEntry((s) => s.pendingIntent);
-  const pendingLocationId = useInventoryEntry((s) => s.pendingLocationId);
   const pendingOpenItemId = useInventoryEntry((s) => s.pendingOpenItemId);
-  useEffect(() => {
-    if (pendingSearch === null) return;
-    setSearchInput(pendingSearch);
-    setSearch(pendingSearch);
-    useInventoryEntry.getState().clearSearch();
-  }, [pendingSearch]);
   useEffect(() => {
     if (pendingIntent === null) return;
     if (pendingIntent === 'add') setAddOpen(true);
@@ -360,14 +385,12 @@ function InventoryWorkspace() {
     onNew: useCallback(() => setAddOpen(true), []),
     onSearch: useCallback(() => searchRef.current?.focus(), []),
   });
-  useEffect(() => {
-    if (pendingLocationId === null) return;
-    setSelectedLocationId(pendingLocationId);
-    useInventoryEntry.getState().clearLocation();
-  }, [pendingLocationId]);
   // Deep-link to one item's detail card (e.g. a Reports data-hygiene row): remember the id so
-  // the standalone dialog below can fetch and open it. Paired with `pendingSearch` at the call
-  // site so the item is also in the list behind the dialog once it is closed.
+  // the standalone dialog below can fetch and open it. This one stays a store handoff rather
+  // than a search param: the dialog it opens already claims a history entry of its own, so a
+  // second one in the URL would need two Back presses to undo a single open (see
+  // `foundry/dialog-history.ts`). The call site pairs it with `?q=<name>` so the item is also
+  // in the list behind the dialog once it is closed.
   useEffect(() => {
     if (pendingOpenItemId === null) return;
     setDetailItemId(pendingOpenItemId);
@@ -383,28 +406,32 @@ function InventoryWorkspace() {
   const lowStockGaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   const expirySoonWindowDays = usePreferencesStore((s) => s.expirySoonWindowDays);
 
-  const toggleStatusFilter = useCallback((status: ItemStatusFilter) => {
-    setStatusFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(status)) next.delete(status);
-      else next.add(status);
-      return next;
-    });
-  }, []);
-  const clearStatusFilters = useCallback(() => setStatusFilters(new Set<ItemStatusFilter>()), []);
-
-  const toggleTag = useCallback((tagId: string) => {
-    setTagIds((prev) => (prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]));
-  }, []);
-
-  // Emit the selected statuses in the canonical order so the query key is stable regardless
-  // of the order chips were toggled (mirrors the server-side ordering in buildStatusFilter).
-  const statusList = useMemo(
-    () => ITEM_STATUS_FILTERS.filter((status) => statusFilters.has(status)),
-    [statusFilters],
+  // Both toggles take the functional form so the callback identity stays stable across a URL
+  // change — the chips and the tag facets are re-rendered on every filter as it is.
+  const toggleStatusFilter = useCallback(
+    (status: ItemStatusFilter) =>
+      setView((v) => ({
+        statuses: v.statuses.includes(status)
+          ? v.statuses.filter((s) => s !== status)
+          : [...v.statuses, status],
+      })),
+    [setView],
   );
-  // Sort the tag ids too so the query key is stable regardless of the order chips were added.
-  const tagIdList = useMemo(() => [...tagIds].sort(), [tagIds]);
+  const clearStatusFilters = useCallback(() => setView({ statuses: [] }), [setView]);
+
+  const toggleTag = useCallback(
+    (tagId: string) =>
+      setView((v) => ({
+        tagIds: v.tagIds.includes(tagId) ? v.tagIds.filter((id) => id !== tagId) : [...v.tagIds, tagId],
+      })),
+    [setView],
+  );
+
+  // Both lists arrive canonically ordered from the URL — statuses in `ITEM_STATUS_FILTERS` order
+  // (which mirrors the server-side ordering in buildStatusFilter), tag ids sorted — so the query
+  // key is stable however the chips were toggled, and two URLs meaning one view read the same.
+  const statusList = view.statuses;
+  const tagIdList = view.tagIds;
   // The repository's `sort` argument for the chosen ordering — `undefined` under the default
   // order, so the filter slice (and therefore the query key) is unchanged for a user who never
   // touches the control. Memoised so the array identity is stable across renders.
@@ -557,16 +584,28 @@ function InventoryWorkspace() {
   const listStatus = paginated ? pageItems : active;
   // Total pages for the control, from the filtered count (only fetched while paginating).
   const totalPages = pageCount(matchCount.data ?? 0, defaultPageSize);
-  // Snap back to page 1 whenever the query feeding the list changes (a filter or the page size), so
-  // a narrowing filter can't strand the user on an out-of-range page. `filters` is memoised, so its
-  // identity changes exactly when a filter dependency does.
+  // Snap back to page 1 whenever the query feeding the list changes, so a narrowing filter or a
+  // re-ordering can't strand the user on a page that no longer names the same rows. A filter axis
+  // resets the page in the very navigation that applies it (see `applyInventoryViewPatch`); this
+  // catches the inputs that are *preferences* rather than search params — the sort order, the page
+  // size, and the thresholds the status chips judge against. It compares against what it last saw
+  // rather than firing on mount, or a `?page=3` deep link would rewrite itself back to page 1 the
+  // moment it arrived. (`filters` is memoised, and holds the URL's two lists by identity, so
+  // turning a page does not itself count as a change here.)
+  const lastQuery = useRef({ filters, defaultPageSize });
   useEffect(() => {
-    setPage(1);
-  }, [filters, defaultPageSize]);
+    if (lastQuery.current.filters === filters && lastQuery.current.defaultPageSize === defaultPageSize) {
+      return;
+    }
+    lastQuery.current = { filters, defaultPageSize };
+    if (page !== 1) setPage(1, { replace: true });
+  }, [filters, defaultPageSize, page, setPage]);
   // If the result set shrinks below the current page (e.g. items removed), clamp back into range.
+  // A correction, not a navigation the user made, so it replaces rather than pushes — Back from
+  // here should leave the screen, not step onto a page that no longer exists.
   useEffect(() => {
-    if (paginated && totalPages > 0 && page > totalPages) setPage(totalPages);
-  }, [paginated, totalPages, page]);
+    if (paginated && totalPages > 0 && page > totalPages) setPage(totalPages, { replace: true });
+  }, [paginated, totalPages, page, setPage]);
   const flatLocations = flat.data?.rows ?? [];
   // The selected location's live row (with its item count), for the compact summary card.
   //
@@ -689,7 +728,7 @@ function InventoryWorkspace() {
       setSelectedLocationId(id);
       withViewTransition(() => setDensity('visual'));
     },
-    [setDensity],
+    [setDensity, setSelectedLocationId],
   );
 
   // Duplicate the single selected item (enabled only when exactly one is selected). The clone
@@ -1526,7 +1565,10 @@ function InventoryWorkspace() {
           // Jump-to-item, mirroring the command palette / alert deep-links: seed the search so
           // the item is in view even if a filter would hide it, then flash its card.
           setScannerOpen(false);
-          useInventoryEntry.getState().requestSearch(item.name);
+          // Both halves of the box: the URL is what the query reads, and the input is what the
+          // user sees — set together so the debounce below has nothing left to commit.
+          setSearchInput(item.name);
+          setView({ search: item.name });
           requestHighlight(item.id);
         }}
       />

@@ -4,10 +4,9 @@
  * Mounted once at the app root. Opens on Cmd/Ctrl-/ (or from the dashboard hero's Search
  * trigger) and runs in one of two modes, chosen by what you type:
  *
- * - **Item search** (the default): searches items live as you type and, on selection, hands
- *   the chosen item's name to the Inventory screen (via {@link useInventoryEntry}) and
- *   navigates there — the inventory detail view is dialog state with no deep-linkable route,
- *   so "jump to item" lands the screen pre-filtered to it.
+ * - **Item search** (the default): searches items live as you type and, on selection, navigates
+ *   to `/inventory?q=<name>` — the inventory detail view is dialog state with no deep-linkable
+ *   route, so "jump to item" lands the screen pre-filtered to it.
  * - **Screen jump** (`>` prefix): typing `>` turns the palette into a screen switcher over
  *   {@link PALETTE_DESTINATIONS} — every nav screen plus the off-nav ones (the Reports
  *   sub-screens and the Modules manager); picking one navigates straight to that route.
@@ -63,7 +62,6 @@ import { useMoveItem } from '@/features/inventory/mutations';
 import { useCheckoutItem } from '@/features/contacts/contacts';
 import { QuantityStepper } from '@/features/inventory/components/QuantityStepper';
 import { isUnlimited } from '@/features/inventory/unlimited';
-import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { useCommandPaletteStore } from './useCommandPaletteStore';
 
 /** Cap on results shown — a quick picker, not a full list (that's the Inventory screen). */
@@ -226,14 +224,13 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
     row?.scrollIntoView({ block: 'nearest' });
   }, [active, activeEntry, acting]);
 
-  // Hand a query to the Inventory screen and go there, then close the palette. Seeding its
+  // Navigate to the Inventory screen with the query in its URL, then close the palette. The
   // quick-search box is how the palette reaches the item list at all — the detail view is dialog
   // state with no deep-linkable route. An item's name opens that one item ("open details", Enter's
   // default and the panel's primary); the raw query opens the whole match set (the "see all" row).
   const openInInventory = (search: string) => {
     onClose();
-    useInventoryEntry.getState().requestSearch(search);
-    void navigate({ to: '/inventory' });
+    void navigate({ to: '/inventory', search: { q: search } });
   };
 
   const select = (index: number) => {

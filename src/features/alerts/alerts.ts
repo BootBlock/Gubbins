@@ -60,6 +60,25 @@ export interface AlertTarget {
 }
 
 /**
+ * The router destination an alert's "View" link navigates to: its route, plus the search params
+ * that put the item on screen when it names one.
+ *
+ * The Inventory screen's whole view lives in its URL (issue #574), so an item alert is an
+ * ordinary link to a filtered list rather than a handover the destination has to consume — the
+ * link can be copied, opened in a new tab, and undone with Back like any other.
+ */
+export function alertTargetLink(target: AlertTarget): {
+  readonly to: string;
+  readonly search?: Record<string, string>;
+} {
+  // `q` is the Inventory screen's quick-search param; no other route reads it, so the name is
+  // only spliced in for that destination.
+  return target.route === '/inventory' && target.itemName
+    ? { to: target.route, search: { q: target.itemName } }
+    : { to: target.route };
+}
+
+/**
  * A single proactive alert surfaced in the alert centre.
  *
  * The `id` is a pure function of the source entity and `now` — no render counter, nothing that
