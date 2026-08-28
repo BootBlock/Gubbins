@@ -202,10 +202,14 @@ export function useSetItemTags(itemId: string) {
     tagsKey: inventoryKeys.itemTags(itemId),
     headingKey: 'inventory.writeError.heading.tagsItem',
     write: (names) => getTagRepository().setForItem(itemId, names),
-    // Gaining a first tag must un-hide the Tags section for a category that hides it (issue
-    // #618); the presence probe is a deeper key than `itemTags`, so no prefix sweep reaches it.
-    invalidateExtra: (client) =>
-      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) }),
+    invalidateExtra: (client) => {
+      // Gaining a first tag must un-hide the Tags section for a category that hides it (issue
+      // #618); the presence probe is a deeper key than `itemTags`, so no prefix sweep reaches it.
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemSectionPresence(itemId) });
+      // Refresh the on-card Tags chips (E1) — each resident window keys its read on its own
+      // item ids, so the shared prefix is what reaches all of them at once (issue #624).
+      void client.invalidateQueries({ queryKey: inventoryKeys.itemsTagsAll() });
+    },
   });
 }
 
