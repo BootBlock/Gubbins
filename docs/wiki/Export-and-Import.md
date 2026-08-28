@@ -153,6 +153,26 @@ going through the item importer first.
 > is listed in the review with its row number and the value your file gave, so a quantity is never
 > quietly changed on the way in.
 
+> **ℹ️ Note**
+> A row that matches an item you already have **updates** it, and that includes its **quantity**
+> and its **location** — so "export the catalogue, edit the counts in a spreadsheet, import it
+> back" works as a stock-take. The quantity in your file is the **count on hand**, not an amount
+> to add: a row reading `250` leaves the item holding 250 whatever it held before. The change is
+> recorded in the [[item's history|Activity-Log]] like any other stock movement, so you can see
+> what an import moved and when. A row whose quantity already matches changes nothing and logs
+> nothing, which is what re-importing an untouched export does.
+>
+> A **location** cell moves the item there, gathering any stock split across other places into
+> it. The **Location** dropdown above the preview is different — it only says where *new* items
+> go, and never moves an item you already have.
+>
+> Only a [[bulk item|Tracking-Modes]] has a count an import can set. A serialised, consumable or
+> untracked item is flagged in the review instead, with the reason, rather than showing a number
+> that would never land.
+>
+> The preview's **Qty** column shows what each row will do: a new item shows the figure from your
+> file, and a matched one shows the new count with the current one beside it (`250 (was 200)`).
+
 > **⚠️ Heads-up**
 > A **serialised** item is a single tracked instance, so its quantity is always 1. If a row says
 > it's serialised but asks for a quantity of 5, the review flags it rather than quietly importing

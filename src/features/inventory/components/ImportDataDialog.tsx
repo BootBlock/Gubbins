@@ -248,7 +248,16 @@ function PreviewTable({ rows }: { rows: readonly ImportPreviewRow[] }) {
                   {row.name || <span className="text-muted-foreground">(none)</span>}
                   {row.message ? <span className="block text-xs text-destructive">{row.message}</span> : null}
                 </td>
-                <td className="px-3 py-1.5 tabular-nums text-foreground">{row.quantity || '—'}</td>
+                <td className="px-3 py-1.5 tabular-nums text-foreground">
+                  {row.quantityChange ? (
+                    <>
+                      {row.quantityChange.to}{' '}
+                      <span className="text-xs text-muted-foreground">(was {row.quantityChange.from})</span>
+                    </>
+                  ) : (
+                    row.quantity || '—'
+                  )}
+                </td>
                 <td className="px-3 py-1.5 font-mono text-xs text-foreground">{row.sku || '—'}</td>
                 <td className="px-3 py-1.5 text-foreground">{row.manufacturer || '—'}</td>
                 <td className="px-3 py-1.5">
@@ -270,6 +279,10 @@ function PreviewTable({ rows }: { rows: readonly ImportPreviewRow[] }) {
 
 function ResultView({ result, onClose }: { result: CatalogApplyResult; onClose: () => void }) {
   const hasSkipped = result.skipped > 0;
+  // Every row that carries a message, not only the skipped ones: an update whose fields landed
+  // but whose stock move, tags or custom fields failed is a partial success, and hiding that half
+  // is the same silence issue #592 was about.
+  const problemRows = result.rows.filter((r) => r.error !== undefined);
   return (
     <div className="space-y-4">
       <SectionHeading>Import complete</SectionHeading>
@@ -290,19 +303,17 @@ function ResultView({ result, onClose }: { result: CatalogApplyResult; onClose: 
         </Surface>
       </div>
 
-      {hasSkipped ? (
+      {problemRows.length > 0 ? (
         <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-3">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-destructive">
-            Rows skipped during import
+            Problems during import
           </p>
           <ul className="max-h-36 space-y-1 overflow-y-auto">
-            {result.rows
-              .filter((r) => r.kind === 'skipped')
-              .map((r) => (
-                <li key={r.sourceRow} className="text-xs text-destructive">
-                  <span className="font-medium">Row {r.sourceRow}:</span> {r.error}
-                </li>
-              ))}
+            {problemRows.map((r) => (
+              <li key={r.sourceRow} className="text-xs text-destructive">
+                <span className="font-medium">Row {r.sourceRow}:</span> {r.error}
+              </li>
+            ))}
           </ul>
         </div>
       ) : null}

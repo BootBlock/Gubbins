@@ -239,6 +239,9 @@ describe('buildCatalogImportPlan — update path (match by name)', () => {
     // quantity is not a field on UpdateItemInput, so it must not appear
     const upd = plan.update[0]!.input;
     expect('quantity' in upd).toBe(false);
+    // It rides beside the input instead, and lands through the stock ledger (issue #592) — see
+    // `catalog-import-stock.test.ts` for the counts actually moving.
+    expect(plan.update[0]!.stock).toEqual({ before: 0, counted: 50 });
   });
 });
 
