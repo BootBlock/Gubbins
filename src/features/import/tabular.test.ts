@@ -116,6 +116,17 @@ describe('detectImportFormat', () => {
     expect(extractTableRows(csv).dataRows).toHaveLength(3);
   });
 
+  it('does not read a quote that closes past the detection sample as an unclosed one', () => {
+    // Detection samples the first 10 lines; extraction reads the whole text. A quoted cell that
+    // closes on line 11 looks unclosed to the sample, so a quote-blind width could win — and
+    // extraction, finding nothing wrong, would then hand back rows under a delimiter the file
+    // does not use, with no warning at all.
+    const lines = ['"Note;A;B,X', ...Array.from({ length: 9 }, () => 'a;b;c,d'), 'end",Y', 'p,q'];
+    const text = lines.join('\n');
+    expect(detectImportFormat(text)).toBe('lines');
+    expect(extractTableRows(text).dataRows).toEqual([]);
+  });
+
   it('still detects CSV when the very first line of a long file opens a quote', () => {
     // Past the 10-line detection sample the merged row is the only row, so the drop-the-last-row
     // rule has nothing left to judge by and the quote-blind widths are what answer.

@@ -228,7 +228,12 @@ function naiveWidths(sample: string, delimiter: string): number[] {
  * cell holding a delimiter inflates its count — {@link detectDelimited} must not let it outrank
  * a delimiter the codec read cleanly.
  */
-function delimiterConsistency(sample: string, delimiter: string, truncated: boolean): DelimiterFit {
+function delimiterConsistency(
+  sample: string,
+  delimiter: string,
+  truncated: boolean,
+  text: string,
+): DelimiterFit {
   const read = readDelimited(sample, delimiter);
   const parsed = read.rows.filter((row) => row.some((c) => c.trim().length > 0));
   // A sample cut off mid-file may have severed the final row (or left a quoted cell unclosed,
@@ -243,7 +248,12 @@ function delimiterConsistency(sample: string, delimiter: string, truncated: bool
   // The codec made no sense of the sample. An unclosed quote explains why, and the quote-blind
   // widths may still show a table. Two lines minimum: a single line carrying a stray quote is
   // far more likely a free-form note than a table, and a line list is the kinder reading of it.
-  if (read.unterminatedQuote) {
+  // A quoted cell that closes *past* the sample looks identical here to one that never closes,
+  // and the difference decides everything: extraction reads the whole text, so a quote that does
+  // close leaves it no defect to report and it hands back rows under a delimiter chosen from a
+  // merge that never existed. Confirm against the whole text before committing to a quote-blind
+  // reading; an untruncated sample is the whole text already.
+  if (read.unterminatedQuote && (!truncated || readDelimited(text, delimiter).unterminatedQuote)) {
     const widths = naiveWidths(sample, delimiter);
     const naive = widths.length >= 2 ? widths[0]! : 0;
     if (naive > 1 && widths.every((w) => w === naive)) {
@@ -282,7 +292,7 @@ function detectDelimited(text: string): ImportFormat | null {
   let blindBest: ImportFormat | null = null;
   let blindColumns = 1;
   for (const [format, delimiter] of candidates) {
-    const fit = delimiterConsistency(sample, delimiter, truncated);
+    const fit = delimiterConsistency(sample, delimiter, truncated, text);
     if (!fit.consistent) continue;
     if (fit.quoteBlind) {
       if (fit.columns > blindColumns) {
