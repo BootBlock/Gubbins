@@ -117,6 +117,18 @@ work:
 - The [[reorder / shopping list|Reorder-and-Shopping-List]], which turns low stock into things
   to buy.
 - Optional [[OS reminder notifications|Reminder-Notifications]] on an installed app.
+- The [[bridge|Bridge-Overview]] surfaces — the [[Home Assistant|Home-Assistant-Integration]]
+  sensors, the [[MQTT summary and webhooks|Webhooks-MQTT-and-iCal]] and the metrics a dashboard
+  scrapes.
+
+> **⚠️ Heads-up**
+> The bridge reads your inventory, not your browser, so it can only see a **default** threshold you
+> have chosen to share. Turn on
+> [[sharing settings between devices|Sharing-Settings-Between-Devices]] with the *Alerts &
+> thresholds* group ticked, and sync — then the Home Assistant low-stock sensor, the MQTT counts
+> and the low-stock events all use the same default the app does. Without that the bridge falls
+> back to the shipped default of *off*, so it flags only items given a **per-item** threshold.
+> Per-item thresholds are part of the item itself, so they reach the bridge either way.
 
 ## Related pages
 

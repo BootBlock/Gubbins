@@ -12,8 +12,9 @@
  * repository seam `/api/v1/status` uses — so it is a single query per projection whatever the
  * inventory's size, and its `low-stock` / `out-of-stock` fragments are the app's SSOT predicates.
  * Those are held to the same answer as the pure `isLow` / `isOutOfStock` seams the events use by
- * the app's own drift guard (`stock-attention-parity.test.ts`), and the thresholds are the shared
- * {@link DEFAULT_LOW_STOCK} — so the SQL and in-memory definitions cannot part company.
+ * the app's own drift guard (`stock-attention-parity.test.ts`), and the thresholds are the ones the
+ * caller resolved through `readLowStockThresholds` — the same blanket the derived `item.low_stock`
+ * events judge against — so the SQL and in-memory definitions cannot part company.
  *
  * It used to page fully-hydrated items into JavaScript instead and apply the pure seams row by
  * row, capped at 50,000 active items: 500 sequential reads on every Prometheus scrape, and past
@@ -32,7 +33,7 @@ import type { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { MAX_PAGE_SIZE } from '@/db/repositories/constants.ts';
 import type { ItemStatusFilter } from '@/db/repositories/item/status-filter.ts';
 import type { Page } from '@/db/repositories/types';
-import { DEFAULT_LOW_STOCK } from './events/model.ts';
+import type { ReorderDefaults } from '@/features/inventory/reorder-policy.ts';
 
 /** Hard cap on how many locations a projection walks — locations are a small physical hierarchy. */
 export const MAX_LOCATIONS_SCANNED = 10_000;
@@ -69,12 +70,15 @@ export interface StockLevelCounts {
  * floor), while out-of-stock is a plain fact of depletion — so an item at zero with no reorder
  * point is counted as out of stock even though it is not "low".
  */
-export async function countStockLevels(items: ItemRepository): Promise<StockLevelCounts> {
+export async function countStockLevels(
+  items: ItemRepository,
+  lowStock: ReorderDefaults,
+): Promise<StockLevelCounts> {
   const counts = await items.applicableStatuses({
     candidates: STOCK_LEVEL_STATUSES,
-    // Passed explicitly (rather than left to the repository's own fallback) so the link to the
-    // event thresholds is visible here: if those move, these counts move with them.
-    lowStockThresholds: DEFAULT_LOW_STOCK,
+    // Required rather than defaulted, so a new projection cannot quietly count against the shipped
+    // thresholds while every other surface counts against the user's blanket (issue #483).
+    lowStockThresholds: lowStock,
   });
   // `applicableStatuses` omits a status nothing matches (the filter bar hides an empty chip), so
   // an absent entry is a real zero rather than a missing answer.

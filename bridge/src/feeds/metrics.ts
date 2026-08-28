@@ -5,7 +5,8 @@
  * A **read-only projection through the app's own repositories** — never bespoke SQL, mirroring the
  * iCal feed and the MQTT state projection. The low/out-of-stock counts come from the shared
  * {@link countStockLevels} (reusing the app's own low/out-of-stock predicates), the *same* helper
- * the EI-5 MQTT state projection uses — so a scraped `gubbins_low_stock_items` can never drift from
+ * the EI-5 MQTT state projection uses, judged against the *same* blanket thresholds
+ * ({@link readLowStockThresholds}) — so a scraped `gubbins_low_stock_items` can never drift from
  * the `item.low_stock` events or the MQTT `gubbins/summary` counts. Per-location fullness reuses
  * the app's own `locationFullness` seam (the maths behind the Edit-location gauge).
  *
@@ -21,6 +22,7 @@ import { locationFullness } from '@/features/inventory/location-fullness.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import type { LocationWithCount } from '@/db/repositories/types';
 import { countStockLevels, forEachPage, MAX_LOCATIONS_SCANNED } from '../inventory-scan.ts';
+import { readLowStockThresholds } from '../low-stock-thresholds.ts';
 
 /** One location's metrics row: its identity, item count, optional capacity and fullness ratio. */
 export interface LocationMetric {
@@ -56,7 +58,10 @@ export interface MetricsSnapshot {
 export async function projectMetrics(driver: IDatabaseDriver): Promise<MetricsSnapshot> {
   const items = new ItemRepository(driver);
   const itemsTotal = await items.count();
-  const { lowStockItems, outOfStockItems } = await countStockLevels(items);
+  const { lowStockItems, outOfStockItems } = await countStockLevels(
+    items,
+    await readLowStockThresholds(driver),
+  );
   const locations = await projectLocations(driver);
   return { itemsTotal, lowStockItems, outOfStockItems, locationsTotal: locations.length, locations };
 }

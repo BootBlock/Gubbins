@@ -9,11 +9,11 @@
  * Like the metrics and MQTT projections it is a **read-only projection through the app's own
  * repository**, never bespoke SQL: {@link ItemRepository.applicableStatuses} is the single query
  * (one conditional `SUM` per status, one pass over `items`), and each status inside it reuses its
- * own SSOT predicate. The low-stock thresholds are the same {@link DEFAULT_LOW_STOCK} the derived
- * `item.low_stock` events and the `/metrics` counts use, so no bridge surface can apply a
- * different idea of "low" from another — and since `/metrics` now counts its two stock statuses
- * through this same repository seam, its figures are these figures, not merely thresholds that
- * agree.
+ * own SSOT predicate. The low-stock thresholds come from the same {@link readLowStockThresholds}
+ * the derived `item.low_stock` events and the `/metrics` counts read, so no bridge surface can
+ * apply a different idea of "low" from another — and since `/metrics` now counts its two stock
+ * statuses through this same repository seam, its figures are these figures, not merely thresholds
+ * that agree.
  *
  * Unlike the app's filter bar, this deliberately probes **every** status rather than a
  * module-enabled subset: which modules are on is per-device UI state (the `gubbins:modules` store),
@@ -28,7 +28,7 @@
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { ITEM_STATUS_FILTERS, type ItemStatusFilter } from '@/db/repositories/item/status-filter.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
-import { DEFAULT_LOW_STOCK } from '../events/model.ts';
+import { readLowStockThresholds } from '../low-stock-thresholds.ts';
 
 /** Every attention status mapped to how many active items currently match it (`0` included). */
 export type ItemStatusCounts = Readonly<Record<ItemStatusFilter, number>>;
@@ -39,9 +39,9 @@ export type ItemStatusCounts = Readonly<Record<ItemStatusFilter, number>>;
  */
 export async function projectItemStatuses(driver: IDatabaseDriver): Promise<ItemStatusCounts> {
   const rows = await new ItemRepository(driver).applicableStatuses({
-    // Passed explicitly (rather than left to the repository's own fallback) so the link to the
-    // event/metrics thresholds is visible here: if those move, this count moves with them.
-    lowStockThresholds: DEFAULT_LOW_STOCK,
+    // Read through the shared seam rather than left to the repository's own fallback, so this
+    // count follows the user's blanket exactly as the event and `/metrics` surfaces do.
+    lowStockThresholds: await readLowStockThresholds(driver),
   });
   const counted = new Map(rows.map((row) => [row.status, row.count]));
   const out = {} as Record<ItemStatusFilter, number>;

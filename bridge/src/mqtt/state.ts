@@ -7,10 +7,11 @@
  * low-stock and out-of-stock counts, and a per-location item count.
  *
  * The low-stock / out-of-stock counts come from the shared {@link countStockLevels} — a
- * whole-inventory aggregate over the app's own low/out-of-stock predicates, with the app-default
- * low-stock thresholds — so the published counts can never drift from the `item.low_stock` /
- * `item.out_of_stock` events. The per-location walk is bounded (paged at the repository ceiling up
- * to {@link MAX_LOCATIONS_SCANNED}) so a huge hierarchy can't produce an unbounded scan.
+ * whole-inventory aggregate over the app's own low/out-of-stock predicates, judged against the
+ * blanket thresholds {@link readLowStockThresholds} resolves — so the published counts can never
+ * drift from the `item.low_stock` / `item.out_of_stock` events. The per-location walk is bounded
+ * (paged at the repository ceiling up to {@link MAX_LOCATIONS_SCANNED}) so a huge hierarchy can't
+ * produce an unbounded scan.
  */
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
@@ -18,6 +19,7 @@ import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import { toLocationFieldValues, type LocationFieldValueDto } from '../api/dto.ts';
 import { countStockLevels, forEachPage, MAX_LOCATIONS_SCANNED } from '../inventory-scan.ts';
+import { readLowStockThresholds } from '../low-stock-thresholds.ts';
 
 /** How many locations' custom-field values to read concurrently (see {@link projectLocations}). */
 const LOCATION_FIELD_READ_CHUNK = 25;
@@ -65,7 +67,10 @@ export async function projectInventoryState(
 ): Promise<InventoryState> {
   const items = new ItemRepository(driver);
   const itemsTotal = await items.count();
-  const { lowStockItems, outOfStockItems } = await countStockLevels(items);
+  const { lowStockItems, outOfStockItems } = await countStockLevels(
+    items,
+    await readLowStockThresholds(driver),
+  );
   const locations = await projectLocations(driver);
   return { itemsTotal, lowStockItems, outOfStockItems, locations, generatedAt: options.generatedAt };
 }

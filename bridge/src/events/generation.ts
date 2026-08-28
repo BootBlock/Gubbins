@@ -19,6 +19,7 @@ import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
 import type { Item } from '@/db/repositories/types';
 import { toItemSummary, type ItemSummaryDto } from '../api/dto.ts';
+import { readLowStockThresholds } from '../low-stock-thresholds.ts';
 import {
   buildEvents,
   buildLocationEvents,
@@ -90,7 +91,14 @@ export async function computeGenerationEvents(
     resolved.push({ entry, item, summary: await toSummary(item, locations, locationNames) });
   }
 
-  return { events: [...buildEvents(resolved, options), ...locationEvents], cursor: next };
+  // The blanket low-stock thresholds are user preferences, so they live in the snapshot rather than
+  // in this build's constants (issue #483). Reading them from *this* generation's driver is what
+  // makes a threshold changed in Settings and synced take effect on the next hydration, exactly as
+  // an item edit does. An explicit caller override still wins, and the read is deferred to here so
+  // a generation with no item events to build never pays for it.
+  const lowStockDefaults = options.lowStockDefaults ?? (await readLowStockThresholds(driver));
+  const built = buildEvents(resolved, { ...options, lowStockDefaults });
+  return { events: [...built, ...locationEvents], cursor: next };
 }
 
 /** Project an item to its summary DTO, resolving (and caching) its home-location name. */

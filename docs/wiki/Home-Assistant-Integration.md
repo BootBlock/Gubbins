@@ -51,6 +51,13 @@ which includes a built-in, step-by-step setup guide.
   can trigger Home Assistant automations from inventory changes (e.g. notify when something runs
   low).
 
+> **⚠️ Heads-up**
+> For the *low stock* count to match the app exactly, the bridge needs your **default** low-stock
+> threshold, and that is a setting rather than inventory data. Share it by turning on
+> [[sharing settings between devices|Sharing-Settings-Between-Devices]] with the *Alerts &
+> thresholds* group ticked, then sync. Until then the bridge counts only items you've given a
+> [[per-item threshold|Low-Stock-and-Gauges]], which travels with the item itself.
+
 ## Reading a scale
 
 Everything above sends information *to* Home Assistant. One feature reads *from* it: if you have a

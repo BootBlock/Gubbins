@@ -232,7 +232,12 @@ export const DEFAULT_EVENT_SCAN_LIMIT = 100;
  */
 export const DEFAULT_FAN_OUT_CAP = 50;
 
-/** The low-stock thresholds the derived `item.low_stock` event uses (the app defaults). */
+/**
+ * The shipped low-stock thresholds — the fallback the derived `item.low_stock` event judges
+ * against when the user has not shared a blanket of their own. `readLowStockThresholds` reads that
+ * blanket out of the synced `settings` table and hands it to {@link buildEvents} instead, so this
+ * is what "nothing shared" resolves to rather than what the event always uses (issue #483).
+ */
 export const DEFAULT_LOW_STOCK: ReorderDefaults = {
   qtyThreshold: LOW_STOCK_QTY_THRESHOLD,
   gaugePercent: LOW_STOCK_GAUGE_PERCENT,

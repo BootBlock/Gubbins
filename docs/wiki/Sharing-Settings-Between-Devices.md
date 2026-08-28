@@ -50,6 +50,12 @@ setting, **the device that changed it most recently wins**. Because each setting
 separately, changing your theme on a phone does not disturb a threshold you tuned on a desktop —
 both changes survive.
 
+> **💡 Tip**
+> Sharing *Alerts & thresholds* does one more thing: it is what lets the
+> [[bridge|Bridge-Overview]] see your **default** low-stock threshold, so the
+> [[Home Assistant|Home-Assistant-Integration]] sensors and the MQTT counts flag the same items
+> the app does. See [[Low stock & gauges|Low-Stock-and-Gauges]].
+
 > **ℹ️ Note**
 > Settings travel on a **sync**, not instantly. Change something on one device, sync it, then sync
 > the other, and the change lands. The Sync screen says how many settings it brought in.
