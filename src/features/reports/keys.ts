@@ -54,8 +54,20 @@ export const reportKeys = {
       currency,
       [...(omittedKinds ?? [])].sort().join(','),
     ] as const,
-  spend: (windowDays: number, buckets: number) => [...reportKeys.all, 'spend', windowDays, buckets] as const,
-  sales: (windowDays: number, buckets: number) => [...reportKeys.all, 'sales', windowDays, buckets] as const,
+  /**
+   * Keyed on the base currency like every other money report (issue #572): the spend total is a
+   * *function* of it — a purchase order priced in another currency is excluded from the figures
+   * rather than converted — so a cached total belongs to the currency it was computed under.
+   */
+  spend: (windowDays: number, buckets: number, currency: string) =>
+    [...reportKeys.all, 'spend', windowDays, buckets, currency] as const,
+  /**
+   * Keyed on the base currency for the same reason as {@link reportKeys.spend} (issue #572), by
+   * way of its decimals: proceeds, cost and margin are quantised to the base currency's minor
+   * unit, so figures computed at one scale must not be re-labelled at another.
+   */
+  sales: (windowDays: number, buckets: number, currency: string) =>
+    [...reportKeys.all, 'sales', windowDays, buckets, currency] as const,
 
   /** The insurance schedule's own prefix — its summary and its pages share it (G1, issue #163). */
   insuranceSchedule: () => [...reportKeys.all, 'insurance-schedule'] as const,
