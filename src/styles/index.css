@@ -972,6 +972,19 @@
  * `bg-background`, `text-muted-foreground`, `border-border`, `bg-warning`, etc.
  * all resolve and switch with the active theme. */
 @theme inline {
+  /*
+   * Tailwind's `sm` breakpoint, restated at its default value so it has a name something else
+   * can be checked against (issue #441).
+   *
+   * The dashboard widget board applies its grid placement and cell spans only from `sm:` up;
+   * below it the board is a plain single column and a card's span is meaningless. The widget
+   * bodies have to make the same call in JS — a card told it is 2×2 draws twice the rows — so
+   * `widget-size.tsx` carries the matching media query, and `widget-size.test.ts` reads this
+   * declaration and asserts the two still agree. Change the value here and that test fails,
+   * rather than the board silently drawing a phone-width card as though it were a large one.
+   */
+  --breakpoint-sm: 40rem;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
@@ -1100,6 +1113,18 @@
   /* Denser secondary tier (compact text-xs labels in nested editors): a
    * proportionally smaller gap from the same family — use `mb-field-gap-compact`. */
   --spacing-field-gap-compact: 0.5rem; /* 8px */
+
+  /*
+   * Minimum height of one row of the customisable dashboard's widget grid (issue #441).
+   *
+   * A card can span two rows, and a span only reads as "twice the card" when a row has a
+   * predictable height — with rows sized purely to their content, a 2-row card would be
+   * whatever its neighbours happened to make it. This is a floor rather than a fixed height:
+   * a row still grows to fit a card that overflows it, so no card is ever clipped, and the
+   * board keeps a steady rhythm the rest of the time. Read by `DashboardGrid`'s
+   * `sm:auto-rows-[minmax(var(--spacing-dashboard-row),auto)]`.
+   */
+  --spacing-dashboard-row: 9rem; /* 144px */
 
   /*
    * Room an outward focus/selection ring needs to paint, for a scroll container that clips

@@ -58,6 +58,7 @@ import { inventorySearchInLocation } from '@/features/inventory/view-params';
 import { IN_TRANSIT_LOCATION_ID } from '@/db/repositories/constants';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { nowMs } from '@/lib/clock';
+import { listColumns, listRowCount, useWidgetSize } from './widget-size';
 
 export interface WidgetDefinition {
   readonly id: string;
@@ -124,6 +125,7 @@ function WidgetShell({
   loading = false,
   error = false,
   errorMessage,
+  columns = 1,
   children,
 }: {
   icon: ReactNode;
@@ -134,6 +136,13 @@ function WidgetShell({
   error?: boolean;
   /** Overrides the default "couldn't load" copy — e.g. the crash fallback's wording. */
   errorMessage?: string;
+  /**
+   * How many columns to lay the body's rows out in (issue #441). A widget widened to two
+   * cells asks for two, so the space it took buys twice the rows rather than twice-as-wide
+   * ones. A skeleton, an error and an empty state always draw in one column — there is one
+   * line to show, and splitting it would only strand it half-way across the card.
+   */
+  columns?: number;
   children: ReactNode;
 }) {
   const t = useT();
@@ -150,7 +159,7 @@ function WidgetShell({
           <AnimatedNumber value={count} className={cn('ml-auto text-lg font-semibold', TONE_COUNT[tone])} />
         ) : null}
       </div>
-      <div className="mt-2 space-y-1">
+      <div className={cn('mt-2', columns > 1 ? 'grid grid-cols-2 gap-x-4 gap-y-1' : 'space-y-1')}>
         {error ? (
           <p className="text-xs text-warning">{errorMessage ?? t('dashboard.widget.error')}</p>
         ) : loading ? (
@@ -187,6 +196,19 @@ function WidgetSkeleton() {
       <div className="shimmer h-3 w-1/2 rounded" />
     </div>
   );
+}
+
+/**
+ * How a list widget should fill the tile it has been given (issue #441): how many rows it may
+ * draw, and how many columns to draw them in. A card left at its default 1×1 size gets exactly
+ * `baseRows` in one column — the list every one of these widgets showed before resizing existed.
+ *
+ * `itemCount` is what the widget actually has to show, so a card that is wide but empty keeps
+ * its one-line empty state in a single column instead of splitting it.
+ */
+function useListLayout(baseRows: number, itemCount: number): { limit: number; columns: number } {
+  const size = useWidgetSize();
+  return { limit: listRowCount(size, baseRows), columns: itemCount > 0 ? listColumns(size) : 1 };
 }
 
 function WidgetRow({ label, meta, dim = false }: { label: string; meta?: ReactNode; dim?: boolean }) {
@@ -256,6 +278,7 @@ function LowStockWidget() {
   // item stays flagged (and counted) on its on-hand quantity even when fully on order.
   const onOrder = useOnOrderQtys(rows.map((item) => item.id));
   const onOrderById = onOrder.data;
+  const list = useListLayout(3, rows.length);
   return (
     <WidgetShell
       icon={<LowStockIcon />}
@@ -264,11 +287,12 @@ function LowStockWidget() {
       tone={count > 0 ? 'warning' : 'quiet'}
       loading={lowStock.isPending || total.isPending}
       error={lowStock.isError || total.isError}
+      columns={list.columns}
     >
       {rows.length === 0 ? (
         <EmptyRow>{t('dashboard.widget.lowStock.empty')}</EmptyRow>
       ) : (
-        rows.slice(0, 3).map((item) => {
+        rows.slice(0, list.limit).map((item) => {
           // The row's supply picture in one call (issue #88): the suggested top-up (its own
           // reorder quantity, else the shortfall back up to its effective reorder point), how
           // much is already inbound, and whether that inbound stock fully covers the top-up —
@@ -333,6 +357,7 @@ function ExpiringWidget() {
   // A `COUNT(*)` for the same reason as the Low stock tile above (issue #606).
   const total = useExpiringCount(expirySoonWindowDays);
   const count = total.data ?? 0;
+  const list = useListLayout(3, rows.length);
   return (
     <WidgetShell
       icon={<ExpiryIcon />}
@@ -341,11 +366,12 @@ function ExpiringWidget() {
       tone={count > 0 ? 'warning' : 'quiet'}
       loading={expiring.isPending || total.isPending}
       error={expiring.isError || total.isError}
+      columns={list.columns}
     >
       {rows.length === 0 ? (
         <EmptyRow>{t('dashboard.widget.expiring.empty')}</EmptyRow>
       ) : (
-        rows.slice(0, 3).map((item) => {
+        rows.slice(0, list.limit).map((item) => {
           // The feed selects on the *effective* expiry — the earlier of the item's own date and
           // its earliest stocked lot's — so the row must show that date too, or an item that is
           // here purely because a lot expires next week would show no date at all (issue #684).
@@ -377,6 +403,7 @@ function OverdueWidget() {
   const counts = useOpenCheckoutCounts();
   const overdueCount = counts.data?.overdue ?? 0;
   const stillOnLoan = (counts.data?.open ?? 0) - overdueCount;
+  const list = useListLayout(3, overdue.length);
   return (
     <WidgetShell
       icon={<DueDateIcon />}
@@ -387,6 +414,7 @@ function OverdueWidget() {
       tone={overdueCount > 0 ? 'danger' : 'quiet'}
       loading={openCheckouts.isPending || counts.isPending}
       error={openCheckouts.isError || counts.isError}
+      columns={list.columns}
     >
       {overdue.length === 0 ? (
         <EmptyRow>
@@ -396,7 +424,7 @@ function OverdueWidget() {
         </EmptyRow>
       ) : (
         <>
-          {overdue.slice(0, 3).map((c) => (
+          {overdue.slice(0, list.limit).map((c) => (
             <WidgetRow
               key={c.id}
               label={c.itemName}
@@ -411,7 +439,9 @@ function OverdueWidget() {
             />
           ))}
           {stillOnLoan > 0 ? (
-            <p className="text-[11px] text-muted-foreground">
+            // The footer is a note about the whole list, not a row in it, so it runs the
+            // full width of a two-column card rather than sitting in one of the columns.
+            <p className="col-span-full text-[11px] text-muted-foreground">
               {t('dashboard.widget.overdue.moreOnLoan', { vars: { count: stillOnLoan } })}
             </p>
           ) : null}
@@ -445,6 +475,7 @@ function MaintenanceWidget() {
   // A `COUNT(*)` for the same reason as the Low stock tile (issue #606).
   const total = useDueMaintenanceCount();
   const count = total.data ?? 0;
+  const list = useListLayout(3, rows.length);
   return (
     <WidgetShell
       icon={<MaintenanceIcon />}
@@ -453,11 +484,12 @@ function MaintenanceWidget() {
       tone={count > 0 ? 'warning' : 'quiet'}
       loading={dueMaintenance.isPending || total.isPending}
       error={dueMaintenance.isError || total.isError}
+      columns={list.columns}
     >
       {rows.length === 0 ? (
         <EmptyRow>{t('dashboard.widget.maintenance.empty')}</EmptyRow>
       ) : (
-        rows.slice(0, 3).map((m) => <WidgetRow key={m.id} label={m.itemName} meta={m.name} />)
+        rows.slice(0, list.limit).map((m) => <WidgetRow key={m.id} label={m.itemName} meta={m.name} />)
       )}
     </WidgetShell>
   );
@@ -467,6 +499,7 @@ function InTransitWidget() {
   const t = useT();
   const inTransit = useInTransitLines();
   const rows = inTransit.data?.rows ?? [];
+  const list = useListLayout(3, rows.length);
   return (
     <WidgetShell
       icon={<TruckIcon />}
@@ -475,11 +508,12 @@ function InTransitWidget() {
       tone={rows.length > 0 ? 'info' : 'quiet'}
       loading={inTransit.isPending}
       error={inTransit.isError}
+      columns={list.columns}
     >
       {rows.length === 0 ? (
         <EmptyRow>{t('dashboard.widget.inTransit.empty')}</EmptyRow>
       ) : (
-        rows.slice(0, 3).map((line) => (
+        rows.slice(0, list.limit).map((line) => (
           // Show the quantity still to arrive — part-received lines surface only their
           // outstanding remainder (§4 split receipts, Phase 24).
           <WidgetRow
@@ -498,6 +532,7 @@ function ProjectsWidget() {
   const projects = useProjects();
   // Surface the live (non-archived) projects with their lifecycle status (§3).
   const active = (projects.data?.rows ?? []).filter((p) => p.status !== 'ARCHIVED');
+  const list = useListLayout(3, active.length);
   return (
     <WidgetShell
       icon={<ProjectIcon />}
@@ -506,11 +541,14 @@ function ProjectsWidget() {
       tone={active.length > 0 ? 'info' : 'quiet'}
       loading={projects.isPending}
       error={projects.isError}
+      columns={list.columns}
     >
       {active.length === 0 ? (
         <EmptyRow>{t('dashboard.widget.projects.empty')}</EmptyRow>
       ) : (
-        active.slice(0, 3).map((p) => <WidgetRow key={p.id} label={p.name} meta={p.status.toLowerCase()} />)
+        active
+          .slice(0, list.limit)
+          .map((p) => <WidgetRow key={p.id} label={p.name} meta={p.status.toLowerCase()} />)
       )}
     </WidgetShell>
   );
@@ -534,6 +572,7 @@ function BudgetAlertsWidget() {
     // Surface the worst offenders first: over-budget before merely-warning.
     .sort((a, b) => Number(b.over) - Number(a.over));
 
+  const list = useListLayout(3, flagged.length);
   const tone: Tone = flagged.some((a) => a.over)
     ? 'danger'
     : flagged.some((a) => a.warn)
@@ -547,11 +586,12 @@ function BudgetAlertsWidget() {
       tone={tone}
       loading={alerts.isPending}
       error={alerts.isError}
+      columns={list.columns}
     >
       {flagged.length === 0 ? (
         <EmptyRow>{t('dashboard.widget.budget.empty')}</EmptyRow>
       ) : (
-        flagged.slice(0, 3).map((a) => (
+        flagged.slice(0, list.limit).map((a) => (
           <WidgetRow
             key={a.projectId}
             label={a.projectName}
@@ -582,12 +622,16 @@ function InventoryTotalsWidget() {
   const categoryCount = categories.data?.rows.length ?? 0;
   const loading = value.isPending || itemCount.isPending || locations.isPending || categories.isPending;
   const error = value.isError || itemCount.isError || locations.isError || categories.isError;
+  // The four figures are the whole widget, so height buys it nothing — but a widened card
+  // pairs them into two columns rather than leaving half of itself blank.
+  const size = useWidgetSize();
   return (
     <WidgetShell
       icon={<ValueIcon />}
       title={t('dashboard.widget.totals.title')}
       loading={loading}
       error={error}
+      columns={listColumns(size)}
     >
       {/* The at-a-glance pulse — its headline figures "count in" from zero on load (and
           roll on any later change). Reduced motion snaps to the final value. */}
@@ -613,13 +657,18 @@ function RecentActivityWidget() {
   // can pick up what they were last working on, unlike the exception trackers. Reuses the
   // pure describeHistoryEntry seam (Phase 52) for each row's label.
   const feed = useActivityFeed(undefined);
-  const rows = (feed.data?.pages.flatMap((p) => p.rows) ?? []).slice(0, 4);
+  const all = feed.data?.pages.flatMap((p) => p.rows) ?? [];
+  // The feed is already paged, so a taller card simply draws more of what has been fetched —
+  // there is no extra round-trip in growing this widget.
+  const list = useListLayout(4, all.length);
+  const rows = all.slice(0, list.limit);
   return (
     <WidgetShell
       icon={<HistoryIcon />}
       title={t('dashboard.widget.recent.title')}
       loading={feed.isPending}
       error={feed.isError}
+      columns={list.columns}
     >
       {rows.length === 0 ? (
         <EmptyRow>{t('dashboard.widget.recent.empty')}</EmptyRow>
