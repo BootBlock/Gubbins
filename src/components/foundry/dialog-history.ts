@@ -27,7 +27,7 @@
  * - **Our entry can end up buried.** A router navigation made from inside a dialog pushes on top
  *   of it, and popping then would undo that navigation rather than the dialog. So a release only
  *   reclaims the entry while it is verifiably still the one the browser is sitting on; otherwise
- *   it is abandoned, and the pop handler skips over the dead marker it leaves behind.
+ *   it is abandoned in place, costing at worst one later Back press that changes nothing.
  *
  * The ordering logic is in the pure {@link resolveDismissals}, split out so the LIFO rules are
  * unit-testable without a session history (the `modal-stack.ts` seam pattern).
@@ -113,11 +113,14 @@ function onPopState(): void {
   const { remaining, dismissed } = resolveDismissals(entries, arrivedId);
   entries = [...remaining];
   for (const entry of dismissed) entry.onDismiss();
-  // A marker naming no open surface is an abandoned entry — the user pressed Back and nothing
-  // visibly happened, because it carries the same URL as the entry below it. Step over it rather
-  // than making them press again. Not suppressed: if we are already at the oldest entry this is
-  // a no-op that fires no event, and a latched flag would then swallow a real Back press.
-  if (arrivedId !== null && !remaining.some((e) => e.id === arrivedId)) window.history.back();
+  // Landing on an abandoned marker — one whose surface has already gone — is deliberately left
+  // alone. Stepping over it with another `history.back()` looks like a kindness and is a trap: a
+  // dismissal above pushes its replacement synchronously, so by the time we got here the browser
+  // would no longer be on the dead entry, and going back would land on it *again*, dismiss the
+  // replacement, push another, and never stop. The cost of leaving it is one Back press that
+  // changes nothing visible, in the rare case where an entry was stranded (see
+  // {@link releaseDialogHistoryEntry}) and nothing is open above it. A press that arrives while
+  // something *is* still open is not wasted at all — it dismisses it, above.
 }
 
 function flushReleases(): void {
@@ -176,7 +179,10 @@ export function pushDialogHistoryEntry(onDismiss: () => void): DialogHistoryEntr
  * browser so the stack stays balanced.
  *
  * A no-op for an entry a `popstate` already consumed — that is the ordinary case of the user
- * pressing Back, where the browser has taken the entry itself.
+ * pressing Back, where the browser has taken the entry itself. An entry {@link flushReleases}
+ * declines to reclaim is abandoned in place: nothing can remove an entry from the middle of a
+ * session history, and an inert one carrying the same URL as its neighbour is the mildest
+ * possible outcome.
  */
 export function releaseDialogHistoryEntry(entry: DialogHistoryEntry): void {
   const index = entries.indexOf(entry);

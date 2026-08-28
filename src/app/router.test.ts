@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from '@tanstack/react-router';
 import { routeTree } from '@/routeTree.gen';
 import {
@@ -52,5 +52,51 @@ describe('resolveDefaultViewTransition', () => {
     expect(router.options.defaultViewTransition).toEqual(
       resolveDefaultViewTransition(viewTransitionTypesSupported()),
     );
+  });
+});
+
+describe('what actually decides whether the router consults the view-transition gate', () => {
+  const realSupports = window.CSS?.supports;
+
+  afterEach(() => {
+    if (window.CSS) window.CSS.supports = realSupports as typeof window.CSS.supports;
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
+  });
+
+  /**
+   * The drift test named by `viewTransitionTypesSupported`. Its docstring, and the choice
+   * `resolveDefaultViewTransition` makes on the strength of it, both rest on a condition that
+   * lives inside `@tanstack/router-core` and is not part of its API. So this drives the *real*
+   * router rather than restating our copy of the condition: if a future version starts
+   * consulting the `types` resolver without the selector — or stops consulting it with one —
+   * this fails, and the choice needs revisiting.
+   */
+  const driveRouter = (selectorSupported: boolean) => {
+    window.CSS = {
+      ...(window.CSS ?? {}),
+      supports: vi.fn(() => selectorSupported),
+    } as unknown as typeof window.CSS;
+    (document as { startViewTransition?: unknown }).startViewTransition = (
+      arg: (() => void) | { update: () => void },
+    ) => ({ updateCallbackDone: Promise.resolve((typeof arg === 'function' ? arg : arg.update)()) });
+
+    const types = vi.fn(() => false as const);
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+      defaultViewTransition: { types },
+    });
+    router.startViewTransition(() => {});
+    return types;
+  };
+
+  it('skips the resolver where the view-transition-type selector is unsupported', () => {
+    // Which is why `resolveDefaultViewTransition(false)` turns transitions off outright: the
+    // object form there would cross-fade the whole document with nothing gating it.
+    expect(driveRouter(false)).not.toHaveBeenCalled();
+  });
+
+  it('consults the resolver where it is supported', () => {
+    expect(driveRouter(true)).toHaveBeenCalled();
   });
 });

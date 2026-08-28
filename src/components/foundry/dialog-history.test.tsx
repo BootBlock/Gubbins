@@ -282,6 +282,29 @@ describe('Modal — the Back gesture', () => {
     await pressBack();
     expect(screen.queryByTestId('unsaved-keep-editing')).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Edit item' })).toBeTruthy();
+
+    // And the dialog still holds an entry underneath, so it is still Back that answers it.
+    await pressBack();
+    expect(screen.getByTestId('unsaved-keep-editing')).toBeTruthy();
+  });
+
+  it('does not chase an abandoned entry when the dismissal pushes a replacement over it', async () => {
+    baseEntry();
+    // An entry the seam could not reclaim: released while a later surface still sits above it,
+    // so it is stranded directly beneath the live one. (`flushReleases` declines rather than
+    // pop a run that is no longer at the top of the stack.)
+    const stranded = pushDialogHistoryEntry(vi.fn());
+    render(<BusyModalHarness busy />);
+    await waitFor(() => expect(marker()).toBeTypeOf('string'));
+    releaseDialogHistoryEntry(stranded);
+    await settle();
+
+    // Back lands on the dead marker. Stepping over it would be a trap: the refusal above has
+    // already pushed a replacement, so going back again would land on the dead entry once more
+    // and never stop.
+    await pressBack();
+
+    expect(screen.getByRole('dialog', { name: 'Restore backup' })).toBeTruthy();
   });
 
   it('hands its entry back when closed by the ✕', async () => {
