@@ -134,7 +134,10 @@ function isLoopbackHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
   if (host === '::1' || host === '0:0:0:0:0:0:0:1') return true;
-  return host.startsWith('127.');
+  // The whole 127.0.0.0/8 block, but only as a literal address — `127.example.com` is an
+  // ordinary registrable name a browser does not trust. `new URL` has already canonicalised
+  // shorthand forms (`127.1`) to four octets by the time a hostname reaches here.
+  return /^127(?:\.\d{1,3}){3}$/.test(host);
 }
 
 /**

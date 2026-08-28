@@ -1705,7 +1705,9 @@ function LabelBaseUrlControl() {
   // A plain `http://` host is not a secure context, so the app cannot boot there at all — every
   // code printed against it would scan to the boot-failure screen. Labels are physical and the
   // only recovery is a reprint, so this is worth saying at the point of entry.
-  const insecureHost = isInsecureLabelBaseUrl(resolved);
+  // Only ever about a host the user typed: the derived default is this device's own origin,
+  // which the app is already running on, so nothing there is theirs to fix.
+  const insecureHost = !usingDefault && isInsecureLabelBaseUrl(resolved);
 
   return (
     <div className="flex w-72 max-w-full flex-col gap-1.5">

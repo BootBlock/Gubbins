@@ -194,6 +194,15 @@ describe('resolveLabelBaseUrl (Link host override)', () => {
     );
   });
 
+  // `127.example.com` is an ordinary registrable name, not the loopback block — a prefix
+  // test would have handed it the one scheme the app cannot boot from.
+  it('treats a name that merely starts with 127. as any other host', () => {
+    expect(resolveLabelBaseUrl('127.example.com', 'http://localhost:5173', '/Gubbins/')).toBe(
+      'https://127.example.com/',
+    );
+    expect(isInsecureLabelBaseUrl('http://127.example.com/')).toBe(true);
+  });
+
   it('leaves an explicit scheme alone, even the one the app cannot boot from', () => {
     expect(resolveLabelBaseUrl('http://gubbins.local/', 'http://localhost:5173', '/Gubbins/')).toBe(
       'http://gubbins.local/',

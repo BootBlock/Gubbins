@@ -225,7 +225,8 @@ check it before printing anything.
 The address has to be an `https://` one — or `localhost` while you are testing on the same machine.
 Browsers only grant Gubbins the storage it needs on a secure address, so the app cannot open from a
 plain `http://` one at all, and a code pointing there would scan to an error rather than to the
-item. If you leave the scheme off, Gubbins fills in `https://` for you.
+item. If you leave the `https://` off, Gubbins fills it in for you — except for `localhost`,
+where it fills in `http://`, because that is the one address a browser trusts without it.
 
 Enter the **whole** address, including any folder the app is served from — `https://example.com/Gubbins/`,
 not just `example.com`. The Link host replaces the address entirely, so a missing folder is dropped

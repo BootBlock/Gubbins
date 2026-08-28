@@ -148,7 +148,7 @@ describe('SettingsDialog — Live camera scanning off', () => {
 });
 
 describe('SettingsDialog — Link host security warning (issue #509)', () => {
-  /** Type a host into the Link host field and return the rendered warnings. */
+  /** Open the tab and type a host into the Link host field. */
   function typeHost(value: string) {
     renderTab('Scanning & labels');
     fireEvent.change(screen.getByTestId('setting-label-base-url'), { target: { value } });
@@ -166,6 +166,13 @@ describe('SettingsDialog — Link host security warning (issue #509)', () => {
     cleanup();
     typeHost('http://localhost:5173');
     expect(screen.queryByTestId('label-base-url-insecure')).toBeNull();
+  });
+
+  it('says nothing about a blank field, whatever address the app itself was opened from', () => {
+    renderTab('Scanning & labels');
+    expect(screen.getByTestId('setting-label-base-url')).toHaveValue('');
+    expect(screen.queryByTestId('label-base-url-insecure')).toBeNull();
+    expect(screen.getByTestId('setting-label-base-url')).not.toHaveAttribute('aria-invalid');
   });
 
   it('promotes a scheme-less host to https, so the preview shows a link that can open', () => {
