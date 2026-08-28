@@ -26,10 +26,10 @@ import {
  * `:memory:` driver and assert the *selected set*, rather than asserting the SQL text (which
  * would pin the wording and prove nothing about the meaning).
  *
- * `stock-attention-parity.test.ts` covers a different question — that the low / out-of-stock
- * SQL agrees with the pure `isLow` / `isOutOfStock` seam. These pin what each predicate itself
- * selects, including the fragments (`variantParentSql`, `effectiveExpirySql`,
- * `warrantyExpiringPredicateSql`) that no parity test reaches.
+ * The parity suites cover a different question — that each SQL predicate agrees with the pure seam
+ * beside it: `stock-attention-parity.test.ts` for `isLow` / `isOutOfStock`, and
+ * `expiry-attention-parity.test.ts` for `expiryStatus` / `warrantyStatus`. These pin what each
+ * predicate itself selects, including `variantParentSql`, which no parity test reaches.
  */
 describe('attention SQL predicates', () => {
   const NOW = 1_700_000_000_000;

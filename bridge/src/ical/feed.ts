@@ -292,10 +292,9 @@ async function warrantyEvents(driver: IDatabaseDriver, dtstamp: ICalDate, now: n
   const repo = new ItemRepository(driver);
   const rows = await collect((limit, offset) =>
     // Read from the *start of the UTC day*, not the raw instant. The repository derives its cut-off
-    // as the UTC date of `addCalendarDays(now, withinDays)`, which preserves local wall-clock time —
-    // so across a decade-wide horizon the offset can differ between `now` and the target, and the
-    // cut-off date would roll over an hour or so off UTC midnight. Snapping the input makes the
-    // cut-off a pure function of the UTC day, which is one of the boundaries
+    // from the local calendar day of whatever instant it is handed (issue #498), so a raw `now`
+    // would roll the horizon over at local midnight. Snapping the input makes the cut-off a pure
+    // function of the UTC day, which is one of the boundaries
     // {@link calendarModifiedAt} accounts for; without it a subscriber could be handed a `304` for
     // a document whose horizon had already moved (issue #363). Immaterial to what the feed shows:
     // the horizon is ten years out, so a day either way changes nothing a user would notice.
