@@ -7,8 +7,9 @@
  * partitions rows into creates (no matching item found), updates (a match found
  * by the chosen key), and errors (invalid rows — never thrown, always collected).
  *
- * The CSV codec is re-used from the shared {@link parseCsv} in `@/features/import/tabular`
- * (same RFC-4180-safe parser, no new dependency). The apply helper runs the plan
+ * The CSV codec is re-used from the shared {@link readDelimited} in `@/features/import/tabular`
+ * (same RFC-4180-safe parser, no new dependency), so an unclosed quote is reported here rather
+ * than quietly shortening the plan. The apply helper runs the plan
  * through the existing {@link ItemRepository} `create`/`update` public methods —
  * no new SQL, no new columns.
  *
@@ -16,7 +17,7 @@
  */
 import { z } from 'zod';
 import { TEXT_LIMITS, withinTextLimit } from '@/lib/text-limits';
-import { parseCsv } from '@/features/import/tabular';
+import { parseCsv, readDelimited, UNTERMINATED_QUOTE_NOTE } from '@/features/import/tabular';
 import { parseAmountCell, leadingIntegerCount } from '@/features/import/columns';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { assertPermissions } from '@/features/users/assert-permission';
@@ -1136,7 +1137,15 @@ export function buildCatalogImportPlan(
     return { create: [], update: [], errors: [] };
   }
 
-  const allRows = parseCsv(csvText).filter((r) => r.some((c) => c.trim().length > 0));
+  // An unclosed quote merges every line after it into one cell, so the rows past that point
+  // describe nothing. Reported as a plan error (row 0 — the file, not a row) rather than let
+  // through as a shorter catalogue nobody was told about (issue #591).
+  const read = readDelimited(csvText, ',');
+  if (read.unterminatedQuote) {
+    return { create: [], update: [], errors: [{ sourceRow: 0, message: UNTERMINATED_QUOTE_NOTE }] };
+  }
+
+  const allRows = read.rows.filter((r) => r.some((c) => c.trim().length > 0));
   if (allRows.length === 0) {
     return { create: [], update: [], errors: [] };
   }

@@ -108,6 +108,17 @@ detection — so a BOM export, a supplier basket or a typed shopping list can be
 going through the item importer first.
 
 > **ℹ️ Note**
+> A double-quote **inside** a cell is treated as ordinary text, so an inch mark reads as itself:
+> `3/4" ball valve`, `1/4" drive socket` and `12" ruler` all import as the names you typed. A
+> quote only marks the start of a quoted cell when it is the *first* character of that cell,
+> which is what spreadsheets do too.
+>
+> If a file opens a quoted cell and never closes it — a stray `"` somewhere in the middle —
+> everything after it would otherwise be read as one enormous cell. Gubbins says so instead of
+> showing you a preview built on it, so look for the unmatched `"`. A quote you want *kept*
+> inside a quoted cell is written twice: `"a 3/4"" valve"`.
+
+> **ℹ️ Note**
 > Once you've pressed import and the rows are actually being written, the dialog stays put until
 > it's done — pressing Escape, clicking outside it and the ✕ all wait. It finishes on a summary:
 > how many items were created, how many updated, and how many rows were skipped with the reason

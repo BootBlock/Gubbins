@@ -9,7 +9,9 @@ import {
   parseHtmlRows,
   parseJsonRows,
   parseMarkdownRows,
+  readDelimited,
   IMPORT_FORMATS,
+  UNTERMINATED_QUOTE_NOTE,
 } from './tabular';
 
 describe('parseDelimited / parseCsv (RFC-4180-ish codec)', () => {
@@ -30,6 +32,28 @@ describe('parseDelimited / parseCsv (RFC-4180-ish codec)', () => {
       ['a', 'b'],
       ['1', '2'],
     ]);
+  });
+
+  it('treats a quote inside an unquoted field as literal data (issue #591)', () => {
+    // An inch mark is ordinary hardware-inventory text. Opening a quoted field on it
+    // swallowed every later line — delimiters, newlines and all — into one cell.
+    expect(parseCsv('name,quantity,location\n3/4" ball valve,5,Workshop\nWidget,2,Shed')).toEqual([
+      ['name', 'quantity', 'location'],
+      ['3/4" ball valve', '5', 'Workshop'],
+      ['Widget', '2', 'Shed'],
+    ]);
+  });
+
+  it('keeps a quote that follows other text in the same field', () => {
+    expect(parseCsv('a,1/4" drive,b')).toEqual([['a', '1/4" drive', 'b']]);
+    // A quote is structural only at the start of a field, so a quoted cell still parses.
+    expect(parseCsv('"a,b",1/2" pipe')).toEqual([['a,b', '1/2" pipe']]);
+  });
+
+  it('reports whether the text ended inside a quoted field', () => {
+    expect(readDelimited('a,b\n1,2').unterminatedQuote).toBe(false);
+    expect(readDelimited('"a,b",c').unterminatedQuote).toBe(false);
+    expect(readDelimited('a,b\n"never closed,2').unterminatedQuote).toBe(true);
   });
 });
 
@@ -66,6 +90,56 @@ describe('detectImportFormat', () => {
     expect(detectImportFormat('Name,Price\nWidget,"£1,234.56"')).toBe('csv');
     expect(detectImportFormat('Reference,Value\n"R1, R2",10k')).toBe('csv');
   });
+  it('still detects CSV when a stray quote is left open (issue #591)', () => {
+    // Before, the merged remainder made no delimiter look consistent and detection fell
+    // through to 'lines' — which offered each merged line as an item, with no warning.
+    expect(detectImportFormat('name,quantity\n"broken,5\nWidget,2')).toBe('csv');
+  });
+
+  it('lets the codec win over the quote-blind widths when both could answer', () => {
+    // The quote-blind re-measure must never pre-empt the codec: a properly quoted cell holding
+    // a comma unbalances the naive count, so leading with it would report this file as a line
+    // list — the exact fallback the fix exists to avoid.
+    const csv = ['Name,Qty,Note', 'Widget,2,"a, b"', 'Gadget,4,"unclosed', 'Bolt,6,ok'].join('\n');
+    expect(detectImportFormat(csv)).toBe('csv');
+    // Same reason, one line: the codec reads `a,b,"c` as three cells, so no re-measure is needed.
+    expect(detectImportFormat('a,b,"c')).toBe('csv');
+  });
+
+  it('never lets a quote-blind fit outrank a delimiter the codec read cleanly', () => {
+    // Whether a `"` opens a field depends on the delimiter, so the *wrong* one can see an
+    // unclosed quote where the right one sees none. Here the semicolon does, and its
+    // quote-blind width (3) beats the comma's real width (2) on count alone — which would
+    // report a perfectly good CSV as an unclosed-quote error with no rows at all.
+    const csv = ['Ref;Alt;Code,Qty', 'R1;R2;R3,4', 'R4;"R5;R6,7', 'R7;R8;R9,2'].join('\n');
+    expect(detectImportFormat(csv)).toBe('csv');
+    expect(extractTableRows(csv).dataRows).toHaveLength(3);
+  });
+
+  it('does not read a quote that closes past the detection sample as an unclosed one', () => {
+    // Detection samples the first 10 lines; extraction reads the whole text. A quoted cell that
+    // closes on line 11 looks unclosed to the sample, so a quote-blind width could win — and
+    // extraction, finding nothing wrong, would then hand back rows under a delimiter the file
+    // does not use, with no warning at all.
+    const lines = ['"Note;A;B,X', ...Array.from({ length: 9 }, () => 'a;b;c,d'), 'end",Y', 'p,q'];
+    const text = lines.join('\n');
+    expect(detectImportFormat(text)).toBe('lines');
+    expect(extractTableRows(text).dataRows).toEqual([]);
+  });
+
+  it('still detects CSV when the very first line of a long file opens a quote', () => {
+    // Past the 10-line detection sample the merged row is the only row, so the drop-the-last-row
+    // rule has nothing left to judge by and the quote-blind widths are what answer.
+    const rows = Array.from({ length: 12 }, (_, i) => `item${i},${i}`).join('\n');
+    expect(detectImportFormat(`"Name,Qty\n${rows}`)).toBe('csv');
+  });
+
+  it('still reads a single free-form line with a stray quote as a line list', () => {
+    // One line carrying an unmatched quote is a note, not a table; only a multi-line block
+    // earns the quote-blind re-measure above.
+    expect(detectImportFormat('"he said hi, there')).toBe('lines');
+  });
+
   it('ignores a final row severed by the detection sample window', () => {
     // 12 rows: the 10-line sample cuts mid-file, leaving a partial last row that proves nothing.
     const rows = Array.from({ length: 12 }, (_, i) => `item${i},${i}`).join('\n');
@@ -142,6 +216,23 @@ describe('extractTableRows', () => {
     );
     expect(html.format).toBe('html');
     expect(html.dataRows).toEqual([['1', '2']]);
+  });
+
+  it('refuses to extract rows from a file with an unclosed quote (issue #591)', () => {
+    const extraction = extractTableRows('name,quantity\n"broken,5\nWidget,2', { format: 'csv' });
+    expect(extraction.unterminatedQuote).toBe(true);
+    expect(extraction.note).toBe(UNTERMINATED_QUOTE_NOTE);
+    expect(extraction.dataRows).toEqual([]);
+  });
+
+  it('extracts an inch mark as part of the cell rather than merging the file', () => {
+    const extraction = extractTableRows('name,quantity\n3/4" ball valve,5\nWidget,2');
+    expect(extraction.format).toBe('csv');
+    expect(extraction.unterminatedQuote).toBeUndefined();
+    expect(extraction.dataRows).toEqual([
+      ['3/4" ball valve', '5'],
+      ['Widget', '2'],
+    ]);
   });
 
   it('returns a note (not a throw) for malformed structured input', () => {

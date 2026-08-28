@@ -464,6 +464,33 @@ describe('extractImport', () => {
       ['Sprocket', '9'],
     ]);
   });
+
+  it('reads a CSV full of inch marks as a table, not a line list (issue #591)', () => {
+    // A bare `"` used to open a quoted field mid-cell, swallowing every later line into
+    // one value. Detection then saw nothing tabular and offered four junk items — one of
+    // them named after the header row.
+    const csv = [
+      'name,quantity,location',
+      '3/4" ball valve,5,Workshop',
+      'Widget,2,Shed',
+      'Gadget,7,Loft',
+    ].join('\n');
+    const ex = extractImport(csv);
+    expect(ex.format).toBe('csv');
+    expect(ex.headerRow).toEqual(['name', 'quantity', 'location']);
+    expect(ex.dataRows).toEqual([
+      ['3/4" ball valve', '5', 'Workshop'],
+      ['Widget', '2', 'Shed'],
+      ['Gadget', '7', 'Loft'],
+    ]);
+  });
+
+  it('warns instead of previewing merged rows when a quote is never closed (issue #591)', () => {
+    const csv = ['name,quantity', '"Widget,2', 'Gadget,7'].join('\n');
+    const ex = extractImport(csv);
+    expect(ex.note).toBeTruthy();
+    expect(ex.dataRows).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
