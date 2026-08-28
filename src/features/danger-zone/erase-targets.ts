@@ -169,6 +169,10 @@ function tombstoneSelect(tableName: string, fromWhere: string): SqlStatement {
 /**
  * Advance the §7.6.3-A history prune watermark to `now` so a peer cannot re-import the
  * history rows we just cleared (mirrors {@link StorageRepository.pruneHistoryBefore}).
+ *
+ * A drift here is silent and one-directional — the erase looks like it worked, and the rows come
+ * back on the next sync — so `history-watermark-parity.test.ts` runs both paths against a real
+ * database and requires the same watermark, monotonic `MAX` included (issue #254).
  */
 function advanceHistoryWatermark(now: number): SqlStatement {
   return {

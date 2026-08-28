@@ -219,6 +219,34 @@ reflects it.
 If a change is purely internal (refactor, tests, build) with **no** user-visible surface, the
 wiki needs no update — the trigger is a change to what the user sees or does, not to the code.
 
+## A "mirrors X" comment is a request for a test
+
+Prose cannot hold two definitions together. A docstring saying a value, predicate, map or string
+**mirrors**, **matches**, **is identical to** or **must stay in sync with** something elsewhere is
+a promise the compiler does not check, the reader cannot verify, and the next edit quietly breaks —
+and the drift is silent by construction, because the comment still reads as though it were true.
+Issues #143, #156 and #254 were all this one habit.
+
+**The rule — when you write, or find, a comment claiming parity between two definitions, do one of
+these three things, in this order of preference:**
+
+1. **Delete one of them.** Derive the second from the first so there is only one definition. The
+   claim becomes true by construction and nothing can drift.
+2. **Give the weaker seam the signal it is missing.** Where the two genuinely cannot share a
+   definition — a TypeScript guard beside a SQL `CHECK`, a pure predicate beside a query — the
+   usual cause is that one side lacks a fact the other has. Add it, then apply rule 1 or 3.
+3. **Write the drift test the comment is asking for**, and name it in the comment so a reader can
+   find what holds the claim up. Prefer driving *both* sides and comparing behaviour over
+   comparing their source text: assert the same verdict from the guard and the real `CHECK`
+   (`src/db/repositories/item/normalise-db-check.test.ts`), the same watermark from both write
+   paths (`src/features/danger-zone/history-watermark-parity.test.ts`), or that every topic a
+   discovery payload names is one the publisher actually publishes
+   (`bridge/src/mqtt/publisher.test.ts`).
+
+A parity test earns its place by *failing* when the claim is broken, so check that it does — mutate
+one side and watch it go red before you commit. What it must never be is a restatement of the
+comment in `expect()` form.
+
 ## Plan docs carry a status (`docs/todo/`)
 
 The plan, backlog and audit documents in [docs/todo](docs/todo) are long-lived and

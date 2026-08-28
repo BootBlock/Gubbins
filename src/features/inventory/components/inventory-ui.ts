@@ -156,7 +156,10 @@ export const WARRANTY_STATUS_LABEL: Record<WarrantyStatus, string> = {
 
 /**
  * Token text-colour class for each warranty state (mirrors {@link CONDITION_COLOR_CLASS}):
- * green for active down to red for expired, muted for "no date set". Static token literals
+ * green for active down to red for expired, muted for "no date set". The two enums differ, so
+ * what "mirrors" means is that each severity *rank* takes the same token on both sides — a bad
+ * warranty and a bad condition never read as two different degrees of bad on one screen.
+ * `inventory-ui.test.ts` asserts that rank-for-rank (issue #254). Static token literals
  * (never raw colours) so Tailwind emits the utilities and the tints stay themed / dark-mode
  * correct. Colour is never the sole signal — {@link WARRANTY_STATUS_LABEL} always reads —
  * keeping this within WCAG 1.4.1.

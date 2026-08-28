@@ -340,3 +340,62 @@ describe('availability lifecycle', () => {
     expect(fake.wasStopped()).toBe(true);
   });
 });
+
+/**
+ * Drift guard (issue #254). `DiscoveryOptions.prefix` is documented as "must match the
+ * publisher's prefix" — a comment standing in for the only thing that makes discovery work at
+ * all. Home Assistant learns where to read an entity's state solely from the topics inside the
+ * discovery payload, so a discovery config naming a topic the publisher never writes produces
+ * entities that appear correctly and then sit at `unknown` forever, with nothing logged.
+ *
+ * Asserted end-to-end rather than by comparing the two prefixes: every topic named by every
+ * discovery payload has to be one this publisher actually published. A deliberately non-default
+ * prefix is used, so a hard-coded `gubbins/` on either side fails here instead of passing by
+ * coincidence.
+ */
+describe('discovery topics ↔ published topics parity (issue #254)', () => {
+  /** The payload keys HA reads a topic out of. */
+  const TOPIC_KEYS = ['state_topic', 'availability_topic', 'json_attributes_topic'] as const;
+
+  it('never names a state topic the publisher does not write', async () => {
+    const { publisher, fake } = makePublisher({ discovery: true, prefix: 'warehouse/gubbins' });
+    // The availability topic is announced on connect; the staleness topic only from the health
+    // hook. Both have to have been published for the parity check to mean anything.
+    fake.triggerConnect();
+    await publisher.publishState(hydrated.driver, GENERATED_AT);
+    publisher.publishSnapshotHealth(summarizeSnapshotHealth({ ...HEALTHY_RELOAD }));
+
+    const configs = fake.published.filter((p) => p.topic.startsWith('homeassistant/'));
+    expect(configs.length).toBeGreaterThan(0);
+
+    const publishedTopics = new Set(
+      fake.published.filter((p) => !p.topic.startsWith('homeassistant/')).map((p) => p.topic),
+    );
+
+    let checked = 0;
+    for (const config of configs) {
+      const payload = JSON.parse(config.payload) as Record<string, unknown>;
+      for (const key of TOPIC_KEYS) {
+        const topic = payload[key];
+        if (typeof topic !== 'string') continue;
+        expect(topic.startsWith('warehouse/gubbins/'), `${key} ignored the configured prefix`).toBe(true);
+        expect(publishedTopics.has(topic), `${key} names an unpublished topic: ${topic}`).toBe(true);
+        checked += 1;
+      }
+    }
+    // Every entity carries at least a state topic and an availability topic.
+    expect(checked).toBeGreaterThanOrEqual(configs.length * 2);
+  });
+
+  it('publishes each discovery config under the configured HA discovery prefix', async () => {
+    const { publisher, fake } = makePublisher({
+      discovery: true,
+      prefix: 'warehouse/gubbins',
+      discoveryPrefix: 'ha-test',
+    });
+    await publisher.publishState(hydrated.driver, GENERATED_AT);
+    const configs = fake.published.filter((p) => p.topic.endsWith('/config'));
+    expect(configs.length).toBeGreaterThan(0);
+    for (const config of configs) expect(config.topic.startsWith('ha-test/')).toBe(true);
+  });
+});
