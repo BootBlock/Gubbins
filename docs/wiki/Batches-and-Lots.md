@@ -38,6 +38,11 @@ You give a batch its expiry date as the stock arrives:
 
 Stock moved between locations keeps its batch identity, so a lot's date travels with it.
 
+> **ℹ️ Note**
+> Those fields appear only where the line is linked to a **Bulk** item. A batch is a slice of a
+> counted quantity, so a receipt that moves no stock has nothing to tag and is not asked for one —
+> see [[Tracking modes|Tracking-Modes]].
+
 ## Batches and expiry alerts
 
 Batch expiry dates feed the [[expiry tracking|Low-Stock-and-Gauges]] and the

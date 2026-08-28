@@ -96,10 +96,12 @@ describe('receiptLandingFor (issue #608)', () => {
 
   // Adding a tracking mode to the SSOT must not silently make its receipts land stock: anything
   // this seam has not been taught about is record-only, which under-promises rather than
-  // inventing a movement the write cannot perform.
-  it('covers every declared tracking mode', () => {
+  // inventing a movement the write cannot perform. Asserting the mode-by-mode answer, not merely
+  // that the answer is one of the two, is what would actually catch a new mode defaulting to
+  // COUNT.
+  it('lands stock for DISCRETE and nothing else, across every declared mode', () => {
     for (const mode of TRACKING_MODES) {
-      expect(['COUNT', 'RECORD_ONLY']).toContain(receiptLandingFor(mode));
+      expect(receiptLandingFor(mode)).toBe(mode === 'DISCRETE' ? 'COUNT' : 'RECORD_ONLY');
     }
   });
 });
@@ -109,6 +111,15 @@ describe('recordOnlyReceiptReason (issue #608)', () => {
     expect(recordOnlyReceiptReason('DISCRETE')).toBeNull();
     for (const mode of TRACKING_MODES.filter((m) => m !== 'DISCRETE')) {
       expect(recordOnlyReceiptReason(mode)).toBeTruthy();
+    }
+  });
+
+  // The dialogs read "is there a reason?" as "is this receipt record-only?" and render the clause
+  // unconditionally on that branch. That is only sound while the two functions agree for every
+  // mode, so the agreement is pinned here rather than re-guarded at each call site.
+  it('gives a reason exactly when the receipt is record-only', () => {
+    for (const mode of TRACKING_MODES) {
+      expect(recordOnlyReceiptReason(mode) !== null).toBe(receiptLandingFor(mode) === 'RECORD_ONLY');
     }
   });
 

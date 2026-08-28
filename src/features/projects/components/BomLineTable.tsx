@@ -13,7 +13,7 @@ import { useItemsAvailability, useItemsRelations, useItemsTrackingModes } from '
 import { useT } from '@/features/i18n';
 import { missingRequirementsByLine } from '@/features/inventory/item-requirements';
 import { useRemoveBomLine, useSetProcurement, useSetReservation, useReceiveLine } from '../projects';
-import { outstandingQty, receiptLandingFor, recordOnlyReceiptReason } from '../receipts';
+import { outstandingQty, recordOnlyReceiptReason } from '../receipts';
 import { PROCUREMENT_STATUS_LABELS, RESERVATION_STATUS_LABELS } from './projects-ui';
 
 /** An optional batch/lot identity entered on a receipt (Phase 28). */
@@ -57,8 +57,11 @@ function ReceiveControl({
   onReceive: (qty: number, batch?: ReceiveBatch) => void;
 }) {
   const outstanding = outstandingQty(line);
-  const recordOnly = trackingMode !== undefined && receiptLandingFor(trackingMode) === 'RECORD_ONLY';
-  const recordOnlyReason = trackingMode ? recordOnlyReceiptReason(trackingMode) : null;
+  // A reason and a record-only landing are the same statement (see `recordOnlyReceiptReason`), so
+  // reading the reason answers both questions at once and leaves no branch for a record-only
+  // receipt with nothing to explain — there is no such case.
+  const recordOnlyReason = trackingMode === undefined ? null : recordOnlyReceiptReason(trackingMode);
+  const recordOnly = recordOnlyReason !== null;
   const [qty, setQty] = useState(outstanding);
   const [batchNumber, setBatchNumber] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -112,7 +115,7 @@ function ReceiveControl({
       <Tooltip
         content={
           recordOnly
-            ? `Record ${clamped} as received${recordOnlyReason === null ? '' : ` — no stock is added, because ${recordOnlyReason}`}`
+            ? `Record ${clamped} as received — no stock is added, because ${recordOnlyReason}`
             : `Receive ${clamped} into stock${batch ? ' (batch tracked)' : ''}`
         }
       >

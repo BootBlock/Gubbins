@@ -469,9 +469,10 @@ export class PurchaseOrderRepository extends BaseRepository {
         // receipt is logged against it even though no stock can move (issue #608). Without this
         // the whole procurement flow ends in a silent no-op: the order flips to RECEIVED and the
         // item's Activity Log shows nothing at all to explain why its on-hand figure did not
-        // change. The entry deliberately carries **no** `quantityDelta`: the ledger's deltas are
-        // what the stock projection is replayed from, and asserting a movement that never
-        // happened would be worse than the silence it replaces.
+        // change. The entry deliberately carries **no** `quantityDelta`, for the same reason
+        // `setReservation` leaves it null (issue #652): the movement and valuation reports sum
+        // that column without filtering on `action`, so a delta here would be counted as a real
+        // arrival that never took place.
         const qty = plan.receivedDelta;
         statements.push(
           historyStatement(line.itemId, 'RECEIVED', this.actorId(), {

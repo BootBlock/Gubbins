@@ -92,11 +92,10 @@ quantity would be meaningless. No number at all.
 
 > **ℹ️ Note**
 > Only **Bulk** has a quantity that stock can be added to or taken from. That is why adjusting a
-> count, moving stock between locations, lending an item and counting it on a scale are all offered
-> for Bulk alone — and why receiving a [[purchase order|Purchase-Orders]] or a
-> [[BOM line|Projects-and-BOM]] against any other mode records the delivery without changing stock.
-> Consumables have their own gauge controls instead, and serialised units are counted by how many
-> records exist.
+> count, moving stock between locations and counting on a scale are all offered for Bulk alone —
+> and why receiving a [[purchase order|Purchase-Orders]] or a [[BOM line|Projects-and-BOM]] against
+> any other mode records the delivery without changing stock. Consumables have their own gauge
+> controls instead, and serialised units are counted by how many records exist.
 
 > **⚠️ Heads-up**
 > Changing an item's tracking mode after the fact is limited on purpose — switching freely

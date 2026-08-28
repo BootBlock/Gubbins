@@ -424,12 +424,6 @@ export function useItemsById(itemIds: readonly string[]) {
 }
 
 /**
- * Relations for a whole set of items in a single round-trip (issue #70) — the project BOM checks
- * every line's hard dependencies at once rather than N+1 times. The item ids are sorted into the
- * cache key so a re-ordered but otherwise identical set hits the same entry. Resolves to a `Map`
- * keyed by item id (a key is absent when the item has no relations); disabled for an empty set.
- */
-/**
  * The tracking mode of a whole set of items in one round-trip (issue #608) — the BOM table asks
  * it of every in-transit line at once so each receive control can say whether it will move stock.
  * Reads only the enum, never the item rows, so a table never pays for thumbnails it does not
@@ -446,6 +440,12 @@ export function useItemsTrackingModes(itemIds: readonly string[]) {
   });
 }
 
+/**
+ * Relations for a whole set of items in a single round-trip (issue #70) — the project BOM checks
+ * every line's hard dependencies at once rather than N+1 times. The item ids are sorted into the
+ * cache key so a re-ordered but otherwise identical set hits the same entry. Resolves to a `Map`
+ * keyed by item id (a key is absent when the item has no relations); disabled for an empty set.
+ */
 export function useItemsRelations(itemIds: readonly string[]) {
   const sortedIds = [...itemIds].sort();
   return useQuery({

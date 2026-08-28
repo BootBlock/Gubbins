@@ -90,8 +90,10 @@ export function receiptLandingFor(trackingMode: TrackingMode): ReceiptLanding {
  * dialogs. Movement-neutral wording, so the same clause serves a receipt and a
  * return-to-supplier.
  *
- * `DISCRETE` has no reason to give, because its receipts do move stock; the caller decides
- * that with {@link receiptLandingFor} first, so this returns null rather than inventing one.
+ * `DISCRETE` has no reason to give, because its receipts do move stock, so this returns null
+ * rather than inventing one. That makes "there is a reason" and "the receipt is record-only"
+ * the same statement — the two functions agree for every mode by construction, including an
+ * out-of-band one, and a test pins that so a caller may read either as the other.
  */
 export function recordOnlyReceiptReason(trackingMode: TrackingMode): string | null {
   switch (trackingMode) {

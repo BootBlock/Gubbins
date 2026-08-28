@@ -3,7 +3,7 @@ import { Button, FormField, Input, Modal } from '@/components/foundry';
 import { LocationSelect, type LocationOption } from '@/features/inventory/components/LocationSelect';
 import type { BatchIdentity } from '@/features/inventory/batches';
 import type { PurchaseOrderLine, TrackingMode } from '@/db/repositories';
-import { receiptLandingFor, recordOnlyReceiptReason } from '@/features/projects/receipts';
+import { recordOnlyReceiptReason } from '@/features/projects/receipts';
 import { fromDateInputValue } from '@/lib/date-input';
 
 /**
@@ -17,8 +17,8 @@ import { fromDateInputValue } from '@/lib/date-input';
  * *record-only*: it is written to the order and the item's Activity Log, and no stock moves. The
  * dialog says so rather than promising units into inventory, and drops the destination, batch,
  * lot and expiry fields — the repository discards all four on that path, so collecting them would
- * be asking for something nothing reads. Which modes land stock is `receiptLandingFor`'s call,
- * shared with the write so the two cannot disagree.
+ * be asking for something nothing reads. Which modes land stock is the shared receipt seam's call,
+ * not this dialog's, so the copy and the write cannot come to promise different things.
  */
 export interface ReceiveLineDialogProps {
   readonly open: boolean;
@@ -52,8 +52,11 @@ export function ReceiveLineDialog({
   onClose,
 }: ReceiveLineDialogProps) {
   const outstanding = Math.max(0, line.orderedQty - line.receivedQty);
-  const recordOnly = itemTrackingMode !== undefined && receiptLandingFor(itemTrackingMode) === 'RECORD_ONLY';
-  const recordOnlyReason = itemTrackingMode ? recordOnlyReceiptReason(itemTrackingMode) : null;
+  // A reason and a record-only landing are the same statement (see `recordOnlyReceiptReason`), so
+  // reading the reason answers both questions at once and leaves no branch for a record-only
+  // receipt with nothing to explain — there is no such case.
+  const recordOnlyReason = itemTrackingMode === undefined ? null : recordOnlyReceiptReason(itemTrackingMode);
+  const recordOnly = recordOnlyReason !== null;
   const [quantity, setQuantity] = useState(String(outstanding));
   const [locationId, setLocationId] = useState('');
   const [batchNumber, setBatchNumber] = useState('');
@@ -126,8 +129,8 @@ export function ReceiveLineDialog({
             className="rounded-lg border border-border bg-secondary/50 p-3 text-sm text-muted-foreground"
             data-testid="po-receive-record-only"
           >
-            No stock will be added{recordOnlyReason === null ? '' : `, because ${recordOnlyReason}`}. The
-            delivery is recorded against this order and in the item&rsquo;s activity log.
+            No stock will be added, because {recordOnlyReason}. The delivery is recorded against this order
+            and in the item&rsquo;s activity log.
           </p>
         ) : (
           <>
