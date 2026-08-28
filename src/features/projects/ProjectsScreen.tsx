@@ -35,6 +35,7 @@ import { PROJECT_STATUS_LABEL_KEYS } from './components/projects-ui';
 import { CreateProjectDialog } from './components/CreateProjectDialog';
 import { ImportBomDialog } from './components/ImportBomDialog';
 import { ProjectDetail } from './components/ProjectDetail';
+import { ProjectsIntro } from './components/ProjectsIntro';
 
 /**
  * The status filter's "don't filter by status" value. A Foundry `Select` is a string-valued
@@ -117,6 +118,10 @@ export function ProjectsScreen() {
   // Nothing to narrow and nothing narrowed: an empty inventory of projects gets the empty state
   // on its own, rather than three controls offering to filter a list that has no rows.
   const showControls = filtering || rows.length > 0;
+  // A genuinely empty projects list — no filter hiding anything, nothing still loading, and no
+  // failed read to misreport as emptiness. Only then is "you have never made a project" true,
+  // which is what the detail pane's first-run explainer claims (issue #421).
+  const introducing = !projects.isLoading && !projects.isError && !filtering && rows.length === 0;
 
   // Narrowing the filter (or shrinking the page size) can strand the user past the last page.
   // Declared before the clamp below so the clamp sees this reset queued and can only narrow it.
@@ -271,9 +276,7 @@ export function ProjectsScreen() {
               </Button>
             </div>
           ) : (
-            <p className="px-2 pt-6 text-sm text-muted-foreground">
-              No projects yet. Create one to plan a build.
-            </p>
+            <p className="px-2 pt-6 text-sm text-muted-foreground">{t('projects.list.empty')}</p>
           )
         ) : (
           <>
@@ -438,11 +441,15 @@ export function ProjectsScreen() {
             <div key={selectedId} className="flex min-h-0 flex-1 animate-swap-in flex-col">
               <ProjectDetail projectId={selectedId} onDeleted={() => selectAfterDelete(selectedId)} />
             </div>
+          ) : introducing ? (
+            // Nothing to select and nothing to go back to: someone here for the first time gets
+            // the explainer rather than an instruction to pick from an empty list (issue #421).
+            <ProjectsIntro onCreate={() => setCreateOpen(true)} onImport={() => setImportOpen(true)} />
           ) : (
             <Surface className="grid flex-1 place-items-center p-8 text-center">
               <div className="text-muted-foreground">
-                <ProjectIcon className="mx-auto mb-3 size-8 opacity-50" />
-                <p className="text-sm">Select a project, or create a new one.</p>
+                <ProjectIcon aria-hidden className="mx-auto mb-3 size-8 opacity-50" />
+                <p className="text-sm">{t('projects.detail.none')}</p>
               </div>
             </Surface>
           )}

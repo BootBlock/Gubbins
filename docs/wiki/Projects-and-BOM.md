@@ -8,6 +8,21 @@ need, and can I afford it?"*
 
 ![A project showing its bill of materials, budget and shopping list](images/projects.png)
 
+## Your first project
+
+Before you've made a project, the screen explains what one *is* rather than asking you to pick
+from an empty list. It walks through what a project gives you — a bill of materials, a shopping
+list, reservations, a budget, and the picking and finalising steps — and offers two ways to begin:
+
+- **Create your first project** — start empty and add parts as you go.
+- **Import a bill of materials** — start from a parts list another tool exported.
+
+The explainer only appears while you genuinely have no projects. Once you have one it gives way to
+the project itself, and a search or status filter that happens to match nothing shows
+**Clear filters** instead.
+
+## The list of projects
+
 Projects accumulate as builds come and go, so the list splits into pages once you have more than
 one screenful. Turn it on with **Paginate list** (or **Settings → Inventory → Lists**) and every
 project stays reachable however many you have — see the [[pagination control|Inventory-Views]].
