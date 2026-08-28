@@ -29,6 +29,11 @@
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
+    // Mirrors the app tsconfig: explicit `override`, no implicit returns, and the
+    // `unknown` catch variable pinned rather than left to `strict` alone.
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "useUnknownInCatchVariables": true,
 
     // Type-check only; Node strips the types at runtime, so we never emit JS (see
     // README.md -> Requirements for the real minimum Node version — the v23.x line is

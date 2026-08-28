@@ -24,6 +24,12 @@
     "noUncheckedSideEffectImports": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
+    /* `override` must be explicit — a repository/mixin method that silently shadows a
+       `BaseRepository` one (src/db/repositories/item/) is otherwise invisible. */
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    /* Implied by `strict`, pinned so the guarantee survives a future `strict` change. */
+    "useUnknownInCatchVariables": true,
 
     /* Path aliases — resolved relative to this config (no baseUrl; TS 6) */
     "paths": {
