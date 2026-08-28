@@ -12,12 +12,13 @@
  * cannot be re-zoned (assigning `process.env.TZ` inside a `worker_threads` worker does not re-seat
  * V8's cached zone). So these drive the **real** classifiers in **child Node processes** pinned to
  * `America/New_York` (behind UTC) and `Asia/Tokyo` (ahead of it) — the two zones the issue's own
- * reproduction table used. A resolve hook maps the `@/` alias onto `src/`; both modules and
- * everything they import are dependency-free, so the child runs the shipping code rather than a
- * copy of it.
+ * reproduction table used. The repo's shared `registerAppTsHooks` teaches the child the `@/` alias
+ * and extensionless imports, so it runs the shipping code rather than a copy of it.
  *
- * Reverting either classifier to `addCalendarDays(now, N)` turns every `stableAcrossTheDay` case
- * below red.
+ * Reverting either classifier to `addCalendarDays(now, N)` turns three of the six cases below red —
+ * the Tokyo pair and New York's beyond-the-window case. New York's inside-the-window case survives
+ * the revert, because a wall-clock window still holds `2026-08-24` at both of its readings; it is
+ * kept as the control that says the boundary did not move the other way.
  */
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -51,19 +52,14 @@ function probeZone(zone: string, morningHour: number, eveningHour: number, eveni
   // `import.meta.url` is rewritten to an `http:` self-URL by Vite's transform, so resolve the real
   // checkout root from the test's own `import.meta.dirname` (see `repoPath`).
   const root = `${pathToFileURL(repoPath(import.meta.dirname)).href}/`;
+  const hooks = `${root}scripts/app-ts-hooks.mjs`;
   const script = `
     process.env.TZ = ${JSON.stringify(zone)};
-    const { registerHooks } = await import('node:module');
-    // The app's '@/' alias is a bundler concern; teach the child the same mapping so it can import
-    // the shipping modules instead of a transcription of them.
-    registerHooks({
-      resolve(specifier, context, nextResolve) {
-        if (specifier.startsWith('@/')) {
-          return nextResolve(new URL('src/' + specifier.slice(2) + '.ts', ${JSON.stringify(root)}).href, context);
-        }
-        return nextResolve(specifier, context);
-      },
-    });
+    // The app's '@/' alias and extensionless imports are bundler concerns; the repo's shared resolve
+    // hook teaches plain Node both, so the child imports the shipping modules rather than a
+    // transcription of them.
+    const { registerAppTsHooks } = await import(${JSON.stringify(hooks)});
+    registerAppTsHooks();
     const { expiryStatus, daysUntilExpiry } = await import(${JSON.stringify(root)} + 'src/features/lifecycle/expiry.ts');
     const { warrantyStatus } = await import(${JSON.stringify(root)} + 'src/features/inventory/asset-lifecycle.ts');
 

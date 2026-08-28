@@ -54,9 +54,15 @@ export type DatedFeedParams = PageParams & {
   /**
    * Lower bound on the selected date, inclusive, as a UNIX-ms instant. Expressed in ms for both
    * feeds even though warranty dates are stored as TEXT — the caller thinks in instants, and each
-   * feed compares `since` in exactly the frame it already compares its cutoff in: the warranty
-   * feed converts to 'YYYY-MM-DD', the expiry feed compares raw ms. The two therefore round a
-   * boundary date the same way their cutoffs do, which can differ by a day at the very edge.
+   * feed converts `since` into the frame its own column is stored in: the warranty feed to a
+   * `'YYYY-MM-DD'` UTC day, the expiry feed not at all (the column is already ms). Both therefore
+   * round a boundary date to the UTC day the caller's instant falls in, which can differ by a day
+   * at the very edge from the day the caller had in mind.
+   *
+   * Unlike the *cutoffs*, which name a whole local calendar day (`localDayWindowCutoff`, issue
+   * #498), this bound is left as the raw instant the caller supplied. It bounds a lookback that is
+   * a year or a century wide, so a day either way changes nothing a user would notice, and every
+   * caller passes a value it derived from `now` rather than a day it chose.
    */
   readonly since?: number;
 };
@@ -317,11 +323,10 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       // day, and `toISOString` then read the UTC day of a local wall-clock value, so the cutoff
       // moved a day as the working day went on (issue #498).
       const cutoff = toDateInputValue(localDayWindowCutoff(now, withinDays));
-      // Optional lower bound, converted into the same TEXT-date frame as the cutoff — its own local
-      // calendar day, so both ends of the window are days and neither drifts with the clock. See
+      // Optional lower bound, converted into the TEXT-date frame the column is stored in. See
       // {@link listExpiring} for why an unbounded past is wrong for a century-wide window, and
       // why this is a bound rather than an appended clause.
-      const since = params.since === undefined ? null : todayDateInputValue(params.since);
+      const since = params.since === undefined ? null : new Date(params.since).toISOString().slice(0, 10);
       const rows = await this.driver.query<ItemRowNoThumbnail>(
         // The warranty predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the alert-centre feed and the filter can never diverge.
