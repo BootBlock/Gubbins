@@ -12,14 +12,28 @@ than changing it.
 
 ## Weight unit
 
-The unit every item **weight** is shown and entered in:
+The unit every item **weight** is shown and entered in. Every figure below is the *same* 250 g
+part, read in a different unit:
 
 | Choice | Shown as |
 | --- | --- |
 | **Grams** *(default)* | `250 g` |
+| **Milligrams** | `250,000 mg` |
 | **Kilograms** | `0.25 kg` |
 | **Ounces** | `8.818 oz` |
 | **Pounds** | `0.551 lb` |
+| **Stones** | `0.0394 st` |
+| **Grains** | `3,858.09 gr` |
+| **Troy ounces** | `8.038 ozt` |
+| **Carats** | `1,250 ct` |
+
+The last three are there for the collections that are habitually weighed in them: **troy ounces**
+for bullion and coins, **grains** for reloading and jewellery work, and **carats** for gemstones.
+
+> **💡 Tip**
+> Pick the unit you'd naturally *say* a figure in, not the most precise one. Everything is stored
+> the same way whichever you choose, so the only thing this changes is how much arithmetic you do
+> in your head when you read a shelf.
 
 It applies wherever a weight appears: the **weight** field on an item's **Details** tab, the
 readings you type into [[counting by weight|Counting-by-Weight]], and the tares saved in your
@@ -28,10 +42,18 @@ readings you type into [[counting by weight|Counting-by-Weight]], and the tares 
 ## Dimension unit
 
 The unit **widths, heights and depths** are shown and entered in — **millimetres** (the default),
-**centimetres**, **metres**, **inches** or **feet**.
+**micrometres**, **centimetres** or **metres** on the metric side, and **thousandths of an inch**
+(`thou`), **inches**, **feet** or **yards** on the imperial one.
 
 It applies to an item's own size on its **Details** tab, and to the internal size of a
 [[location|Locations-and-Stock]] — the measurements Gubbins turns into a usable volume.
+
+The very small units earn their place on thin stock: sheet, film, foil and shim are specified in
+microns or thousandths, not in millimetres. **Yards** suit a fabric, rope or timber inventory.
+
+> **ℹ️ Note**
+> Your choice here also decides which family the **Volume unit** below uses when it is left on
+> **Automatic** — pick any imperial length unit and volumes read in cubic inches and cubic feet.
 
 ## Volume unit
 
@@ -56,6 +78,10 @@ The same is true of anything already typed in: a part recorded as `500 g` shows 
 moment you switch, and an item you then enter as `2 lb` is stored so that it reads `907.185 g` if
 you switch back.
 
+Figures are shown to three decimal places, or to three significant figures when they fall below
+one of the unit you've chosen — so a 500 mg part still reads `0.0000787 st` rather than rounding
+away to nothing.
+
 > **ℹ️ Note**
 > These three units live in the **Language, units & currency** group, so they travel with your
 > other preferences if you have [[settings sharing|Sharing-Settings-Between-Devices]] switched on
@@ -74,8 +100,9 @@ value is being handled as raw data rather than read off a screen:
   millimetres, in both directions — see [[export & import|Export-and-Import]]. That keeps a file
   exported on one device meaningful on another with different settings.
 - **A pasted list of items.** Importing free-form lines (one item per line), a labelled weight
-  *does* accept a unit — `w:2.5kg`, `weight:16oz` — while a bare number like `w:500` is read as
-  grams.
+  *does* accept a unit — `w:2.5kg`, `weight:16oz`, `w:11st` — while a bare number like `w:500` is
+  read as grams. Grains are spelled out (`w:120 grains`), because `gr` is written for a gram often
+  enough that reading it as a grain would misstate the weight.
 - **The [[bridge|Bridge-Overview]].** A filter on `weight` or `width` / `height` / `depth`
   compares in grams and millimetres, so an integration reads the same figures whatever this device
   is set to.

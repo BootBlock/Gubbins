@@ -2,7 +2,7 @@ import { FormField, InfoHint, Input } from '@/components/foundry';
 import { useT } from '@/features/i18n';
 import { assertExhaustive } from '@/lib/exhaustive';
 import { useFormatters } from '@/lib/useFormatters';
-import type { DimensionUnit } from '@/lib/dimensions';
+import { dimensionUnitLabel, type DimensionUnit } from '@/lib/dimensions';
 import type { MeasureDraft } from './measure-draft';
 
 /**
@@ -82,7 +82,9 @@ export function LocationDimensionsFields({
         </span>
         <div className="grid gap-3 sm:grid-cols-3">
           <FormField
-            label={t('inventory.location.dimensions.width', { vars: { unit: dimensionUnit } })}
+            label={t('inventory.location.dimensions.width', {
+              vars: { unit: dimensionUnitLabel(dimensionUnit) },
+            })}
             error={issueText(states.width)}
           >
             <Input
@@ -93,12 +95,16 @@ export function LocationDimensionsFields({
               value={width}
               onChange={(e) => onWidthChange(e.target.value)}
               placeholder="—"
-              aria-label={t('inventory.location.dimensions.widthAria', { vars: { unit: dimensionUnit } })}
+              aria-label={t('inventory.location.dimensions.widthAria', {
+                vars: { unit: dimensionUnitLabel(dimensionUnit) },
+              })}
               data-testid="location-width"
             />
           </FormField>
           <FormField
-            label={t('inventory.location.dimensions.height', { vars: { unit: dimensionUnit } })}
+            label={t('inventory.location.dimensions.height', {
+              vars: { unit: dimensionUnitLabel(dimensionUnit) },
+            })}
             error={issueText(states.height)}
           >
             <Input
@@ -109,12 +115,16 @@ export function LocationDimensionsFields({
               value={height}
               onChange={(e) => onHeightChange(e.target.value)}
               placeholder="—"
-              aria-label={t('inventory.location.dimensions.heightAria', { vars: { unit: dimensionUnit } })}
+              aria-label={t('inventory.location.dimensions.heightAria', {
+                vars: { unit: dimensionUnitLabel(dimensionUnit) },
+              })}
               data-testid="location-height"
             />
           </FormField>
           <FormField
-            label={t('inventory.location.dimensions.depth', { vars: { unit: dimensionUnit } })}
+            label={t('inventory.location.dimensions.depth', {
+              vars: { unit: dimensionUnitLabel(dimensionUnit) },
+            })}
             error={issueText(states.depth)}
           >
             <Input
@@ -125,7 +135,9 @@ export function LocationDimensionsFields({
               value={depth}
               onChange={(e) => onDepthChange(e.target.value)}
               placeholder="—"
-              aria-label={t('inventory.location.dimensions.depthAria', { vars: { unit: dimensionUnit } })}
+              aria-label={t('inventory.location.dimensions.depthAria', {
+                vars: { unit: dimensionUnitLabel(dimensionUnit) },
+              })}
               data-testid="location-depth"
             />
           </FormField>

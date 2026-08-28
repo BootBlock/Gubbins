@@ -25,10 +25,10 @@
  * from a scale and one typed by hand convert identically.
  *
  * Deliberately *not* shared with `src/lib/weight.ts`: that table is the set of units a user may
- * **enter and read** weights in (`g`/`kg`/`oz`/`lb`), which is a UI choice. This one is the set
- * a third-party sensor may **report**, which is a wider, integration-driven set we don't
- * control. Conflating them would force a new display unit into the app's settings every time
- * some integration reports stones.
+ * **enter and read** weights in, which is a UI choice. This one is the set a third-party sensor
+ * may **report**, which is an integration-driven set we don't control. Conflating them would
+ * force a new display unit into the app's settings every time some integration reported one —
+ * micrograms, say — that nobody would ever choose to read a stock figure in.
  */
 const GRAMS_PER_HA_UNIT: Readonly<Record<string, number>> = {
   mg: 0.001,
