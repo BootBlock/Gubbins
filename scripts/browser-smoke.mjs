@@ -233,6 +233,21 @@ async function chooseOption(combo, name, { exact = true } = {}) {
 }
 
 /**
+ * Choose a row in a **search-driven picker** — the item and project pickers (issue #484).
+ *
+ * Not a Foundry Select: these are editable comboboxes over a server-side search, and they offer
+ * only a short list of the closest matches. Opening one and looking for a row would find it only
+ * while the catalogue is small, so the name is *typed* — which is what runs the query the row
+ * comes back in.
+ */
+async function choosePickerOption(field, name, { exact = false } = {}) {
+  await field.fill(name);
+  const option = page.getByRole('option', { name, exact });
+  await option.waitFor({ state: 'visible', timeout: ms(8000) });
+  await option.click();
+}
+
+/**
  * Poll a Foundry Select combobox's displayed label until it matches — the combobox
  * counterpart to reading a native `<select>`'s value (a `role="combobox"` div has no
  * `.inputValue()`). Some selects are server-controlled (their value re-seeds after a
@@ -1187,7 +1202,7 @@ try {
         await page.getByTestId('po-add-line').click();
         const lineForm = page.getByTestId('po-line-form');
         await lineForm.waitFor({ state: 'visible', timeout: 5000 });
-        await chooseOption(lineForm.getByTestId('po-line-item'), poItemName, { exact: false });
+        await choosePickerOption(lineForm.getByTestId('po-line-item'), poItemName);
         await lineForm.getByTestId('po-line-qty').fill('7');
         await lineForm.getByTestId('po-line-save').click();
         await page
@@ -2237,7 +2252,7 @@ try {
       const dialog = page.getByRole('dialog', { name: 'Export' });
       await dialog.getByRole('button', { name: /Markdown vault/ }).click();
       await chooseOption(dialog.getByTestId('export-scope'), 'A project / BOM');
-      await chooseOption(dialog.getByTestId('export-target-project'), projectName, { exact: false });
+      await choosePickerOption(dialog.getByTestId('export-target-project'), projectName);
       const download = page.waitForEvent('download', { timeout: 10000 });
       await dialog.getByTestId('run-export').click();
       const file = await download;
@@ -2270,7 +2285,7 @@ try {
       const dialog = page.getByRole('dialog', { name: 'Export' });
       await dialog.getByRole('button', { name: /JSON data/ }).click();
       await chooseOption(dialog.getByTestId('export-scope'), 'A single item');
-      await chooseOption(dialog.getByTestId('export-target-item'), screwName, { exact: false });
+      await choosePickerOption(dialog.getByTestId('export-target-item'), screwName);
       const download = page.waitForEvent('download', { timeout: 8000 });
       await dialog.getByTestId('run-export').click();
       const file = await download;
