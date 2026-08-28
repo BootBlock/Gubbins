@@ -272,9 +272,8 @@ export function TagsScreen() {
           ) : tags.length === 0 ? (
             // "No tags yet" would be wrong when a filter is what emptied the list, and it would
             // send the user to add a tag they may well already have. The unfiltered branch is the
-            // only place the feature is explained (issue #425): a first-time user meets it here,
-            // in the middle of the screen they landed on, rather than in a line of small print
-            // above a screen they cannot yet use.
+            // only place the screen explains what tags are for (issue #425), so a first-time user
+            // meets the feature in the middle of the screen they landed on.
             <Surface className="flex flex-col items-center gap-3 p-8 text-center">
               <TagIcon aria-hidden className="size-8 text-muted-foreground/60" />
               {searching ? (
@@ -288,8 +287,9 @@ export function TagsScreen() {
                 >
                   <h3 className="text-base font-semibold text-foreground">{t('tags.empty.heading')}</h3>
                   <p>{t('tags.empty.lead')}</p>
-                  {/* The explanation itself reads left-aligned: centred prose of this length is
-                      hard to follow, so only the block is centred, not the sentences in it. */}
+                  {/* The bullets and the closing hint read left-aligned: centred prose of this
+                      length is hard to follow. The heading and the one-line lead above are short
+                      enough to keep the Surface's centring. */}
                   <div className="flex flex-col gap-2 text-left">
                     <h4 className="text-sm font-semibold text-foreground">{t('tags.empty.why.heading')}</h4>
                     <ul className="flex list-disc flex-col gap-2 pl-5">
