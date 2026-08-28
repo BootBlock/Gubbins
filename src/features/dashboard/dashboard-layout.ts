@@ -180,11 +180,11 @@ function clampColumn(x: number, w: number): number {
  *
  * Collision rule (issue #441): a target region held by exactly one widget **of the same
  * size** swaps with the subject, which is the 1×1 behaviour the board has always had. Any
- * other clash — a differently-sized neighbour, or two widgets partly under the target — is
- * refused rather than guessed at, so moving one card never rearranges cards the user did not
- * touch. The column is clamped so the widget stays on the board and the row floored at 0; an
- * unknown/hidden id, a refused move, or a move onto its own cell is a no-op (returns the same
- * array reference).
+ * other clash — a differently-sized neighbour, two widgets partly under the target, or a swap
+ * the subject would land back on top of — is refused rather than guessed at, so moving one card
+ * never rearranges cards the user did not touch. The column is clamped so the widget stays on
+ * the board and the row floored at 0; an unknown/hidden id, a refused move, or a move onto its
+ * own cell is a no-op (returns the same array reference).
  */
 export function moveWidget(layout: DashboardLayout, id: string, x: number, y: number): DashboardLayout {
   const subject = layout.find((p) => p.id === id);
@@ -204,6 +204,12 @@ export function moveWidget(layout: DashboardLayout, id: string, x: number, y: nu
     // Only an equal-sized neighbour can swap: any other pairing would leave one of the two
     // hanging over a cell the move never checked.
     if (theirs.w !== w || theirs.h !== h) return layout;
+    // A swap hands the occupant the subject's *old* rectangle, which is only free if the
+    // subject has genuinely left it. A multi-cell card moved by less than its own span still
+    // covers part of where it was, so the two would land on top of each other — refuse, the
+    // same as any other clash. (For 1×1 cards the two rectangles are always disjoint, so this
+    // never changes the behaviour the board has always had.)
+    if (rectsOverlap({ x: subject.x, y: subject.y, w, h }, { x: tx, y: ty, w, h })) return layout;
   }
 
   return layout.map((p) => {

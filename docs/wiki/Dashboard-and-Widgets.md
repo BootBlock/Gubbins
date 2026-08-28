@@ -59,11 +59,14 @@ short. A wider card splits its rows into two columns, so the extra width buys tw
 rather than twice-as-wide ones. Inventory totals pairs its figures into two columns when widened.
 The three system-status cards have a fixed set of readings and simply sit in a larger card.
 
-A size the card can't take is shown greyed out rather than hidden — that means it would run off
-the right-hand edge of the board, or overlap a neighbour. Move the card or shrink its neighbour
-first, and the size becomes available. Growing a card never shoves other cards out of the way, so
-the rest of your board stays exactly where you put it. Each resize is spoken aloud for
-screen-reader users ("Low stock resized to a 2 by 1 card").
+A size the card can't take is shown greyed out rather than hidden — that means it would overlap a
+neighbour. Move the card or shrink its neighbour first, and the size becomes available. Growing a
+card never shoves other cards out of the way, so the rest of your board stays exactly where you put
+it. Each resize is spoken aloud for screen-reader users ("Low stock resized to a 2 by 1 card").
+
+Widening a card that sits in the **last** column is the one case where the card itself moves: there
+is no room to its right, so it grows leftwards into the column beside it instead. If that column is
+occupied, the wider size is greyed out like any other blocked size.
 
 > **ℹ️ Note**
 > Sizes apply to the wide, multi-column board. On a phone the dashboard is a single column of

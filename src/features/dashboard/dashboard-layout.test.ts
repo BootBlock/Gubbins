@@ -390,3 +390,52 @@ describe('reconcileLayout with spans', () => {
     expect(reconcileLayout(stored, ['a', 'b', 'c'])).toEqual(stored);
   });
 });
+
+describe('moveWidget — a swap must fully vacate the subject cells', () => {
+  // A swap hands the occupant the subject's old rectangle. A multi-cell card nudged by less than
+  // its own span is still standing in part of that rectangle, so the two would end up on top of
+  // each other — the stacked-unreadable-tile state the board exists to prevent.
+  it('refuses a one-row nudge that would land a swapped 1x2 card back under the subject', () => {
+    const layout: DashboardLayout = [span('a', 0, 0, 1, 2), span('b', 0, 2, 1, 2)];
+    expect(moveWidget(layout, 'a', 0, 1)).toBe(layout);
+  });
+
+  it('refuses a one-column nudge that would land a swapped 2x1 card back under the subject', () => {
+    const layout: DashboardLayout = [span('a', 0, 0, 2, 1), span('b', 0, 1, 2, 1)];
+    // Moving 'a' one column right overlaps nothing on its own row, so this is a plain move.
+    expect(moveWidget(layout, 'a', 1, 0)).toEqual([span('a', 1, 0, 2, 1), span('b', 0, 1, 2, 1)]);
+  });
+
+  it('refuses a one-row nudge that would land a swapped 2x2 card back under the subject', () => {
+    const layout: DashboardLayout = [span('a', 0, 0, 2, 2), span('b', 0, 2, 2, 2)];
+    expect(moveWidget(layout, 'a', 0, 1)).toBe(layout);
+  });
+
+  it('still swaps two multi-cell cards whose rectangles do not overlap', () => {
+    const layout: DashboardLayout = [span('a', 0, 0, 1, 2), span('b', 1, 0, 1, 2)];
+    expect(moveWidget(layout, 'a', 1, 0)).toEqual([span('a', 1, 0, 1, 2), span('b', 0, 0, 1, 2)]);
+  });
+
+  it('leaves no two visible cards sharing a cell after any single-step nudge', () => {
+    // Drive every direction from every card of a mixed-size board and assert the invariant the
+    // whole module exists to hold: one card per cell.
+    const start: DashboardLayout = [
+      span('tall', 0, 0, 1, 2),
+      span('wide', 1, 0, 2, 1),
+      span('big', 1, 1, 2, 2),
+      span('small', 0, 2, 1, 1),
+    ];
+    const dirs = ['up', 'down', 'left', 'right'] as const;
+    for (const p of start) {
+      for (const dir of dirs) {
+        const next = nudgeWidget(start, p.id, dir);
+        const cells = next
+          .filter((q) => q.visible)
+          .flatMap((q) =>
+            Array.from({ length: q.w * q.h }, (_, i) => `${q.x + (i % q.w)},${q.y + Math.floor(i / q.w)}`),
+          );
+        expect(new Set(cells).size, `${p.id} nudged ${dir}`).toBe(cells.length);
+      }
+    }
+  });
+});
