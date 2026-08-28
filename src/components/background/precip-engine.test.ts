@@ -289,7 +289,7 @@ describe('startPrecip control interaction (issue #68)', () => {
     // and fall back down to the control top before the first landing can happen.
     for (let i = 1; i <= 250; i++) pump(i * 50);
     expect(orec.drawImages.length).toBeGreaterThan(0); // settled snow is being composited
-    expect(orec.clearCount).toBeGreaterThan(0); // the overlay is cleared every frame
+    expect(orec.clearCount).toBeGreaterThan(0); // …over a cleared overlay
     ctrl.stop();
   });
 
@@ -306,13 +306,17 @@ describe('startPrecip control interaction (issue #68)', () => {
     });
     for (let i = 1; i <= 250; i++) pump(i * 50);
     expect(orec.drawImages.length).toBeGreaterThan(0);
-    // The world moves: every surface top changes beyond the tolerance → all depths reset. If the
-    // reset were ever dropped, the engine would keep compositing the (stale) mound layer every
-    // frame and this assertion would fail.
+    // The world moves: every surface top changes beyond the tolerance, so the settled snow is
+    // knocked off and the overlay stops compositing it. The change dirties the mound cache too, so
+    // the assertion is only meaningful once a re-render has had the chance to happen — hence
+    // pumping well past `renderInterval` (0.15s) rather than a single frame.
+    //
+    // Note what this does *not* prove: with every top gone the columns are `NO_SURFACE`, which
+    // `renderMounds` skips whatever depth they hold, so the per-column depth reset itself is not
+    // observable here. A test that pins that down would move only *some* surfaces.
     surfaces.clear();
     const before = orec.drawImages.length;
-    pump(250 * 50 + 50);
-    pump(250 * 50 + 100);
+    for (let i = 251; i <= 260; i++) pump(i * 50);
     expect(orec.drawImages.length).toBe(before); // the settled snow was knocked off
     ctrl.stop();
   });
@@ -329,25 +333,33 @@ describe('startPrecip control interaction (issue #68)', () => {
       surfaces: surfaces.factory,
     });
     for (let i = 1; i <= 250; i++) pump(i * 50);
-    // At rest the mound layer is one full-canvas blit (5-arg drawImage), never shifted.
+    // At rest the mound layer is one full-canvas blit (5-arg drawImage), never shifted — and it is
+    // drawn once, not per frame: with the cache unchanged and no lift to follow, every further
+    // frame would be identical to the one on screen, so the overlay pass skips itself entirely
+    // (issue #419). Drop that skip and `restFrame` fills up again.
     const restMark = orec.drawImages.length;
     pump(250 * 50 + 50);
+    pump(250 * 50 + 100);
     const restFrame = orec.drawImages.slice(restMark);
-    expect(restFrame.length).toBeGreaterThan(0);
-    expect(restFrame.every((d) => d.args.length === 5)).toBe(true);
+    expect(restFrame).toEqual([]);
     // Hover a mid-screen control span, lifted 4px up: its columns are drawn as a shifted slice
     // (9-arg drawImage(img, sx,sy,sw,sh, dx,dy,dw,dh) — dest-y at index 6 is -4) while the rest
-    // stays at rest.
+    // stays at rest. A changed lift is a changed frame, so the skip above must not swallow it.
     surfaces.setHover({ c0: 40, c1: 60, dy: -4 });
     const mark = orec.drawImages.length;
-    pump(250 * 50 + 100);
+    pump(250 * 50 + 150);
     const frame = orec.drawImages.slice(mark);
     expect(frame.some((d) => d.args.length === 9 && d.args[6] === -4)).toBe(true);
-    // Releasing (no hover) returns to the single unshifted full-canvas blit.
+    // Holding the same lift is again a still frame, so it too stops redrawing.
+    const heldMark = orec.drawImages.length;
+    pump(250 * 50 + 200);
+    expect(orec.drawImages.slice(heldMark)).toEqual([]);
+    // Releasing (no hover) redraws once, as the single unshifted full-canvas blit.
     surfaces.setHover(null);
     const mark2 = orec.drawImages.length;
-    pump(250 * 50 + 150);
+    pump(250 * 50 + 250);
     const frame2 = orec.drawImages.slice(mark2);
+    expect(frame2.length).toBeGreaterThan(0);
     expect(frame2.every((d) => d.args.length === 5)).toBe(true);
     ctrl.stop();
   });

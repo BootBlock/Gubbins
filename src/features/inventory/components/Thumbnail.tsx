@@ -43,5 +43,10 @@ export function Thumbnail({
       </div>
     );
   }
-  return <img src={url} alt={alt} className={cn('object-cover', className)} />;
+  // `decoding="async"` keeps the image decode off the critical path (issue #419). A thumbnail is
+  // mounted and unmounted every time the virtualised list recycles a row, so on a fast scroll the
+  // default synchronous decode lands a burst of them on the main thread mid-gesture — the frames
+  // where the device can least afford it. The box is already sized by `className`, so a late
+  // decode shifts nothing.
+  return <img src={url} alt={alt} decoding="async" className={cn('object-cover', className)} />;
 }

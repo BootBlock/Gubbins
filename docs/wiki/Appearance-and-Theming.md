@@ -83,6 +83,14 @@ Gubbins has some gentle visual polish that you can dial up or down:
 > Want a calmer app in one move? Turning **Animation** down (or enabling your device's
 > reduce-motion setting) quiets every decorative effect at once.
 
+> **ℹ️ Note**
+> On a phone or tablet, Gubbins simplifies a little of the purely decorative rendering so that
+> scrolling stays smooth — cards keep their translucency, but drop the frosted blur behind it,
+> and the sweeping highlight that lights a card under the mouse pointer isn't drawn on a screen
+> that has no pointer to hover with. A background effect is also drawn at a slightly lower
+> resolution on a device that reports modest memory or few processor cores. There's nothing to
+> set: it happens on its own, and nothing is lost from what the app can *do*.
+
 ## Also in this panel
 
 The Appearance panel ends with a handful of settings that aren't about the *look* of the app:
