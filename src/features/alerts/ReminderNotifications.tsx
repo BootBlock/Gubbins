@@ -14,12 +14,11 @@ import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from '@/app/router';
 import { requestHighlight } from '@/lib/highlight';
-import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useReminderFiring, useReminderPeriodicSync } from './useReminderNotifications';
 import { browserReminderApi, type ReminderApi } from './reminder-api';
 import { REMINDER_CLICK_MESSAGE, REMINDER_SYNC_MESSAGE } from './reminder-messages';
-import type { AlertTarget } from './alerts';
+import { alertTargetLink, type AlertTarget } from './alerts';
 
 /** Runs the alert-feed-consuming firing; mounted only while reminders are enabled. */
 function ReminderFirer({ api }: { readonly api: ReminderApi }) {
@@ -43,10 +42,8 @@ export function ReminderNotifications() {
       // A notification was clicked while a window was open: deep-link to its target — the same
       // landing the alert-centre "View in inventory" link produces (seed search, navigate, flash).
       if (data?.type === REMINDER_CLICK_MESSAGE && data.target) {
-        const { route, itemId, itemName } = data.target;
-        if (itemName) useInventoryEntry.getState().requestSearch(itemName);
-        void router.navigate({ to: route });
-        if (itemId) requestHighlight(itemId);
+        void router.navigate(alertTargetLink(data.target));
+        if (data.target.itemId) requestHighlight(data.target.itemId);
         return;
       }
 

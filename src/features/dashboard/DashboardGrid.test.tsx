@@ -1,19 +1,26 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 
-// Plain-anchor Link so the grid renders without a RouterProvider; the `href` lets us
-// assert whether a tile is a live quick-link or a dropped (non-clickable) one.
+// Plain-anchor Link so the grid renders without a RouterProvider. The `href` lets us assert
+// whether a tile is a live quick-link or a dropped (non-clickable) one, and it carries any
+// `search` the widget declared so the pre-scoped tiles can be told apart from the plain ones.
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, ...props }: { children: React.ReactNode; to: string; [k: string]: unknown }) => (
-    <a href={to} {...props}>
+  Link: ({
+    children,
+    to,
+    search,
+    ...props
+  }: {
+    children: React.ReactNode;
+    to: string;
+    search?: Record<string, unknown>;
+    [k: string]: unknown;
+  }) => (
+    <a href={search ? `${to}?${new URLSearchParams(search as Record<string, string>)}` : to} {...props}>
       {children}
     </a>
   ),
 }));
-
-// A spy the synthetic `delta` widget's `onLinkClick` calls, so the test below can assert
-// the grid actually wires it to the rendered Link's onClick.
-const mockDeltaLinkClick = vi.fn();
 
 // The set of "all clear" widget ids the mocked `useHealthyWidgetIds` reports — the
 // "hide healthy cards" tests (issue #111) drive it to control which cards are dropped.
@@ -26,14 +33,14 @@ vi.mock('./widgets', () => {
   const defs = [
     // Ungated widget with a core-route link — always on the board, link always live.
     { id: 'alpha', title: 'Alpha', icon: null, to: '/inventory', Component: () => <p>Alpha body</p> },
-    // Same shape as alpha, but carries an `onLinkClick` (mirrors the In-Transit widget
-    // handing a one-shot location intent to the Inventory screen before navigating).
+    // Same shape as alpha, but carries `search` (mirrors the In-Transit widget landing the
+    // Inventory screen scoped to one location rather than on the plain list).
     {
       id: 'delta',
       title: 'Delta',
       icon: null,
       to: '/inventory',
-      onLinkClick: () => mockDeltaLinkClick(),
+      search: { loc: 'loc-1' },
       Component: () => <p>Delta body</p>,
     },
     // Gated on `projects` — disappears entirely when Projects is off.
@@ -186,11 +193,11 @@ describe('DashboardGrid — widget feature gating (Phase 4)', () => {
     expect(useSettingsDialog.getState().initialTab).toBe('storage');
   });
 
-  it('fires a widget’s onLinkClick (e.g. a one-shot destination intent) just before it navigates', () => {
+  it('carries a widget’s `search` into its quick-link, so the tile lands pre-scoped', () => {
     render(<DashboardGrid />);
-    expect(mockDeltaLinkClick).not.toHaveBeenCalled();
-    fireEvent.click(tileLink('delta') as HTMLAnchorElement);
-    expect(mockDeltaLinkClick).toHaveBeenCalledTimes(1);
+    expect(tileLink('delta')?.getAttribute('href')).toBe('/inventory?loc=loc-1');
+    // A widget declaring no `search` still links to the plain screen.
+    expect(tileLink('alpha')?.getAttribute('href')).toBe('/inventory');
   });
 });
 

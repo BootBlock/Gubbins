@@ -140,6 +140,34 @@ describe('detectImportFormat', () => {
     expect(detectImportFormat('"he said hi, there')).toBe('lines');
   });
 
+  it('reads a single named column as CSV only when the caller can recognise the header (issue #408)', () => {
+    // A one-column file carries no delimiter, so nothing but the header tells it apart from a
+    // free-form list. Without the hint it stays a line list and the header imports as an item.
+    const csv = 'name\nWidget A\nWidget B\nWidget C';
+    expect(detectImportFormat(csv)).toBe('lines');
+    expect(detectImportFormat(csv, { isHeaderCell: (cell) => cell === 'name' })).toBe('csv');
+    expect(extractTableRows(csv, { format: 'csv' }).dataRows).toEqual([
+      ['Widget A'],
+      ['Widget B'],
+      ['Widget C'],
+    ]);
+  });
+
+  it('keeps a free-form list a line list even with a header hint supplied', () => {
+    const isHeaderCell = (cell: string) => cell === 'name';
+    // First line is an item, not a column name.
+    expect(detectImportFormat('Widget A\nWidget B', { isHeaderCell })).toBe('lines');
+    // A header with nothing under it would extract to no rows at all.
+    expect(detectImportFormat('name', { isHeaderCell })).toBe('lines');
+    // A delimiter on any line means the file is not one column, whatever the hint says of it.
+    // A ragged file read as a one-column CSV would split its data lines and drop every cell
+    // past the first: `Widget, the big one` would import as `Widget`.
+    expect(detectImportFormat('name;extra\nWidget A', { isHeaderCell: () => true })).toBe('lines');
+    expect(detectImportFormat('name\nWidget, the big one\nSprocket', { isHeaderCell })).toBe('lines');
+    // A consistent two-column file is the delimiter sniff's own case, decided before the hint.
+    expect(detectImportFormat('name;qty\nWidget A;2', { isHeaderCell: () => true })).toBe('ssv');
+  });
+
   it('ignores a final row severed by the detection sample window', () => {
     // 12 rows: the 10-line sample cuts mid-file, leaving a partial last row that proves nothing.
     const rows = Array.from({ length: 12 }, (_, i) => `item${i},${i}`).join('\n');

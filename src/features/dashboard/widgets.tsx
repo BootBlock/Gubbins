@@ -52,7 +52,7 @@ import { useCategories } from '@/features/inventory/categories';
 import { useInventoryValue } from '@/features/reports/queries';
 import { useActivityFeed } from '@/features/activity/queries';
 import { describeHistoryEntry } from '@/features/inventory/history-format';
-import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
+import { inventorySearchInLocation } from '@/features/inventory/view-params';
 import { IN_TRANSIT_LOCATION_ID } from '@/db/repositories/constants';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { nowMs } from '@/lib/clock';
@@ -67,12 +67,10 @@ export interface WidgetDefinition {
   /** Optional quick-link target — the whole tile navigates here in view mode. */
   readonly to?: string;
   /**
-   * Fires just before the quick-link navigates (mirrors the dashboard hero's Add/Scan
-   * quick-actions — see `DashboardActions`). Use this to hand a one-shot intent to the
-   * destination screen — e.g. `useInventoryEntry.getState().requestLocation(id)` so the
-   * In-Transit tile lands pre-scoped to that location rather than the plain list.
+   * Search params for the quick-link, so a tile can land its destination pre-scoped rather than
+   * on the plain screen — the In-Transit tile arrives at the In-Transit location's list.
    */
-  readonly onLinkClick?: () => void;
+  readonly search?: Record<string, unknown>;
   /**
    * When `to` is `/settings`, which Settings rail tab the dialog should land on (the Settings
    * dialog special-cases `to: '/settings'` into a direct `openSettings` call rather than a
@@ -776,7 +774,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     to: '/inventory',
     // Land scoped to the system In-Transit location (spec §4 "liminal procurement") rather
     // than the plain, unfiltered list — that's where incoming stock actually sits.
-    onLinkClick: () => useInventoryEntry.getState().requestLocation(IN_TRANSIT_LOCATION_ID),
+    search: inventorySearchInLocation(IN_TRANSIT_LOCATION_ID),
     feature: 'purchase-orders',
     permission: 'purchase-orders:read',
     Component: InTransitWidget,
