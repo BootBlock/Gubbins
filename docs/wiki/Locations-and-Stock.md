@@ -133,8 +133,10 @@ typing: the list narrows as you go, so you never have to scroll a long list of b
 - Where a picker offers a **＋ New location…** row — **Add item** does — that row stays on offer
   even when nothing matches, which is usually exactly the moment you want it.
 
-The same goes for every long dropdown in Gubbins, not just locations: categories, projects and
-item pickers all behave this way.
+The same goes for every long dropdown in Gubbins, not just locations: categories behave this way
+too. **Item** and **project** pickers go one step further — they search your whole catalogue as
+you type rather than filtering a list already on screen, so nothing is ever out of reach of them.
+See [[Choosing an item in a picker|Search-Overview]].
 
 > **ℹ️ Note**
 > A very long list is drawn a screenful at a time as you scroll, just as the tree is, so opening

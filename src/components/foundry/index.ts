@@ -49,6 +49,14 @@ export {
   type AutocompleteFieldProps,
 } from './autocomplete';
 export { filterSuggestions } from './autocomplete-filter';
+export {
+  PICKER_OPTION_LIMIT,
+  buildPickerLabelMap,
+  usePickerSelection,
+  type PickerRowAccess,
+  type PickerSelection,
+  type PickerSelectionParams,
+} from './entity-picker';
 export { Pagination, type PaginationProps } from './pagination';
 export {
   pageCount,

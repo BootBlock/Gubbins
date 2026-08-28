@@ -44,6 +44,29 @@ Inventory screen) and all do the same thing under the hood — they build up a f
 refine, re-run and **[[save|Saved-Searches-and-Favourites]]**. Saved searches are reachable from
 both places: the **Visual search** panel and the quick-search box's bookmark button.
 
+## Choosing an item in a picker
+
+Plenty of screens ask you to *pick an item* rather than search for one: a kit component, a BOM
+line, a purchase-order line, a related item, a substitute, or the single item an export covers.
+Every one of those pickers searches your whole catalogue.
+
+Click the box and it offers a first few items to choose from. Start typing and it searches
+instead, exactly as the quick-search box does — so an item is reachable however far down the
+alphabet it sits, and however many items you hold.
+
+- **The closest matches come first.** The list is ranked by how well each item matches what you
+  typed, over every item that matched — not the first handful in alphabetical order.
+- **It tells you what it isn't showing.** Under the box, a line such as *"Showing the closest 20
+  of 143 matches — keep typing to narrow"* means there is more behind it. Add another word.
+- **Two items with the same name stay distinct.** The second and later ones are shown with a short
+  identifier in brackets, so you can tell which is which.
+- **`↑` / `↓` and `Enter`** choose from the list, and **`Escape`** closes it without clearing what
+  you typed.
+
+> **ℹ️ Note**
+> The project picker on the [[export|Export-and-Import]] screen searches your whole list of
+> projects the same way, though it offers them alphabetically rather than closest-first.
+
 ## Filtering alongside search
 
 Search combines with the other ways to narrow the list:

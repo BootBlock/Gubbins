@@ -20,7 +20,8 @@ import { Button, Checkbox, InfoHint, Input, SelectField, useToast } from '@/comp
 import { AddIcon, AssemblyIcon, DeleteIcon } from '@/components/icons';
 import type { Item, KitComponent } from '@/db/repositories';
 import { buildableCount } from '@/features/inventory/kit-availability';
-import { useInventoryItems, useLocations } from '@/features/inventory/queries';
+import { useLocations } from '@/features/inventory/queries';
+import { ItemPicker } from '@/features/inventory/components/ItemPicker';
 import { plural } from '@/lib/plural';
 import { useErrorMessage } from '@/features/errors';
 import {
@@ -41,18 +42,12 @@ export function KitEditor({ item }: { item: Item }) {
   const [error, setError] = useState<string | null>(null);
   const describeError = useErrorMessage();
 
-  // Candidate components: active items other than this kit and the ones already added. The
-  // repository rejects deeper cycles/self-containment too; excluding these here keeps the
-  // common case out of the picker. A modest page is loaded — a fuller search picker is a
-  // later refinement, matching the project BOM's item Select.
-  const { data: itemsPage } = useInventoryItems({}, 100);
-  const alreadyAdded = useMemo(() => new Set((components ?? []).map((c) => c.componentItemId)), [components]);
-  const candidates = useMemo(
-    () =>
-      (itemsPage?.pages.flatMap((p) => p.rows) ?? []).filter(
-        (i) => i.id !== item.id && !alreadyAdded.has(i.id),
-      ),
-    [itemsPage, item.id, alreadyAdded],
+  // Candidate components: any item other than this kit and the ones already added. The repository
+  // rejects deeper cycles/self-containment too; excluding these here keeps the common case out of
+  // the picker. The picker searches the whole catalogue for the rest (issue #484).
+  const excluded = useMemo(
+    () => new Set([item.id, ...(components ?? []).map((c) => c.componentItemId)]),
+    [item.id, components],
   );
 
   const rows = components ?? [];
@@ -266,14 +261,11 @@ export function KitEditor({ item }: { item: Item }) {
         </p>
         <div className="flex items-end gap-2">
           <div className="flex-1">
-            <SelectField
+            <ItemPicker
               label="Component item"
               value={componentId}
-              onChange={setComponentId}
-              options={[
-                { value: '', label: '— Choose an item —' },
-                ...candidates.map((i) => ({ value: i.id, label: i.name })),
-              ]}
+              onChange={(id) => setComponentId(id ?? '')}
+              exclude={excluded}
               data-testid="kit-component-picker"
             />
           </div>
