@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-driver';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
+import { BARCODE_MATCH_LIMIT } from './item/core';
 import { ItemRepository } from './ItemRepository';
 
 /** Retail barcode (GTIN) storage + lookup (recommendation point 1). */
@@ -29,27 +30,40 @@ describe('ItemRepository — barcode', () => {
     expect(blank.barcode).toBeNull();
   });
 
-  it('finds the active item carrying a barcode, case-insensitively', async () => {
+  it('finds the active items carrying a barcode, case-insensitively', async () => {
     const item = await items.create({ name: 'Widget', barcode: 'ABC123' });
-    const found = await items.getByBarcode('abc123');
-    expect(found?.id).toBe(item.id);
-    expect(await items.getByBarcode('nope')).toBeUndefined();
-    expect(await items.getByBarcode('   ')).toBeUndefined();
+    expect((await items.findByBarcode('abc123')).map((i) => i.id)).toEqual([item.id]);
+    expect(await items.findByBarcode('nope')).toEqual([]);
+    expect(await items.findByBarcode('   ')).toEqual([]);
   });
 
-  it('never returns a soft-deleted item, and prefers the most recent on a clash', async () => {
+  it('never returns a soft-deleted item, and returns every item sharing a barcode (issue #513)', async () => {
     const older = await items.create({ name: 'Older', barcode: '5000159407236' });
     await items.softDelete(older.id);
     // The deleted one is invisible even though it still holds the barcode.
-    expect(await items.getByBarcode('5000159407236')).toBeUndefined();
+    expect(await items.findByBarcode('5000159407236')).toEqual([]);
 
     const a = await items.create({ name: 'First', barcode: '111' });
     const b = await items.create({ name: 'Second', barcode: '111' });
-    // Under a duplicate barcode the lookup is deterministic (same answer every call) and is
-    // one of the two — the LIMIT-1 ordering never returns an arbitrary row across calls.
-    const hit = await items.getByBarcode('111');
-    expect([a.id, b.id]).toContain(hit?.id);
-    expect((await items.getByBarcode('111'))?.id).toBe(hit?.id);
+    // Both are reported, so the scanner can ask which one was meant rather than adjusting
+    // whichever happened to be created last.
+    const hits = await items.findByBarcode('111');
+    expect(hits.map((i) => i.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  it('caps a shared barcode at BARCODE_MATCH_LIMIT, most recent first', async () => {
+    const created: string[] = [];
+    for (let n = 0; n < BARCODE_MATCH_LIMIT + 3; n += 1) {
+      created.push((await items.create({ name: `Copy ${n}`, barcode: 'SHARED' })).id);
+    }
+    const hits = await items.findByBarcode('SHARED');
+    expect(hits).toHaveLength(BARCODE_MATCH_LIMIT);
+    // Every row is one of the items that carry the code, and the same call twice gives the same
+    // rows — the cap slices a deterministic order, not an arbitrary one. (The rows are created
+    // within one millisecond of each other, so which ones survive the cap is decided by the `id`
+    // tiebreak rather than by `created_at`; asserting *which* would be asserting UUID order.)
+    expect(hits.every((i) => created.includes(i.id))).toBe(true);
+    expect((await items.findByBarcode('SHARED')).map((i) => i.id)).toEqual(hits.map((i) => i.id));
   });
 
   it('makes the barcode findable via full-text search', async () => {

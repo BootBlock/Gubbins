@@ -1,10 +1,18 @@
 import { useState } from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { BarcodeField } from './BarcodeField';
 
 vi.mock('@/features/modules/useFeature', () => ({ useFeature: () => true }));
+// The duplicate advisory's only data source (issue #513); each test sets what the barcode is
+// already recorded against. Mocked rather than provided, so the field keeps its no-QueryClient
+// contract in these tests.
+let carriers: { id: string; name: string }[] = [];
+vi.mock('../queries', () => ({ useBarcodeCarriers: () => ({ data: carriers }) }));
 
+beforeEach(() => {
+  carriers = [];
+});
 afterEach(cleanup);
 
 /** Render with the value held in a parent, so typing behaves as it does in the real forms. */
@@ -129,5 +137,65 @@ describe('BarcodeField — typed-entry check (issue #344)', () => {
     const { onScan } = renderField();
     fireEvent.click(screen.getByTestId('barcode-scan'));
     expect(onScan).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A barcode two items share is legitimate, but it is also what makes a later scan stop and ask
+ * which one was meant (issue #513). The field says so at the moment the value is entered, in the
+ * same advisory style as the check-digit warning — it never blocks the save.
+ */
+describe('BarcodeField — already recorded against another item (issue #513)', () => {
+  it('names the other item holding the barcode, without rejecting the entry', () => {
+    carriers = [{ id: 'item-2', name: 'NE555 timer (sealed)' }];
+    const { input } = renderField();
+
+    typeAndBlur(input, '4006381333931'); // a valid check digit, so only the duplicate is at issue
+
+    expect(screen.getByText(/NE555 timer \(sealed\) already has this barcode/i)).toBeTruthy();
+    // Advisory, exactly as the check-digit warning is: described to the control, never invalid.
+    expect(input).not.toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('counts them when several already share it', () => {
+    carriers = [
+      { id: 'item-2', name: 'One' },
+      { id: 'item-3', name: 'Two' },
+    ];
+    const { input } = renderField();
+
+    typeAndBlur(input, '4006381333931');
+
+    expect(screen.getByText(/2 other items already have this barcode/i)).toBeTruthy();
+  });
+
+  it('never reports the item being edited against itself', () => {
+    // The editor loads an item whose own barcode is the value in the field; the only carrier is
+    // that item, so there is nothing to warn about.
+    carriers = [{ id: 'item-1', name: 'NE555 timer' }];
+    render(
+      <BarcodeField
+        value="4006381333931"
+        onChange={vi.fn()}
+        onScan={vi.fn()}
+        inputTestId="barcode"
+        scanTestId="barcode-scan"
+        itemId="item-1"
+      />,
+    );
+
+    expect(screen.queryByText(/already has this barcode/i)).toBeNull();
+  });
+
+  it('lets the check-digit warning win when the value is also malformed', () => {
+    // Both could apply, and the shape is the more urgent fault: a mistyped barcode will never
+    // resolve at all, while a shared one still finds the item after a question.
+    carriers = [{ id: 'item-2', name: 'Other' }];
+    const { input } = renderField();
+
+    typeAndBlur(input, '4006381333930'); // …930 for …931
+
+    expect(screen.getByText(/check digit/i)).toBeTruthy();
+    expect(screen.queryByText(/already has this barcode/i)).toBeNull();
   });
 });

@@ -40,6 +40,7 @@ import { WishlistRepository } from './WishlistRepository';
 import type { RepositoryOptions } from './base';
 
 export { ItemRepository } from './ItemRepository';
+export { BARCODE_MATCH_LIMIT } from './item/core';
 export { LocationRepository } from './LocationRepository';
 export { LocationPhotoRepository } from './LocationPhotoRepository';
 export { MaintenanceRepository } from './MaintenanceRepository';

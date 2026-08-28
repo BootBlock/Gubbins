@@ -116,6 +116,8 @@ export const inventoryKeys = {
   stableStatuses: (tuning: ApplicableStatusTuning) =>
     [...inventoryKeys.itemAttention(), 'stable-statuses', tuning] as const,
   item: (id: string) => [...inventoryKeys.items(), 'detail', id] as const,
+  /** Items already carrying a barcode — the Barcode field's duplicate advisory (issue #513). */
+  barcodeCarriers: (barcode: string) => [...inventoryKeys.items(), 'barcode', barcode] as const,
   itemHistory: (id: string) => [...inventoryKeys.item(id), 'history'] as const,
   locations: () => [...inventoryKeys.all, 'locations'] as const,
   locationTree: () => [...inventoryKeys.locations(), 'tree'] as const,
@@ -750,6 +752,24 @@ export function useItem(id: string | undefined) {
     queryKey: inventoryKeys.item(id ?? ''),
     queryFn: () => getItemRepository().getById(id!),
     enabled: Boolean(id),
+  });
+}
+
+/**
+ * The active items already carrying a barcode (issue #513) — what the Barcode field's duplicate
+ * advisory is judged from, and the read that lets the field say "another item has this" *before*
+ * a scan of it turns into a question.
+ *
+ * A blank value disables the query rather than asking for every item with no barcode. The caller
+ * decides *when* to ask: the field passes `''` mid-keystroke, so a half-typed GTIN never costs a
+ * round-trip and the advisory appears at the same moment the check-digit one does.
+ */
+export function useBarcodeCarriers(barcode: string) {
+  const value = barcode.trim();
+  return useQuery({
+    queryKey: inventoryKeys.barcodeCarriers(value),
+    queryFn: () => getItemRepository().findByBarcode(value),
+    enabled: value.length > 0,
   });
 }
 

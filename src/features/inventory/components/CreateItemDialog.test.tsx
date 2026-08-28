@@ -67,6 +67,9 @@ vi.mock('../categories', () => ({
 vi.mock('../queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../queries')>()),
   useFieldSuggestions: () => ({ data: [] }),
+  // The Barcode field's duplicate advisory (issue #513). This dialog renders without a
+  // QueryClient, and nothing carries the code here, so the read is stubbed rather than run.
+  useBarcodeCarriers: () => ({ data: [] }),
 }));
 
 // The camera barcode-capture dialog (issue #8) owns the real getUserMedia/decoder plumbing,
