@@ -11,11 +11,11 @@
  * {@link useNavCounts} owns the count logic. All the arrangement maths is the pure
  * `dashboard-nav-order.ts` seam.
  *
- * A hidden tile (its feature switched off) never appears and can't be ordered, but its stored
- * placement is kept verbatim and concatenated back on every write — so re-enabling the module
- * restores the exact arrangement. A stored
- * order referencing tiles that no longer exist resolves gracefully: unknown ids are dropped and
- * newly-added tiles append into their default group.
+ * A hidden tile (its feature switched off) never appears and can't be ordered, but on every
+ * write it is spliced back beside the visible neighbour it sat behind (`mergeGated`) — so
+ * re-enabling the module reveals it where the user left it, not at the end of its group. A
+ * stored order referencing tiles that no longer exist resolves gracefully: unknown ids are
+ * dropped and newly-added tiles append into their default group.
  */
 import { useCallback, useMemo } from 'react';
 import {
@@ -28,6 +28,7 @@ import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePermissionCheck } from '@/features/users/usePermission';
 import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import {
+  mergeGated,
   moveTile,
   nudgeTile,
   partitionByEnabled,
@@ -101,10 +102,10 @@ export function useNavOrder(): UseNavOrder {
   const full = useMemo(() => reconcileOrder(stored, NAV_TILE_DEFAULTS, NAV_GROUP_ORDER), [stored]);
 
   // Split off the tiles whose module is switched off, or whose read permission this session
-  // lacks (issue #522): `enabled` is what the hub draws and every edit operates on; `gated` is
-  // kept verbatim and merged back on persist so a hidden tile never loses its place — which is
-  // what lets a tile reappear where it was when the module comes back or the role changes.
-  const { enabled, gated } = useMemo(
+  // lacks (issue #522): `enabled` is what the hub draws and every edit operates on. The hidden
+  // half is merged back from `full` on persist (see `apply`), so a hidden tile keeps its place
+  // and reappears where it was when the module comes back or the role changes.
+  const { enabled } = useMemo(
     () =>
       partitionByEnabled(full, (id) => {
         const feature = FEATURE_BY_ROUTE.get(id);
@@ -126,14 +127,15 @@ export function useNavOrder(): UseNavOrder {
   );
 
   // Persist an op's result only when it actually changed the enabled order (the pure ops
-  // return the same reference on a no-op), always re-appending the gated placements untouched.
+  // return the same reference on a no-op), splicing each hidden tile back beside the neighbour
+  // it sat behind rather than at the end of its group (issue #628).
   // Returns the tile's resulting placement so the caller can announce the move, or null on
   // a no-op. `next` is the enabled-only order, so the reported position/count count only the
   // visible tiles — exactly what a sighted user sees.
   const apply = useCallback(
     (next: NavOrder, id: string): NavMoveResult | null => {
       if (next === enabled) return null;
-      setStored([...next, ...gated]);
+      setStored(mergeGated(full, next, NAV_GROUP_ORDER));
       const placement = next.find((p) => p.id === id);
       if (!placement) return null;
       const groupTiles = tilesInGroup(next, placement.group);
@@ -146,7 +148,7 @@ export function useNavOrder(): UseNavOrder {
         pinned: placement.pinned,
       };
     },
-    [enabled, gated, setStored],
+    [enabled, full, setStored],
   );
 
   const move = useCallback(

@@ -118,10 +118,10 @@ export function tilesInGroup(order: NavOrder, group: NavGroup): NavOrder {
 /**
  * Split an order into the tiles that render (`enabled`) and those whose feature is off
  * (`gated`), by an id predicate. The gated placements are kept verbatim so the caller can
- * concatenate them back on persist — a hidden module's tiles then keep their exact
- * arrangement, and re-enabling the module restores it untouched. An order is ordinal, so a
- * reinserted tile can't land on top of another; the widget board carries absolute coordinates
- * and so has to edit its gated placements too (issue #627).
+ * edit the enabled half alone and merge the two back together with {@link mergeGated} on
+ * persist. Note that this store's *order is the array order*, so the gated half cannot be
+ * concatenated back: it has to be spliced in against the pre-edit order (issue #628). The
+ * widget board has the same shape of problem with absolute coordinates (issue #627).
  */
 export function partitionByEnabled(
   order: NavOrder,
@@ -131,6 +131,55 @@ export function partitionByEnabled(
   const gated: NavTilePlacement[] = [];
   for (const p of order) (isEnabled(p.id) ? enabled : gated).push(p);
   return { enabled, gated };
+}
+
+/**
+ * Merge an edited enabled-only order back into the full arrangement, putting each hidden
+ * tile back where it sat rather than at the end of its group (issue #628).
+ *
+ * A placement record has no index field, so the position of a hidden tile only exists as
+ * its neighbours in `previous`: each gated tile is anchored to the nearest **enabled tile
+ * ahead of it in its own group** that the edit left in that group, and re-inserted directly
+ * behind that anchor wherever the anchor ended up in `next`. A tile that moved to another
+ * group cannot be an anchor, because it would drag the hidden tile out of its own group's
+ * block. A gated tile with no anchor left sat at the head of its group, so it goes back to
+ * the head. The result is re-normalised, which restores the group-block and pinned-first
+ * invariants — so a hidden pinned tile stays in the pinned run even if its anchor is
+ * unpinned.
+ *
+ * `previous` is the full pre-edit order (enabled + gated); `next` is the edited order of
+ * the enabled tiles alone. Tiles of `previous` that are absent from `next` are treated as
+ * gated, so the two arguments do not have to come from the same {@link partitionByEnabled}
+ * call.
+ */
+export function mergeGated(previous: NavOrder, next: NavOrder, groupOrder: readonly NavGroup[]): NavOrder {
+  const groupAfter = new Map(next.map((p) => [p.id, p.group] as const));
+  /** Gated tiles with no anchor left — they belong at the head of their group. */
+  const leading: NavTilePlacement[] = [];
+  /** Gated tiles keyed by the id of the enabled tile they go back behind. */
+  const behind = new Map<string, NavTilePlacement[]>();
+  /** Per group, the enabled tiles seen so far in `previous`, nearest-first. */
+  const ahead = new Map<NavGroup, string[]>();
+
+  for (const p of previous) {
+    if (groupAfter.has(p.id)) {
+      ahead.set(p.group, [p.id, ...(ahead.get(p.group) ?? [])]);
+      continue;
+    }
+    const anchor = (ahead.get(p.group) ?? []).find((id) => groupAfter.get(id) === p.group);
+    if (anchor === undefined) leading.push(p);
+    else behind.set(anchor, [...(behind.get(anchor) ?? []), p]);
+  }
+
+  // Head-of-group tiles go to the front of the flat array; normalisation then files each one
+  // at the top of its own group block.
+  const out: NavTilePlacement[] = [...leading];
+  for (const p of next) {
+    out.push(p);
+    const trailing = behind.get(p.id);
+    if (trailing) out.push(...trailing);
+  }
+  return normaliseOrder(out, groupOrder);
 }
 
 /**

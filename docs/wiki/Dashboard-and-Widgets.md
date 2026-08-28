@@ -69,6 +69,14 @@ screens — a launchpad as well as an overview. What appears reflects the
 [[modules you've enabled|Modular-UI]], and several aspects (nav-tile counts, the getting-started
 panel) are configurable in **Settings → Dashboard**.
 
+Nav tiles rearrange the same way the widgets do: while **Customise** is on, drag a tile, nudge it
+with the ▲▼◀▶ cluster or the arrow keys, and pin the ones you use most to the top of their group.
+
+> **ℹ️ Note**
+> A tile belonging to a [[module you've switched off|Modular-UI]] keeps its place too. It isn't
+> shown while the module is away, and rearranging the tiles around it doesn't move it — switching
+> the module back on brings the tile back where you left it.
+
 > **ℹ️ Note**
 > The dashboard layout is a per-device preference — your phone and your workshop tablet can each
 > have their own arrangement.
