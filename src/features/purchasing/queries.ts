@@ -14,6 +14,7 @@ import {
   type CreatePurchaseOrderInput,
   type CreatePurchaseOrderLineInput,
   type LowStockThresholds,
+  type PurchaseOrderCountFilter,
   type UpdatePurchaseOrderLineInput,
 } from '@/db/repositories';
 import { agendaKeys } from '@/features/calendar/keys';
@@ -32,7 +33,7 @@ export const purchaseOrderKeys = {
    * no write has to learn about pagination.
    */
   page: (offset: number, limit: number) => [...purchaseOrderKeys.list(), { offset, limit }] as const,
-  count: () => [...purchaseOrderKeys.list(), 'count'] as const,
+  count: (filter: PurchaseOrderCountFilter = {}) => [...purchaseOrderKeys.list(), 'count', filter] as const,
   detail: (id: string) => [...purchaseOrderKeys.all, 'detail', id] as const,
 };
 
@@ -123,11 +124,23 @@ export function readPurchaseOrdersPage(params: { limit: number; offset: number }
   return getPurchaseOrderRepository().list(params);
 }
 
-/** How many purchase orders exist in total — the denominator for the Orders tab's pager. */
-export function usePurchaseOrderCount() {
+/**
+ * How many purchase orders match `filter` — the denominator for the Orders tab's pager with no
+ * filter, and the Dashboard tile's figure with `{ open: true }` (issue #573).
+ *
+ * The open count is resolved by the database rather than by filtering the page in hand: the list
+ * reads newest-first, so a user whose most recent hundred orders were all received saw "0 open
+ * orders" while a hundred older open ones sat past the page boundary. Pass `{ enabled: false }` to
+ * mount without fetching.
+ */
+export function usePurchaseOrderCount(
+  filter: PurchaseOrderCountFilter = {},
+  options: { enabled?: boolean } = {},
+) {
   return useQuery({
-    queryKey: purchaseOrderKeys.count(),
-    queryFn: () => getPurchaseOrderRepository().count(),
+    queryKey: purchaseOrderKeys.count(filter),
+    queryFn: () => getPurchaseOrderRepository().count(filter),
+    enabled: options.enabled ?? true,
   });
 }
 

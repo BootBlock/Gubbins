@@ -69,6 +69,10 @@ screens — a launchpad as well as an overview. What appears reflects the
 [[modules you've enabled|Modular-UI]], and several aspects (nav-tile counts, the getting-started
 panel) are configurable in **Settings → Dashboard**.
 
+Most collection tiles carry a small count — items, active projects, open orders, contacts,
+upcoming bookings. Each one counts your **whole** collection, not just what fits on the first page
+of the screen behind it, so a tile reading **0** means there really is nothing there.
+
 Nav tiles rearrange the same way the widgets do: while **Customise** is on, drag a tile, nudge it
 with the ▲▼◀▶ cluster or the arrow keys, and pin the ones you use most to the top of their group.
 

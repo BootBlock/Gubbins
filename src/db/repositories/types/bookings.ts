@@ -58,6 +58,25 @@ export interface CreateBookingInput {
   readonly note?: string | null;
 }
 
+/**
+ * What narrows a booking **count** (issue #573) — the Dashboard's Bookings tile.
+ *
+ * Every bound is a midnight-UTC day-start UNIX-ms, matching the stored `start_date` /
+ * `end_date` (issue #320); the day cut-off is therefore taken in UTC too, so the comparison
+ * stays in one time frame. All the fields given must hold, and an omitted one is no bound at
+ * all — `{}` counts every booking, cancelled and converted ones included.
+ */
+export interface BookingCountFilter {
+  /** Exclude cancelled and already-converted bookings — "still a booking". */
+  readonly liveOnly?: boolean;
+  /** Keep only bookings whose last booked day is this day or later ("not yet over"). */
+  readonly endsOnOrAfter?: number;
+  /** Keep only bookings starting on this day or later. */
+  readonly startsFrom?: number;
+  /** Keep only bookings starting **before** this day — exclusive, so windows can abut. */
+  readonly startsBefore?: number;
+}
+
 /** A minimal pick-list entry for the booking form's asset picker. */
 export interface BookableAsset {
   readonly id: string;

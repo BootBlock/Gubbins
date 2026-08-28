@@ -496,6 +496,24 @@ export const PROJECT_STATUSES = ['PLANNING', 'ACTIVE', 'COMPLETED', 'ARCHIVED'] 
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
 /**
+ * The statuses a project has *finished* in — the build shipped, or it was shelved. Named
+ * because "is this project still live?" is asked in more than one place (the Dashboard's
+ * Projects tile counts the ones that are not), and a hand-repeated
+ * `status !== 'COMPLETED' && status !== 'ARCHIVED'` is exactly the sort of pair that drifts
+ * when a fifth status is added.
+ */
+export const TERMINAL_PROJECT_STATUSES = ['COMPLETED', 'ARCHIVED'] as const;
+
+/**
+ * The complement of {@link TERMINAL_PROJECT_STATUSES} — a project still being worked on.
+ * **Derived** from {@link PROJECT_STATUSES} rather than listed again, so a new status joins
+ * the active set unless it is explicitly declared terminal.
+ */
+export const ACTIVE_PROJECT_STATUSES: readonly ProjectStatus[] = PROJECT_STATUSES.filter(
+  (status): status is ProjectStatus => !(TERMINAL_PROJECT_STATUSES as readonly string[]).includes(status),
+);
+
+/**
  * BOM costing mode (spec §4 "BOM Costing"). The toggle changes how a project's
  * total cost is calculated:
  * - `CURRENT_REPLACEMENT` (default) — live `items.unit_cost` × required quantity.

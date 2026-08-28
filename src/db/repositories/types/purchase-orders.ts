@@ -94,6 +94,18 @@ export interface PurchaseOrderWithLines extends PurchaseOrder {
   readonly effectiveStatus: PurchaseOrderStatus;
 }
 
+/**
+ * What narrows a purchase-order **count** (issue #573).
+ *
+ * `open` restricts the count to orders still outstanding — everything whose effective status is
+ * neither RECEIVED nor CANCELLED. It exists because an order's effective status is derived from
+ * its lines rather than stored, so "how many are still open?" cannot be asked as a plain
+ * `status = ?` and had to be answered by filtering a page of rows in JavaScript instead.
+ */
+export interface PurchaseOrderCountFilter {
+  readonly open?: boolean;
+}
+
 /** Fields accepted when creating a PO. Status starts DRAFT; lines are added separately. */
 export interface CreatePurchaseOrderInput {
   /** Existing supplier by id, or a typed name to resolve-or-create. */

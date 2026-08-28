@@ -1,43 +1,42 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
-// Each count comes from a domain hook; stub them so we exercise only the "what counts as
-// active/open/upcoming/…" selectors that live in useNavCounts. The A2 problem-metric hooks are
-// stubbed as arg-capturing spies so we can also assert they are *gated* — only fetched (enabled)
-// when their metric is the tile's current choice.
+// Each badge is a dedicated count query (issue #573); stub the domain count hooks as
+// arg-capturing spies so we can assert both the figure that reaches the tile *and* what was
+// asked for — which filter/scope the query ran with, and that the counts a tile's metric does
+// not need stay gated (`enabled: false`) rather than fetching.
 const itemCountMock = vi.fn();
-const projectsMock = vi.fn();
+const projectCountMock = vi.fn();
 const budgetAlertsMock = vi.fn();
-const purchaseOrdersMock = vi.fn();
-const contactsMock = vi.fn();
-const bookingsMock = vi.fn();
+const purchaseOrderCountMock = vi.fn();
+const contactCountMock = vi.fn();
+const bookingCountMock = vi.fn();
 const lowStockMock = vi.fn();
 const outOfStockMock = vi.fn();
 
-vi.mock('@/features/inventory/queries', () => ({ useItemCount: () => itemCountMock() }));
+vi.mock('@/features/inventory/queries', () => ({
+  useItemCount: (filters: unknown, enabled?: boolean) => itemCountMock(filters, enabled),
+}));
 vi.mock('@/features/projects/projects', () => ({
-  useProjects: () => projectsMock(),
+  useProjectCount: (filter: unknown, opts: { enabled?: boolean }) => projectCountMock(filter, opts),
   useBudgetAlerts: (opts: { enabled?: boolean }) => budgetAlertsMock(opts),
 }));
-vi.mock('@/features/purchasing/queries', () => ({ usePurchaseOrders: () => purchaseOrdersMock() }));
-vi.mock('@/features/contacts/contacts', () => ({ useContacts: () => contactsMock() }));
-vi.mock('@/features/bookings/bookings', () => ({ useBookings: () => bookingsMock() }));
+vi.mock('@/features/purchasing/queries', () => ({
+  usePurchaseOrderCount: (filter: unknown) => purchaseOrderCountMock(filter),
+}));
+vi.mock('@/features/contacts/contacts', () => ({ useContactCount: () => contactCountMock() }));
+vi.mock('@/features/bookings/bookings', () => ({
+  useBookingCount: (scope: string) => bookingCountMock(scope),
+}));
 vi.mock('@/features/reports/queries', () => ({
   useLowStockCount: (opts: { enabled?: boolean }) => lowStockMock(opts),
   useOutOfStockCount: (opts: { enabled?: boolean }) => outOfStockMock(opts),
 }));
 
-import {
-  countBookings,
-  countOverBudgetProjects,
-  countProjects,
-  countPurchaseOrders,
-  useNavCounts,
-} from './useNavCounts';
+import { countOverBudgetProjects, useNavCounts } from './useNavCounts';
+import { ACTIVE_PROJECT_STATUSES } from '@/db/repositories';
 import { DEFAULT_NAV_COUNT_METRICS, type NavCountRoute } from '@/features/settings/settings';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-
-const DAY = 24 * 60 * 60 * 1000;
 
 /** Point one configurable tile at a metric for the duration of a test. */
 function setMetric(route: NavCountRoute, metric: string): void {
@@ -47,11 +46,11 @@ function setMetric(route: NavCountRoute, metric: string): void {
 beforeEach(() => {
   // Default: every source still loading (no data) ⇒ empty map.
   itemCountMock.mockReturnValue({ data: undefined });
-  projectsMock.mockReturnValue({ data: undefined });
+  projectCountMock.mockReturnValue({ data: undefined });
   budgetAlertsMock.mockReturnValue({ data: undefined });
-  purchaseOrdersMock.mockReturnValue({ data: undefined });
-  contactsMock.mockReturnValue({ data: undefined });
-  bookingsMock.mockReturnValue({ data: undefined });
+  purchaseOrderCountMock.mockReturnValue({ data: undefined });
+  contactCountMock.mockReturnValue({ data: undefined });
+  bookingCountMock.mockReturnValue({ data: undefined });
   lowStockMock.mockReturnValue({ data: undefined });
   outOfStockMock.mockReturnValue({ data: undefined });
   // Reset every tile to its shipped default metric so a prior test can't leak a choice.
@@ -83,88 +82,69 @@ describe('useNavCounts — default metrics', () => {
     expect(outOfStockMock).toHaveBeenCalledWith({ enabled: false });
   });
 
-  it('counts only active projects — not completed or archived — and names them', () => {
-    projectsMock.mockReturnValue({
-      data: {
-        rows: [{ status: 'PLANNING' }, { status: 'ACTIVE' }, { status: 'COMPLETED' }, { status: 'ARCHIVED' }],
-      },
-    });
+  it('counts active projects with a status filter the database resolves, and names them', () => {
+    projectCountMock.mockReturnValue({ data: 250 });
     const { result } = renderHook(() => useNavCounts());
     expect(result.current['/projects']).toEqual({
-      count: 2,
+      count: 250,
       noun: 'active project',
       nounPlural: 'active projects',
       tone: 'neutral',
     });
+    // "Active" is asked of the database as a status set, not filtered out of a page of rows —
+    // and it is the derived set, so a new non-terminal status joins it automatically.
+    expect(projectCountMock).toHaveBeenCalledWith({ statuses: ACTIVE_PROJECT_STATUSES }, { enabled: true });
+    expect(ACTIVE_PROJECT_STATUSES).toEqual(['PLANNING', 'ACTIVE']);
     // The over-budget feed is not fetched while the tile shows its default metric.
     expect(budgetAlertsMock).toHaveBeenCalledWith({ enabled: false });
   });
 
-  it('counts only open purchase orders — not received or cancelled', () => {
-    purchaseOrdersMock.mockReturnValue({
-      data: {
-        rows: [
-          { effectiveStatus: 'DRAFT' },
-          { effectiveStatus: 'ORDERED' },
-          { effectiveStatus: 'PARTIAL' },
-          { effectiveStatus: 'RECEIVED' },
-          { effectiveStatus: 'CANCELLED' },
-        ],
-      },
-    });
+  it('counts open purchase orders through the open filter, not a page of rows', () => {
+    // The regression this guards (issue #573): the first page of orders can be entirely
+    // RECEIVED while a hundred open ones sit behind it, so the tile must ask for the count.
+    purchaseOrderCountMock.mockReturnValue({ data: 137 });
     const { result } = renderHook(() => useNavCounts());
-    expect(result.current['/purchase-orders']?.count).toBe(3);
+    expect(result.current['/purchase-orders']?.count).toBe(137);
+    expect(purchaseOrderCountMock).toHaveBeenCalledWith({ open: true });
   });
 
-  it('counts every contact', () => {
-    contactsMock.mockReturnValue({ data: { rows: [{}, {}, {}] } });
+  it('counts every contact from the exact total, past the 100-row page cap', () => {
+    contactCountMock.mockReturnValue({ data: 250 });
     const { result } = renderHook(() => useNavCounts());
     expect(result.current['/contacts']).toEqual({
-      count: 3,
+      count: 250,
       noun: 'contact',
       nounPlural: 'contacts',
       tone: 'neutral',
     });
   });
 
-  it('counts upcoming bookings — excluding cancelled, converted and past ones', () => {
-    const future = Date.now() + 5 * DAY;
-    const past = Date.now() - 5 * DAY;
-    bookingsMock.mockReturnValue({
-      data: {
-        rows: [
-          { startDate: future, endDate: future, cancelledAt: null, convertedCheckoutId: null }, // upcoming ✓
-          { startDate: past, endDate: past, cancelledAt: null, convertedCheckoutId: null }, // ended ✗
-          { startDate: future, endDate: future, cancelledAt: Date.now(), convertedCheckoutId: null }, // cancelled ✗
-          { startDate: future, endDate: future, cancelledAt: null, convertedCheckoutId: 'co-1' }, // converted ✗
-        ],
-      },
-    });
+  it('counts upcoming bookings through the upcoming scope', () => {
+    bookingCountMock.mockReturnValue({ data: 4 });
     const { result } = renderHook(() => useNavCounts());
-    expect(result.current['/bookings']?.count).toBe(1);
+    expect(result.current['/bookings']?.count).toBe(4);
+    expect(bookingCountMock).toHaveBeenCalledWith('upcoming');
   });
 });
 
 describe('useNavCounts — configurable metrics', () => {
   it('counts all projects when the tile is re-pointed at "all"', () => {
     setMetric('/projects', 'all');
-    projectsMock.mockReturnValue({
-      data: { rows: [{ status: 'ACTIVE' }, { status: 'COMPLETED' }, { status: 'ARCHIVED' }] },
-    });
+    projectCountMock.mockReturnValue({ data: 12 });
     const { result } = renderHook(() => useNavCounts());
     expect(result.current['/projects']).toEqual({
-      count: 3,
+      count: 12,
       noun: 'project',
       nounPlural: 'projects',
       tone: 'neutral',
     });
+    // "All" drops the status filter rather than passing an empty set (which matches nothing).
+    expect(projectCountMock).toHaveBeenCalledWith({}, { enabled: true });
   });
 
   it('counts all purchase orders when the tile is re-pointed at "all"', () => {
     setMetric('/purchase-orders', 'all');
-    purchaseOrdersMock.mockReturnValue({
-      data: { rows: [{ effectiveStatus: 'RECEIVED' }, { effectiveStatus: 'CANCELLED' }] },
-    });
+    purchaseOrderCountMock.mockReturnValue({ data: 2 });
     const { result } = renderHook(() => useNavCounts());
     expect(result.current['/purchase-orders']).toEqual({
       count: 2,
@@ -172,24 +152,12 @@ describe('useNavCounts — configurable metrics', () => {
       nounPlural: 'orders',
       tone: 'neutral',
     });
+    expect(purchaseOrderCountMock).toHaveBeenCalledWith({});
   });
 
   it('counts bookings starting this week and names them with the phrase plural', () => {
     setMetric('/bookings', 'thisWeek');
-    // Bookings store midnight UTC (issue #320), so the "start of today" cut-off is taken in UTC.
-    const start = new Date();
-    start.setUTCHours(0, 0, 0, 0);
-    const inWeek = start.getTime() + 3 * DAY;
-    const nextWeek = start.getTime() + 10 * DAY;
-    bookingsMock.mockReturnValue({
-      data: {
-        rows: [
-          { startDate: inWeek, endDate: inWeek, cancelledAt: null, convertedCheckoutId: null }, // this week ✓
-          { startDate: nextWeek, endDate: nextWeek, cancelledAt: null, convertedCheckoutId: null }, // later ✗
-          { startDate: inWeek, endDate: inWeek, cancelledAt: Date.now(), convertedCheckoutId: null }, // cancelled ✗
-        ],
-      },
-    });
+    bookingCountMock.mockReturnValue({ data: 1 });
     const { result } = renderHook(() => useNavCounts());
     expect(result.current['/bookings']).toEqual({
       count: 1,
@@ -197,16 +165,31 @@ describe('useNavCounts — configurable metrics', () => {
       nounPlural: 'bookings starting this week',
       tone: 'neutral',
     });
+    expect(bookingCountMock).toHaveBeenCalledWith('startingThisWeek');
+  });
+
+  it('counts every booking, terminal ones included, when re-pointed at "all"', () => {
+    setMetric('/bookings', 'all');
+    bookingCountMock.mockReturnValue({ data: 9 });
+    const { result } = renderHook(() => useNavCounts());
+    expect(result.current['/bookings']).toEqual({
+      count: 9,
+      noun: 'booking',
+      nounPlural: 'bookings',
+      tone: 'neutral',
+    });
+    expect(bookingCountMock).toHaveBeenCalledWith('all');
   });
 
   it('falls back to the tile default when a stale metric id is persisted', () => {
     usePreferencesStore.setState({
       navCountMetrics: { ...DEFAULT_NAV_COUNT_METRICS, '/projects': 'nonsense' },
     });
-    projectsMock.mockReturnValue({ data: { rows: [{ status: 'ACTIVE' }, { status: 'COMPLETED' }] } });
+    projectCountMock.mockReturnValue({ data: 1 });
     const { result } = renderHook(() => useNavCounts());
-    // 'active' default: the COMPLETED row is excluded.
-    expect(result.current['/projects']?.count).toBe(1);
+    // 'active' default: the status filter is applied, and the tile is named for it.
+    expect(result.current['/projects']?.noun).toBe('active project');
+    expect(projectCountMock).toHaveBeenCalledWith({ statuses: ACTIVE_PROJECT_STATUSES }, { enabled: true });
   });
 });
 
@@ -222,9 +205,10 @@ describe('useNavCounts — A2 problem metrics', () => {
       nounPlural: 'low-stock items',
       tone: 'warning',
     });
-    // Only the selected problem query fetches.
+    // Only the selected count fetches — the item total is gated off as well.
     expect(lowStockMock).toHaveBeenCalledWith({ enabled: true });
     expect(outOfStockMock).toHaveBeenCalledWith({ enabled: false });
+    expect(itemCountMock).toHaveBeenCalledWith({}, false);
   });
 
   it('counts out-of-stock items with a danger tone when selected', () => {
@@ -268,51 +252,12 @@ describe('useNavCounts — A2 problem metrics', () => {
       tone: 'danger',
     });
     expect(budgetAlertsMock).toHaveBeenCalledWith({ enabled: true });
+    // The plain project count is gated off — the over-budget tile does not need it.
+    expect(projectCountMock).toHaveBeenCalledWith(expect.anything(), { enabled: false });
   });
 });
 
 describe('nav-count selectors (pure)', () => {
-  it('countProjects: active excludes finished/shelved; all counts everything', () => {
-    const rows = [{ status: 'ACTIVE' }, { status: 'COMPLETED' }, { status: 'ARCHIVED' }];
-    expect(countProjects(rows, 'active')).toBe(1);
-    expect(countProjects(rows, 'all')).toBe(3);
-  });
-
-  it('countPurchaseOrders: open excludes received/cancelled; all counts everything', () => {
-    const rows = [
-      { effectiveStatus: 'ORDERED' },
-      { effectiveStatus: 'RECEIVED' },
-      { effectiveStatus: 'CANCELLED' },
-    ];
-    expect(countPurchaseOrders(rows, 'open')).toBe(1);
-    expect(countPurchaseOrders(rows, 'all')).toBe(3);
-  });
-
-  it('countBookings: keeps a booking whose last day is today (endDate snapped to that day start)', () => {
-    // endDate is a midnight-UTC day-start (issue #320), matching the UTC "start of today" cut-off.
-    const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
-    const rows = [
-      {
-        startDate: todayStart.getTime(),
-        endDate: todayStart.getTime(),
-        cancelledAt: null,
-        convertedCheckoutId: null,
-      },
-    ];
-    expect(countBookings(rows, 'upcoming')).toBe(1);
-  });
-
-  it('countBookings: "all" counts every booking, even cancelled/converted/past ones', () => {
-    const past = Date.now() - 30 * DAY;
-    const rows = [
-      { startDate: past, endDate: past, cancelledAt: Date.now(), convertedCheckoutId: null },
-      { startDate: past, endDate: past, cancelledAt: null, convertedCheckoutId: 'co-1' },
-    ];
-    expect(countBookings(rows, 'all')).toBe(2);
-    expect(countBookings(rows, 'upcoming')).toBe(0);
-  });
-
   it('countOverBudgetProjects: counts a project over on either spend-so-far or projected cost', () => {
     const warnPercent = 80;
     const rows = [

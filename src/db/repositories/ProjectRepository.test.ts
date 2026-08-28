@@ -5,7 +5,7 @@ import { migrations } from '@/db/migrations';
 import { DbError } from '@/db/errors';
 import { readAllPages } from '@/lib/read-all-pages';
 import { planAssemblyDraw } from '@/features/projects/assembly';
-import { IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from './constants';
+import { ACTIVE_PROJECT_STATUSES, IN_TRANSIT_LOCATION_ID, UNASSIGNED_LOCATION_ID } from './constants';
 import { ItemRepository } from './ItemRepository';
 import { LocationRepository } from './LocationRepository';
 import { ProjectRepository } from './ProjectRepository';
@@ -106,6 +106,32 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
       expect(await projects.count({ search: 'psu' })).toBe(1);
       expect(await projects.count({ status: 'COMPLETED' })).toBe(1);
       expect(await projects.count({ search: 'rover', status: 'COMPLETED' })).toBe(0);
+    });
+
+    it('narrows to a set of statuses, which is how "still live" is asked (issue #573)', async () => {
+      const { bench, rover } = await seed();
+      // The Dashboard's Projects tile counts every project bar the terminal ones. A single
+      // `status` cannot express that, so the set is asked for directly.
+      expect(await projects.count({ statuses: ACTIVE_PROJECT_STATUSES })).toBe(2);
+      const page = await projects.list({ statuses: ACTIVE_PROJECT_STATUSES, sort: 'NAME_ASC' });
+      expect(page.rows.map((p) => p.id)).toEqual([bench.id, rover.id]);
+      // An empty set is "none of these stages", not "no filter at all".
+      expect(await projects.count({ statuses: [] })).toBe(0);
+      // Combined with the other narrowings, every one must hold.
+      expect(await projects.count({ statuses: ACTIVE_PROJECT_STATUSES, search: 'rover' })).toBe(1);
+      expect(await projects.count({ statuses: ['COMPLETED'], status: 'ACTIVE' })).toBe(0);
+    });
+
+    it('counts live projects past the page a single read would have shown', async () => {
+      // The bug (issue #573): the tile counted the first hundred rows, so a hundred-and-first
+      // project never moved the badge.
+      for (let i = 0; i < 105; i += 1) {
+        await projects.create({ name: `Rig ${i}` });
+      }
+      const archived = await projects.create({ name: 'Retired rig' });
+      await projects.update(archived.id, { status: 'ARCHIVED' });
+      expect(await projects.count({ statuses: ACTIVE_PROJECT_STATUSES })).toBe(105);
+      expect((await projects.list({ limit: 100 })).rows).toHaveLength(100);
     });
 
     it('matches a typed wildcard literally rather than as a pattern', async () => {

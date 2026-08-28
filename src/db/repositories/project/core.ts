@@ -54,6 +54,16 @@ function projectFilter(filter: ProjectFilter): { where: string; params: SqlValue
     clauses.push('p.status = ?');
     params.push(filter.status);
   }
+  if (filter.statuses) {
+    // An empty set matches nothing — `IN ()` is not valid SQLite, and silently ignoring the
+    // filter would answer "every project" to a question that asked for none of them.
+    if (filter.statuses.length === 0) {
+      clauses.push('0');
+    } else {
+      clauses.push(`p.status IN (${filter.statuses.map(() => '?').join(', ')})`);
+      params.push(...filter.statuses);
+    }
+  }
   return { where: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params };
 }
 

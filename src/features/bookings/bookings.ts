@@ -10,10 +10,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getAssetBookingRepository,
+  MS_PER_DAY,
+  type BookingCountFilter,
   type ConvertBookingInput,
   type CreateBookingInput,
   type UpdateBookingInput,
 } from '@/db/repositories';
+import { startOfUtcDay } from '@/lib/calendar-days';
+import { nowMs } from '@/lib/clock';
 import { agendaKeys } from '@/features/calendar/keys';
 import { checkoutKeys, contactKeys } from '@/features/contacts/keys';
 import { invalidateItems } from '@/features/inventory/invalidate';
@@ -21,8 +25,40 @@ import { invalidateItems } from '@/features/inventory/invalidate';
 export const bookingKeys = {
   all: ['bookings'] as const,
   list: () => [...bookingKeys.all, 'list'] as const,
+  /**
+   * One counted scope of the calendar. Nested **under** {@link bookingKeys.list} so every
+   * existing `invalidateQueries` against the list (or `all`) refreshes the counts too — no write
+   * has to learn that the Dashboard counts bookings.
+   */
+  count: (scope: BookingCountScope) => [...bookingKeys.list(), 'count', scope] as const,
   bookable: () => [...bookingKeys.all, 'bookable'] as const,
 } as const;
+
+/**
+ * Which bookings a count takes in (issue #573) — the three questions the Dashboard's Bookings
+ * tile can be pointed at.
+ *
+ * - `all` — every booking on record, cancelled and converted ones included.
+ * - `upcoming` — live bookings not yet past their last booked day (what the agenda shows).
+ * - `startingThisWeek` — live bookings starting in the next seven days.
+ */
+export type BookingCountScope = 'all' | 'upcoming' | 'startingThisWeek';
+
+/**
+ * The `BookingCountFilter` for `scope`, resolved against the start of today in UTC.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function bookingCountFilter(scope: BookingCountScope): BookingCountFilter {
+  // Bookings store midnight-UTC day starts (issue #320), so the cut-off is taken in UTC to keep
+  // the comparison in one time frame. Read when the query runs, so a refetch re-dates it.
+  const startOfToday = startOfUtcDay(nowMs());
+  if (scope === 'all') return {};
+  if (scope === 'upcoming') return { liveOnly: true, endsOnOrAfter: startOfToday };
+  // A UTC day is exactly MS_PER_DAY (no DST), so the far edge stays on a UTC midnight aligned
+  // with the stored dates.
+  return { liveOnly: true, startsFrom: startOfToday, startsBefore: startOfToday + 7 * MS_PER_DAY };
+}
 
 /** Invalidate every view a booking write reshapes (the list + the upcoming agenda). */
 function invalidateBookings(client: ReturnType<typeof useQueryClient>): void {
@@ -36,6 +72,22 @@ export function useBookings() {
   return useQuery({
     queryKey: bookingKeys.list(),
     queryFn: () => getAssetBookingRepository().list({ limit: 100 }),
+  });
+}
+
+/**
+ * How many bookings fall in `scope` (issue #573) — the Dashboard's Bookings tile.
+ *
+ * A count query rather than a filter over {@link useBookings}: that read is a single capped page
+ * of a list ordered live-first-then-soonest, so a long booking history could push every upcoming
+ * booking off the page and the tile then reported there was nothing coming up. Pass
+ * `{ enabled: false }` to mount without fetching.
+ */
+export function useBookingCount(scope: BookingCountScope, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: bookingKeys.count(scope),
+    queryFn: () => getAssetBookingRepository().count(bookingCountFilter(scope)),
+    enabled: options.enabled ?? true,
   });
 }
 

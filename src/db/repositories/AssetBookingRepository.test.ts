@@ -178,6 +178,65 @@ describe('AssetBookingRepository (Phase 78 — time-based asset booking)', () =>
     expect(names).toEqual(['Printer A']);
   });
 
+  it('counts bookings by scope, past the page the list would have shown (issue #573)', async () => {
+    const a = await serialisedAsset('Printer A');
+    const b = await serialisedAsset('Printer B');
+    const c = await serialisedAsset('Printer C');
+    const d = await serialisedAsset('Printer D');
+    const e = await serialisedAsset('Printer E');
+
+    await bookings.create({ itemId: a, startDate: day(3), endDate: day(5) }); // upcoming, this week
+    await bookings.create({ itemId: b, startDate: day(20), endDate: day(22) }); // upcoming, later
+    const cancelled = await bookings.create({ itemId: c, startDate: day(4), endDate: day(6) });
+    await bookings.cancel(cancelled.id);
+    const converted = await bookings.create({
+      itemId: d,
+      startDate: day(2),
+      endDate: day(4),
+      contactName: 'Ada',
+    });
+    await bookings.convertToCheckout(converted.id);
+    await bookings.create({ itemId: e, startDate: day(-5), endDate: day(-3) }); // ended in the past
+
+    const today = dayStart(0);
+    // Every booking, terminal ones included — what the tile's "all" metric shows.
+    expect(await bookings.count()).toBe(5);
+    // Upcoming: live, and not yet past its last booked day — the same set listUpcoming returns.
+    expect(await bookings.count({ liveOnly: true, endsOnOrAfter: today })).toBe(2);
+    expect((await bookings.listUpcoming(day(0), { limit: 100 })).rows).toHaveLength(2);
+    // Starting in the next seven days — the far edge is exclusive, so day 7 is next week's.
+    expect(
+      await bookings.count({
+        liveOnly: true,
+        startsFrom: today,
+        startsBefore: today + 7 * MS_PER_DAY,
+      }),
+    ).toBe(1);
+  });
+
+  it('counts a booking that is live on its very last day, and not the day after', async () => {
+    const itemId = await serialisedAsset();
+    await bookings.create({ itemId, startDate: day(-2), endDate: day(0) });
+    // An all-day booking is still upcoming on its final day (the cut-off is that day's start).
+    expect(await bookings.count({ liveOnly: true, endsOnOrAfter: dayStart(0) })).toBe(1);
+    expect(await bookings.count({ liveOnly: true, endsOnOrAfter: dayStart(1) })).toBe(0);
+  });
+
+  it('counts every booking past a single 100-row page', async () => {
+    // The bug (issue #573): the tile counted one capped page of a list ordered live-first, so a
+    // long history could push every upcoming booking off it and the badge then read 0.
+    const upcoming = await serialisedAsset('Printer Live');
+    await bookings.create({ itemId: upcoming, startDate: day(1), endDate: day(2) });
+    for (let i = 0; i < 120; i += 1) {
+      const past = await serialisedAsset(`Retired ${i}`);
+      await bookings.create({ itemId: past, startDate: day(-10), endDate: day(-9) });
+    }
+    expect(await bookings.count()).toBe(121);
+    expect(await bookings.count({ liveOnly: true, endsOnOrAfter: dayStart(0) })).toBe(1);
+    // The read the count replaced: one page, which cannot see past its own hundred rows.
+    expect((await bookings.list({ limit: 100 })).rows).toHaveLength(100);
+  });
+
   it('tombstones a removed booking for sync', async () => {
     const itemId = await serialisedAsset();
     const booking = await bookings.create({ itemId, startDate: day(1), endDate: day(2) });
