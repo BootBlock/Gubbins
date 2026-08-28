@@ -98,21 +98,45 @@ async function loadAllItems(): Promise<Item[]> {
   return all;
 }
 
-async function loadAllCustomFields(): Promise<CategoryField[]> {
-  const categoryRepo = getCategoryRepository();
-  const fields: CategoryField[] = [];
-  for (let offset = 0; ; offset += 100) {
-    const cats = await categoryRepo.list({ limit: 100, offset });
-    for (const cat of cats.rows) fields.push(...(await categoryRepo.listFields(cat.id)));
-    if (!cats.hasMore) break;
-  }
-  return fields;
+/** Minimal category shape the importer needs: id + name, to resolve a `category` cell. */
+interface ImportCategory {
+  readonly id: string;
+  readonly name: string;
 }
 
-/** Minimal location shape the importer needs: id + name for the picker and resolution. */
+/**
+ * The categories and their custom-field definitions, read in one pass over the category pages.
+ *
+ * The names are needed as well as the fields (issue #596): the catalogue CSV writes a category
+ * **name**, so without them a plain-English cell would plan cleanly and then fail its row on a
+ * foreign key.
+ */
+async function loadAllCategories(): Promise<{
+  categories: ImportCategory[];
+  customFields: CategoryField[];
+}> {
+  const categoryRepo = getCategoryRepository();
+  const categories: ImportCategory[] = [];
+  const customFields: CategoryField[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const cats = await categoryRepo.list({ limit: 100, offset });
+    for (const cat of cats.rows) {
+      categories.push({ id: cat.id, name: cat.name });
+      customFields.push(...(await categoryRepo.listFields(cat.id)));
+    }
+    if (!cats.hasMore) break;
+  }
+  return { categories, customFields };
+}
+
+/**
+ * Minimal location shape the importer needs: id + name for the picker, plus the parent so a
+ * cell holding a full path (`Workshop / Drawer 1`) resolves to exactly one place (issue #596).
+ */
 interface ImportLocation {
   readonly id: string;
   readonly name: string;
+  readonly parentId: string | null;
 }
 
 async function loadAllLocations(): Promise<ImportLocation[]> {
@@ -120,7 +144,7 @@ async function loadAllLocations(): Promise<ImportLocation[]> {
   const all: ImportLocation[] = [];
   for (let offset = 0; ; offset += 100) {
     const page = await repo.list({ limit: 100, offset });
-    for (const loc of page.rows) all.push({ id: loc.id, name: loc.name });
+    for (const loc of page.rows) all.push({ id: loc.id, name: loc.name, parentId: loc.parentId });
     if (!page.hasMore) break;
   }
   return all;
@@ -130,6 +154,7 @@ interface Catalogue {
   readonly items: readonly Item[];
   readonly customFields: readonly CategoryField[];
   readonly locations: readonly ImportLocation[];
+  readonly categories: readonly ImportCategory[];
 }
 
 // ---------------------------------------------------------------------------
@@ -425,6 +450,7 @@ function ImportWorkbench({
         matchKey,
         customFields: catalogue.customFields,
         locations: catalogue.locations,
+        categories: catalogue.categories,
         ...(defaultLocationId ? { defaultLocationId } : {}),
         ...(defaultTrackingMode ? { defaultTrackingMode: defaultTrackingMode as TrackingMode } : {}),
       }),
@@ -434,6 +460,7 @@ function ImportWorkbench({
       catalogue.items,
       catalogue.customFields,
       catalogue.locations,
+      catalogue.categories,
       matchKey,
       defaultLocationId,
       defaultTrackingMode,
@@ -944,12 +971,12 @@ export function ImportDataDialog({
     setLoadError(null);
     void (async () => {
       try {
-        const [items, customFields, locations] = await Promise.all([
+        const [items, { categories, customFields }, locations] = await Promise.all([
           loadAllItems(),
-          loadAllCustomFields(),
+          loadAllCategories(),
           loadAllLocations(),
         ]);
-        if (!cancelled) setCatalogue({ items, customFields, locations });
+        if (!cancelled) setCatalogue({ items, customFields, locations, categories });
       } catch {
         if (!cancelled) setLoadError('Could not load the existing catalogue — please try again.');
       }

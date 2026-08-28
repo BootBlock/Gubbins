@@ -24,10 +24,7 @@ import {
 } from '@/features/export/tabular-export';
 import { isoTimestamp, listExportFilename } from '@/features/export/export-every-page';
 import { humanizeGlyphName } from '@/components/foundry/glyph-picker/glyph-name';
-import { locationPath } from './labels/location-label';
-
-/** The separator between path levels, matching the one the printed location label uses. */
-const PATH_SEPARATOR = ' / ';
+import { fullLocationPath } from './labels/location-path';
 
 /**
  * One exported row: the location, plus the ancestry a flat table would otherwise lose.
@@ -56,14 +53,11 @@ export interface LocationExportRow {
  */
 export function toLocationExportRows(locations: readonly LocationWithCount[]): readonly LocationExportRow[] {
   const byId = new Map(locations.map((l) => [l.id, l]));
-  return locations.map((location) => {
-    const ancestors = locationPath(location.id, locations, PATH_SEPARATOR);
-    return {
-      location,
-      parentName: location.parentId ? (byId.get(location.parentId)?.name ?? null) : null,
-      path: ancestors ? `${ancestors}${PATH_SEPARATOR}${location.name}` : location.name,
-    };
-  });
+  return locations.map((location) => ({
+    location,
+    parentName: location.parentId ? (byId.get(location.parentId)?.name ?? null) : null,
+    path: fullLocationPath(location, locations),
+  }));
 }
 
 /**

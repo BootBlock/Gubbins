@@ -16,6 +16,9 @@
 import { buildLocationQrUrl } from '@/features/scanner/scan-payload';
 import { labelCellHtml, resolveCell, sheetDocument, type LabelCell } from './label-sheet';
 import { type LabelTemplate } from './label-template';
+// Re-exported so the existing label call sites keep importing the path walk from here, while the
+// walk itself lives in a module the CSV importer can pull in without a QR encoder behind it.
+export { locationPath, type LocationPathNode } from './location-path';
 
 /** The fields a location label can surface. */
 export interface LocationLabelInput {
@@ -23,13 +26,6 @@ export interface LocationLabelInput {
   readonly name: string;
   /** Ancestor path shown as a second line when the template enables "location". */
   readonly path?: string | null;
-}
-
-/** A minimal `{id, parentId, name}` shape for {@link locationPath} ancestor walking. */
-export interface LocationPathNode {
-  readonly id: string;
-  readonly name: string;
-  readonly parentId: string | null;
 }
 
 /**
@@ -48,26 +44,6 @@ export function clampCopies(value: unknown): number {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return 1;
   return Math.min(MAX_LOCATION_LABEL_COPIES, Math.max(1, n));
-}
-
-/**
- * The ancestor path of a location as a separator-joined string (root first, excluding
- * the location itself), e.g. `Workshop / Shelf B`. Returns `''` for a top-level
- * location. Cycle-safe: a malformed parent chain stops at the first repeat.
- */
-export function locationPath(id: string, nodes: readonly LocationPathNode[], separator = ' / '): string {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const ancestors: string[] = [];
-  const seen = new Set<string>([id]);
-  let parentId = byId.get(id)?.parentId ?? null;
-  while (parentId && !seen.has(parentId)) {
-    const parent = byId.get(parentId);
-    if (!parent) break;
-    ancestors.push(parent.name);
-    seen.add(parent.id);
-    parentId = parent.parentId;
-  }
-  return ancestors.reverse().join(separator);
 }
 
 /**

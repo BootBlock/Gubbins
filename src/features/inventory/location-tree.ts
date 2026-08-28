@@ -6,6 +6,7 @@
  */
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { includesAllTerms, splitSearchTerms } from '@/lib/text-terms';
+import { fullLocationPath } from './labels/location-path';
 
 /** The minimal shape these helpers need from a location row. */
 export interface FlatNode {
@@ -296,18 +297,14 @@ export function markedDefaultLocationId(
  * A human-readable ancestry breadcrumb for a location, root-first and joined by
  * `" / "` (e.g. `Workshop / Cabinet A / Drawer 3`). Defensive against a broken
  * parent chain: a missing or cyclic ancestor simply stops the walk.
+ *
+ * The walk itself is {@link fullLocationPath}'s, so the breadcrumb a user reads on screen and
+ * the path the catalogue CSV writes and resolves are the same string by construction. An id the
+ * set does not contain has no path at all, which is what an empty breadcrumb means here.
  */
 export function locationPath(id: string, nodes: readonly FlatNode[], separator = ' / '): string {
-  const byId = new Map(nodes.map((n) => [n.id, n] as const));
-  const names: string[] = [];
-  const seen = new Set<string>();
-  let current = byId.get(id);
-  while (current && !seen.has(current.id)) {
-    seen.add(current.id);
-    names.unshift(current.name);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-  return names.join(separator);
+  const node = nodes.find((n) => n.id === id);
+  return node ? fullLocationPath(node, nodes, separator) : '';
 }
 
 /**
