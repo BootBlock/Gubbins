@@ -72,6 +72,23 @@ export interface LocationBatchLine {
   readonly quantity: number;
 }
 
+/**
+ * One SERIALISED instance sitting at a location — a line of the §4.4 presence audit
+ * (issue #561).
+ *
+ * Deliberately not an `Item`. The count sheet renders a name and a serial number per
+ * instance, and reading the audit as items meant projecting `ITEM_READ_COLUMNS` — every
+ * instance's thumbnail BLOB included — for a location that may hold thousands of them, then
+ * discarding all but three fields in JS. Same reasoning as
+ * `ITEM_READ_COLUMNS_NO_THUMBNAIL` (issue #529), taken one step further because this read
+ * needs no `Item` at all.
+ */
+export interface LocationSerialisedLine {
+  readonly itemId: string;
+  readonly name: string;
+  readonly serialNo: number | null;
+}
+
 export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
   return class ItemStockRepository extends Base {
     /**
@@ -196,6 +213,38 @@ export function withStock<TBase extends Constructor<ItemCoreRepository>>(Base: T
         lotNumber: r.lot_number,
         expiryDate: r.expiry_date,
         quantity: Number(r.quantity),
+      }));
+    }
+
+    /**
+     * The SERIALISED instances physically sitting *at* a location — the §4.4 presence audit
+     * sheet, in one query (issue #561).
+     *
+     * The audit used to be assembled caller-side by paging `list({ locationId })` 200 rows at a
+     * time and keeping the SERIALISED rows, which made a bulk-storage location's audit cost the
+     * whole item set: every row carried its thumbnail out of the worker, the non-serialised ones
+     * were thrown away in JS, and the paging was by `OFFSET`, so each successive page cost more
+     * than the last. Filtering in SQL reads only the rows the sheet renders, and only the three
+     * columns it shows. The cap that walk removed (an audit must never under-count) stays
+     * removed: there is no `LIMIT` here.
+     *
+     * Ordered by name then serial number, so two instances of the same item are counted in a
+     * predictable order and the sheet is stable across reloads. That deliberately drops the
+     * favourites-first lead the general item list sorts by: a presence audit is walked shelf
+     * order, and floating the favourites to the top of it only makes the sheet harder to follow
+     * against what is actually in front of the auditor.
+     */
+    async listSerialisedAtLocation(locationId: string): Promise<LocationSerialisedLine[]> {
+      const rows = await this.driver.query<{ id: string; name: string; serial_no: number | null }>(
+        `SELECT id, name, serial_no FROM items
+         WHERE location_id = ? AND tracking_mode = 'SERIALISED' AND is_active = 1
+         ORDER BY name COLLATE NOCASE ASC, serial_no ASC, id ASC;`,
+        [locationId],
+      );
+      return rows.map((r) => ({
+        itemId: r.id,
+        name: r.name,
+        serialNo: r.serial_no === null ? null : Number(r.serial_no),
       }));
     }
 

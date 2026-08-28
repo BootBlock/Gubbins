@@ -22,6 +22,11 @@ Counts handle every stock style:
   loan|Loans-Check-Out-and-In]]).
 - **[[Batches|Batches-and-Lots]]** — per-batch quantities.
 
+A bulk location holding hundreds or thousands of lines is counted the same way. The sheet lists
+every one of them — nothing is left off it, because a count that stopped short would quietly
+under-count — and once the list gets long it scrolls inside the dialog rather than pushing the
+**Authorise** buttons off the bottom of the screen.
+
 > **💡 Tip**
 > Cycle count a few high-value or fast-moving locations regularly rather than the whole place
 > rarely — you catch drift sooner and it's never a big job.

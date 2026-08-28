@@ -106,6 +106,7 @@ export type {
   LocationStockLine,
   ItemBatchPlacement,
   LocationBatchLine,
+  LocationSerialisedLine,
   KitComponent,
   ItemStatusCount,
   ItemSectionPresence,

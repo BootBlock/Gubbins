@@ -36,7 +36,7 @@ const BATCH_LINE_KEY = `${ONE_BATCH.itemId}|${ONE_BATCH.batchKey}`;
 vi.mock('@/db/repositories', () => ({
   getItemRepository: () => ({
     listStockBatchesAtLocation: () => Promise.resolve([ONE_BATCH]),
-    list: () => Promise.resolve({ rows: [] }),
+    listSerialisedAtLocation: () => Promise.resolve([]),
   }),
 }));
 

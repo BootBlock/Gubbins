@@ -6,8 +6,8 @@
  * per-location / per-batch).
  */
 import { DbError } from '../../errors';
-import type { SqlStatement } from '../../rpc/driver';
-import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
+import type { SqlStatement, SqlValue } from '../../rpc/driver';
+import { batchKeyOf } from '@/features/inventory/batches';
 import { reconciliationNote } from '@/features/lifecycle/cycle-count';
 import {
   placementDeltaStatements,
@@ -18,10 +18,44 @@ import {
 } from '../stock-batches';
 import { markCountedStatement } from '../location-count';
 import { stockRowId } from '../stock';
+import type { TrackingMode } from '../constants';
 import type { Item, ReconciliationAdjustment, SerialisedReconciliation } from '../types';
 import { historyStatement } from './history';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
+
+/**
+ * How many bound parameters one `IN (…)` read may carry (issue #561). SQLite's own default
+ * ceiling is far higher, but a count authorised at a bulk-storage location can carry thousands
+ * of adjustments, and a single statement bound to all of them would be one host limit away from
+ * failing the whole audit. Chunking keeps the read a fixed number of round-trips per thousand
+ * lines instead of one per line, without betting on a driver's variable limit.
+ */
+const IN_CHUNK = 400;
+
+/** Split a list of ids into `IN (…)`-sized chunks. */
+function chunked<T>(values: readonly T[]): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < values.length; i += IN_CHUNK) chunks.push(values.slice(i, i + IN_CHUNK));
+  return chunks;
+}
+
+/**
+ * The item facts a reconciliation plan needs about one adjusted item — everything the old
+ * per-adjustment `require()` was read for, and nothing else (issue #561).
+ *
+ * `require()` returns a full `Item`, so planning a count of N lines meant N `getById` reads,
+ * each projecting `ITEM_READ_COLUMNS` and so each dragging that item's thumbnail BLOB through
+ * the worker boundary, all of it discarded but these five fields. They are read for the whole
+ * batch in one round-trip per chunk instead.
+ */
+interface CountTarget {
+  readonly name: string;
+  readonly trackingMode: TrackingMode;
+  readonly quantity: number;
+  readonly locationId: string;
+  readonly isActive: boolean;
+}
 
 /** A planned batch of reconciliation writes plus the items they touch. */
 interface CountPlan {
@@ -35,6 +69,19 @@ export interface AuthorisedCount {
   readonly discrete: Item[];
   /** SERIALISED instances retired by the presence audit. */
   readonly serialised: Item[];
+}
+
+/**
+ * The pre-read facts for one adjusted item, or the same constraint error `require()` raised
+ * when the item is gone. Kept identical in wording so a reconciliation naming a deleted item
+ * still fails exactly as it always did.
+ */
+function requireTarget(targets: ReadonlyMap<string, CountTarget>, itemId: string): CountTarget {
+  const target = targets.get(itemId);
+  if (!target) {
+    throw new DbError('SQLITE_CONSTRAINT', `Item "${itemId}" does not exist.`);
+  }
+  return target;
 }
 
 export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
@@ -90,11 +137,29 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       const statements: SqlStatement[] = [];
       const touched: string[] = [];
 
+      // The item behind each adjustment, and the quantity its variance is measured against,
+      // read for the whole batch first (issue #561). Planning used to await both *per line* — a
+      // full `getById` plus the lot's or the placement's current quantity — so authorising a
+      // bulk-storage location's count stalled for thousands of sequential worker calls with
+      // nothing on screen to say why. Neither read writes, and neither depends on the other's
+      // result, so hoisting them changes only how many times the worker is asked. The loop
+      // keeps its original order and its original failure points: a bad count, a missing item
+      // and a wrong tracking mode are still raised at the same adjustment, in the same order,
+      // because only the *source* of each fact moved.
+      //
+      // The loop is not read-free after this: a *shortfall* on the whole-placement or
+      // whole-item branch still awaits `placementDeltaStatements`, which reads the placement's
+      // lots to draw them down FEFO. That allocation depends on the delta this adjustment
+      // computes, so it cannot be hoisted with the rest — and the count sheet never reaches
+      // those branches anyway (it always names the lot).
+      const targets = await this.loadCountTargets(adjustments.map((a) => a.itemId));
+      const quantities = await this.loadCountedQuantities(adjustments);
+
       for (const adj of adjustments) {
         if (!Number.isInteger(adj.counted) || adj.counted < 0) {
           throw new DbError('SQLITE_CONSTRAINT', 'A counted quantity must be a non-negative whole number.');
         }
-        const existing = await this.require(adj.itemId);
+        const existing = requireTarget(targets, adj.itemId);
         if (existing.trackingMode !== 'DISCRETE') {
           throw new DbError(
             'SQLITE_CONSTRAINT',
@@ -106,7 +171,8 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
           // Per-batch: `counted` is this lot's new absolute quantity at the placement. The
           // batch row is upserted (a surplus of a previously-unseen lot seeds it); the
           // recompute triggers re-derive item_stock then items.quantity (Phase 28).
-          const before = await this.batchQuantity(adj.itemId, adj.locationId, adj.batch);
+          const before =
+            quantities.get(stockBatchRowId(adj.itemId, adj.locationId, batchKeyOf(adj.batch))) ?? 0;
           const delta = adj.counted - before;
           if (delta === 0) continue;
           // The only write in this concern that states a *physically observed* quantity for one
@@ -133,14 +199,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
           // in that case, so this path keeps the pre-#633 behaviour, double-application and all.
           // The count sheet always names the lot (`useLocationCycleCount` passes `batch`), so the
           // path a user reaches is the asserted one above.
-          const before = Number(
-            (
-              await this.driver.queryOne<{ quantity: number }>(
-                'SELECT quantity FROM item_stock WHERE id = ?;',
-                [stockRowId(adj.itemId, adj.locationId)],
-              )
-            )?.quantity ?? 0,
-          );
+          const before = quantities.get(stockRowId(adj.itemId, adj.locationId)) ?? 0;
           const delta = adj.counted - before;
           if (delta === 0) continue;
           statements.push(
@@ -217,8 +276,12 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       const statements: SqlStatement[] = [];
       const touched: string[] = [];
 
+      // One read for the whole presence audit rather than a `getById` per missing instance —
+      // see the note in {@link planReconcile} (issue #561).
+      const targets = await this.loadCountTargets(adjustments.map((a) => a.itemId));
+
       for (const adj of adjustments) {
-        const existing = await this.require(adj.itemId);
+        const existing = requireTarget(targets, adj.itemId);
         if (existing.trackingMode !== 'SERIALISED') {
           throw new DbError(
             'SQLITE_CONSTRAINT',
@@ -296,23 +359,97 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       };
     }
 
-    /** Re-read the items a plan wrote, dropping any that vanished under a concurrent delete. */
+    /**
+     * Re-read the items a plan wrote, dropping any that vanished under a concurrent delete.
+     *
+     * In bulk, through {@link ItemCoreRepository.getManyById} (issue #561): a `getById` per
+     * touched item left the very cost this concern's planning was rewritten to remove sitting
+     * on the *result* path, where a count of a bulk location would pay it a few thousand times
+     * over. The list keeps one entry per id it was given, duplicates included — a count that
+     * drifted two lots of the same item wrote two adjustments, and the caller reports that
+     * total.
+     */
     private async loadTouched(ids: readonly string[]): Promise<Item[]> {
-      const updated = await Promise.all(ids.map((id) => this.getById(id)));
-      return updated.filter((i): i is Item => i !== undefined);
+      const byId = new Map<string, Item>();
+      for (const chunk of chunked([...new Set(ids)])) {
+        for (const [id, item] of await this.getManyById(chunk)) byId.set(id, item);
+      }
+      return ids.map((id) => byId.get(id)).filter((i): i is Item => i !== undefined);
     }
 
-    /** Current quantity of a specific batch at a placement (0 if the lot has no row yet). */
-    private async batchQuantity(
-      itemId: string,
-      locationId: string,
-      identity: BatchIdentity,
-    ): Promise<number> {
-      const row = await this.driver.queryOne<{ quantity: number }>(
-        'SELECT quantity FROM stock_batches WHERE id = ?;',
-        [stockBatchRowId(itemId, locationId, batchKeyOf(identity))],
-      );
-      return Number(row?.quantity ?? 0);
+    /**
+     * The {@link CountTarget} for each adjusted item, keyed by id, in one round-trip per chunk
+     * (issue #561). Missing ids are simply absent — {@link requireTarget} raises the same
+     * "does not exist" constraint error `require()` did, at the same adjustment.
+     */
+    private async loadCountTargets(ids: readonly string[]): Promise<Map<string, CountTarget>> {
+      const unique = [...new Set(ids)];
+      const byId = new Map<string, CountTarget>();
+      for (const chunk of chunked(unique)) {
+        const rows = await this.driver.query<{
+          id: string;
+          name: string;
+          tracking_mode: TrackingMode;
+          quantity: number;
+          location_id: string;
+          is_active: number;
+        }>(
+          `SELECT id, name, tracking_mode, quantity, location_id, is_active FROM items
+           WHERE id IN (${chunk.map(() => '?').join(', ')});`,
+          chunk as SqlValue[],
+        );
+        for (const row of rows) {
+          byId.set(row.id, {
+            name: row.name,
+            trackingMode: row.tracking_mode,
+            quantity: Number(row.quantity),
+            locationId: row.location_id,
+            isActive: Boolean(row.is_active),
+          });
+        }
+      }
+      return byId;
+    }
+
+    /**
+     * The current quantity behind every adjustment that measures its variance against a stored
+     * row — the lot's `stock_batches` row for a per-batch count, the placement's `item_stock`
+     * row for a per-placement one — keyed by that row's id (issue #561).
+     *
+     * A row that does not exist yet is absent from the map, and both callers default it to 0,
+     * exactly as the single-row reads they replace did. A whole-item count is not represented
+     * here: it measures against `items.quantity`, which the item read above already carries.
+     */
+    private async loadCountedQuantities(
+      adjustments: readonly ReconciliationAdjustment[],
+    ): Promise<Map<string, number>> {
+      const batchIds = new Set<string>();
+      const placementIds = new Set<string>();
+      for (const adj of adjustments) {
+        if (!adj.locationId) continue;
+        if (adj.batch) batchIds.add(stockBatchRowId(adj.itemId, adj.locationId, batchKeyOf(adj.batch)));
+        else placementIds.add(stockRowId(adj.itemId, adj.locationId));
+      }
+      // Two literal statements rather than one over an interpolated table name: the row-shape
+      // guard can only prepare a statement whose text is fixed, and a read it cannot prepare is
+      // a read nothing checks the projection of (`query-row-shape.test.ts`). The two id spaces
+      // are disjoint, so one map holds both.
+      const quantities = new Map<string, number>();
+      for (const chunk of chunked([...batchIds])) {
+        const rows = await this.driver.query<{ id: string; quantity: number }>(
+          `SELECT id, quantity FROM stock_batches WHERE id IN (${chunk.map(() => '?').join(', ')});`,
+          chunk as SqlValue[],
+        );
+        for (const row of rows) quantities.set(row.id, Number(row.quantity));
+      }
+      for (const chunk of chunked([...placementIds])) {
+        const rows = await this.driver.query<{ id: string; quantity: number }>(
+          `SELECT id, quantity FROM item_stock WHERE id IN (${chunk.map(() => '?').join(', ')});`,
+          chunk as SqlValue[],
+        );
+        for (const row of rows) quantities.set(row.id, Number(row.quantity));
+      }
+      return quantities;
     }
   };
 }
