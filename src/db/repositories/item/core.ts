@@ -65,6 +65,14 @@ import type { LowStockThresholds } from '../types';
 import { nowMs } from '@/lib/clock';
 
 /**
+ * How many items a barcode lookup returns at most (issue #513). A shared barcode is a small,
+ * deliberate overlap in practice — two variants, a multipack and its unit — so ten rows is far
+ * more than a picker can usefully show, while the cap keeps a pathological code (one string
+ * pasted onto every item) from projecting a thumbnail BLOB per row.
+ */
+export const BARCODE_MATCH_LIMIT = 10;
+
+/**
  * A keyset (seek) page request for the infinite-scroll list (issue #172) — the offset-free
  * alternative to `PageParams.offset`. `cursor` is the boundary row's ordering values (a prior
  * page's `endCursor` for `forward`, its `startCursor` for `backward`); `startIndex` is the
@@ -166,23 +174,33 @@ export class ItemCoreRepository extends BaseRepository {
   }
 
   /**
-   * Find the **active** item carrying a given retail barcode (GTIN), or `undefined`.
-   * The scanner uses this to resolve a scanned EAN/UPC to an existing item before
-   * offering to create one (recommendation point 1). The match is case-insensitive and
-   * exact (barcodes are stored verbatim as printed); if several items share a barcode
-   * the most recently created wins, so the result is deterministic. A blank barcode
-   * never matches.
+   * The **active** items carrying a given barcode — a retail GTIN, or any other symbology an
+   * item records verbatim (issue #506). The scanner uses this to resolve a scanned code to an
+   * existing item before offering to create one (recommendation point 1). The match is
+   * case-insensitive and exact (barcodes are stored verbatim as printed). A blank barcode
+   * matches nothing.
+   *
+   * It returns the matches rather than a winner, for the same reason {@link findByShortCode}
+   * does (issue #513). Nothing stops two items sharing a barcode, and the ways in are ordinary
+   * — two variants of one product, a duplicated item that kept its code, a multipack sharing
+   * its unit's GTIN. Picking the newest silently would adjust the stock of whichever record
+   * was created last, which for "I bought more and made a new item" is precisely the duplicate.
+   * So the caller is told there is a choice and asks.
+   *
+   * Ordered most-recent-first for a deterministic result, and capped at
+   * {@link BARCODE_MATCH_LIMIT} — enough rows to fill a picker without projecting a thumbnail
+   * BLOB per row for a shared code someone has used across dozens of items.
    */
-  async getByBarcode(barcode: string): Promise<Item | undefined> {
+  async findByBarcode(barcode: string): Promise<Item[]> {
     const value = barcode.trim();
-    if (value.length === 0) return undefined;
-    const row = await this.driver.queryOne<ItemRow>(
+    if (value.length === 0) return [];
+    const rows = await this.driver.query<ItemRow>(
       `SELECT ${ITEM_READ_COLUMNS} FROM items
        WHERE barcode = ? COLLATE NOCASE AND is_active = 1
-       ORDER BY created_at DESC, id ASC LIMIT 1;`,
+       ORDER BY created_at DESC, id ASC LIMIT ${BARCODE_MATCH_LIMIT};`,
       [value],
     );
-    return row ? rowToItem(row) : undefined;
+    return rows.map(rowToItem);
   }
 
   /**

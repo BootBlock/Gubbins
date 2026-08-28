@@ -19,7 +19,7 @@ import {
   ScanIcon,
   SerialisedIcon,
 } from '@/components/icons';
-import { getItemRepository, type Item } from '@/db/repositories';
+import { BARCODE_MATCH_LIMIT, getItemRepository, type Item } from '@/db/repositories';
 import { CheckoutDialog } from '@/features/contacts/components/CheckoutDialog';
 import { useCheckoutItem } from '@/features/contacts/contacts';
 import { QuantityStepper } from '@/features/inventory/components/QuantityStepper';
@@ -134,6 +134,9 @@ function ScannerOverlayInner({
   // the header.
   const [helpOpen, setHelpOpen] = useState(false);
   const [discreteResult, setDiscreteResult] = useState<Item | null>(null);
+  // A barcode more than one item carries (issue #513) — the candidates, and the code that found
+  // them, so the picker can name it. Null whenever the scan resolved to a single item.
+  const [barcodeChoice, setBarcodeChoice] = useState<{ code: string; matches: Item[] } | null>(null);
   // A recognised retail barcode that no item carries yet — offer to create one (point 1).
   const [gtinResult, setGtinResult] = useState<string | null>(null);
   // A product resolved for that unknown barcode via an online / extension lookup (issue #59), so
@@ -197,6 +200,7 @@ function ScannerOverlayInner({
         gate.current.resolved(raw);
         setGtinResult(null);
         setLookupResult(null);
+        setBarcodeChoice(null);
         if (state.mode === 'CONTINUOUS') {
           // The queue's own id-keyed guard still has work the raw gate cannot do: two different
           // codes can name one item. A refusal is acknowledged, not passed over in silence.
@@ -280,9 +284,26 @@ function ScannerOverlayInner({
       // into an item's Barcode field. The read path has to accept the same range: "an item
       // records this exact string" is a resolution in its own right, not a privilege of GTINs.
       const barcode = code?.kind === 'gtin' ? code.gtin : raw.trim();
-      const existing = await getItemRepository().getByBarcode(barcode);
-      if (existing) {
-        presentItem(existing);
+      const carriers = await getItemRepository().findByBarcode(barcode);
+      if (carriers.length === 1) {
+        presentItem(carriers[0]!);
+        return;
+      }
+      // Two items can carry one barcode — two variants of a product, a duplicated item that kept
+      // its code, a multipack sharing its unit's GTIN — and nothing in the app prevents it. Taking
+      // the newest would adjust the stock of whichever record was created last and say nothing,
+      // so the scan pauses and asks, exactly as an ambiguous short code does (issue #513). A
+      // picker rather than a refusal: unlike a short-code collision, a shared barcode is often
+      // deliberate and the user does know which item they meant.
+      if (carriers.length > 1) {
+        gate.current.resolved(raw);
+        feedback.current.confirm(confirmOpts);
+        dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view for the choice
+        setDiscreteResult(null);
+        setGtinResult(null);
+        setLookupResult(null);
+        setBarcodeChoice({ code: barcode, matches: carriers });
+        setNotice(t('scanner.barcode.ambiguous'));
         return;
       }
 
@@ -397,10 +418,33 @@ function ScannerOverlayInner({
 
   const scanAgain = () => {
     setDiscreteResult(null);
+    setBarcodeChoice(null);
     setGtinResult(null);
     setLookupResult(null);
     setSingleMove('');
     resumeScanning();
+  };
+
+  /**
+   * Resolve a shared barcode to the item the user picked (issue #513). The scan itself already
+   * confirmed and paused the viewfinder, so this only settles *which* record it meant — and then
+   * behaves exactly as an unambiguous scan of that item would have: a Discrete scan opens the
+   * result card, a Continuous one queues it and goes straight back to scanning.
+   */
+  const chooseBarcodeMatch = (item: Item) => {
+    setBarcodeChoice(null);
+    setNotice(null);
+    if (state.mode === 'CONTINUOUS') {
+      // The queue's own id-keyed guard still applies: the same item may already be in it from an
+      // earlier scan of one of its other codes. A refusal is acknowledged, never silent.
+      if (!queue.offer(item.id, item.name)) {
+        feedback.current.repeat({ beep: beepEnabled, haptics: hapticsEnabled });
+        setNotice(t('scanner.notice.alreadyScanned'));
+      }
+      resumeScanning();
+      return;
+    }
+    setDiscreteResult(item);
   };
 
   // Move the single scanned item to a location — the one-id peer of the Continuous
@@ -626,7 +670,7 @@ function ScannerOverlayInner({
                   </Button>
                 ) : null}
                 <Button variant="outline" onClick={scanAgain}>
-                  Scan again
+                  {t('scanner.result.scanAgain')}
                 </Button>
               </div>
 
@@ -653,6 +697,53 @@ function ScannerOverlayInner({
                   <MoveIcon /> Move here
                 </Button>
               </div>
+            </Surface>
+          </div>
+        ) : null}
+
+        {/* Shared-barcode picker: more than one item carries the scanned code, so the scan names a
+            set rather than a record (issue #513). Each row is a button that settles the choice;
+            the location and the label's short code are what tell two variants of one product
+            apart when their names cannot. */}
+        {barcodeChoice ? (
+          <div className="absolute inset-x-0 bottom-0 p-4 pr-safe-gutter-right pl-safe-gutter-left">
+            <Surface className="space-y-3 p-4 text-foreground" data-testid="scanner-barcode-choice">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                {t('scanner.barcode.chooseTitle')}
+              </p>
+              <p className="font-mono text-lg font-semibold tracking-wide">{barcodeChoice.code}</p>
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  barcodeChoice.matches.length >= BARCODE_MATCH_LIMIT
+                    ? 'scanner.barcode.chooseHintCapped'
+                    : 'scanner.barcode.chooseHint',
+                  { vars: { count: barcodeChoice.matches.length } },
+                )}
+              </p>
+              <ul className="max-h-56 space-y-2 overflow-auto">
+                {barcodeChoice.matches.map((match) => (
+                  <li key={match.id}>
+                    <Button
+                      variant="outline"
+                      className="h-auto w-full justify-start py-2 text-left"
+                      onClick={() => chooseBarcodeMatch(match)}
+                      data-testid={`scanner-barcode-choice-${match.id}`}
+                    >
+                      <span className="flex min-w-0 flex-col items-start">
+                        <span className="w-full truncate font-medium">{match.name}</span>
+                        <span className="w-full truncate text-xs font-normal text-muted-foreground">
+                          {locationRows.find((loc) => loc.id === match.locationId)?.name ??
+                            t('scanner.barcode.noLocation')}{' '}
+                          · <span className="font-mono">{shortId(match.id)}</span>
+                        </span>
+                      </span>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <Button variant="outline" onClick={scanAgain}>
+                {t('scanner.result.scanAgain')}
+              </Button>
             </Surface>
           </div>
         ) : null}
@@ -693,7 +784,7 @@ function ScannerOverlayInner({
                   </Button>
                 ) : null}
                 <Button variant="outline" onClick={scanAgain}>
-                  Scan again
+                  {t('scanner.result.scanAgain')}
                 </Button>
               </div>
             </Surface>
@@ -701,7 +792,7 @@ function ScannerOverlayInner({
         ) : null}
 
         {/* Continuous queue review */}
-        {state.status === 'PROCESSING_QUEUE' && !discreteResult && !gtinResult ? (
+        {state.status === 'PROCESSING_QUEUE' && !discreteResult && !gtinResult && !barcodeChoice ? (
           <div className="absolute inset-x-0 bottom-0 p-4 pr-safe-gutter-right pl-safe-gutter-left">
             <Surface className="space-y-3 p-4 text-foreground">
               <p className="text-sm font-semibold">

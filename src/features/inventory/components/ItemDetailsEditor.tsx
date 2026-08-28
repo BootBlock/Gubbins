@@ -323,6 +323,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
         onScan={() => setBarcodeScanOpen(true)}
         inputTestId="item-details-barcode"
         scanTestId="item-details-barcode-scan"
+        itemId={item.id}
       />
 
       <FormField
