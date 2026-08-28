@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { TEXT_LIMITS } from '@/lib/text-limits';
 import { parseCsv, parseBom, BomImportError } from './bom-import';
+import { UNTERMINATED_QUOTE_NOTE } from '@/features/import/tabular';
 
 describe('parseCsv (RFC-4180-ish, native)', () => {
   it('parses simple rows', () => {
@@ -95,6 +96,19 @@ describe('parseBom — KiCad / generic column mapping', () => {
 
   it('throws a BomImportError for a free-form (non-table) paste', () => {
     expect(() => parseBom('just a note about some parts')).toThrow(BomImportError);
+  });
+
+  it('names an unclosed quote rather than blaming the columns (issue #591)', () => {
+    const csv = ['Designator,Value,Qty', 'R1,"10k,2', 'R2,10k,1'].join('\n');
+    expect(() => parseBom(csv)).toThrow(UNTERMINATED_QUOTE_NOTE);
+  });
+
+  it('keeps an inch mark in a value instead of swallowing the rest of the file (issue #591)', () => {
+    const csv = ['Designator,Description,Qty', 'V1,3/4" ball valve,5', 'V2,Widget,2'].join('\n');
+    const { lines } = parseBom(csv);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ description: '3/4" ball valve', requiredQty: 5 });
+    expect(lines[1]).toMatchObject({ description: 'Widget', requiredQty: 2 });
   });
 });
 

@@ -19,6 +19,7 @@ import {
   isTabularFormat,
   parseCsv,
   parseDelimited,
+  UNTERMINATED_QUOTE_NOTE,
   type ImportFormat,
 } from '@/features/import/tabular';
 import {
@@ -143,6 +144,12 @@ export function parseBom(text: string, options: ParseBomOptions = {}): BomParseR
     format,
     ...(options.hasHeader !== undefined ? { hasHeader: options.hasHeader } : {}),
   });
+
+  // An unclosed quote is a defect in the file, not a missing column, and the reader can only
+  // act on it if they are told which it is (issue #591).
+  if (extraction.unterminatedQuote) {
+    throw new BomImportError(UNTERMINATED_QUOTE_NOTE);
+  }
 
   // A structured parse failed, or the text is a free-form list rather than a table:
   // surface the classic "no recognisable columns" error so the guidance is BOM-specific.

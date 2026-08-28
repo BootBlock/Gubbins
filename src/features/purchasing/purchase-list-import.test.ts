@@ -7,6 +7,7 @@ import {
   toWishlistDraft,
   type ParsedPurchaseListLine,
 } from './purchase-list-import';
+import { UNTERMINATED_QUOTE_NOTE } from '@/features/import/tabular';
 
 /** A parsed line with every field absent, for building focused expectations. */
 const EMPTY: ParsedPurchaseListLine = {
@@ -42,6 +43,19 @@ describe('parsePurchaseList — rejection', () => {
 
   it('rejects malformed JSON', () => {
     expect(() => parsePurchaseList('{ "items": ', { format: 'json' })).toThrow(PurchaseListImportError);
+  });
+
+  it('names an unclosed quote rather than blaming the columns (issue #591)', () => {
+    const csv = ['Name,Qty', '"Widget,2', 'Gadget,1'].join('\n');
+    expect(() => parsePurchaseList(csv)).toThrow(UNTERMINATED_QUOTE_NOTE);
+  });
+
+  it('keeps an inch mark in a name instead of swallowing the rest of the file (issue #591)', () => {
+    const csv = ['Name,Qty', '3/4" ball valve,5', 'Widget,2'].join('\n');
+    const { lines } = parsePurchaseList(csv);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ name: '3/4" ball valve', quantity: 5 });
+    expect(lines[1]).toMatchObject({ name: 'Widget', quantity: 2 });
   });
 });
 

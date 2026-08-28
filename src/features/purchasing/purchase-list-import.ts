@@ -26,6 +26,7 @@ import {
   detectImportFormat,
   extractTableRows,
   isTabularFormat,
+  UNTERMINATED_QUOTE_NOTE,
   type ImportFormat,
 } from '@/features/import/tabular';
 import {
@@ -252,6 +253,12 @@ export function parsePurchaseList(
     format,
     ...(options.hasHeader !== undefined ? { hasHeader: options.hasHeader } : {}),
   });
+
+  // An unclosed quote is a defect in the file, not a missing column, and the reader can only
+  // act on it if they are told which it is (issue #591).
+  if (extraction.unterminatedQuote) {
+    throw new PurchaseListImportError(UNTERMINATED_QUOTE_NOTE);
+  }
 
   // A structured parse failed (malformed JSON, no table found): surface the column guidance
   // rather than the engine's generic note, so the user is told what a purchase list needs.

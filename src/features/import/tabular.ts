@@ -74,26 +74,48 @@ export function isTabularFormat(format: ImportFormat): boolean {
 // RFC-4180 delimited codec
 // ---------------------------------------------------------------------------
 
+/** The result of reading delimited text: the cell matrix, plus what the codec noticed. */
+export interface DelimitedRead {
+  /** The parsed rows. */
+  readonly rows: string[][];
+  /**
+   * The text ended while still inside a quoted field, so everything from the opening
+   * quote onwards — newlines included — was swallowed into a single cell. The rows are
+   * still returned, but their shape past that point does not describe the source.
+   */
+  readonly unterminatedQuote: boolean;
+}
+
 /**
- * Parse delimiter-separated text into a matrix of string cells. Handles quoted
- * fields (with embedded delimiters, doubled-quote escapes and embedded newlines)
- * and CRLF/LF line endings. A trailing blank line is ignored; other rows are
- * preserved verbatim.
+ * Read delimiter-separated text into a matrix of string cells, and report whether the
+ * text ended inside a quoted field. Handles quoted fields (with embedded delimiters,
+ * doubled-quote escapes and embedded newlines) and CRLF/LF line endings. A trailing
+ * blank line is ignored; other rows are preserved verbatim.
  *
- * The delimiter is a single character (`,` for CSV, `\t` for TSV). The same
- * RFC-4180 quoting rules apply regardless of delimiter, so this one codec serves
- * every delimiter-based import path.
+ * A `"` is structural **only at the start of a field**. Anywhere else it is literal
+ * data — which is what RFC 4180 describes, and what Excel, LibreOffice and the common
+ * CSV libraries implement. An inch mark in an unquoted cell (`3/4" ball valve`) is
+ * therefore read as itself, rather than opening a quoted field that swallows the rest
+ * of the file (issue #591).
+ *
+ * The delimiter is a single character (`,` for CSV, a tab for TSV). The same RFC-4180
+ * quoting rules apply regardless of delimiter, so this one codec serves every
+ * delimiter-based import path.
  */
-export function parseDelimited(text: string, delimiter = ','): string[][] {
+export function readDelimited(text: string, delimiter = ','): DelimitedRead {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
   let inQuotes = false;
   let started = false;
+  // Nothing has been read into the current field yet — the only position at which a
+  // `"` opens a quoted field.
+  let atFieldStart = true;
 
   const pushField = () => {
     row.push(field);
     field = '';
+    atFieldStart = true;
   };
   const pushRow = () => {
     pushField();
@@ -120,8 +142,9 @@ export function parseDelimited(text: string, delimiter = ','): string[][] {
       continue;
     }
 
-    if (ch === '"') {
+    if (ch === '"' && atFieldStart) {
       inQuotes = true;
+      atFieldStart = false;
     } else if (ch === delimiter) {
       pushField();
     } else if (ch === '\n') {
@@ -130,6 +153,7 @@ export function parseDelimited(text: string, delimiter = ','): string[][] {
       // swallow; the following \n (if any) finalises the row
     } else {
       field += ch;
+      atFieldStart = false;
     }
   }
 
@@ -138,7 +162,15 @@ export function parseDelimited(text: string, delimiter = ','): string[][] {
     pushRow();
   }
 
-  return rows;
+  return { rows, unterminatedQuote: inQuotes };
+}
+
+/**
+ * Parse delimiter-separated text into a matrix of string cells — {@link readDelimited}
+ * without the diagnostics, for the callers that only want the rows.
+ */
+export function parseDelimited(text: string, delimiter = ','): string[][] {
+  return readDelimited(text, delimiter).rows;
 }
 
 /**
@@ -162,6 +194,11 @@ function nonEmptyLines(text: string): string[] {
   return text.split(/\r\n|\r|\n/).filter((line) => line.trim().length > 0);
 }
 
+/** Column widths read by a plain split, ignoring quoting entirely. */
+function naiveWidths(sample: string, delimiter: string): number[] {
+  return nonEmptyLines(sample).map((line) => line.split(delimiter).length);
+}
+
 /**
  * Is a delimiter used consistently across a sample of the text? A block is "consistent" when
  * the sampled rows all yield the same number (> 1) of columns — the signature of tabular data.
@@ -171,13 +208,35 @@ function nonEmptyLines(text: string): string[] {
  * unbalance the count and wrongly disqualify a perfectly good CSV. Quoting is the single most
  * common reason a delimiter sniff mis-fires, and every importer inherits the answer, so it is
  * worth reading the sample properly.
+ *
+ * Where the whole text ends inside an unclosed quote, that reading is worthless — the codec has
+ * merged every later line into one cell — so the widths are re-measured with quoting ignored.
+ * The file *is* delimited and will be told so; {@link extractTableRows} then reports the
+ * unclosed quote, which is far more use to the reader than falling through to a line list and
+ * offering each merged line as an item (issue #591).
  */
 function delimiterConsistency(
   sample: string,
   delimiter: string,
   truncated: boolean,
 ): { consistent: boolean; columns: number } {
-  const parsed = parseDelimited(sample, delimiter).filter((row) => row.some((c) => c.trim().length > 0));
+  const read = readDelimited(sample, delimiter);
+
+  // An unclosed quote in a sample that is *not* truncated is a real defect in the file rather
+  // than an artefact of sampling, and it has merged every later line into one cell — so the
+  // codec's widths are worthless here and the quote-blind ones are read instead. (A truncated
+  // sample is left to the dropped-last-row rule below, which already covers a quoted cell
+  // straddling the cut.)
+  if (read.unterminatedQuote && !truncated) {
+    // Two lines minimum: a single line carrying a stray quote is far more likely a free-form
+    // note than a table, and a line list is the more forgiving reading of it.
+    const widths = naiveWidths(sample, delimiter);
+    if (widths.length < 2) return { consistent: false, columns: 0 };
+    const columns = widths[0]!;
+    return { consistent: columns > 1 && widths.every((w) => w === columns), columns };
+  }
+
+  const parsed = read.rows.filter((row) => row.some((c) => c.trim().length > 0));
   // A sample cut off mid-file may have severed the final row (or left a quoted cell unclosed,
   // which swallows the remainder into one field). Its width proves nothing, so drop it — but
   // only while at least one whole row is left to judge by.
@@ -462,6 +521,12 @@ export interface TableExtraction {
   readonly dataRows: readonly string[][];
   /** A non-fatal note when the text could not be parsed as the chosen format. */
   readonly note?: string;
+  /**
+   * The delimited source ended inside a quoted field, so the rows past that point were
+   * merged into one cell and no extraction is offered. Consumers that word their own
+   * errors use this to say *which* defect they hit rather than a generic one.
+   */
+  readonly unterminatedQuote?: boolean;
 }
 
 /** Options for {@link extractTableRows}. */
@@ -475,6 +540,16 @@ export interface ExtractTableOptions {
    */
   readonly hasHeader?: boolean;
 }
+
+/**
+ * What the user is told when a delimited file ends inside an unclosed quote. Exported so
+ * the importers that word their own failure messages can reuse it instead of reporting a
+ * missing-columns error for a defect that has nothing to do with the columns.
+ */
+export const UNTERMINATED_QUOTE_NOTE =
+  'A quoted value is never closed — the text ends inside a double-quote, so everything after ' +
+  'it was read as a single cell. Check for a stray " (a double-quote inside a cell must be ' +
+  'written twice, as "").';
 
 /** Build a synthetic header row (`Column 1 … Column n`) for headerless input. */
 function syntheticHeaders(width: number): string[] {
@@ -530,7 +605,14 @@ export function extractTableRows(text: string, options: ExtractTableOptions = {}
 
   // Delimited: csv / ssv / tsv.
   const delimiter = DELIMITERS[format] ?? ',';
-  const allRows = parseDelimited(text, delimiter).filter((r) => r.some((c) => c.trim().length > 0));
+  const read = readDelimited(text, delimiter);
+  // An unclosed quote has merged every line after it into one cell, so the rows no longer
+  // describe the file. Offering them anyway is the silent-corruption path of issue #591 — a
+  // plausible-looking preview over junk — so the extraction is empty and the defect is named.
+  if (read.unterminatedQuote) {
+    return { ...emptyExtraction(format, UNTERMINATED_QUOTE_NOTE), unterminatedQuote: true };
+  }
+  const allRows = read.rows.filter((r) => r.some((c) => c.trim().length > 0));
   if (hasHeader) {
     return { format, headerRow: allRows[0] ?? [], dataRows: allRows.slice(1) };
   }
