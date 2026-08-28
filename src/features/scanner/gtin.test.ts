@@ -83,3 +83,44 @@ describe('describeGtinConcern — judging a hand-typed entry (issue #344)', () =
     expect(describeGtinConcern('X4006381333930')).toBeNull();
   });
 });
+
+describe('UPC-E — the compressed 8-digit code (issue #508)', () => {
+  it('expands a scanned UPC-E to the UPC-A it compresses', () => {
+    // The printed check digit belongs to the expansion, so the eight digits alone fail the
+    // length-agnostic mod-10 rule — this is the case that used to dead-end at the scanner.
+    expect(hasValidGtinCheckDigit('04252614')).toBe(false);
+    expect(parseGtin('04252614')).toBe('042100005264');
+    expect(isValidGtin('04252614')).toBe(true);
+  });
+
+  it('expands number system 1 as well as 0', () => {
+    expect(parseGtin('14252611')).toBe('142100005261');
+  });
+
+  it('stores the same value a UPC-A scan of the same article would', () => {
+    expect(parseGtin('04252614')).toBe(parseGtin('042100005264'));
+  });
+
+  it('leaves a genuine EAN-8 verbatim', () => {
+    // No UPC-E number system, so there is nothing to expand.
+    expect(parseGtin('96385074')).toBe('96385074');
+  });
+
+  it('prefers the UPC-E reading when the code can be read either way', () => {
+    // `01234565` passes the EAN-8 check *and* expands to a valid UPC-A. GS1 reserves the
+    // GTIN-8 prefix 0 for this compressed form, so the expansion wins.
+    expect(hasValidGtinCheckDigit('01234565')).toBe(true);
+    expect(parseGtin('01234565')).toBe('012345000065');
+  });
+
+  it('still rejects eight digits that are neither an EAN-8 nor a UPC-E', () => {
+    expect(parseGtin('07350053')).toBeNull();
+  });
+
+  it('stops flagging a correctly typed UPC-E as mistyped', () => {
+    expect(describeGtinConcern('04252614')).toBeNull();
+    expect(describeGtinConcern('14252611')).toBeNull();
+    // A genuinely wrong eight digits is still flagged.
+    expect(describeGtinConcern('07350053')).toBe('check-digit');
+  });
+});

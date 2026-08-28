@@ -199,3 +199,26 @@ describe('BarcodeField — already recorded against another item (issue #513)', 
     expect(screen.queryByText(/already has this barcode/i)).toBeNull();
   });
 });
+
+describe('BarcodeField — typed UPC-E (issue #508)', () => {
+  it('replaces a typed UPC-E with the UPC-A it compresses when the field is left', () => {
+    const { input } = renderField();
+    typeAndBlur(input, '04252614');
+    expect((input as HTMLInputElement).value).toBe('042100005264');
+    // …and it is not reported as mistyped on the way.
+    expect(screen.queryByText(/check digit/i)).toBeNull();
+  });
+
+  it('leaves an EAN-8 and every other typed code exactly as typed', () => {
+    const { input } = renderField();
+    typeAndBlur(input, '96385074');
+    expect((input as HTMLInputElement).value).toBe('96385074');
+  });
+
+  it('never rewrites a value the user did not type', () => {
+    // An item's stored barcode must not change just because the field was focused and left.
+    const { input } = renderField('04252614');
+    fireEvent.blur(input);
+    expect((input as HTMLInputElement).value).toBe('04252614');
+  });
+});

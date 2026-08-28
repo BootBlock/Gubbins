@@ -87,6 +87,12 @@ camera actually offers it, so you'll never see a switch that does nothing.
 > will stop and ask which item you meant.
 
 > **ℹ️ Note**
+> Small packaging — batteries, fasteners, cosmetics — often carries a short **UPC‑E** barcode of
+> eight digits. It's a squeezed-down version of the full twelve-digit UPC‑A, so Gubbins stores it
+> in its full form: scan the same product in either version and you get the same **Barcode**
+> value, and a product lookup finds it. Typing the eight digits printed on the pack works too.
+
+> **ℹ️ Note**
 > Some packaging carries a **marketing QR code** (a website link) next to the real barcode. If
 > you scan one into the **Barcode** field, Gubbins spots that it's a link rather than a barcode
 > and offers to **open it** — it's never quietly saved as the item's barcode. Point at the

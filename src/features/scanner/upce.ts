@@ -1,0 +1,63 @@
+/**
+ * UPC-E expansion — the compressed 8-digit North-American retail code, restored to the
+ * 12-digit UPC-A it stands for (issue #508).
+ *
+ * A UPC-E is not a GTIN width of its own: it is a **UPC-A with a run of zeroes squeezed
+ * out**, printed on packaging too small to carry the full symbol. Neither the zxing reader
+ * nor the native `BarcodeDetector` expands it — both hand back the eight printed digits —
+ * and those eight digits carry no check digit of their own. The trailing digit is the check
+ * digit of the *expanded* UPC-A, so testing it with the length-agnostic GTIN rule in
+ * {@link ./gtin} rejects roughly nine real UPC-E codes in ten.
+ *
+ * Expanding on the way in fixes all three consequences at once: the code validates, the
+ * value stored matches what a UPC-A scan of the same article would store, and the lookup key
+ * becomes the one the product databases are indexed by.
+ *
+ * This module is **only** the expansion — a fully-specified table on the sixth body digit.
+ * It deliberately does no check-digit work: `gtin.ts` owns the one mod-10 rule and applies
+ * it to the expanded value, so there is a single definition of "valid" rather than two that
+ * could drift. Pure and unit-tested.
+ */
+
+/**
+ * True when `digits` has the *shape* of a UPC-E: exactly eight digits led by number system
+ * 0 or 1 (the only two the symbology defines). Shape only — whether the code is genuine can
+ * only be judged from the check digit of its expansion.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function looksLikeUpcE(digits: string): boolean {
+  return /^[01][0-9]{7}$/.test(digits);
+}
+
+/**
+ * Expand a printed 8-digit UPC-E to the 12-digit UPC-A it compresses, or `null` when `raw`
+ * is not UPC-E-shaped ({@link looksLikeUpcE}). Surrounding whitespace is ignored.
+ *
+ * The expansion re-inserts the zero run the symbology squeezed out, chosen by the **last
+ * body digit** `d6` (`N d1 d2 d3 d4 d5 d6 C` → UPC-A `N …ten digits… C`):
+ *
+ * | `d6`  | Ten middle digits          |
+ * | ----- | -------------------------- |
+ * | 0–2   | `d1 d2 d6 0 0 0 0 d3 d4 d5` |
+ * | 3     | `d1 d2 d3 0 0 0 0 0 d4 d5` |
+ * | 4     | `d1 d2 d3 d4 0 0 0 0 0 d5` |
+ * | 5–9   | `d1 d2 d3 d4 d5 0 0 0 0 d6` |
+ *
+ * The number system and the check digit are carried across unchanged. The result is **not**
+ * validated here — the caller applies the shared mod-10 rule (see the module note).
+ */
+export function expandUpcE(raw: string): string | null {
+  const digits = raw.trim();
+  if (!looksLikeUpcE(digits)) return null;
+  const [n, d1, d2, d3, d4, d5, d6, check] = digits;
+  const middle =
+    d6 === '0' || d6 === '1' || d6 === '2'
+      ? `${d1}${d2}${d6}0000${d3}${d4}${d5}`
+      : d6 === '3'
+        ? `${d1}${d2}${d3}00000${d4}${d5}`
+        : d6 === '4'
+          ? `${d1}${d2}${d3}${d4}00000${d5}`
+          : `${d1}${d2}${d3}${d4}${d5}0000${d6}`;
+  return `${n}${middle}${check}`;
+}

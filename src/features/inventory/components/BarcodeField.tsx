@@ -3,7 +3,7 @@ import { Button, FormField, Input } from '@/components/foundry';
 import { ScanIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useFeature } from '@/features/modules/useFeature';
-import { describeGtinConcern } from '@/features/scanner/gtin';
+import { canonicaliseTypedBarcode, describeGtinConcern } from '@/features/scanner/gtin';
 import { useBarcodeCarriers } from '../queries';
 
 export interface BarcodeFieldProps {
@@ -39,6 +39,10 @@ export interface BarcodeFieldProps {
  * advisory in the same non-blocking style, not a rejection. What it buys the user is knowing in
  * advance why a later scan of that code will stop and ask which item was meant, instead of
  * meeting the question with no idea where the duplicate came from.
+ *
+ * Leaving the field is also where a typed **UPC-E** — the squeezed 8-digit code on small
+ * packaging — is replaced by the 12-digit UPC-A it compresses (issue #508), so a code typed off
+ * the pack and the same code scanned from it store the same value.
  *
  * The warning waits for **blur**, because a half-typed GTIN is transiently wrong at almost
  * every keystroke (`400638133393` is a valid UPC-A *width* on the way to a 13-digit EAN) and
@@ -105,6 +109,14 @@ export function BarcodeField({
             onChange(e.target.value);
           }}
           onBlur={() => {
+            // A typed UPC-E is replaced by the UPC-A it compresses, so the stored value is the
+            // one a camera scan of that pack produces (issue #508). Only on a value the user
+            // actually typed: an item's existing barcode must never change just because the
+            // field was focused and left.
+            if (editing) {
+              const canonical = canonicaliseTypedBarcode(value);
+              if (canonical !== value) onChange(canonical);
+            }
             setEditing(false);
             onBlur?.();
           }}
