@@ -16,10 +16,12 @@
  * device seeds them identically from the baseline.
  */
 import { hashPassword, needsRehash, verifyPassword } from '@/features/users/password';
+import { TEXT_LIMITS } from '@/lib/text-limits';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { BUILTIN_USER_IDS } from './constants';
 import { rowToUser } from './mappers';
+import { normaliseText } from './item/normalise';
 import { duplicateNameError, foldedNameFilter, matchesFoldedName } from './name-lookup';
 import { tombstoneStatement } from './tombstone';
 import type { CreateUserInput, Page, PageParams, UpdateUserInput, User, UserRow } from './types';
@@ -97,14 +99,15 @@ export class UserRepository extends BaseRepository {
     const displayName = input.displayName?.trim() || username;
     const id = crypto.randomUUID();
     await this.driver.execute(
-      `INSERT INTO users (id, username, display_name, email, description, kind, role_id)
-       VALUES (?, ?, ?, ?, ?, 'normal', ?);`,
+      `INSERT INTO users (id, username, display_name, email, description, icon, kind, role_id)
+       VALUES (?, ?, ?, ?, ?, ?, 'normal', ?);`,
       [
         id,
         username,
         displayName,
         input.email?.trim() || null,
         input.description?.trim() || null,
+        normaliseText(input.icon, TEXT_LIMITS.code, 'A user icon'),
         input.roleId ?? null,
       ],
     );
@@ -144,6 +147,10 @@ export class UserRepository extends BaseRepository {
     if (input.description !== undefined) {
       sets.push('description = ?');
       params.push(input.description?.trim() || null);
+    }
+    if (input.icon !== undefined) {
+      sets.push('icon = ?');
+      params.push(normaliseText(input.icon, TEXT_LIMITS.code, 'A user icon'));
     }
     if (input.isEnabled !== undefined) {
       sets.push('is_enabled = ?');

@@ -23,6 +23,7 @@
 import { normaliseGrants } from '@/features/users/permissions';
 import { TEXT_LIMITS } from '@/lib/text-limits';
 import { assertTextLimit } from './text-limits';
+import { normaliseText } from './item/normalise';
 import { DbError } from '../errors';
 import { BaseRepository } from './base';
 import { rowToRole } from './mappers';
@@ -80,9 +81,15 @@ export class RoleRepository extends BaseRepository {
     if (await this.findByName(name)) throw duplicateNameError('roles.name');
     const id = crypto.randomUUID();
     await this.driver.execute(
-      `INSERT INTO roles (id, name, description, permissions, is_builtin)
-       VALUES (?, ?, ?, ?, 0);`,
-      [id, name, input.description?.trim() || null, JSON.stringify(normaliseGrants(input.permissions ?? []))],
+      `INSERT INTO roles (id, name, description, icon, permissions, is_builtin)
+       VALUES (?, ?, ?, ?, ?, 0);`,
+      [
+        id,
+        name,
+        input.description?.trim() || null,
+        normaliseText(input.icon, TEXT_LIMITS.code, 'A role icon'),
+        JSON.stringify(normaliseGrants(input.permissions ?? [])),
+      ],
     );
     return (await this.getById(id))!;
   }
@@ -107,6 +114,10 @@ export class RoleRepository extends BaseRepository {
     if (input.description !== undefined) {
       sets.push('description = ?');
       params.push(input.description?.trim() || null);
+    }
+    if (input.icon !== undefined) {
+      sets.push('icon = ?');
+      params.push(normaliseText(input.icon, TEXT_LIMITS.code, 'A role icon'));
     }
     if (input.permissions !== undefined) {
       sets.push('permissions = ?');

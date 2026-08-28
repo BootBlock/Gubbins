@@ -38,9 +38,14 @@ sharply in what they can change, so pick by the post rather than by seniority:
 > **Sync** or **Bridge**. Doing work in Gubbins and administering the device it runs on are
 > separate jobs. If someone needs both, give them Manager or a role of your own.
 
+Each shipped role carries an icon — a shield for Administrator, an eye for Viewer, a spanner for
+Technician — so the list reads at a glance rather than by name alone.
+
 Add your own with **Add role** whenever none of these quite fits. Role names are matched **ignoring
 case, in any language**, so `Workshop Lead` and `WORKSHOP LEAD` are one role rather than two that
-look alike.
+look alike. A role you create can have an **icon** of its own: pick one from the icon chooser, or
+leave it blank and Gubbins uses the default role glyph. You can change or clear the icon on a
+shipped role in the same way.
 
 > **ℹ️ Note**
 > These are shown in your [[interface language|Language-and-Region]]. Rename one — or rewrite
