@@ -66,9 +66,10 @@ const GROUP_TINTS: Record<NavGroup, string> = {
 /**
  * Translucent, group-coloured background for the cards themselves (the non-CTA tiles),
  * a touch deeper than the panel wash so each tile lifts off its panel while still letting
- * the tint beneath show through. Same theme-aware tokens as {@link GROUP_TINTS}; the
- * Surface's own `backdrop-blur` frosts it for a glassy, tinted look. The Inventory tile is
- * exempt — it keeps its solid primary call-to-action fill.
+ * the tint beneath show through. Same theme-aware tokens as {@link GROUP_TINTS}; where the
+ * `Surface` carries its frost — see `--backdrop-surface`, which touch hardware and high contrast
+ * both clear — that glazes the tint for a glassy look. The Inventory tile is exempt — it keeps
+ * its solid primary call-to-action fill.
  */
 const GROUP_CARD_TINTS: Record<NavGroup, string> = {
   primary: 'bg-primary/10 hover:bg-primary/15',

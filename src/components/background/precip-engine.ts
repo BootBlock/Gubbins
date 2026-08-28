@@ -189,7 +189,7 @@ export interface StartPrecipOptions {
   readonly kind: PrecipKind;
   /** When true (OS reduced-motion or the "Reduce effects" switch), paint one static frame only. */
   readonly reduced: boolean;
-  /** Device-pixel-ratio cap for the backing store (default 2). */
+  /** Device-pixel-ratio cap for the backing store; defaults to {@link DEFAULT_DPR_CAP}. */
   readonly dprCap?: number;
   /**
    * Optional interaction canvas stacked *above* the app content (issue #68). When given together
@@ -217,6 +217,14 @@ export interface StartPrecipOptions {
   /** Initial snow-weather override (lab); defaults to `auto`. See {@link SnowWeatherMode}. */
   readonly weather?: SnowWeatherMode;
 }
+
+/**
+ * The backing store's device-pixel-ratio ceiling when the caller names none. Exported because the
+ * caller that *does* name one derives its value from this (see {@link
+ * import('./device-tier').precipDprCap}), and a second literal there would be free to drift from
+ * this one with nothing to catch it.
+ */
+export const DEFAULT_DPR_CAP = 2;
 
 /** Per-kind tuning. `density` = viewport px² per particle (lower ⇒ denser), clamped to [min, max]. */
 const TUNING = {
@@ -1273,7 +1281,7 @@ function buildEmojiSprite(dpr: number, emoji: string): HTMLCanvasElement {
 
 export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions): PrecipController {
   const { kind, reduced } = opts;
-  const dprCap = opts.dprCap ?? 2;
+  const dprCap = opts.dprCap ?? DEFAULT_DPR_CAP;
   const ctx = canvas.getContext('2d');
   // No 2D context (very old browser or a jsdom test): nothing to do — a no-op controller keeps the
   // caller's lifecycle simple and the app fully functional without the decoration.
@@ -1373,6 +1381,22 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   let lastMoundRender = -Infinity;
   /** True while the overlay canvas holds no pixels, so blank frames skip even the clear. */
   let overlayClean = true;
+  /**
+   * Bumped on every mound re-render, so the per-frame overlay pass can tell "the cache changed"
+   * from "the cache is the same one I already blitted" without comparing pixels (issue #419).
+   */
+  let moundGen = 0;
+  /**
+   * What the overlay currently *shows*: the mound generation blitted into it and the hover lift it
+   * was blitted with (`-1` for no lift). Settled snow keeps the overlay live indefinitely, but a
+   * still cache drawn at a still offset produces a byte-identical frame — so when all three match
+   * and no splash is animating, the pass skips its full-viewport clear and blit entirely. `-1`
+   * means "nothing trustworthy on screen" and always forces a redraw.
+   */
+  let drawnMoundGen = -1;
+  let drawnDy = 0;
+  let drawnC0 = -1;
+  let drawnC1 = -1;
   /** Offscreen cache the mound shapes are path-rendered into (a few times/s at most). */
   let moundCanvas: HTMLCanvasElement | null = null;
   let moundCtx: CanvasRenderingContext2D | null = null;
@@ -1735,6 +1759,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       // transform after; the cleared bitmap means the overlay starts this size clean.
       octx!.setTransform(dpr, 0, 0, dpr, 0, 0);
       overlayClean = true;
+      drawnMoundGen = -1;
       // The mound cache mirrors the overlay via the shared helper, so its DPR handling can
       // never drift from the sprites'.
       [moundCanvas, moundCtx] = makeCanvas(cssWidth, cssHeight, dpr);
@@ -2031,6 +2056,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    */
   function renderMounds(): void {
     moundDirty = false;
+    moundGen++;
     lastMoundRender = elapsed;
     moundVisible = false;
     moundCtx?.clearRect(0, 0, cssWidth, cssHeight);
@@ -2295,44 +2321,82 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
 
   /**
    * Blit the cached mound layer, riding the hover lift of whichever control the pointer is over
-   * (issue #68 follow-up): the columns that control spans are drawn shifted by its live transform
-   * offset, the rest at rest — so a card's settled snow lifts and eases back with the card instead
-   * of hanging in mid-air. The map itself stays at the resting position (see {@link
-   * import('./surface-map').HoverFollow}), so this is the only place the lift is applied.
+   * (issue #68 follow-up): columns `c0`…`c1` are drawn shifted by `dy`, the rest at rest — so a
+   * card's settled snow lifts and eases back with the card instead of hanging in mid-air. The map
+   * itself stays at the resting position (see {@link import('./surface-map').HoverFollow}), so
+   * this is the only place the lift is applied. The caller reads the lift and passes it in,
+   * because it also needs it to decide whether this frame differs from the one already on screen;
+   * `c0 < 0` means no lift.
    */
-  function blitMounds(): void {
-    const h = interact ? surfaces!.hoverFollow() : null;
-    const dy = h ? clamp(h.dy, -32, 32) : 0;
-    if (!h || Math.abs(dy) < 0.5) {
+  function blitMounds(dy: number, c0: number, c1: number): void {
+    if (c0 < 0) {
       octx!.drawImage(moundCanvas!, 0, 0, cssWidth, cssHeight);
       return;
     }
-    const x0 = clamp(h.c0 * COLUMN_WIDTH, 0, cssWidth);
-    const x1 = clamp((h.c1 + 1) * COLUMN_WIDTH, 0, cssWidth);
+    const x0 = clamp(c0 * COLUMN_WIDTH, 0, cssWidth);
+    const x1 = clamp((c1 + 1) * COLUMN_WIDTH, 0, cssWidth);
     blitMoundSpan(0, x0, 0);
     blitMoundSpan(x0, x1, dy);
     blitMoundSpan(x1, cssWidth, 0);
   }
 
-  /** Paint the interaction overlay: the cached mound layer plus any in-flight splashes. */
+  /**
+   * Paint the interaction overlay: the cached mound layer plus any in-flight splashes.
+   *
+   * Settled snow keeps this layer live for as long as it lasts — but "live" is not the same as
+   * "changing". Once the mound cache has been rendered and the pointer is not lifting a control,
+   * every frame this would paint is byte-for-byte the frame already on screen, so redrawing it
+   * costs a full-viewport clear and a full-viewport blit to produce no visible difference at all.
+   * On a phone, where there is no hover to follow, that is *every* frame for as long as any snow
+   * is settled — which is exactly when the user is scrolling (issue #419).
+   *
+   * So the pass tracks what the overlay currently shows — the mound generation and the hover lift
+   * it was drawn with — and returns early when nothing has moved. A splash is animation by
+   * definition, so it always redraws, and it parks `drawnMoundGen` at `-1` so the frame after the
+   * last splash still repaints once to clear it away.
+   */
   function drawOverlay(dt: number): void {
     if (moundDirty && elapsed - lastMoundRender >= SETTLE.snow.renderInterval) renderMounds();
     const hasMound = moundVisible && moundCanvas !== null;
-    if (!hasMound && !anySplashActive()) {
+    const splashing = anySplashActive();
+    if (!hasMound && !splashing) {
       // Nothing to draw: clear once after the last visible frame, then skip the whole pass.
-      // (While snow is settled, `hasMound` keeps the overlay live every frame, so an in-progress
-      // hover lift is followed continuously by blitMounds rather than snapping.)
       if (!overlayClean) {
         octx!.clearRect(0, 0, cssWidth, cssHeight);
         overlayClean = true;
+        drawnMoundGen = -1;
       }
+      return;
+    }
+    // Read the lift every frame regardless of whether we redraw — it is the tracker's own live
+    // state, and it is the comparison below that decides the frame, not the read.
+    const h = hasMound && interact ? surfaces!.hoverFollow() : null;
+    const raw = h ? clamp(h.dy, -32, 32) : 0;
+    const lifted = h !== null && Math.abs(raw) >= 0.5;
+    // Normalised to exactly 0 below the threshold, so the sub-half-pixel tail of a release —
+    // which is drawn unshifted either way — reads as the same frame rather than a new one.
+    const dy = lifted ? raw : 0;
+    const c0 = lifted ? h!.c0 : -1;
+    const c1 = lifted ? h!.c1 : -1;
+    if (
+      !splashing &&
+      !overlayClean &&
+      drawnMoundGen === moundGen &&
+      drawnDy === dy &&
+      drawnC0 === c0 &&
+      drawnC1 === c1
+    ) {
       return;
     }
     octx!.clearRect(0, 0, cssWidth, cssHeight);
     overlayClean = false;
-    if (hasMound) blitMounds();
+    if (hasMound) blitMounds(dy, c0, c1);
     drawSplashes(dt);
     octx!.globalAlpha = 1;
+    drawnMoundGen = splashing ? -1 : moundGen;
+    drawnDy = dy;
+    drawnC0 = c0;
+    drawnC1 = c1;
   }
 
   /** Add every active eddy's tangential swirl to the particle's already-set velocity. */

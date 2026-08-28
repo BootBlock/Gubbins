@@ -310,6 +310,15 @@
   --shape-handle: oklch(0.99 0 0); /* resize-handle affordance — matches the default stroke */
 
   --radius: 0.65rem;
+
+  /*
+   * The frosted-glass backdrop the Foundry `Surface` panel wears, via the `backdrop-surface`
+   * utility below. A whole *filter value*, not a blur radius, because the
+   * only cheap setting is `none`: `blur(0px)` still promotes a compositing layer and still reads
+   * back the pixels behind the element every frame, so a zeroed radius saves the blur and keeps
+   * all of the cost. The `pointer: coarse` block further down swaps it out on touch hardware.
+   */
+  --backdrop-surface: blur(24px);
 }
 
 .dark {
@@ -706,6 +715,13 @@
  * colour alone — every accent's `--primary` is already AA against its foreground.
  */
 [data-contrast='high'] {
+  /* Both blocks force every surface fully opaque, so there is nothing behind a card to see
+     through it — yet a `backdrop-filter` would still promote the element and read the backdrop
+     back every frame to blur pixels the card then covers. Dropping it here is free: it changes
+     nothing on screen, and high contrast is the mode most likely to be paired with modest
+     hardware. Declared in both blocks because `.dark[data-contrast='high']` does not inherit
+     from this one. */
+  --backdrop-surface: none;
   --background: oklch(1 0 0);
   --foreground: oklch(0.12 0 0);
   --card: oklch(1 0 0);
@@ -722,6 +738,8 @@
   --input: oklch(0 0 0 / 60%);
 }
 .dark[data-contrast='high'] {
+  /* See the light block above: opaque surfaces, so the frost is invisible work. */
+  --backdrop-surface: none;
   --background: oklch(0.06 0 0);
   --foreground: oklch(1 0 0);
   --card: oklch(0.1 0 0);
@@ -772,6 +790,35 @@
  */
 :root[data-bg-effect]:not([data-surface]):not([data-contrast='high']) {
   --card: color-mix(in oklab, var(--card-base) 70%, transparent);
+}
+
+/*
+ * Drop the surface frost on touch hardware (issue #419).
+ *
+ * `backdrop-filter` is the most expensive thing a phone GPU is asked to do here: each element
+ * that carries one is promoted to its own compositing layer, and every frame it reads back the
+ * pixels behind that layer and runs a 24px separable blur over them at the device pixel ratio.
+ * `Surface` is the app's card, so a Dashboard or an Inventory screen pays that ten times over in
+ * a single frame. The two blocks above make it worse rather than better: whenever the weather
+ * layer paints, or the user picks a translucent surface style, the backdrop *changes 60 times a
+ * second*, so a blur that would otherwise be rasterised once and cached is instead recomputed
+ * for every card on every frame — which is exactly the reported "scrolling is sluggish with snow
+ * on" on a low-end handset.
+ *
+ * `(pointer: coarse)` is the same discriminator `large-format:` and `handset:` use to ask "is
+ * this a touch device", and the honest proxy available for "a GPU that cannot afford this". The
+ * frost is decoration: `--card` still carries the surface's translucency, so the effect and the
+ * background still show through a card on a phone — only the blur of them is lost. Desktop is
+ * untouched.
+ *
+ * A device capability query would be a better question to ask than the pointer type, but no such
+ * media feature exists; `navigator.deviceMemory`/`hardwareConcurrency` are the JS-side
+ * equivalents and are used for the same purpose by the weather layer's DPR cap.
+ */
+@media (pointer: coarse) {
+  :root {
+    --backdrop-surface: none;
+  }
 }
 
 /*
@@ -1165,7 +1212,6 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
   }
 
   ::selection {
@@ -1445,6 +1491,19 @@
 }
 
 /*
+ * The frosted-glass backdrop a content surface wears, as one utility reading one token
+ * (`--backdrop-surface`, declared in `:root` above). Written this way rather than as
+ * `backdrop-blur-xl` at the call site so the *whole filter* — including turning it off outright
+ * — tunes in one place: `blur(0px)` is not an off switch, because the element stays promoted and
+ * the backdrop is still read back every frame. See the `pointer: coarse` block above for why
+ * touch hardware gets `none`.
+ */
+@utility backdrop-surface {
+  -webkit-backdrop-filter: var(--backdrop-surface);
+  backdrop-filter: var(--backdrop-surface);
+}
+
+/*
  * Standard scrollable region for dialogs (spec §2.4.1). The scrollbar must never paint over
  * the content — on a classic (space-taking) bar OR a floating *overlay* bar — and a
  * horizontal bar must never appear at all; this is a *vertical* scroll region only.
@@ -1580,10 +1639,17 @@
  * heartbeat so a code that hasn't been read yet never reads as a frozen, dead screen. Purely
  * decorative — the "Scanning…" status text carries the same meaning for anyone who can't see
  * the motion, and the reduced-motion / "reduce effects" catch-alls clamp it to a static bar.
+ *
+ * It travels on `transform`, not on `top` (issue #419): `top` is a layout property, so animating
+ * it re-ran layout for the sweep every frame of an *infinite* animation — running only while the
+ * camera is live, which is the one moment the device is already busy decoding video frames. The
+ * animated element is therefore a full-height track (`inset-0`) translated by its own height,
+ * which is the reticle's height; the visible bar sits at the track's top edge and rides it. Both
+ * animated properties are now compositor-only.
  */
 @keyframes gubbins-scanline {
   0% {
-    top: 0%;
+    transform: translateY(0);
     opacity: 0;
   }
   12%,
@@ -1591,7 +1657,7 @@
     opacity: 1;
   }
   100% {
-    top: 100%;
+    transform: translateY(100%);
     opacity: 0;
   }
 }
@@ -2038,6 +2104,23 @@
 }
 
 /*
+ * …and so does a device that cannot hover (issue #419). The ring is a *hover* affordance whose
+ * `:focus-within` half is a courtesy, not the focus indicator — that is the real focus ring, which
+ * is untouched here, exactly as the high-contrast opt-out above already relies on.
+ *
+ * Left in place on a phone it is not merely unused, it is expensive: this pseudo-element carries a
+ * conic gradient behind a two-layer `mask-composite` and a live (if paused) infinite animation of a
+ * registered custom property, and it exists on *every* item card in the list. `(hover: none)` asks
+ * "will a hover state ever be entered", rather than `(pointer: coarse)`'s "how precise is the
+ * pointer" — so a touchscreen laptop, which has a mouse as its primary input, keeps the effect.
+ */
+@media (hover: none) {
+  .gubbins-spotlight-border::before {
+    display: none;
+  }
+}
+
+/*
  * Pointer tilt / parallax / glare (visual-flair F7). On pointer-hover a Visual-density card
  * leans a few degrees *toward* the cursor in 3D, its raised hero layer drifts the other way for
  * a counter-parallax, and a soft accent-tinted specular glare tracks the pointer — then it all
@@ -2060,8 +2143,9 @@
  * Because the transform is applied only under `:hover`, exactly one card is ever promoted to a 3D
  * layer at a time and an idle recycled card in the virtualised grid carries no transform — safe on
  * the list, with no per-mount entrance to re-fire. It reverts to `transform: none` on `:hover`
- * loss, and Surface's own `transition-all … ease-emphasized` animates that settle, so no bespoke
- * easing is introduced (one motion language, [[ease-emphasized-motion-token]]).
+ * loss, and Surface's own `transition-[transform,translate,scale,rotate,box-shadow] …
+ * ease-emphasized` animates that settle, so no bespoke easing is introduced (one motion language,
+ * [[ease-emphasized-motion-token]]).
  *
  * Decoration only: the real focus ring, the hover-lift, the `selected` ring and the F5 spotlight
  * comet remain the actual focus/selection signals. The tilt (an individual `transform`) composes

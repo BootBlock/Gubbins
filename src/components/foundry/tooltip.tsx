@@ -14,6 +14,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 import { Markdown } from './markdown';
 import { useReducedMotion } from './useReducedMotion';
+import { lastInputWasPointer, observeInputModality } from './input-modality';
 
 /**
  * Foundry Tooltip (spec §2.4.1, §3) — a premium, glassmorphic tooltip whose body
@@ -192,13 +193,11 @@ export function Tooltip({
   const scrollRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Whether the most recent global input was a pointer press rather than a keypress. Consulted
-  // by `onFocus` so the tooltip opens only on *keyboard* focus: a focus caused by a pointer —
-  // a click/tap on the trigger, or focus restored to it when a dialog opened by a tap/click is
-  // dismissed (issue #474) — must not pop the bubble. Tracked at document level (below) because
-  // the input can land anywhere, not just on this trigger; `false` (keyboard) by default so a
-  // trigger keyboard-focused right after mount still opens.
-  const lastInputWasPointer = useRef(false);
+  // The most recent global input modality is consulted by `onFocus` so the tooltip opens only on
+  // *keyboard* focus: a focus caused by a pointer — a click/tap on the trigger, or focus restored
+  // to it when a dialog opened by a tap/click is dismissed (issue #474) — must not pop the bubble.
+  // It is tracked at document level, and shared across every tooltip, in `./input-modality`.
+
   // Long-press-to-peek state (touch/pen on a control-wrapping trigger). `pressTimer`
   // is the pending peek; `pressStart` is the down point for the movement-cancel; and
   // `longPressFired` is a one-shot guard read by `onClickCapture` to swallow the click
@@ -263,25 +262,10 @@ export function Tooltip({
     closeTimer.current = setTimeout(() => setOpen(false), CLOSE_DELAY_MS);
   }, [cancelOpen, cancelClose]);
 
-  // Track the last global input modality so `onFocus` can open only on keyboard focus. A
-  // pointer press (mouse or touch) marks pointer; a keypress marks keyboard. Capture-phase
-  // document listeners see the input wherever it lands — including the click/tap that opens a
-  // dialog, so the focus restored when that dialog closes is still recognised as pointer-driven
-  // and never pops the bubble (issue #474).
-  useEffect(() => {
-    const markPointer = () => {
-      lastInputWasPointer.current = true;
-    };
-    const markKeyboard = () => {
-      lastInputWasPointer.current = false;
-    };
-    document.addEventListener('pointerdown', markPointer, true);
-    document.addEventListener('keydown', markKeyboard, true);
-    return () => {
-      document.removeEventListener('pointerdown', markPointer, true);
-      document.removeEventListener('keydown', markKeyboard, true);
-    };
-  }, []);
+  // Track the last global input modality so `onFocus` can open only on keyboard focus. The
+  // tracking itself is one document-wide subscription shared by every tooltip on the page (see
+  // `./input-modality`); this only holds a reference to it for as long as this one is mounted.
+  useEffect(() => observeInputModality(), []);
 
   useEffect(
     () => () => {
@@ -501,7 +485,7 @@ export function Tooltip({
   // is dismissed (issue #474): that restoration follows a pointer interaction, so the modality
   // tracker still reads pointer and the bubble stays shut. Only genuine keyboard focus opens it.
   const onFocus = useCallback(() => {
-    if (lastInputWasPointer.current) return;
+    if (lastInputWasPointer()) return;
     show();
   }, [show]);
 
