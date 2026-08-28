@@ -30,11 +30,12 @@ import {
   RegionCanvas,
   SegmentedRadioGroup,
   Spinner,
+  buildPickerLabelMap,
   useToast,
   type SegmentedOption,
 } from '@/components/foundry';
 import { AddIcon, DeleteIcon, ImageIcon, UnlinkIcon } from '@/components/icons';
-import type { LocationPhoto, LocationRegionWithCount } from '@/db/repositories';
+import type { Item, LocationPhoto, LocationRegionWithCount } from '@/db/repositories';
 import type { RegionShape } from '@/db/repositories/constants';
 import { useT } from '@/features/i18n';
 import { serialiseGeometry, type RegionGeometry } from '../regions/geometry';
@@ -484,21 +485,21 @@ function SelectedRegionEditor({
   /**
    * Label → item, for the picker's suggestions and for resolving what the user typed back to a
    * row. Two items can legitimately render the same label (same name, neither serialised), and
-   * matching on the label alone would silently link whichever came first — so a repeated label
-   * is disambiguated with a short id fragment, keeping every entry uniquely resolvable.
+   * matching on the label alone would silently link whichever came first — {@link
+   * buildPickerLabelMap} is the one place that decides how a repeated label is told apart, shared
+   * with the item and project pickers.
    */
-  const byLabel = useMemo(() => {
-    const seen = new Map<string, number>();
-    const out = new Map<string, (typeof candidates)[number]>();
-    for (const item of candidates) {
-      if (placedIds.has(item.id)) continue;
-      const base = itemDisplayName(item.name, item.serialNo);
-      const n = (seen.get(base) ?? 0) + 1;
-      seen.set(base, n);
-      out.set(n === 1 ? base : `${base} (${item.id.slice(0, 6)})`, item);
-    }
-    return out;
-  }, [candidates, placedIds]);
+  const byLabel = useMemo(
+    () =>
+      buildPickerLabelMap(
+        candidates.filter((item) => !placedIds.has(item.id)),
+        {
+          labelFor: (item: Item) => itemDisplayName(item.name, item.serialNo),
+          idFor: (item: Item) => item.id,
+        },
+      ),
+    [candidates, placedIds],
+  );
 
   const suggestions = useMemo(() => [...byLabel.keys()], [byLabel]);
 

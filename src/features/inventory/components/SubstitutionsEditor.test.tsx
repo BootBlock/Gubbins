@@ -21,6 +21,11 @@ const h = vi.hoisted(() => ({
 vi.mock('../queries', () => ({
   useItemRelations: () => ({ data: h.relations }),
   useInventoryItems: () => ({ data: { pages: [{ rows: h.candidates }] } }),
+  // The picker searches the catalogue rather than reading a fixed page of it (issue #484). Nothing
+  // is typed into it here, so only its browse read answers; the by-id read is what refills the box
+  // when a value is set from outside, which these tests never do.
+  useItemRelevanceSearch: () => ({ data: undefined }),
+  useItem: () => ({ data: undefined }),
 }));
 
 vi.mock('../mutations', () => ({
@@ -95,7 +100,7 @@ describe('SubstitutionsEditor — add a substitute', () => {
     expect(screen.getByTestId('add-substitution')).toBeDisabled();
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Item' }));
-    fireEvent.click(screen.getByRole('option', { name: 'M3×12 screw' }));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'M3×12 screw' }));
     fireEvent.change(screen.getByTestId('substitution-note'), { target: { value: 'same pitch' } });
     fireEvent.click(screen.getByTestId('add-substitution'));
 
@@ -115,7 +120,7 @@ describe('SubstitutionsEditor — add a substitute', () => {
     );
     renderEditor();
     fireEvent.click(screen.getByRole('combobox', { name: 'Item' }));
-    fireEvent.click(screen.getByRole('option', { name: 'M3×10 bolt' }));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'M3×10 bolt' }));
     fireEvent.click(screen.getByTestId('add-substitution'));
 
     await waitFor(() =>

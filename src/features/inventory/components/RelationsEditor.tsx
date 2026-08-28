@@ -11,7 +11,8 @@ import { useMemo, useState } from 'react';
 import { Button, InfoHint, Input, SelectField } from '@/components/foundry';
 import { AddIcon, LinkIcon, UnlinkIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
-import { useInventoryItems, useItemRelations } from '../queries';
+import { useItemRelations } from '../queries';
+import { ItemPicker } from './ItemPicker';
 import { useAddRelation, useRemoveRelation } from '../mutations';
 import {
   RELATION_OPTIONS,
@@ -28,13 +29,9 @@ export function RelationsEditor({ item }: { item: Item }) {
   const addRelation = useAddRelation();
   const removeRelation = useRemoveRelation();
 
-  // Candidate items to link to: every other active item. A fuller search picker is a later
-  // refinement (matches the KitEditor / project-BOM item Select).
-  const { data: itemsPage } = useInventoryItems({}, 100);
-  const candidates = useMemo(
-    () => (itemsPage?.pages.flatMap((p) => p.rows) ?? []).filter((i) => i.id !== item.id),
-    [itemsPage, item.id],
-  );
+  // A relation is to some *other* item; everything else the catalogue holds is fair game, so the
+  // picker searches it rather than offering a fixed first page of it (issue #484).
+  const excluded = useMemo(() => new Set([item.id]), [item.id]);
 
   const [optionValue, setOptionValue] = useState<string>(RELATION_OPTIONS[0]!.value);
   const [otherId, setOtherId] = useState('');
@@ -166,14 +163,11 @@ export function RelationsEditor({ item }: { item: Item }) {
             />
           </div>
           <div className="min-w-52 flex-1">
-            <SelectField
+            <ItemPicker
               label="Item"
               value={otherId}
-              onChange={setOtherId}
-              options={[
-                { value: '', label: '— Choose an item —' },
-                ...candidates.map((i) => ({ value: i.id, label: itemDisplayName(i.name, i.serialNo) })),
-              ]}
+              onChange={(id) => setOtherId(id ?? '')}
+              exclude={excluded}
               data-testid="relation-item-picker"
             />
           </div>

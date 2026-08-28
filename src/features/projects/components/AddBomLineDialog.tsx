@@ -2,8 +2,9 @@ import { Controller, useForm } from 'react-hook-form';
 import { TEXT_LIMITS, withinTextLimit } from '@/lib/text-limits';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { AutocompleteField, Button, FormField, Input, Modal, SelectField } from '@/components/foundry';
+import { AutocompleteField, Button, FormField, Input, Modal } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
+import { ItemPicker } from '@/features/inventory/components/ItemPicker';
 import { TRACKING_MODE_LABELS } from '@/features/inventory/components/inventory-ui';
 import { useFieldSuggestions } from '@/features/inventory/queries';
 import { receiptLandingFor } from '../receipts';
@@ -25,16 +26,28 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+/**
+ * How a candidate item is named in the picker. An item whose tracking mode holds no counted
+ * quantity is named as such (issue #608): it stays matchable, so the BOM can still require a
+ * serialised tool or a consumable, but the label no longer implies that receiving the line will
+ * move that item's stock — it cannot.
+ */
+function bomItemLabel(item: Item): string {
+  const suffix =
+    receiptLandingFor(item.trackingMode) === 'RECORD_ONLY'
+      ? ` · ${TRACKING_MODE_LABELS[item.trackingMode]} — no stock movement`
+      : '';
+  return `${item.name}${item.mpn ? ` · ${item.mpn}` : ''}${suffix}`;
+}
+
 export function AddBomLineDialog({
   open,
   onClose,
   projectId,
-  items,
 }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
-  items: readonly Item[];
 }) {
   const addLine = useAddBomLine(projectId);
   const { data: manufacturerSuggestions } = useFieldSuggestions('manufacturer');
@@ -94,25 +107,12 @@ export function AddBomLineDialog({
             control={control}
             name="itemId"
             render={({ field }) => (
-              <SelectField
+              <ItemPicker
                 label="Inventory item (optional)"
                 value={field.value ?? ''}
-                onChange={field.onChange}
-                options={[
-                  { value: '', label: '— Manual / unmatched —' },
-                  // An item whose tracking mode holds no counted quantity is named as such
-                  // (issue #608): it stays matchable, so the BOM can still require a serialised
-                  // tool or a consumable, but the picker no longer implies that receiving the
-                  // line will move that item's stock — it cannot.
-                  ...items.map((item) => ({
-                    value: item.id,
-                    label:
-                      `${item.name}${item.mpn ? ` · ${item.mpn}` : ''}` +
-                      (receiptLandingFor(item.trackingMode) === 'RECORD_ONLY'
-                        ? ` · ${TRACKING_MODE_LABELS[item.trackingMode]} — no stock movement`
-                        : ''),
-                  })),
-                ]}
+                onChange={(id) => field.onChange(id ?? '')}
+                labelFor={bomItemLabel}
+                placeholder="Type to search — or leave blank for a manual line"
               />
             )}
           />

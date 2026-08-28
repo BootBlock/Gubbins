@@ -9,10 +9,11 @@
  * and reviewable (add/remove only, never inferred).
  */
 import { useMemo, useState } from 'react';
-import { Button, InfoHint, Input, SelectField } from '@/components/foundry';
+import { Button, InfoHint, Input } from '@/components/foundry';
 import { AddIcon, SubstituteIcon, UnlinkIcon } from '@/components/icons';
 import type { Item } from '@/db/repositories';
-import { useInventoryItems, useItemRelations } from '../queries';
+import { useItemRelations } from '../queries';
+import { ItemPicker } from './ItemPicker';
 import { useAddRelation, useRemoveRelation } from '../mutations';
 import { describeItemRelations, isSubstitutionKind } from '../item-relations';
 import { itemDisplayName } from '../item-display';
@@ -23,13 +24,9 @@ export function SubstitutionsEditor({ item }: { item: Item }) {
   const addRelation = useAddRelation();
   const removeRelation = useRemoveRelation();
 
-  // Candidate items to link to: every other active item. A fuller search picker is a later
-  // refinement (matches the RelationsEditor / KitEditor item Select).
-  const { data: itemsPage } = useInventoryItems({}, 100);
-  const candidates = useMemo(
-    () => (itemsPage?.pages.flatMap((p) => p.rows) ?? []).filter((i) => i.id !== item.id),
-    [itemsPage, item.id],
-  );
+  // A substitute is some *other* item; the picker searches the whole catalogue for it rather than
+  // offering a fixed first page of it (issue #484).
+  const excluded = useMemo(() => new Set([item.id]), [item.id]);
 
   const [otherId, setOtherId] = useState('');
   const [note, setNote] = useState('');
@@ -129,14 +126,11 @@ export function SubstitutionsEditor({ item }: { item: Item }) {
         </p>
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-52 flex-1">
-            <SelectField
+            <ItemPicker
               label="Item"
               value={otherId}
-              onChange={setOtherId}
-              options={[
-                { value: '', label: '— Choose an item —' },
-                ...candidates.map((i) => ({ value: i.id, label: itemDisplayName(i.name, i.serialNo) })),
-              ]}
+              onChange={(id) => setOtherId(id ?? '')}
+              exclude={excluded}
               data-testid="substitution-item-picker"
             />
           </div>

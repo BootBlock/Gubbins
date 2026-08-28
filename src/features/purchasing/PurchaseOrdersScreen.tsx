@@ -34,13 +34,7 @@ import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { moneyDecimals } from '@/lib/money';
-import {
-  useInventoryItems,
-  useItem,
-  useLocations,
-  useSupplierPartsForItems,
-} from '@/features/inventory/queries';
-import { preferredSupplierPart } from '@/features/inventory/supplier-cost';
+import { useItem, useItemsById, useLocations } from '@/features/inventory/queries';
 import type { LocationOption } from '@/features/inventory/components/LocationSelect';
 import type { PurchaseOrderLine, PurchaseOrderWithLines } from '@/db/repositories';
 import { estimatedValue, poStatusPresentation, totalOrdered, totalReceived } from './po-presentation';
@@ -61,7 +55,7 @@ import {
   useSetPurchaseOrderStatus,
 } from './queries';
 import { CreatePurchaseOrderDialog } from './components/CreatePurchaseOrderDialog';
-import { PurchaseOrderLineDialog, type LineItemOption } from './components/PurchaseOrderLineDialog';
+import { PurchaseOrderLineDialog } from './components/PurchaseOrderLineDialog';
 import { ReceiveLineDialog } from './components/ReceiveLineDialog';
 import { ReturnLineDialog } from './components/ReturnLineDialog';
 import { ImportPurchaseListDialog } from './components/ImportPurchaseListDialog';
@@ -461,16 +455,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const t = useT();
   const { show } = useToast();
   const poQuery = usePurchaseOrder(poId);
-  const itemsQuery = useInventoryItems({}, 100);
   const locationsQuery = useLocations();
-
-  // The pickable items, and their supplier parts loaded in one batch so the line editor can
-  // apply each item's quantity price-breaks (issue #37) without an N+1 fan-out.
-  const pickableItems = useMemo(
-    () => (itemsQuery.data?.pages ?? []).flatMap((p) => p.rows),
-    [itemsQuery.data],
-  );
-  const supplierPartsQuery = useSupplierPartsForItems(pickableItems.map((i) => i.id));
 
   const addLine = useAddPurchaseOrderLine();
   const removeLine = useRemovePurchaseOrderLine();
@@ -511,24 +496,6 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   // change and announce it without firing on first render.
   const prevReceivedRef = useRef<number | null>(null);
 
-  const itemOptions = useMemo<LineItemOption[]>(() => {
-    const bySupplier = supplierPartsQuery.data;
-    return pickableItems.map((item) => {
-      // The preferred supplier part supplies the flat cost, currency and price-breaks; the
-      // dialog applies the item's manual override precedence and the quantity break itself.
-      const preferred = preferredSupplierPart(bySupplier?.get(item.id) ?? []);
-      return {
-        id: item.id,
-        name: item.name,
-        manualUnitCost: item.unitCost,
-        supplierUnitCost: preferred?.unitCost ?? null,
-        priceBreaks: preferred?.priceBreaks ?? [],
-        currency: preferred?.currency ?? null,
-        trackingMode: item.trackingMode,
-      };
-    });
-  }, [pickableItems, supplierPartsQuery.data]);
-
   const locationOptions = useMemo<LocationOption[]>(() => {
     const rows = locationsQuery.data?.rows ?? [];
     return [
@@ -537,11 +504,20 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
     ];
   }, [locationsQuery.data]);
 
+  // Names for the items this order's lines are linked to, read by id in one round-trip. They used
+  // to be taken from the line editor's candidate list, which was the first page of the catalogue —
+  // so a line linked to anything outside that page fell back to its description, or to "Linked
+  // item" when it had none (issue #484).
+  const linkedItemIds = useMemo(
+    () => (poQuery.data?.lines ?? []).flatMap((line) => (line.itemId === null ? [] : [line.itemId])),
+    [poQuery.data],
+  );
+  const linkedItemsQuery = useItemsById(linkedItemIds);
   const itemNameById = useMemo(() => {
     const map = new Map<string, string>();
-    for (const opt of itemOptions) map.set(opt.id, opt.name);
+    for (const [id, item] of linkedItemsQuery.data ?? []) map.set(id, item.name);
     return map;
-  }, [itemOptions]);
+  }, [linkedItemsQuery.data]);
 
   /**
    * How a line is named on screen — the matched item's name, else the typed description. Shared
@@ -907,7 +883,6 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
 
       <PurchaseOrderLineDialog
         open={lineOpen}
-        items={itemOptions}
         orderCurrency={po.currency}
         isSaving={addLine.isPending}
         onClose={() => setLineOpen(false)}

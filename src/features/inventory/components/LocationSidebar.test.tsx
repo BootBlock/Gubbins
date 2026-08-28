@@ -945,6 +945,156 @@ describe('LocationSidebar — a newly created location is selected (issue #612)'
   });
 });
 
+describe('LocationSidebar — the selection never outlives its row (issue #713)', () => {
+  const ARCHIVED_AT = 1_700_000_000;
+
+  /**
+   * The tree and the flat list with `id` archived, exactly as the refetched locations query would
+   * carry them. Both sides matter: the sidebar prunes the *tree* to decide which rows render, and
+   * reads the *flat* list to decide whether the selection still has one.
+   */
+  function archived(id: string): { tree: LocationTreeNode[]; flat: LocationWithCount[] } {
+    const mark = (nodes: LocationTreeNode[]): LocationTreeNode[] =>
+      nodes.map((n) => ({
+        ...n,
+        archivedAt: n.id === id ? ARCHIVED_AT : n.archivedAt,
+        children: mark(n.children),
+      }));
+    return {
+      tree: mark(tree),
+      flat: flat.map((loc) => (loc.id === id ? { ...loc, archivedAt: ARCHIVED_AT } : loc)),
+    };
+  }
+
+  /** Render with a location already selected, the way the Inventory screen scopes its item list. */
+  function renderSelected(selectedId: string) {
+    const onSelect = vi.fn();
+    const ui = (id: string | null, rows: { tree: LocationTreeNode[]; flat: LocationWithCount[] }) => (
+      <ToastProvider>
+        <LocationSidebar
+          tree={rows.tree}
+          flat={rows.flat}
+          selectedId={id}
+          onSelect={onSelect}
+          totalCount={7}
+        />
+      </ToastProvider>
+    );
+    const initial = { tree, flat };
+    const { rerender } = render(ui(selectedId, initial));
+    return {
+      onSelect,
+      refetch: (id: string | null, rows = initial) => rerender(ui(id, rows)),
+    };
+  }
+
+  it('falls back to All items when the selected location is deleted', () => {
+    // Drawer is empty, so the Edit dialog deletes it outright — and it is the location the item
+    // list is currently scoped to, so that filter has to go with it.
+    const { onSelect } = renderSelected('drawer');
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    cabinet.focus();
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    expect(spies.del).toHaveBeenCalledWith('drawer');
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('falls back to All items once a non-empty selected location is confirmed for deletion', () => {
+    const { onSelect } = renderSelected('workshop');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    // The confirmation still stands in the way, so the selection is untouched until it is taken.
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-delete-location'));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('leaves the selection alone when a different location is deleted', () => {
+    const { onSelect } = renderSelected('workshop');
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    cabinet.focus();
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    expect(spies.del).toHaveBeenCalledWith('drawer');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('falls back to All items when the selected location is archived out of view', () => {
+    const { onSelect, refetch } = renderSelected('workshop');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-archive'));
+    expect(spies.archive).toHaveBeenCalledWith({ id: 'workshop', archived: true });
+    // The archive lands and the locations query refetches: the row is now hidden.
+    refetch('workshop', archived('workshop'));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('falls back to All items when an *ancestor* of the selection is archived out of view', () => {
+    // Cabinet is live, but archiving the Workshop above it prunes the whole branch.
+    const { onSelect, refetch } = renderSelected('cabinet');
+    expect(onSelect).not.toHaveBeenCalled();
+    refetch('cabinet', archived('workshop'));
+    expect(screen.queryByRole('treeitem', { name: 'Cabinet' })).toBeNull();
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('keeps the selection while "Show archived" is on', () => {
+    const { onSelect, refetch } = renderSelected('workshop');
+    // The toggle only appears once something is archived, so bring an unrelated archived row in.
+    refetch('workshop', archived('drawer'));
+    fireEvent.click(screen.getByLabelText(/Show archived/));
+    // Now archive the selected Workshop: its row stays on screen, so the filter still makes sense.
+    refetch('workshop', archived('workshop'));
+    expect(screen.getByRole('treeitem', { name: 'Workshop' })).toBeTruthy();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('falls back to All items when "Show archived" is unticked under the selection', () => {
+    // The row is only on screen because archived rows are shown; hiding them takes it away just
+    // as surely as archiving it did, and no per-action handler would catch this one.
+    const { onSelect, refetch } = renderSelected('workshop');
+    refetch('workshop', archived('drawer'));
+    fireEvent.click(screen.getByLabelText(/Show archived/));
+    refetch('workshop', archived('workshop'));
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText(/Show archived/));
+    expect(screen.queryByRole('treeitem', { name: 'Workshop' })).toBeNull();
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('reports a deliberate pick separately, so the compact drawer only closes on one', () => {
+    // The drawer closes on `onPick` (issue #147). Clearing a selection the user did not choose to
+    // leave — the delete below — must not be mistaken for a pick, or the pane vanishes under them.
+    const onPick = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <ToastProvider>
+        <LocationSidebar
+          tree={tree}
+          flat={flat}
+          selectedId="workshop"
+          onSelect={onSelect}
+          onPick={onPick}
+          totalCount={7}
+        />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    fireEvent.click(screen.getByTestId('confirm-delete-location'));
+    expect(onSelect).toHaveBeenCalledWith(null);
+    expect(onPick).not.toHaveBeenCalled();
+
+    // A row the user actually clicks is a pick, and still reports the selection as well.
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Cabinet' }));
+    expect(onSelect).toHaveBeenCalledWith('cabinet');
+    expect(onPick).toHaveBeenCalledTimes(1);
+  });
+});
+
 /**
  * The location list export (issue #617, `N7`). The sidebar is the app's location list, so this is
  * where the shared list-export control lives — and it must serialise the *list*, not the tree on

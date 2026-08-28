@@ -114,11 +114,15 @@ vi.mock('./wishlist-queries', () => ({
 vi.mock('@/features/inventory/queries', () => ({
   useInventoryItems: () => ({ data: { pages: [] } }),
   useLocations: () => ({ data: { rows: [] } }),
-  useSupplierPartsForItems: () => ({ data: new Map() }),
   // Issue #608 — the receiving line's item, read for its tracking mode so the receive dialog
   // knows whether the receipt can land stock. Unresolved by default, as it is before the read
   // lands; a test that cares seeds it.
   useItem: () => ({ data: undefined }),
+  // The names of the items this order's lines link to (issue #484), and the line editor's own
+  // reads of the item it is pricing.
+  useItemsById: () => ({ data: new Map() }),
+  useItemRelevanceSearch: () => ({ data: undefined }),
+  useItemSupplierParts: () => ({ data: [] }),
 }));
 
 /** Currency-code → symbol for the formatter stub; anything unmapped renders as the base £. */

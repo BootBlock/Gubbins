@@ -1,14 +1,18 @@
 /**
  * Behaviour tests for {@link PurchaseOrderLineDialog} — price breaks in the Order process
- * (issue #37). The dialog is presentational (its `items` carry the pricing), so these pin the
- * quantity-aware costing that is the risk surface: the unit-cost field defaulting from the
- * chosen item, tracking the applicable supplier price-break as the ordered quantity changes,
- * the clickable break tiers, a manual override winning outright, and a hand-typed cost pinning
- * the field. `onSubmit` is a prop, so the only hook to stub is the formatters bundle.
+ * (issue #37). These pin the quantity-aware costing that is the risk surface: the unit-cost field
+ * defaulting from the chosen item, tracking the applicable supplier price-break as the ordered
+ * quantity changes, the clickable break tiers, a manual override winning outright, and a
+ * hand-typed cost pinning the field.
+ *
+ * The dialog reads the chosen item and its supplier parts itself (issue #484 — the picker now
+ * searches the whole catalogue, so pricing follows the choice rather than being assembled
+ * up-front for a fixed first page of it), so those two reads are stubbed here alongside the
+ * picker's own catalogue read.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import type { LineItemOption } from './PurchaseOrderLineDialog';
+import type { Item, PriceBreak, SupplierPart, TrackingMode } from '@/db/repositories';
 
 vi.mock('@/lib/useFormatters', () => ({
   useFormatters: () => ({
@@ -25,42 +29,87 @@ vi.mock('@/lib/useFormatters', () => ({
   }),
 }));
 
+/** The catalogue the picker browses, and each item's supplier parts, as this suite has staged them. */
+const h = vi.hoisted(() => ({
+  items: [] as { id: string; name: string }[],
+  parts: new Map<string, unknown[]>(),
+}));
+
+vi.mock('@/features/inventory/queries', () => ({
+  useInventoryItems: () => ({ data: { pages: [{ rows: h.items, hasMore: false }] } }),
+  // Nothing is typed into the picker in these tests, so only the browse read answers.
+  useItemRelevanceSearch: () => ({ data: undefined }),
+  useItem: (id?: string) => ({ data: h.items.find((i) => i.id === id) }),
+  useItemSupplierParts: (id?: string) => ({ data: h.parts.get(id ?? '') ?? [] }),
+}));
+
 import { PurchaseOrderLineDialog } from './PurchaseOrderLineDialog';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 
 const onSubmit = vi.fn();
 const onClose = vi.fn();
 
+/** An item plus the supplier parts the dialog prices it from. */
+interface Fixture {
+  readonly item: Item;
+  readonly parts: readonly SupplierPart[];
+}
+
+function fixture(o: {
+  id: string;
+  name: string;
+  trackingMode?: TrackingMode;
+  /** The manual item-level valuation override, which wins over supplier pricing. */
+  unitCost?: number | null;
+  supplierUnitCost?: number | null;
+  priceBreaks?: readonly PriceBreak[];
+  currency?: string | null;
+}): Fixture {
+  return {
+    item: {
+      id: o.id,
+      name: o.name,
+      serialNo: null,
+      unitCost: o.unitCost ?? null,
+      trackingMode: o.trackingMode ?? 'DISCRETE',
+    } as Item,
+    parts: [
+      {
+        isPreferred: true,
+        unitCost: o.supplierUnitCost ?? null,
+        priceBreaks: o.priceBreaks ?? [],
+        currency: o.currency ?? null,
+      } as SupplierPart,
+    ],
+  };
+}
+
 /** A part priced flat at 0.10 with 10+ and 100+ quantity price-breaks. */
-const withBreaks: LineItemOption = {
+const withBreaks = fixture({
   id: 'i1',
   name: 'Resistor 10k',
-  manualUnitCost: null,
   supplierUnitCost: 0.1,
   priceBreaks: [
     { qty: 10, unitCost: 0.09 },
     { qty: 100, unitCost: 0.075 },
   ],
-  currency: null,
-  trackingMode: 'DISCRETE',
-};
+});
 
 /** A part with a manual valuation override that must win over the supplier's breaks. */
-const overridden: LineItemOption = {
+const overridden = fixture({
   id: 'i2',
   name: 'Capacitor',
-  manualUnitCost: 0.5,
+  unitCost: 0.5,
   supplierUnitCost: 0.1,
   priceBreaks: [{ qty: 100, unitCost: 0.075 }],
-  currency: null,
-  trackingMode: 'DISCRETE',
-};
+});
 
-function renderDialog(items: LineItemOption[] = [withBreaks], orderCurrency: string | null = null) {
+function renderDialog(items: Fixture[] = [withBreaks], orderCurrency: string | null = null) {
+  h.items = items.map((f) => f.item);
+  h.parts = new Map(items.map((f) => [f.item.id, [...f.parts]]));
   return render(
     <PurchaseOrderLineDialog
       open
-      items={items}
       orderCurrency={orderCurrency}
       isSaving={false}
       onSubmit={onSubmit}
@@ -72,9 +121,10 @@ function renderDialog(items: LineItemOption[] = [withBreaks], orderCurrency: str
 const qtyInput = () => screen.getByTestId('po-line-qty');
 const costInput = () => screen.getByTestId('po-line-cost') as HTMLInputElement;
 
+/** Open the picker's list and accept an option — the APG combobox commits on mousedown. */
 function selectItem(name: string) {
   fireEvent.click(screen.getByRole('combobox', { name: 'Item' }));
-  fireEvent.click(screen.getByRole('option', { name }));
+  fireEvent.mouseDown(screen.getByRole('option', { name }));
 }
 
 beforeEach(() => {
@@ -130,18 +180,15 @@ describe('PurchaseOrderLineDialog — quantity price breaks (issue #37)', () => 
   });
 
   it('does not duplicate the qty-1 tier when a break already starts at qty 1', () => {
-    const breakAtOne: LineItemOption = {
+    const breakAtOne = fixture({
       id: 'i3',
       name: 'Fuse',
-      manualUnitCost: null,
       supplierUnitCost: 0.1,
       priceBreaks: [
         { qty: 1, unitCost: 0.09 },
         { qty: 100, unitCost: 0.06 },
       ],
-      currency: null,
-      trackingMode: 'DISCRETE',
-    };
+    });
     renderDialog([breakAtOne]);
     selectItem('Fuse');
     // The flat qty-1 price is superseded by the 1+ break → two tiers, not three, and no
@@ -184,7 +231,7 @@ describe('PurchaseOrderLineDialog — quantity price breaks (issue #37)', () => 
     expect(screen.getByTestId('po-line-price-breaks')).toBeTruthy();
 
     // Close, then reopen — the reset fires on the closed→open edge.
-    const props = { items: [withBreaks], isSaving: false, onSubmit, onClose };
+    const props = { orderCurrency: null, isSaving: false, onSubmit, onClose };
     rerender(<PurchaseOrderLineDialog open={false} {...props} />);
     rerender(<PurchaseOrderLineDialog open {...props} />);
 
@@ -192,7 +239,8 @@ describe('PurchaseOrderLineDialog — quantity price breaks (issue #37)', () => 
     expect((qtyInput() as HTMLInputElement).value).toBe('1');
     expect(costInput().value).toBe('');
     expect((screen.getByTestId('po-line-description') as HTMLInputElement).value).toBe('');
-    // The item is unlinked again, so its break tiers no longer show.
+    // The item is unlinked again — the picker is empty and its break tiers no longer show.
+    expect((screen.getByTestId('po-line-item') as HTMLInputElement).value).toBe('');
     expect(screen.queryByTestId('po-line-price-breaks')).toBeNull();
   });
 
@@ -213,7 +261,10 @@ describe('PurchaseOrderLineDialog — quantity price breaks (issue #37)', () => 
 
 describe('PurchaseOrderLineDialog — supplier/order currency mismatch (issue #285)', () => {
   /** The same part, but quoted by a supplier who prices in euros. */
-  const euroQuoted: LineItemOption = { ...withBreaks, currency: 'EUR' };
+  const euroQuoted: Fixture = {
+    item: withBreaks.item,
+    parts: withBreaks.parts.map((p) => ({ ...p, currency: 'EUR' })),
+  };
 
   it('warns, and refuses to auto-fill the cost, when the quote is in another currency', () => {
     // A line stores a bare number read as the order's currency, so copying €0.10 into a GBP
@@ -284,12 +335,7 @@ describe('PurchaseOrderLineDialog — supplier/order currency mismatch (issue #2
  */
 describe('PurchaseOrderLineDialog — items with no counted quantity', () => {
   it('names the tracking mode, and says the link moves no stock', () => {
-    const wrench: LineItemOption = {
-      ...withBreaks,
-      id: 'wr',
-      name: 'Torque wrench',
-      trackingMode: 'SERIALISED',
-    };
+    const wrench = fixture({ id: 'wr', name: 'Torque wrench', trackingMode: 'SERIALISED' });
     renderDialog([withBreaks, wrench]);
     fireEvent.click(screen.getByRole('combobox', { name: 'Item' }));
 
@@ -304,6 +350,6 @@ describe('PurchaseOrderLineDialog — items with no counted quantity', () => {
   it('leaves a bulk item’s label alone', () => {
     renderDialog();
     fireEvent.click(screen.getByRole('combobox', { name: 'Item' }));
-    expect(screen.getByRole('option', { name: withBreaks.name })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: withBreaks.item.name })).toBeInTheDocument();
   });
 });

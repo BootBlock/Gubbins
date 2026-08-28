@@ -231,17 +231,13 @@ export const inventoryKeys = {
   /** The closest `limit` matches for a free-text query, plus the total that matched (issue #629).
    *  Its own `'relevance'` segment keeps it clear of both page families: it caches
    *  `{ rows, total }`, not `InfiniteData`, so the optimistic page patcher must never reach it. */
-  relevanceSearch: (search: string, limit: number) =>
-    [...inventoryKeys.search(), 'relevance', search, limit] as const,
+  relevanceSearch: (search: string, limit: number, includeInactive: boolean) =>
+    [...inventoryKeys.search(), 'relevance', search, limit, includeInactive] as const,
   // Phase 8 — Universal Alias Mapping (§4 external scraping).
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
   // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`
   // invalidation refreshes it by prefix.
   itemSupplierParts: (itemId: string) => [...inventoryKeys.item(itemId), 'supplier-parts'] as const,
-  // Issue #37 — supplier parts for a set of on-screen items in one round-trip (the PO line
-  // editor's price-break lookup); under items() so any supplier-part write refreshes it by prefix.
-  itemsSupplierParts: (itemIds: readonly string[]) =>
-    [...inventoryKeys.items(), 'supplier-parts-batch', itemIds] as const,
   // Phase 81 — a supplier part's recorded cost-over-time points; under item() so the
   // existing supplier-part invalidation (which invalidates item()) refreshes it by prefix.
   supplierPartPriceHistory: (itemId: string, supplierPartId: string) =>
@@ -360,22 +356,6 @@ export function useItemSupplierParts(itemId: string | undefined) {
     queryKey: inventoryKeys.itemSupplierParts(itemId ?? ''),
     queryFn: () => getSupplierPartRepository().listForItem(itemId!),
     enabled: Boolean(itemId),
-  });
-}
-
-/**
- * Supplier parts for a whole set of items in a single round-trip (issue #37) — the Purchase-Order
- * line editor reads its pickable items' supplier pricing once (to apply quantity price-breaks)
- * rather than N+1 times. The item ids are sorted into the cache key so a re-ordered but otherwise
- * identical set hits the same entry. Resolves to a `Map` keyed by item id (a key is absent when the
- * item has no supplier parts); disabled for an empty set.
- */
-export function useSupplierPartsForItems(itemIds: readonly string[]) {
-  const sortedIds = [...itemIds].sort();
-  return useQuery({
-    queryKey: inventoryKeys.itemsSupplierParts(sortedIds),
-    queryFn: () => getSupplierPartRepository().listForItems(sortedIds),
-    enabled: sortedIds.length > 0,
   });
 }
 
@@ -617,11 +597,18 @@ export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DE
  * capped read as the whole set.
  *
  * `enabled` gates it off (default on) for an empty query or a session that may not read items.
+ * `includeInactive` widens the match set to decommissioned items — for a picker whose target may
+ * legitimately be one (the export scope), not for one that links live inventory together.
  */
-export function useItemRelevanceSearch(search: string, limit: number, enabled = true) {
+export function useItemRelevanceSearch(
+  search: string,
+  limit: number,
+  enabled = true,
+  includeInactive = false,
+) {
   return useQuery({
-    queryKey: inventoryKeys.relevanceSearch(search, limit),
-    queryFn: () => getItemRepository().searchByRelevance(search, { limit }),
+    queryKey: inventoryKeys.relevanceSearch(search, limit, includeInactive),
+    queryFn: () => getItemRepository().searchByRelevance(search, { limit, includeInactive }),
     enabled: enabled && search.trim().length > 0,
     // Hold the previous query's matches on screen while the next loads, so each keystroke
     // refines the list rather than blanking it to a spinner and back.

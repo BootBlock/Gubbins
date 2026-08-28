@@ -41,6 +41,11 @@ vi.mock('../hooks', () => ({
 vi.mock('@/features/inventory/queries', () => ({
   useInventoryItems: () => ({ data: { pages: [{ rows: h.candidates }] } }),
   useLocations: () => ({ data: { rows: h.locations } }),
+  // The picker searches the catalogue rather than reading a fixed page of it (issue #484). Nothing
+  // is typed into it here, so only its browse read answers; the by-id read is what refills the box
+  // when a value is set from outside, which these tests never do.
+  useItemRelevanceSearch: () => ({ data: undefined }),
+  useItem: () => ({ data: undefined }),
 }));
 
 import { KitEditor } from './KitEditor';
@@ -121,7 +126,7 @@ describe('KitEditor — add a component', () => {
     expect(screen.getByTestId('add-kit-component')).toBeDisabled();
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Component item' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Scissors' }));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Scissors' }));
     fireEvent.change(screen.getByTestId('kit-qty'), { target: { value: '3' } });
     fireEvent.click(screen.getByTestId('add-kit-component'));
 
@@ -139,7 +144,7 @@ describe('KitEditor — add a component', () => {
     h.add.mockImplementation((_input, opts) => opts?.onError?.(new Error('That would create a cycle.')));
     renderEditor();
     fireEvent.click(screen.getByRole('combobox', { name: 'Component item' }));
-    fireEvent.click(screen.getByRole('option', { name: 'Bandage' }));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Bandage' }));
     fireEvent.click(screen.getByTestId('add-kit-component'));
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('That would create a cycle.'));

@@ -30,6 +30,7 @@ export function useLocationSidebar({
   flat,
   selectedId,
   onSelect,
+  onPick,
   forceExpandedIds,
   scrollRowIntoView,
 }: {
@@ -37,6 +38,13 @@ export function useLocationSidebar({
   flat: readonly LocationWithCount[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /**
+   * The user *chose* a row — as distinct from `onSelect`, which also fires when the selection is
+   * cleared on the user's behalf (the selected location is deleted, or archived out of view). Only
+   * a deliberate pick should dismiss the compact drawer the sidebar lives in (issue #147); closing
+   * it because a filter toggle invalidated the selection would take the pane away mid-task.
+   */
+  onPick?: () => void;
   /**
    * Locations forced open regardless of the stored overrides — the ancestors retained by an
    * active search/tag filter, so a deep match is reachable without hand-expanding branches
@@ -138,6 +146,7 @@ export function useLocationSidebar({
   const select = (id: string) => {
     setFocusedId(id);
     onSelect(id === ALL_ITEMS_ID ? null : id);
+    onPick?.();
   };
 
   // End an inline rename and return focus to the row it belonged to.
@@ -152,10 +161,16 @@ export function useLocationSidebar({
     updateLocation.mutate({ id, input: { name } }, { onError: reportLocationUpdate });
   };
 
-  // Focus retreats to "All items" before a deleted row leaves the tree.
-  const retreatFocusToAllItems = () => {
+  /**
+   * Retreat to "All items" before a deleted row leaves the tree: the roving tab stop always, and
+   * the *selection* too when the doomed row is the one the item list is scoped to. Without the
+   * second half the screen keeps filtering on an id that no longer exists — the list empties, and
+   * no row is selected to explain why or to click away from (issue #713).
+   */
+  const retreatToAllItems = (deletedId: string) => {
     setFocusedId(ALL_ITEMS_ID);
     focusRow(ALL_ITEMS_ID);
+    if (selectedId === deletedId) onSelect(null);
   };
 
   // Either delete an empty location outright, or open the confirmation dialog when
@@ -165,13 +180,13 @@ export function useLocationSidebar({
       setConfirmDelete({ id, name, itemCount });
       return;
     }
-    retreatFocusToAllItems();
+    retreatToAllItems(id);
     deleteLocation.mutate(id);
   };
 
   const confirmDeleteNow = () => {
     if (!confirmDelete) return;
-    retreatFocusToAllItems();
+    retreatToAllItems(confirmDelete.id);
     deleteLocation.mutate(confirmDelete.id, {
       onSuccess: () => setConfirmDelete(null),
     });
