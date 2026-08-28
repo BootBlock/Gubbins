@@ -1,13 +1,17 @@
 /**
- * Component smoke tests for the parts-catalogue screen (issue #22). The aggregation itself is
- * exhaustively covered by `parts-catalogue.test.ts` (the pure builder) and
- * `ReportRepository.test.ts` (the SQL scopes); here we only prove the presentation wiring — the
- * default columns render, the column picker adds/removes columns, and the totals footer appears
- * with the costed column. Every data hook, the router and the icon set are mocked at the module
- * boundary so the test stays in happy-dom with no providers.
+ * Component tests for the parts-catalogue screen (issue #22). The aggregation itself is
+ * exhaustively covered by `parts-catalogue.test.ts` (the pure line + summary seams) and
+ * `ReportRepository.test.ts` (the SQL scopes, the grouped totals and the paged reads); here we
+ * prove the presentation wiring — the default columns render, the column picker adds/removes
+ * columns, the totals footer appears with the costed column — and the **print guarantees** from
+ * issue #410: the paged reading view is never what prints, and an unprepared print is a
+ * clearly-headed section-subtotal summary with no item rows.
+ *
+ * Every data hook, the router and the icon set are mocked at the module boundary so the test
+ * stays in happy-dom with no providers.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, ...props }: { children: React.ReactNode; to: string; [k: string]: unknown }) => (
@@ -56,9 +60,32 @@ vi.mock('@/features/modules/useFeature', () => ({
   useEnabledFeatures: () => new Set(['projects', 'reports']),
 }));
 
-// The catalogue query — a single priced line under one location, hasValue so totals show.
-const catalogueState: { isLoading: boolean; isError: boolean; data?: unknown } = {
-  isLoading: false,
+/** The one priced line the fixture document holds, under the Garage section. */
+const WIDGET = {
+  id: 'widget',
+  name: 'Widget',
+  locationId: 'garage',
+  category: 'Hardware',
+  description: 'A test widget',
+  thumbnail: null,
+  quantity: 3,
+  unitOfMeasure: null,
+  measured: false,
+  condition: null,
+  serialNo: null,
+  mpn: 'MPN-1',
+  manufacturer: null,
+  supplier: null,
+  unitCost: 2,
+  lineValue: 6,
+  purchasePrice: null,
+  acquiredAt: null,
+  warranty: 'none',
+  notes: null,
+};
+
+/** The bounded summary read: one section, one line, priced — so the totals show. */
+const summaryState: { isError: boolean; data?: Record<string, unknown> } = {
   isError: false,
   data: {
     groups: [
@@ -66,31 +93,10 @@ const catalogueState: { isLoading: boolean; isError: boolean; data?: unknown } =
         groupId: 'garage',
         groupLabel: 'Garage',
         depth: 0,
+        itemCount: 1,
         subtotal: 6,
         totalQuantity: 3,
-        lines: [
-          {
-            id: 'widget',
-            name: 'Widget',
-            locationId: 'garage',
-            category: 'Hardware',
-            description: 'A test widget',
-            thumbnail: null,
-            quantity: 3,
-            unitOfMeasure: null,
-            condition: null,
-            serialNo: null,
-            mpn: 'MPN-1',
-            manufacturer: null,
-            supplier: null,
-            unitCost: 2,
-            lineValue: 6,
-            purchasePrice: null,
-            acquiredAt: null,
-            warranty: 'none',
-            notes: null,
-          },
-        ],
+        ref: { kind: 'location', locationId: 'garage' },
       },
     ],
     grandTotal: 6,
@@ -101,20 +107,27 @@ const catalogueState: { isLoading: boolean; isError: boolean; data?: unknown } =
   },
 };
 
-/** How many items the chosen scope covers — the bounded count read (issue #338). */
-const scopeCountState: { data?: number } = { data: 1 };
-/** The options the screen last passed to the document read, so its `enabled` gate is testable. */
-let catalogueOptions: { enabled?: boolean } = {};
+/** One page of lines, as the screen's paged read returns them (one slice per section). */
+const pageState: { isPending: boolean; data?: unknown } = {
+  isPending: false,
+  data: [{ groupId: 'garage', lines: [WIDGET] }],
+};
+
+/** The arguments the screen last passed to the paged read, so its wiring is testable. */
+let pageArgs: unknown[] = [];
+/** Spied so a test can prove the Print button loads the *whole* document before printing. */
+const loadFull = vi.fn(async () => new Map([['garage', [WIDGET]]]));
 
 vi.mock('./queries', () => ({
-  usePartsCatalogue: (_scope: unknown, options: { enabled?: boolean } = {}) => {
-    catalogueOptions = options;
-    return { ...catalogueState };
+  usePartsCatalogueSummary: () => ({ ...summaryState }),
+  usePartsCataloguePage: (...args: unknown[]) => {
+    pageArgs = args;
+    return { ...pageState };
   },
-  useCatalogueItemCount: () => ({ ...scopeCountState }),
+  loadFullCatalogueLines: (...args: unknown[]) => loadFull(...(args as [])),
 }));
 
-// Spied so a test can prove the screen never pays for a QR encode it is going to throw away.
+// Spied so a test can prove the screen only pays for the QR codes a page actually shows.
 const qrSvgOrNull = vi.fn(() => '<svg />');
 vi.mock('@/features/scanner/qr-code', () => ({ qrSvgOrNull: (...a: unknown[]) => qrSvgOrNull(...a) }));
 
@@ -140,8 +153,10 @@ afterEach(() => {
   cleanup();
   usePreferencesStore.setState(BRANDING_DEFAULTS);
   useCatalogueLaunch.setState({ pendingScope: null });
-  scopeCountState.data = 1;
-  catalogueOptions = {};
+  (summaryState.data as { itemCount: number }).itemCount = 1;
+  summaryState.isError = false;
+  pageArgs = [];
+  loadFull.mockClear();
   qrSvgOrNull.mockClear();
 });
 
@@ -150,15 +165,15 @@ describe('CatalogueScreen', () => {
     render(<CatalogueScreen />);
 
     // Default columns (name is always first).
-    const table = screen.getByRole('table');
+    const table = within(screen.getByTestId('catalogue-window')).getByRole('table');
     const headers = within(table)
       .getAllByRole('columnheader')
       .map((h) => h.textContent);
     expect(headers).toEqual(['Item', 'Category', 'Qty', 'Unit cost', 'Line value']);
 
-    expect(screen.getByText('Widget')).toBeTruthy();
+    expect(within(screen.getByTestId('catalogue-window')).getByText('Widget')).toBeTruthy();
     // The costed column drives a grand-total; £6.00 appears (formatter mock).
-    expect(screen.getByTestId('catalogue-grand-total')).toBeTruthy();
+    expect(within(screen.getByTestId('catalogue-window')).getByTestId('catalogue-grand-total')).toBeTruthy();
     // Print is available with data present.
     expect(screen.getByTestId('print-catalogue').hasAttribute('disabled')).toBe(false);
   });
@@ -175,11 +190,11 @@ describe('CatalogueScreen', () => {
 
   it('drops the totals when the Line value column is turned off', () => {
     render(<CatalogueScreen />);
-    expect(screen.getByTestId('catalogue-grand-total')).toBeTruthy();
+    expect(screen.getAllByTestId('catalogue-grand-total').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByTestId('catalogue-field-lineValue'));
 
-    expect(screen.queryByTestId('catalogue-grand-total')).toBeNull();
+    expect(screen.queryAllByTestId('catalogue-grand-total')).toHaveLength(0);
     expect(screen.queryByRole('columnheader', { name: 'Line value' })).toBeNull();
   });
 
@@ -193,12 +208,13 @@ describe('CatalogueScreen', () => {
   it('renders a title of only whitespace as the default "Catalogue"', () => {
     usePreferencesStore.setState({ catalogueTitle: '   ' });
     render(<CatalogueScreen />);
-    expect(screen.getByTestId('catalogue-title').textContent).toBe('Catalogue');
+    expect(screen.getAllByTestId('catalogue-title')[0]!.textContent).toBe('Catalogue');
   });
 
   it('shows the total quantity in the grand totals', () => {
     render(<CatalogueScreen />);
-    expect(screen.getByTestId('catalogue-total-quantity').textContent).toContain('3');
+    const window_ = screen.getByTestId('catalogue-window');
+    expect(within(window_).getByTestId('catalogue-total-quantity').textContent).toContain('3');
   });
 
   it('dresses the preview as white paper when the toggle is on', () => {
@@ -252,14 +268,15 @@ describe('CatalogueScreen', () => {
     usePreferencesStore.setState({ catalogueOrgName: 'Acme Ltd', catalogueTitle: 'Spare Parts' });
     render(<CatalogueScreen />);
 
-    expect(screen.getByTestId('catalogue-org-name').textContent).toBe('Acme Ltd');
-    expect(screen.getByTestId('catalogue-title').textContent).toBe('Spare Parts');
+    const printDoc = within(screen.getByTestId('catalogue-print-doc'));
+    expect(printDoc.getByTestId('catalogue-org-name').textContent).toBe('Acme Ltd');
+    expect(printDoc.getByTestId('catalogue-title').textContent).toBe('Spare Parts');
   });
 
   it('falls back to the "Catalogue" title and can hide the generated date', () => {
     render(<CatalogueScreen />);
     // Default: no title override → "Catalogue"; generated date shown.
-    expect(screen.getByTestId('catalogue-title').textContent).toBe('Catalogue');
+    expect(screen.getAllByTestId('catalogue-title')[0]!.textContent).toBe('Catalogue');
     expect(document.body.textContent).toContain('Generated');
 
     cleanup();
@@ -268,8 +285,11 @@ describe('CatalogueScreen', () => {
     expect(document.body.textContent).not.toContain('Generated');
   });
 
-  /** The print ceiling and the size readout that precede the browser's own dialog (issue #338). */
-  describe('print size', () => {
+  /**
+   * The print guarantees: the size readout that precedes the browser's own dialog (issue #338),
+   * and the artefact split that keeps a page of a catalogue off paper (issue #410).
+   */
+  describe('printing', () => {
     /** happy-dom has no `window.print`, so the screen's one is stubbed to record the call. */
     const stubPrint = () => {
       const print = vi.fn();
@@ -277,9 +297,9 @@ describe('CatalogueScreen', () => {
       return print;
     };
 
-    /** Swap in a catalogue of `itemCount` lines, restoring the single-line default afterwards. */
+    /** Swap in a document of `itemCount` lines, restoring the single-line default afterwards. */
     const withLineCount = (itemCount: number) => {
-      const data = catalogueState.data as { itemCount: number };
+      const data = summaryState.data as { itemCount: number };
       const original = data.itemCount;
       data.itemCount = itemCount;
       return () => {
@@ -294,17 +314,18 @@ describe('CatalogueScreen', () => {
       expect(size).toContain('about 1 printed page');
     });
 
-    it('prints straight away when the job is small', () => {
+    it('loads the whole document, then prints, when the job is small', async () => {
       const print = stubPrint();
       render(<CatalogueScreen />);
 
       fireEvent.click(screen.getByTestId('print-catalogue'));
 
-      expect(print).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
+      expect(loadFull).toHaveBeenCalledTimes(1);
       expect(screen.queryByTestId('catalogue-print-confirm')).toBeNull();
     });
 
-    it('asks first when the job runs to many pages, and prints once confirmed', () => {
+    it('asks first when the job runs to many pages, and prints once confirmed', async () => {
       const restore = withLineCount(4_000);
       const print = stubPrint();
       render(<CatalogueScreen />);
@@ -315,66 +336,94 @@ describe('CatalogueScreen', () => {
       expect(screen.getByTestId('catalogue-print-confirm')).toBeTruthy();
 
       fireEvent.click(screen.getByTestId('catalogue-print-confirm'));
-      expect(print).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
       // The confirmation is gone by the time the page is printed, so it never reaches paper.
       expect(screen.queryByTestId('catalogue-print-confirm')).toBeNull();
       restore();
     });
 
-    it('refuses a scope too large to print, and never builds its document', () => {
-      scopeCountState.data = 50_000;
+    /**
+     * The structural guarantee. Nothing derived from the paged reading view may print, because a
+     * reader of the paper cannot tell one page of a catalogue from the whole of it. Until the
+     * Print button has loaded the full document, the print-only artefact is a section-subtotal
+     * summary that says so and lists no items.
+     */
+    it('prints a clearly-headed summary — never the paged view — until the full document is loaded', async () => {
+      render(<CatalogueScreen />);
+
+      const printDoc = screen.getByTestId('catalogue-print-doc');
+      expect(screen.getByTestId('catalogue-print-heading').textContent).toContain('Summary');
+      // The one item on screen is in the paged view, and in no part of what would print.
+      expect(within(printDoc).queryByText('Widget')).toBeNull();
+      expect(document.querySelector('.catalogue-window')).toBeTruthy();
+
+      stubPrint();
+      fireEvent.click(screen.getByTestId('print-catalogue'));
+      await waitFor(() =>
+        expect(screen.getByTestId('catalogue-print-heading').textContent).toContain('Full catalogue'),
+      );
+      expect(within(screen.getByTestId('catalogue-print-doc')).getByText('Widget')).toBeTruthy();
+    });
+
+    it('refuses to print a scope over the ceiling, but still lets it be read a page at a time', () => {
+      const restore = withLineCount(50_000);
       render(<CatalogueScreen />);
 
       expect(screen.getByTestId('catalogue-too-large').textContent).toContain('50000');
       expect(screen.getByTestId('print-catalogue').hasAttribute('disabled')).toBe(true);
-      // The stale document from the previous (smaller) scope must not stand in for this one.
-      expect(screen.queryByRole('table')).toBeNull();
-      expect(screen.queryByTestId('catalogue-print-size')).toBeNull();
+      // …and the document itself is still there. Reading is paged, so its size no longer bars it.
+      expect(screen.getByText('Widget')).toBeTruthy();
+      restore();
     });
 
-    it('holds the document read until the scope has actually been counted', () => {
-      // Both hooks run in the same render, so an unknown count must gate the read as firmly as
-      // an over-ceiling one. Otherwise the unbounded read fires alongside the count on the very
-      // first render — and it cannot be called back once it is in flight.
-      scopeCountState.data = undefined;
-      render(<CatalogueScreen />);
-
-      expect(catalogueOptions.enabled).toBe(false);
-      expect(screen.getByTestId('print-catalogue').hasAttribute('disabled')).toBe(true);
-    });
-
-    it('starts the read once the count comes back within the ceiling', () => {
-      render(<CatalogueScreen />);
-      expect(catalogueOptions.enabled).toBe(true);
-    });
-
-    it('encodes no QR codes for a scope it is going to refuse to print', () => {
-      // The QR column is not part of the catalogue's query key, so ticking it neither re-keys
-      // nor drops the cached document — it only lowers the ceiling. Without a guard the screen
-      // would encode a code per line of a document it is about to decline to show.
-      scopeCountState.data = 5_000;
-      render(<CatalogueScreen />);
-
-      fireEvent.click(screen.getByTestId('catalogue-field-qr'));
-
-      expect(screen.getByTestId('catalogue-too-large')).toBeTruthy();
-      expect(qrSvgOrNull).not.toHaveBeenCalled();
-    });
-
-    it('still encodes QR codes for a scope within the ceiling', () => {
+    it('encodes a QR code for each line on the page, not for each line in the scope', () => {
+      // The whole-document encode this replaced ran once per item in scope before the reader
+      // could see anything; a page's worth is bounded by the page size whatever the scope holds.
+      const restore = withLineCount(50_000);
       render(<CatalogueScreen />);
       fireEvent.click(screen.getByTestId('catalogue-field-qr'));
-      expect(qrSvgOrNull).toHaveBeenCalled();
+
+      expect(qrSvgOrNull).toHaveBeenCalledTimes(1);
+      restore();
     });
 
     it('lowers the ceiling once a media column is on', () => {
       // 5,000 items is comfortably printable as text, and over the ceiling with QR codes.
-      scopeCountState.data = 5_000;
+      const restore = withLineCount(5_000);
       render(<CatalogueScreen />);
       expect(screen.queryByTestId('catalogue-too-large')).toBeNull();
 
       fireEvent.click(screen.getByTestId('catalogue-field-qr'));
       expect(screen.getByTestId('catalogue-too-large')).toBeTruthy();
+      restore();
+    });
+  });
+
+  describe('paging', () => {
+    it('reads a page through the sections the summary named, and offers the pager', () => {
+      render(<CatalogueScreen />);
+      // (scope, groups, offset, limit, options) — the sections come from the summary read, so a
+      // page can never be addressed against an ordering the headings do not share.
+      expect(pageArgs[1]).toBe((summaryState.data as { groups: unknown }).groups);
+      expect(pageArgs[2]).toBe(0);
+    });
+
+    it('offers the pager once the document runs to more than one page', () => {
+      const data = summaryState.data as { itemCount: number };
+      data.itemCount = 500;
+      render(<CatalogueScreen />);
+      expect(screen.getByTestId('catalogue-pagination')).toBeTruthy();
+    });
+
+    it('says so when a section is only partly on the page', () => {
+      const groups = (summaryState.data as { groups: { itemCount: number }[] }).groups;
+      const original = groups[0]!.itemCount;
+      groups[0]!.itemCount = 9; // …of which one line is on this page
+      render(<CatalogueScreen />);
+
+      // A bare "9 items" beside a single row would read as the whole section.
+      expect(document.body.textContent).toContain('showing 1 of 9');
+      groups[0]!.itemCount = original;
     });
   });
 });

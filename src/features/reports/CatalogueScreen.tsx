@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { assertExhaustive } from '@/lib/exhaustive';
 import {
@@ -8,15 +8,19 @@ import {
   FormField,
   InfoHint,
   Input,
+  LiveRegion,
   Modal,
   Money,
   PageContainer,
   PageHeader,
+  Pagination,
   SelectField,
   Spinner,
   Surface,
   Textarea,
   MAIN_CONTENT_ID,
+  clampPage,
+  pageCount,
   type SelectOption,
 } from '@/components/foundry';
 import { CatalogueIcon, ChevronDownIcon, DeleteIcon, PrintIcon, UploadIcon } from '@/components/icons';
@@ -51,14 +55,15 @@ import {
   cataloguePrintLimit,
   estimateCataloguePages,
   type CatalogueFieldKey,
-  type CatalogueGroup,
   type CatalogueGroupBy,
+  type CatalogueGroupSummary,
   type CatalogueLine,
   type CatalogueScope,
   type CatalogueSortBy,
-  type PartsCatalogue,
+  type PartsCatalogueSummary,
 } from './parts-catalogue';
-import { useCatalogueItemCount, usePartsCatalogue } from './queries';
+import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
+import { loadFullCatalogueLines, usePartsCatalogueSummary, usePartsCataloguePage } from './queries';
 import { useCatalogueLaunch } from './useCatalogueLaunch';
 
 /** Render context threaded to {@link renderField} — the formatters plus the per-item QR SVGs. */
@@ -67,6 +72,20 @@ interface RenderCtx {
   /** Pre-rendered QR SVG per line id when the QR column is on, else null. */
   readonly qrByLine: ReadonlyMap<string, string> | null;
 }
+
+/** One section's share of the current page, as the paged read returns it. */
+interface CataloguePageSlice {
+  readonly groupId: string | null;
+  readonly lines: readonly CatalogueLine[];
+}
+
+/**
+ * Stable empty page, so "no page yet" is the same array on every render.
+ *
+ * A fresh `[]` in the `??` fallback would re-key the memo that encodes the page's QR codes on
+ * every render, which is exactly the per-line cost this screen exists to bound.
+ */
+const NO_SLICES: readonly CataloguePageSlice[] = [];
 
 /** Which family of items the catalogue is built from — the reader's top-level scope choice. */
 type ScopeKind = 'all' | 'location' | 'project' | 'selection';
@@ -127,8 +146,22 @@ const PAPER_PREVIEW_HINT =
  * dependency, exactly like the insurance schedule it is modelled on. The print CSS (`@media
  * print` in `styles/index.css`, keyed off the `catalogue-*` classes) drops the app chrome and
  * the configuration panel, forces an ink-friendly light scheme and paginates the tables cleanly.
- * All aggregation lives in the pure {@link usePartsCatalogue} → `buildPartsCatalogue` seam; this
- * screen is presentation only, and the column selection is applied here at render time.
+ * All aggregation lives in the pure `parts-catalogue` seam; this screen is presentation only, and
+ * the column selection is applied here at render time.
+ *
+ * **On screen the document is paged** (issue #410). A catalogue can cover the whole inventory, so
+ * reading it in one go does not scale — the previous whole-document read pulled every item in
+ * scope into a single array and rendered a non-virtualised table row for each. Section headings
+ * and every total now come from a bounded summary read, lines come a page at a time, and the
+ * per-line costs the reader opts into (a thumbnail, a QR encode) are paid for a page rather than
+ * for a scope.
+ *
+ * **What prints is never the paged view.** The print CSS hides `.catalogue-window` outright and
+ * shows `.catalogue-print-doc` instead, so no route to the printer — the button, Ctrl+P, or the
+ * browser's own menu — can emit one page of a catalogue that reads as the whole thing. There are
+ * two artefacts, each headed with what it is: a section-subtotal **summary** (always available,
+ * always short) and the **full** catalogue, which the Print button loads completely before
+ * printing. The same rule, for the same reason, as the insurance schedule (issue #163).
  */
 export function CatalogueScreen() {
   const f = useFormatters();
@@ -158,14 +191,15 @@ export function CatalogueScreen() {
   // Paper-preview (persisted): show the on-screen document as a white printed page.
   const paperPreview = usePreferencesStore((s) => s.cataloguePaperPreview);
   const setCataloguePaperPreview = usePreferencesStore((s) => s.setCataloguePaperPreview);
+  // The reader's page size, shared with every other paged list on the device.
+  const defaultPageSize = usePreferencesStore((s) => s.defaultPageSize);
+  const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
   // The QR column deep-links back to each item; resolve the base URL the same way printed labels do.
   const labelBaseUrl = usePreferencesStore((s) => s.labelBaseUrl);
   // Surfaced if a picked logo can't be decoded (leaves the existing logo untouched).
   const [logoError, setLogoError] = useState('');
-  // The "this is a long print" confirmation, and the flag that fires the print once it has
-  // actually left the DOM (issue #338).
+  // The "this is a long print" confirmation (issue #338).
   const [confirmingPrint, setConfirmingPrint] = useState(false);
-  const [printArmed, setPrintArmed] = useState(false);
   const t = useT();
 
   // How the catalogue is laid out — session view choices (like the scope + column picks).
@@ -247,33 +281,41 @@ export function CatalogueScreen() {
             ? { kind: 'items', itemIds: selectionIds }
             : null;
 
-  // Count the scope before building it (issue #338). The catalogue reads every item in scope into
-  // one document and encodes one QR per line, so "All items" over a large inventory has to be
-  // headed off *before* the read — not warned about once the tab is already wedged.
-  const scopeCount = useCatalogueItemCount(scope);
+  // The document's shape and totals: one bounded read, whatever the scope's size (issue #410).
+  // Section headings, per-section counts and every total come from here; the lines beneath them
+  // are fetched a page at a time below.
+  const summary = usePartsCatalogueSummary(scope, groupBy);
+  const itemCount = summary.data?.itemCount ?? 0;
   const printLimit = cataloguePrintLimit(fields);
-  /** The scope's size, once known. `null` while it is still being counted. */
-  const scopeItemCount = scopeCount.data ?? null;
-  const tooLarge = scopeItemCount != null && scopeItemCount > printLimit;
+  const tooLarge = itemCount > printLimit;
 
-  const catalogue = usePartsCatalogue(scope, {
-    includePhotos: fields.has('photo'),
-    groupBy,
-    sortBy,
-    // Both hooks run in the same render, so "not counted yet" must gate the read as firmly as
-    // "too large" does. Treating an unknown size as small enough would fire the unbounded read
-    // in parallel with the count on the very first render — and React Query does not abort a
-    // request once it is in flight, so the tab would pay for the whole document before the
-    // count that was supposed to prevent it ever arrived.
-    enabled: scopeItemCount != null && !tooLarge,
-  });
+  const [page, setPage] = useState(1);
+  const totalPages = pageCount(itemCount, defaultPageSize);
+  // Keep the requested page inside the document as it changes underneath the reader — the same
+  // reset-then-clamp pair the inventory list and the insurance schedule use.
+  useEffect(() => {
+    setPage(1);
+  }, [defaultPageSize, groupBy, sortBy, scopeKind, locationId, projectId]);
+  useEffect(() => {
+    setPage((current) => clampPage(current, totalPages));
+  }, [totalPages]);
+
+  const photosOn = fields.has('photo');
+  const pageQuery = usePartsCataloguePage(
+    scope,
+    summary.data?.groups,
+    (page - 1) * defaultPageSize,
+    defaultPageSize,
+    { includePhotos: photosOn, groupBy, sortBy },
+  );
+
   const selectedFields = CATALOGUE_FIELDS.filter((field) => fields.has(field.key));
-  // Per-group subtotals and the grand total are only meaningful — and only shown — when the
+  // Per-section subtotals and the grand total are only meaningful — and only shown — when the
   // costed "Line value" column is on and at least one item is actually priced.
-  const showTotals = fields.has('lineValue') && (catalogue.data?.hasValue ?? false);
+  const showTotals = fields.has('lineValue') && (summary.data?.hasValue ?? false);
 
-  // Resolve the deep-link base URL once (as printed labels do), then pre-render one QR SVG per
-  // item — but only when the QR column is on, so a plain catalogue never pays for QR encoding.
+  // Resolve the deep-link base URL once (as printed labels do); the QR codes themselves are
+  // encoded per rendered document, so a page pays for a page's worth and never the scope's.
   const baseUrl = useMemo(
     () =>
       resolveLabelBaseUrl(
@@ -286,38 +328,24 @@ export function CatalogueScreen() {
   const qrColumnOn = fields.has('qr');
   // Roughly how long the printed document will be — shown beside the Print button, and the
   // threshold the confirmation below turns on (issue #338).
-  const estimatedPages = catalogue.data
+  const estimatedPages = summary.data
     ? estimateCataloguePages({
-        lineCount: catalogue.data.itemCount,
-        groupCount: catalogue.data.groups.length,
-        photos: fields.has('photo'),
+        lineCount: summary.data.itemCount,
+        groupCount: summary.data.groups.length,
+        photos: photosOn,
         qr: qrColumnOn,
       })
     : 0;
-  const qrByLine = useMemo<ReadonlyMap<string, string> | null>(() => {
-    // `tooLarge` is checked here as well as at the read: the QR column is not part of the
-    // catalogue's query key, so ticking it neither re-keys nor drops the document already in
-    // cache — it only lowers the ceiling. Without this guard, turning QR on over a large scope
-    // would encode a code for every line of a document the screen is about to decline to show.
-    if (tooLarge || !qrColumnOn || !catalogue.data) return null;
-    const map = new Map<string, string>();
-    for (const group of catalogue.data.groups) {
-      for (const line of group.lines) {
-        // Guarded: a deep-link too long to encode (an over-long "Link host") leaves that
-        // line without a QR rather than throwing out of this render-time memo.
-        const svg = qrSvgOrNull(buildItemQrUrl(line.id, baseUrl), { scale: 3 });
-        if (svg) map.set(line.id, svg);
-      }
-    }
-    return map;
-    // Keyed on the boolean (not the whole `fields` Set) so toggling an unrelated column never
-    // regenerates every QR.
-  }, [tooLarge, qrColumnOn, catalogue.data, baseUrl]);
+
+  const pageSlices = pageQuery.data ?? NO_SLICES;
+  const pageLines = useMemo(() => pageSlices.flatMap((slice) => slice.lines), [pageSlices]);
+  const qrByLine = useQrByLine(pageLines, qrColumnOn, baseUrl);
   // The QR column is on and there are lines, but not one encoded — the deep-link is too long for
   // any QR symbol, which only an over-long "Link host" can cause. Surface it rather than
   // rendering a silently blank column.
-  const lineCount = catalogue.data?.groups.reduce((n, g) => n + g.lines.length, 0) ?? 0;
-  const qrTooLong = qrColumnOn && qrByLine !== null && lineCount > 0 && qrByLine.size === 0;
+  const qrTooLong = qrColumnOn && qrByLine !== null && pageLines.length > 0 && qrByLine.size === 0;
+
+  const print = usePreparedCataloguePrint(scope, summary.data, { includePhotos: photosOn, sortBy }, t);
 
   // The @page running header + page-number CSS, injected as a <style> only when enabled.
   const pageStyle = buildCataloguePageStyle({
@@ -335,36 +363,21 @@ export function CatalogueScreen() {
     });
   };
 
-  const empty = scope !== null && catalogue.data != null && catalogue.data.itemCount === 0;
+  const empty = scope !== null && summary.data != null && summary.data.itemCount === 0;
   const needsChoice = scope === null;
-  /**
-   * The scope's size is not known yet.
-   *
-   * While it isn't, any document on screen belongs to the *previous* scope (both reads keep the
-   * last result to avoid flicker), and nothing can say whether the new one is even printable —
-   * so neither the size readout nor the Print button may speak for it.
-   */
-  const sizing = !needsChoice && scopeItemCount == null;
   // The size of the print job, stated before the browser's own dialog can open. Only meaningful
-  // once the document exists — there is nothing to print until then.
-  const showPrintSize = !needsChoice && !sizing && !tooLarge && !empty && catalogue.data != null;
+  // once the document's shape is known — there is nothing to print until then.
+  const showPrintSize = !needsChoice && !empty && summary.data != null;
 
-  // A long print asks first (issue #338). `window.print()` blocks synchronously, so it must not
-  // be called from the confirm handler — React would not have committed the dialog's unmount
-  // yet, and the overlay would print across the first page. Arming a flag and printing from the
-  // effect that follows the commit keeps the paper clean.
+  // A long print asks first (issue #338), then the whole document is loaded before the browser's
+  // print dialog is raised — see `usePreparedCataloguePrint`.
   const requestPrint = () => {
     if (estimatedPages > CATALOGUE_CONFIRM_PAGES) {
       setConfirmingPrint(true);
       return;
     }
-    window.print();
+    void print.start();
   };
-  useEffect(() => {
-    if (!printArmed) return;
-    setPrintArmed(false);
-    window.print();
-  }, [printArmed]);
 
   return (
     <PageContainer>
@@ -381,7 +394,7 @@ export function CatalogueScreen() {
                   className="flex items-center gap-1.5 text-sm text-muted-foreground"
                   data-testid="catalogue-print-size"
                 >
-                  {t('reports.catalogue.scopeSize', { vars: { count: catalogue.data!.itemCount } })} ·{' '}
+                  {t('reports.catalogue.scopeSize', { vars: { count: summary.data!.itemCount } })} ·{' '}
                   {t('reports.catalogue.pageEstimate', { vars: { count: estimatedPages } })}
                   <InfoHint content={t('reports.catalogue.pageEstimateHint')} />
                 </span>
@@ -390,24 +403,29 @@ export function CatalogueScreen() {
                   "Add item" on the Inventory screen) so the next action is obvious. */}
               <Button
                 onClick={requestPrint}
-                disabled={
-                  needsChoice || sizing || empty || tooLarge || catalogue.isLoading || !catalogue.data
-                }
+                disabled={needsChoice || empty || tooLarge || print.busy || !summary.data}
+                aria-busy={print.busy}
                 data-testid="print-catalogue"
               >
                 <PrintIcon />
-                Print / Save as PDF
+                {print.busy ? t('reports.catalogue.print.preparing') : 'Print / Save as PDF'}
               </Button>
+              {print.busy ? (
+                <Button variant="ghost" onClick={print.cancel} data-testid="cancel-prepare-catalogue">
+                  {t('reports.catalogue.print.cancel')}
+                </Button>
+              ) : null}
             </div>
           }
         />
         {tooLarge ? (
           <p className="mt-2 text-sm text-muted-foreground" data-testid="catalogue-too-large">
             {t('reports.catalogue.tooLarge', {
-              vars: { count: f.quantity(scopeItemCount ?? 0), limit: f.quantity(printLimit) },
+              vars: { count: f.quantity(itemCount), limit: f.quantity(printLimit) },
             })}
           </p>
         ) : null}
+        <LiveRegion>{print.status}</LiveRegion>
       </div>
 
       {/* A catalogue can be long without being over the ceiling, and the browser's own print
@@ -422,7 +440,7 @@ export function CatalogueScreen() {
             {t('reports.catalogue.confirmBody', {
               vars: {
                 pages: f.quantity(estimatedPages),
-                items: f.quantity(catalogue.data?.itemCount ?? 0),
+                items: f.quantity(itemCount),
               },
             })}
           </p>
@@ -433,7 +451,7 @@ export function CatalogueScreen() {
             <Button
               onClick={() => {
                 setConfirmingPrint(false);
-                setPrintArmed(true);
+                void print.start();
               }}
               data-testid="catalogue-print-confirm"
             >
@@ -699,6 +717,11 @@ export function CatalogueScreen() {
           className={cn('flex flex-col gap-6', paperPreview && 'catalogue-paper')}
           data-testid="catalogue-preview"
         >
+          {/* Print-only @page furniture (running header + page numbers), for whichever artefact
+              reaches the printer. Injected as raw CSS; the text is escaped in
+              `buildCataloguePageStyle`, and a text child of <style> is not re-parsed as HTML,
+              so this cannot break out. */}
+          {pageStyle ? <style>{pageStyle}</style> : null}
           {needsChoice ? (
             <p className="py-16 text-center text-sm text-muted-foreground">
               {scopeKind === 'location'
@@ -709,36 +732,74 @@ export function CatalogueScreen() {
                     : 'Add a project to build a parts catalogue for it.'
                   : 'No items are selected.'}
             </p>
-          ) : tooLarge ? (
-            // Checked ahead of the document: the scope's read is disabled at this size, so
-            // whatever `catalogue.data` still holds describes a *different* scope — showing it
-            // would present one selection's document under another's heading.
-            <p className="py-16 text-center text-sm text-muted-foreground">
-              {t('reports.catalogue.tooLargeDocument')}
-            </p>
-          ) : catalogue.isError ? (
+          ) : summary.isError ? (
             <p role="alert" className="py-16 text-center text-sm text-destructive">
               The catalogue could not be loaded.
             </p>
-          ) : !catalogue.data ? (
-            // Covers the read itself *and* the window before it starts, while the scope is still
-            // being counted — the document read is idle then, so there is no `isLoading` to key
-            // off and nothing yet to render.
+          ) : !summary.data ? (
             <div className="grid place-items-center py-16">
               <Spinner />
             </div>
           ) : empty ? (
             <p className="py-16 text-center text-sm text-muted-foreground">No items match this selection.</p>
           ) : (
-            <CatalogueDocument
-              catalogue={catalogue.data!}
-              fields={selectedFields}
-              showTotals={showTotals}
-              branding={branding}
-              qrByLine={qrByLine}
-              pageStyle={pageStyle}
-              formatters={f}
-            />
+            <>
+              {/* Screen-only: the paged reading view. Hidden in print (see the
+                  `.catalogue-window` rule in styles/index.css) because part of a catalogue must
+                  never reach paper under a heading that claims the whole of it. */}
+              <section className="catalogue-window flex flex-col gap-6" data-testid="catalogue-window">
+                <CatalogueHeader
+                  summary={summary.data}
+                  branding={branding}
+                  showTotals={showTotals}
+                  formatters={f}
+                />
+                {pageQuery.isPending && !pageQuery.data ? (
+                  <div className="grid place-items-center py-16">
+                    <Spinner />
+                  </div>
+                ) : (
+                  <PagedSections
+                    groups={summary.data.groups}
+                    slices={pageSlices}
+                    fields={selectedFields}
+                    showTotals={showTotals}
+                    ctx={{ f, qrByLine }}
+                    t={t}
+                  />
+                )}
+                <Pagination
+                  page={page}
+                  pageCount={totalPages}
+                  onPageChange={setPage}
+                  pageSize={defaultPageSize}
+                  onPageSizeChange={setDefaultPageSize}
+                  pageSizeOptions={PAGE_SIZE_PRESETS}
+                  minPageSize={PAGE_SIZE_BOUNDS.min}
+                  maxPageSize={PAGE_SIZE_BOUNDS.max}
+                  totalItems={itemCount}
+                  data-testid="catalogue-pagination"
+                />
+                <CatalogueTotals summary={summary.data} showTotals={showTotals} formatters={f} />
+                <CatalogueBrandingFooter branding={branding} />
+              </section>
+
+              {/* Print-only: whichever complete artefact is ready. Never derived from the paged
+                  view above, so what prints always matches its own heading. */}
+              <section className="catalogue-print-doc" data-testid="catalogue-print-doc">
+                <CataloguePrintDocument
+                  summary={summary.data}
+                  lines={print.lines}
+                  fields={selectedFields}
+                  showTotals={showTotals}
+                  branding={branding}
+                  qrColumnOn={qrColumnOn}
+                  baseUrl={baseUrl}
+                  formatters={f}
+                  t={t}
+                />
+              </section>
+            </>
           )}
         </div>
       </main>
@@ -746,114 +807,385 @@ export function CatalogueScreen() {
   );
 }
 
-/** The document body: an optional letterhead, the title/metadata band, the location groups,
- * an optional totals footer and an optional branding footer line. */
-function CatalogueDocument({
-  catalogue,
-  fields,
-  showTotals,
+/**
+ * Encode one QR SVG per line, but only while the QR column is on.
+ *
+ * Keyed on the lines actually rendered, so the cost is a page's worth of codes and never the
+ * scope's — the whole-document encode this replaced was the other half of what made a large
+ * catalogue unusable (issue #410). A deep-link too long to encode (an over-long "Link host")
+ * leaves that line without a code rather than throwing out of a render-time memo.
+ */
+function useQrByLine(
+  lines: readonly CatalogueLine[],
+  qrColumnOn: boolean,
+  baseUrl: string,
+): ReadonlyMap<string, string> | null {
+  return useMemo(() => {
+    if (!qrColumnOn) return null;
+    const map = new Map<string, string>();
+    for (const line of lines) {
+      const svg = qrSvgOrNull(buildItemQrUrl(line.id, baseUrl), { scale: 3 });
+      if (svg) map.set(line.id, svg);
+    }
+    return map;
+  }, [lines, qrColumnOn, baseUrl]);
+}
+
+/**
+ * Drive the "prepare the whole document, then print" flow.
+ *
+ * The document is loaded into state and `window.print()` is called from an effect once React has
+ * committed it — never synchronously from the click handler, which would raise the print dialog
+ * against a half-built page. When the Photo column is on, every image is decoded first or the
+ * thumbnails print blank. `afterprint` drops the document again so a whole catalogue's rows are
+ * not held alive once the print is over, and a prepared document is dropped whenever the columns,
+ * the sort or the underlying summary change — a document that no longer matches the settings it
+ * was built under is a wrong document, not a stale one.
+ */
+function usePreparedCataloguePrint(
+  scope: CatalogueScope | null,
+  summary: PartsCatalogueSummary | undefined,
+  options: { readonly includePhotos: boolean; readonly sortBy: CatalogueSortBy },
+  t: ReturnType<typeof useT>,
+) {
+  const [lines, setLines] = useState<Map<string | null, CatalogueLine[]> | null>(null);
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const abort = useRef<AbortController | null>(null);
+  const { includePhotos, sortBy } = options;
+
+  // A prepared document is only valid for the settings it was prepared under.
+  useEffect(() => {
+    setLines(null);
+  }, [includePhotos, sortBy, summary]);
+
+  useEffect(() => {
+    const drop = () => setLines(null);
+    window.addEventListener('afterprint', drop);
+    return () => window.removeEventListener('afterprint', drop);
+  }, []);
+
+  // Print only once the full document has actually been committed to the DOM.
+  useEffect(() => {
+    if (lines === null) return;
+    let cancelled = false;
+    void (async () => {
+      // Thumbnails are decoded before the dialog opens, or they print as blanks.
+      const images = Array.from(document.querySelectorAll<HTMLImageElement>('.catalogue-print-doc img'));
+      await Promise.all(images.map((img) => img.decode().catch(() => undefined)));
+      if (!cancelled) window.print();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lines]);
+
+  const start = useCallback(async () => {
+    if (scope === null || summary === undefined) return;
+    const controller = new AbortController();
+    abort.current = controller;
+    setBusy(true);
+    setStatus(t('reports.catalogue.print.preparing'));
+    try {
+      const loaded = await loadFullCatalogueLines(
+        scope,
+        summary.groups,
+        { includePhotos, sortBy },
+        (done, total) =>
+          setStatus(
+            t('reports.catalogue.print.progress', {
+              vars: { done: String(done), total: String(total) },
+            }),
+          ),
+        controller.signal,
+      );
+      setLines(loaded);
+      setStatus(t('reports.catalogue.print.ready'));
+    } catch (err) {
+      setStatus(
+        (err as Error)?.name === 'AbortError'
+          ? t('reports.catalogue.print.cancelled')
+          : t('reports.catalogue.print.failed'),
+      );
+    } finally {
+      setBusy(false);
+      abort.current = null;
+    }
+  }, [scope, summary, includePhotos, sortBy, t]);
+
+  const cancel = useCallback(() => abort.current?.abort(), []);
+
+  return { lines, status, busy, start, cancel };
+}
+
+/**
+ * The document's letterhead and title band: the optional branding, the title, when it was
+ * generated, how many items it covers and — with the costed column on — its grand total.
+ */
+function CatalogueHeader({
+  summary,
   branding,
-  qrByLine,
-  pageStyle,
+  showTotals,
   formatters,
+  printedCount,
 }: {
-  catalogue: PartsCatalogue;
-  fields: readonly (typeof CATALOGUE_FIELDS)[number][];
-  showTotals: boolean;
+  summary: PartsCatalogueSummary;
   branding: CatalogueBranding;
-  qrByLine: ReadonlyMap<string, string> | null;
-  /** `@page` running-header + page-number CSS to inject for print, or '' for none. */
-  pageStyle: string;
+  showTotals: boolean;
   formatters: Formatters;
+  /** Items the artefact this heads actually holds; defaults to the whole document's count. */
+  printedCount?: number;
 }) {
   const f = formatters;
-  const ctx: RenderCtx = { f, qrByLine };
+  const count = printedCount ?? summary.itemCount;
   // Gate each letterhead element on *trimmed* content so a whitespace-only field prints nothing,
   // while still rendering exactly what the reader typed (their newlines/spacing are preserved).
   const showOrgName = branding.orgName.trim().length > 0;
   const showOrgDetails = branding.orgDetails.trim().length > 0;
   const hasLetterhead = Boolean(branding.logo) || showOrgName || showOrgDetails;
   return (
-    <>
-      {/* Print-only @page furniture (running header + page numbers). Injected as raw CSS; the
-          text is escaped in `buildCataloguePageStyle`, and a text child of <style> is not
-          re-parsed as HTML, so this cannot break out. */}
-      {pageStyle ? <style>{pageStyle}</style> : null}
-      <header className="flex flex-col gap-3 border-b border-border pb-4">
-        {hasLetterhead ? (
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex flex-col gap-0.5">
-              {showOrgName ? (
-                <p className="text-base font-semibold text-foreground" data-testid="catalogue-org-name">
-                  {branding.orgName}
-                </p>
-              ) : null}
-              {showOrgDetails ? (
-                <p className="whitespace-pre-line text-sm text-muted-foreground">{branding.orgDetails}</p>
-              ) : null}
-            </div>
-            {branding.logo ? (
-              <img
-                src={branding.logo}
-                alt={showOrgName ? `${branding.orgName.trim()} logo` : 'Catalogue logo'}
-                className="catalogue-logo max-h-20 w-auto shrink-0 object-contain"
-              />
+    <header className="flex flex-col gap-3 border-b border-border pb-4">
+      {hasLetterhead ? (
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-0.5">
+            {showOrgName ? (
+              <p className="text-base font-semibold text-foreground" data-testid="catalogue-org-name">
+                {branding.orgName}
+              </p>
+            ) : null}
+            {showOrgDetails ? (
+              <p className="whitespace-pre-line text-sm text-muted-foreground">{branding.orgDetails}</p>
             ) : null}
           </div>
-        ) : null}
-
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold" data-testid="catalogue-title">
-            {branding.title.trim() || 'Catalogue'}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {branding.showGeneratedDate ? <>Generated {f.date(catalogue.generatedAt)} · </> : null}
-            {f.quantity(catalogue.itemCount)} {plural(catalogue.itemCount, 'item')}
-            {showTotals ? (
-              <>
-                {' · total value '}
-                <Money
-                  value={catalogue.grandTotal}
-                  formatters={f}
-                  className="font-medium text-foreground"
-                  data-testid="catalogue-grand-total"
-                />
-              </>
-            ) : null}
-          </p>
+          {branding.logo ? (
+            <img
+              src={branding.logo}
+              alt={showOrgName ? `${branding.orgName.trim()} logo` : 'Catalogue logo'}
+              className="catalogue-logo max-h-20 w-auto shrink-0 object-contain"
+            />
+          ) : null}
         </div>
-      </header>
-
-      {catalogue.groups.map((group) => (
-        <CatalogueGroupSection
-          key={group.groupId ?? 'ungrouped'}
-          group={group}
-          fields={fields}
-          showTotals={showTotals}
-          ctx={ctx}
-        />
-      ))}
-
-      {/* Grand totals — the item count and total quantity always, plus the value when priced. */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t-2 border-border pt-3 text-base font-semibold">
-        <span>Total</span>
-        <span className="flex flex-wrap items-center gap-x-3 tabular-nums">
-          <span>
-            {f.quantity(catalogue.itemCount)} {plural(catalogue.itemCount, 'item')}
-          </span>
-          <span data-testid="catalogue-total-quantity">{f.quantity(catalogue.totalQuantity)} in stock</span>
-          {showTotals ? <Money value={catalogue.grandTotal} formatters={f} /> : null}
-        </span>
-      </div>
-
-      {branding.footer.trim().length > 0 ? (
-        <footer
-          className="border-t border-border pt-3 text-xs text-muted-foreground"
-          data-testid="catalogue-footer"
-        >
-          {branding.footer}
-        </footer>
       ) : null}
+
+      <div className="flex flex-col gap-1">
+        <h2 className="text-lg font-semibold" data-testid="catalogue-title">
+          {branding.title.trim() || 'Catalogue'}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {branding.showGeneratedDate ? <>Generated {f.date(summary.generatedAt)} · </> : null}
+          {f.quantity(count)} {plural(count, 'item')}
+          {showTotals ? (
+            <>
+              {' · total value '}
+              <Money
+                value={summary.grandTotal}
+                formatters={f}
+                className="font-medium text-foreground"
+                data-testid="catalogue-grand-total"
+              />
+            </>
+          ) : null}
+        </p>
+      </div>
+    </header>
+  );
+}
+
+/** The closing totals rule: the item count and total quantity always, the value when priced. */
+function CatalogueTotals({
+  summary,
+  showTotals,
+  formatters,
+}: {
+  summary: PartsCatalogueSummary;
+  showTotals: boolean;
+  formatters: Formatters;
+}) {
+  const f = formatters;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t-2 border-border pt-3 text-base font-semibold">
+      <span>Total</span>
+      <span className="flex flex-wrap items-center gap-x-3 tabular-nums">
+        <span>
+          {f.quantity(summary.itemCount)} {plural(summary.itemCount, 'item')}
+        </span>
+        <span data-testid="catalogue-total-quantity">{f.quantity(summary.totalQuantity)} in stock</span>
+        {showTotals ? <Money value={summary.grandTotal} formatters={f} /> : null}
+      </span>
+    </div>
+  );
+}
+
+/** The optional closing branding line (a confidentiality or copyright notice). */
+function CatalogueBrandingFooter({ branding }: { branding: CatalogueBranding }) {
+  if (branding.footer.trim().length === 0) return null;
+  return (
+    <footer
+      className="border-t border-border pt-3 text-xs text-muted-foreground"
+      data-testid="catalogue-footer"
+    >
+      {branding.footer}
+    </footer>
+  );
+}
+
+/** The sections touched by the current page, each showing how much of it is on screen. */
+function PagedSections({
+  groups,
+  slices,
+  fields,
+  showTotals,
+  ctx,
+  t,
+}: {
+  groups: readonly CatalogueGroupSummary[];
+  slices: readonly CataloguePageSlice[];
+  fields: readonly (typeof CATALOGUE_FIELDS)[number][];
+  showTotals: boolean;
+  ctx: RenderCtx;
+  t: ReturnType<typeof useT>;
+}) {
+  const byId = useMemo(() => new Map(groups.map((g) => [g.groupId, g])), [groups]);
+  return (
+    <>
+      {slices.map((slice) => {
+        const group = byId.get(slice.groupId);
+        if (group === undefined) return null;
+        return (
+          <CatalogueGroupSection
+            key={group.groupId ?? 'ungrouped'}
+            group={group}
+            lines={slice.lines}
+            fields={fields}
+            showTotals={showTotals}
+            ctx={ctx}
+            // A partial section must say so. A bare count beside part of a section reads as the
+            // whole section — exactly the misreading the print rules exist to prevent.
+            showingLabel={
+              slice.lines.length < group.itemCount
+                ? t('reports.catalogue.group.showingOf', {
+                    vars: {
+                      shown: ctx.f.quantity(slice.lines.length),
+                      total: ctx.f.quantity(group.itemCount),
+                    },
+                  })
+                : null
+            }
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * The artefact that actually prints: the full catalogue once it has been prepared, otherwise a
+ * section-subtotal summary. Both carry a heading naming which they are, so a printed page can
+ * never misrepresent its own completeness.
+ */
+function CataloguePrintDocument({
+  summary,
+  lines,
+  fields,
+  showTotals,
+  branding,
+  qrColumnOn,
+  baseUrl,
+  formatters,
+  t,
+}: {
+  summary: PartsCatalogueSummary;
+  lines: Map<string | null, CatalogueLine[]> | null;
+  fields: readonly (typeof CATALOGUE_FIELDS)[number][];
+  showTotals: boolean;
+  branding: CatalogueBranding;
+  qrColumnOn: boolean;
+  baseUrl: string;
+  formatters: Formatters;
+  t: ReturnType<typeof useT>;
+}) {
+  const f = formatters;
+  const full = lines !== null;
+  // Count what is actually on the page, not what the summary said there would be. The two agree
+  // unless the inventory changed mid-load, and in that case the heading must describe the
+  // document in front of the reader — a heading is only a guarantee if it is derived from the
+  // thing it describes.
+  const printedCount = full
+    ? summary.groups.reduce((sum, g) => sum + (lines.get(g.groupId)?.length ?? 0), 0)
+    : summary.itemCount;
+  const printedLines = useMemo(
+    () => (lines === null ? [] : summary.groups.flatMap((g) => lines.get(g.groupId) ?? [])),
+    [lines, summary.groups],
+  );
+  const qrByLine = useQrByLine(printedLines, qrColumnOn, baseUrl);
+
+  return (
+    <>
+      <CatalogueHeader
+        summary={summary}
+        branding={branding}
+        showTotals={showTotals}
+        formatters={f}
+        printedCount={printedCount}
+      />
+      <p className="text-sm font-medium" data-testid="catalogue-print-heading">
+        {full
+          ? t('reports.catalogue.print.fullHeading', { vars: { count: f.quantity(printedCount) } })
+          : t('reports.catalogue.print.summaryHeading')}
+      </p>
+      {full ? null : (
+        <p className="text-sm text-muted-foreground">{t('reports.catalogue.print.summaryCaveat')}</p>
+      )}
+
+      {full ? (
+        summary.groups.map((group) => (
+          <CatalogueGroupSection
+            key={group.groupId ?? 'ungrouped'}
+            group={group}
+            lines={lines.get(group.groupId) ?? []}
+            fields={fields}
+            showTotals={showTotals}
+            ctx={{ f, qrByLine }}
+          />
+        ))
+      ) : (
+        <table className="catalogue-table w-full text-sm">
+          <caption className="sr-only">{t('reports.catalogue.print.summaryHeading')}</caption>
+          <thead>
+            <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th scope="col" className="py-2 pr-3 font-medium">
+                {t('reports.catalogue.summaryTable.section')}
+              </th>
+              <th scope="col" className="py-2 pr-3 text-right font-medium">
+                {t('reports.catalogue.summaryTable.items')}
+              </th>
+              {showTotals ? (
+                <th scope="col" className="py-2 text-right font-medium">
+                  {t('reports.catalogue.summaryTable.subtotal')}
+                </th>
+              ) : null}
+            </tr>
+          </thead>
+          <tbody>
+            {summary.groups.map((group) => (
+              <tr key={group.groupId ?? 'ungrouped'} className="border-t border-border">
+                <td className="py-2 pr-3">
+                  {group.groupLabel || t('reports.catalogue.summaryTable.allItems')}
+                </td>
+                <td className="py-2 pr-3 text-right tabular-nums">{f.quantity(group.itemCount)}</td>
+                {showTotals ? (
+                  <td className="py-2 text-right font-medium">
+                    <Money value={group.subtotal} formatters={f} />
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <CatalogueTotals summary={summary} showTotals={showTotals} formatters={f} />
+      <CatalogueBrandingFooter branding={branding} />
     </>
   );
 }
@@ -861,14 +1193,18 @@ function CatalogueDocument({
 /** One catalogue section: an optional heading (with its totals), then the item table. */
 function CatalogueGroupSection({
   group,
+  lines,
   fields,
   showTotals,
   ctx,
+  showingLabel,
 }: {
-  group: CatalogueGroup;
+  group: CatalogueGroupSummary;
+  lines: readonly CatalogueLine[];
   fields: readonly (typeof CATALOGUE_FIELDS)[number][];
   showTotals: boolean;
   ctx: RenderCtx;
+  showingLabel?: string | null;
 }) {
   const f = ctx.f;
   // The "No grouping" layout produces a single unheaded section.
@@ -879,7 +1215,13 @@ function CatalogueGroupSection({
         <div className="catalogue-group-heading flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-1">
           <h3 className="font-semibold">{group.groupLabel}</h3>
           <span className="text-sm text-muted-foreground">
-            {f.quantity(group.lines.length)} {plural(group.lines.length, 'item')} ·{' '}
+            {showingLabel ? (
+              <>{showingLabel} · </>
+            ) : (
+              <>
+                {f.quantity(group.itemCount)} {plural(group.itemCount, 'item')} ·{' '}
+              </>
+            )}
             {f.quantity(group.totalQuantity)} in stock
             {showTotals ? (
               <>
@@ -911,7 +1253,7 @@ function CatalogueGroupSection({
             </tr>
           </thead>
           <tbody>
-            {group.lines.map((line) => (
+            {lines.map((line) => (
               <tr key={line.id} className="border-t border-border align-top">
                 <td className="py-2 pr-3 font-medium">{line.name}</td>
                 {fields.map((field) => (

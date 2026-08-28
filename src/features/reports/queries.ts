@@ -8,7 +8,14 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { getReportRepository } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { reportKeys } from './keys';
-import type { CatalogueScope, CataloguePartsOptions } from './parts-catalogue';
+import type {
+  CatalogueGroupBy,
+  CatalogueGroupSummary,
+  CatalogueLine,
+  CatalogueScope,
+  CatalogueSortBy,
+} from './parts-catalogue';
+import { sliceGroupsForPage } from './group-slices';
 import type { HygieneIssueKind } from './data-hygiene';
 import { scheduleSlices, type ScheduleGroupSummary, type ScheduleLine } from './insurance-schedule';
 import { MAX_PAGE_SIZE } from '@/db/repositories/constants';
@@ -428,53 +435,115 @@ export async function loadFullScheduleLines(
 }
 
 /**
- * Parts catalogue (issue #22): a printable list of items resolved from the chosen `scope`
- * (all / a location subtree / a project / an ad-hoc selection). Read-only aggregation over
- * `items` + `locations`, fetched through `ReportRepository`; the screen renders the returned
- * DTO, shows only the columns the reader selected and offers `window.print()`.
+ * Parts catalogue (issue #22) — the document's totals and section ordering, with no lines.
  *
- * `scope` is `null` while the reader has not yet chosen a location/project — the query stays
- * idle (disabled) until a concrete scope exists, so no rows are fetched for an incomplete pick.
- * `options.enabled` is the second gate: the screen counts the scope first
- * ({@link useCatalogueItemCount}) and leaves this read idle when it is too large to print at
- * all, so an unbounded document is never fetched (issue #338).
+ * Bounded by the section count rather than the item count (issue #410), so it is safe to read for
+ * any scope. It is also what the screen needs first: the grand total, the section list and each
+ * section's item count are what page navigation, the print-size readout and the printed summary
+ * are all built from.
+ *
+ * `scope` is `null` while the reader has not yet chosen a location/project — the query stays idle
+ * until a concrete scope exists, so nothing is read for an incomplete pick.
  */
-export function usePartsCatalogue(
-  scope: CatalogueScope | null,
-  options: CataloguePartsOptions & { readonly enabled?: boolean } = {},
-) {
-  const { includePhotos = false, groupBy, sortBy, enabled = true } = options;
+export function usePartsCatalogueSummary(scope: CatalogueScope | null, groupBy?: CatalogueGroupBy) {
   const currency = useValuationCurrency();
   return useQuery({
-    queryKey: reportKeys.partsCatalogue(scope, includePhotos, groupBy, sortBy, currency),
-    queryFn: () => getReportRepository().partsCatalogue(scope!, { includePhotos, groupBy, sortBy }),
-    enabled: scope !== null && enabled,
-    // Re-keyed as the reader changes scope/grouping/columns; keep the previous document on screen
-    // while the new one loads instead of flashing to a spinner.
+    queryKey: reportKeys.partsCatalogueSummary(scope, groupBy, currency),
+    queryFn: () => getReportRepository().partsCatalogueSummary(scope!, { groupBy }),
+    enabled: scope !== null,
+    // Re-keyed as the reader changes scope or grouping; keep the previous document's shape on
+    // screen while the new one loads instead of flashing to a spinner.
     placeholderData: keepPreviousData,
   });
 }
 
 /**
- * How many items a catalogue scope covers, without fetching any of them (issue #338).
+ * One page of the catalogue's lines, addressed document-wide.
  *
- * The catalogue screen leads with this — as the insurance schedule leads with its bounded
- * summary read — so the size of the job is known before a single row, thumbnail BLOB or QR
- * encode is paid for, and a scope too large to print never builds a document at all.
- *
- * Unlike {@link usePartsCatalogue} this is not re-keyed by the chosen columns or grouping:
- * neither changes which items are in scope, so switching a column on must not re-run the count.
+ * `sliceGroupsForPage` maps the requested window onto per-section reads — a page straddling a
+ * section boundary becomes two — and the results are returned in document order. Thumbnails are
+ * only fetched when the Photo column is on, which is what keeps a page's payload to text.
  */
-export function useCatalogueItemCount(scope: CatalogueScope | null) {
+export function usePartsCataloguePage(
+  scope: CatalogueScope | null,
+  groups: readonly CatalogueGroupSummary[] | undefined,
+  offset: number,
+  limit: number,
+  options: {
+    readonly includePhotos?: boolean;
+    readonly groupBy?: CatalogueGroupBy;
+    readonly sortBy?: CatalogueSortBy;
+  } = {},
+) {
+  const { includePhotos = false, groupBy, sortBy } = options;
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: reportKeys.partsCatalogueCount(scope),
-    queryFn: () => getReportRepository().partsCatalogueCount(scope!),
-    enabled: scope !== null,
-    // Deliberately **not** `keepPreviousData`, unlike every other read on this screen. This
-    // count is a gate, not a display value: holding the previous scope's answer while a new
-    // one loads would let a ten-item location's count wave through the read for "All items".
-    // An undefined count has to mean "not known yet", so the caller can wait for it.
+    queryKey: reportKeys.partsCataloguePage(scope, groupBy, sortBy, offset, limit, includePhotos, currency),
+    queryFn: async () => {
+      const repo = getReportRepository();
+      const slices = sliceGroupsForPage(groups ?? [], offset, limit);
+      const pages = await Promise.all(
+        slices.map((slice) =>
+          repo.partsCatalogueGroupPage(
+            scope!,
+            slice.group.ref,
+            { limit: slice.limit, offset: slice.offset },
+            { includePhotos, sortBy },
+          ),
+        ),
+      );
+      return slices.map((slice, i) => ({ groupId: slice.group.groupId, lines: pages[i]!.rows }));
+    },
+    enabled: scope !== null && groups !== undefined,
+    // Re-keyed as the reader pages, re-sorts or toggles a media column; hold the previous page
+    // rather than flashing the document to a spinner.
+    placeholderData: keepPreviousData,
   });
+}
+
+/**
+ * Load **every** line of the catalogue, section by section, for printing.
+ *
+ * Deliberately not a cached query. A full document is the one read whose size scales with the
+ * scope, so it is materialised only when the reader explicitly asks to print, reported on while
+ * it loads, abortable, and dropped once the print is over — rather than sat in the query cache
+ * holding a whole inventory (and, with the Photo column on, its thumbnails) alive.
+ *
+ * Sections are walked in the summary's order and each is paged at the repository ceiling, so no
+ * single read is unbounded even though the assembled result is the whole document.
+ */
+export async function loadFullCatalogueLines(
+  scope: CatalogueScope,
+  groups: readonly CatalogueGroupSummary[],
+  options: { readonly includePhotos?: boolean; readonly sortBy?: CatalogueSortBy },
+  onProgress: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<Map<string | null, CatalogueLine[]>> {
+  const repo = getReportRepository();
+  const total = groups.reduce((sum, g) => sum + g.itemCount, 0);
+  const byGroup = new Map<string | null, CatalogueLine[]>();
+  let loaded = 0;
+
+  for (const group of groups) {
+    const lines: CatalogueLine[] = [];
+    while (lines.length < group.itemCount) {
+      if (signal?.aborted) throw new DOMException('Catalogue preparation cancelled', 'AbortError');
+      const page = await repo.partsCatalogueGroupPage(
+        scope,
+        group.ref,
+        { limit: MAX_PAGE_SIZE, offset: lines.length },
+        options,
+      );
+      // A section that shrank mid-read would otherwise spin forever waiting for rows that no
+      // longer exist; the count came from a summary read a moment earlier, not this instant.
+      if (page.rows.length === 0) break;
+      lines.push(...page.rows);
+      loaded += page.rows.length;
+      onProgress(Math.min(loaded, total), total);
+    }
+    byGroup.set(group.groupId, lines);
+  }
+  return byGroup;
 }
 
 /**

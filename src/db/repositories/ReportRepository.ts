@@ -88,12 +88,18 @@ import {
   type ScheduleLocationInput,
 } from '@/features/reports/insurance-schedule';
 import {
-  buildPartsCatalogue,
+  DEFAULT_CATALOGUE_GROUP_BY,
+  DEFAULT_CATALOGUE_SORT_BY,
+  finalisePartsCatalogueSummary,
+  toCatalogueLine,
+  type CatalogueGroupBy,
+  type CatalogueGroupRef,
+  type CatalogueGroupTally,
   type CatalogueItemInput,
-  type CatalogueLocationInput,
-  type CataloguePartsOptions,
+  type CatalogueLine,
   type CatalogueScope,
-  type PartsCatalogue,
+  type CatalogueSortBy,
+  type PartsCatalogueSummary,
 } from '@/features/reports/parts-catalogue';
 import { THUMBNAIL_SUBQUERY } from './item/sql';
 import { notAVariantParentSql } from './item/attention-sql';
@@ -255,6 +261,20 @@ function valuedAmountSql(alias: string): string {
  * is a document that does not add up.
  */
 const SCHEDULE_ITEM_FILTER = valuableItemFilter('items');
+
+/**
+ * The shared WHERE for every parts-catalogue read: one row per active, non-parent item.
+ *
+ * Deliberately **not** {@link valuableItemFilter}: a catalogue is a list of what you have, not a
+ * valuation, so an unlimited-supply item belongs on it even though `qty × value` is undefined for
+ * one and every valuation read therefore excludes it. What the two do share is that a variant
+ * *parent* is an abstraction holding no stock of its own.
+ *
+ * Named because the catalogue threads it through both of its reads, so a section's subtotal and
+ * the page of lines beneath it can never disagree about which items the section covers (issue
+ * #410) — a line the totals omit, or vice versa, is a document that does not add up.
+ */
+const CATALOGUE_ITEM_FILTER = `items.is_active = 1 AND ${notAVariantParent('items.id')}`;
 
 /**
  * SQL expression for an item's **depreciated purchase price** in stored micro-units, or NULL when
@@ -460,6 +480,86 @@ function preferredSupplierNameSql(col: string): string {
              JOIN suppliers s ON s.id = sp.supplier_id
              WHERE sp.item_id = ${col} AND sp.is_preferred = 1
              ORDER BY sp.updated_at DESC LIMIT 1)`;
+}
+
+/**
+ * SQL predicate for "does **anything** price this item?" — the twin of the pure
+ * {@link hasValuationSource} seam, which the catalogue reads to tell a line worth a real `0` from
+ * one nothing prices at all (issue #706). It exists in SQL for the same reason
+ * {@link effectiveUnitValueSql} does (issue #170): the catalogue's per-section totals are summed
+ * by the database, so "how many of these lines are priced" has to be answerable there too.
+ *
+ * It states the same four sources the pure seam names, in a shape that keeps the expensive one
+ * last. The branches are worth reading against `hasValuationSource` directly:
+ *
+ *  - A **gauge** is priced by its cost per unit of measure and by nothing else — the other
+ *    sources price one *countable* unit, and a gauge holds a measure (issue #683).
+ *  - `purchase_price IS NOT NULL` stands in for the pure seam's `depreciatedPurchasePrice`,
+ *    because {@link depreciatedPurchasePriceSql} is NULL in exactly one case — a NULL
+ *    `purchase_price` — and non-NULL in every other. Testing the cheap column instead of the
+ *    formula is the same question asked without evaluating a `julianday` arithmetic chain.
+ *  - The correlated supplier lookup is the last branch, so `CASE`'s short-circuit only reaches it
+ *    for an item that no column of its own prices — rather than paying for it on every row, on
+ *    top of the evaluation {@link effectiveUnitValueSql} already makes in the same statement.
+ *
+ * `ReportRepository.test.ts` pins this against `hasValuationSource` over randomised fixtures, so
+ * the third statement of the precedence cannot quietly drift from the other two.
+ */
+function hasValuationSourceSql(alias: string, baseCurrency: string | null): string {
+  return `CASE
+            WHEN ${isGauge(alias)} THEN ${alias}.cost_per_unit_of_measure IS NOT NULL
+            WHEN ${alias}.current_value IS NOT NULL
+              OR ${alias}.unit_cost IS NOT NULL
+              OR ${alias}.purchase_price IS NOT NULL THEN 1
+            ELSE ${preferredSupplierCostSql(`${alias}.id`, baseCurrency)} IS NOT NULL
+          END`;
+}
+
+/**
+ * Resolve a {@link CatalogueGroupRef} to the extra `WHERE` clause that selects one printed
+ * section's rows, and its bind params.
+ *
+ * Every ref is produced by the summary read that drew the section's heading, so this is the point
+ * at which a heading and its lines are proved to describe the same set. Two folds are load-bearing
+ * and easy to lose:
+ *
+ *  - the trailing bucket must pick up an item whose location/category **no longer exists**, not
+ *    merely one with none set — the same rule `resolveScheduleGroupKey` states for the schedule;
+ *  - `categories.name` carries no uniqueness constraint, so a section headed with a name that two
+ *    categories share is one predicate over both of their ids.
+ */
+function catalogueGroupFilter(ref: CatalogueGroupRef): { clause: string; params: SqlValue[] } {
+  switch (ref.kind) {
+    case 'all':
+      return { clause: '', params: [] };
+    case 'location':
+      return { clause: ' AND items.location_id = ?', params: [ref.locationId] };
+    case 'unassigned':
+      return {
+        clause: ' AND (items.location_id IS NULL OR items.location_id NOT IN (SELECT id FROM locations))',
+        params: [],
+      };
+    case 'category': {
+      // A section with no ids at all can only arise from a summary row that resolved to no
+      // category, which `uncategorised` covers — match nothing rather than emit `IN ()`.
+      if (ref.categoryIds.length === 0) return { clause: ' AND 0', params: [] };
+      return {
+        clause: ` AND items.category_id IN (${ref.categoryIds.map(() => '?').join(', ')})`,
+        params: [...ref.categoryIds],
+      };
+    }
+    case 'uncategorised': {
+      // Unset, dangling, or in a category whose name is blank — all three read as no heading.
+      const blank =
+        ref.blankCategoryIds.length > 0
+          ? ` OR items.category_id IN (${ref.blankCategoryIds.map(() => '?').join(', ')})`
+          : '';
+      return {
+        clause: ` AND (items.category_id IS NULL OR items.category_id NOT IN (SELECT id FROM categories)${blank})`,
+        params: [...ref.blankCategoryIds],
+      };
+    }
+  }
 }
 
 export class ReportRepository extends BaseRepository {
@@ -761,7 +861,7 @@ export class ReportRepository extends BaseRepository {
     const base = this.baseCurrency();
     const decimals = this.moneyDecimals();
     const factor = 10 ** decimals;
-    const locations = await this.scheduleLocations();
+    const locations = await this.documentLocations();
 
     const rows = await this.driver.query<{ group_id: string | null; n: number; minor: number | null }>(
       `SELECT loc.id AS group_id, COUNT(*) AS n,
@@ -896,8 +996,12 @@ export class ReportRepository extends BaseRepository {
     return this.toPage(lines, limit, offset);
   }
 
-  /** The location rows the schedule groups and orders by. Bounded by the location count. */
-  private async scheduleLocations(): Promise<ScheduleLocationInput[]> {
+  /**
+   * The location rows a printable document groups and orders by — the insurance schedule and the
+   * parts catalogue share one read because they share one ordering (`flattenLocationHierarchy`).
+   * Bounded by the location count, so it is safe at any inventory size.
+   */
+  private async documentLocations(): Promise<ScheduleLocationInput[]> {
     const rows = await this.driver.query<{ id: string; name: string; parent_id: string | null }>(
       `SELECT id, name, parent_id FROM locations;`,
     );
@@ -905,36 +1009,152 @@ export class ReportRepository extends BaseRepository {
   }
 
   /**
-   * Parts catalogue (issue #22): a printable list of items scoped by `all`, by a location and
-   * its whole subtree, by a project's bill of materials, or by an explicit ad-hoc selection.
-   * One row per active, non-parent item (a variant parent holds no stock of its own); the
-   * pure {@link buildPartsCatalogue} groups them by location and rolls up value subtotals.
-   * A line is valued through the same `valuedUnitValue` seam as every other valuation — a manual
-   * `current_value`, else a unit cost, else the {@link preferredSupplierCostSql} supplier price,
-   * else the {@link depreciatedPurchasePriceSql} book value (issue #688) — and it takes the shared
-   * {@link valuedItemColumns} projection to get there. It used to spell that projection out and
-   * omit `current_value`, so a revalued asset printed as unpriced and contributed nothing to its
-   * room subtotal, while the insurance schedule listed the same asset at that value (issue #706).
-   * The columns the reader ultimately prints are a UI concern — every field is resolved here.
+   * Parts catalogue (issue #22) — the document's **sections and totals**, with no lines.
+   *
+   * Summed **in the database** (issue #410): one grouped row per location or category rather than
+   * one transferred row per item. The read it replaced pulled every item in scope into a single
+   * array, cloned it across the worker boundary and rendered one non-virtualised table row for
+   * each — the same shape of problem issue #163 fixed for the insurance schedule, minus the
+   * thumbnail BLOBs (which the catalogue has always fetched only for the Photo column). "All
+   * items" over a large inventory now costs a few dozen numbers.
+   *
+   * Each line is quantised to integer minor units by {@link scheduleLineMinorUnitsSql} —
+   * reproducing `scheduleLineValue` exactly, which is the same value {@link toCatalogueLine}
+   * puts on a printed line — so the `SUM` is exact, order-independent, and adds up to what the
+   * document prints (issue #288). Nothing here selects a thumbnail or a supplier name: totalling
+   * a catalogue never needs either.
+   *
+   * The grouping key is normalised through a `LEFT JOIN`, so an item whose location or category
+   * is unset **or** points at a deleted row folds into the trailing "Unassigned" / "Uncategorised"
+   * section exactly as the pure seam folds it. Narrowing that to `IS NULL` would silently drop
+   * items pointing at a deleted row from a document that claims to cover the whole scope.
+   *
+   * Value flows through the same `valuedUnitValue` rule as every other valuation — restated here
+   * as {@link effectiveUnitValueSql} so the whole catalogue sums in SQL — so a line and the
+   * subtotal above it come from one rule.
    */
-  async partsCatalogue(
+  async partsCatalogueSummary(
     scope: CatalogueScope,
-    options: CataloguePartsOptions = {},
+    options: { readonly groupBy?: CatalogueGroupBy } = {},
     now: number = nowMs(),
-  ): Promise<PartsCatalogue> {
+  ): Promise<PartsCatalogueSummary> {
+    const groupBy = options.groupBy ?? DEFAULT_CATALOGUE_GROUP_BY;
     const base = this.baseCurrency();
+    const decimals = this.moneyDecimals();
     const filter = await this.catalogueScopeFilter(scope);
     // An empty ad-hoc selection resolves to nothing — short-circuit rather than emit an
-    // `IN ()` (a syntax error) or fetch the whole catalogue.
+    // `IN ()` (a syntax error) or scan the whole catalogue.
     if (filter === null) {
-      return { groups: [], grandTotal: 0, totalQuantity: 0, itemCount: 0, hasValue: false, generatedAt: now };
+      return {
+        groups: [],
+        grandTotal: 0,
+        totalQuantity: 0,
+        itemCount: 0,
+        hasValue: false,
+        generatedAt: now,
+      };
     }
 
-    // The thumbnail BLOB is only fetched when the Photo column is on — an unneeded per-item
-    // BLOB would bloat the payload of a large, text-only catalogue.
-    const thumbnailSelect = options.includePhotos ? `${THUMBNAIL_SUBQUERY}` : `NULL AS thumbnail_blob`;
+    // The grouping row, joined so a deleted target resolves to NULL rather than dropping the
+    // item. "No grouping" needs no join and no `GROUP BY` — the whole scope is one section.
+    const grouping =
+      groupBy === 'category'
+        ? {
+            join: ' LEFT JOIN categories grp ON grp.id = items.category_id',
+            id: 'grp.id',
+            name: 'grp.name',
+          }
+        : groupBy === 'location'
+          ? { join: ' LEFT JOIN locations grp ON grp.id = items.location_id', id: 'grp.id', name: 'NULL' }
+          : { join: '', id: 'NULL', name: 'NULL' };
+    const groupClause = groupBy === 'none' ? '' : `\n        GROUP BY ${grouping.id}`;
 
-    const itemRows = await this.driver.query<{
+    const rows = await this.driver.query<{
+      group_id: string | null;
+      group_name: string | null;
+      n: number;
+      minor: number | null;
+      qty: number | null;
+      priced: number | null;
+    }>(
+      `SELECT ${grouping.id} AS group_id, ${grouping.name} AS group_name, COUNT(*) AS n,
+              SUM(${scheduleLineMinorUnitsSql('items', base, decimals, now)}) AS minor,
+              SUM(CASE WHEN ${isGauge('items')} THEN 0 ELSE MAX(items.quantity, 0) END) AS qty,
+              SUM(CASE WHEN ${hasValuationSourceSql('items', base)} THEN 1 ELSE 0 END) AS priced
+         FROM items${grouping.join}
+        WHERE ${CATALOGUE_ITEM_FILTER}${filter.clause}${groupClause};`,
+      filter.params,
+    );
+
+    const locations = await this.documentLocations();
+    // "No grouping" is an ungrouped aggregate, so SQLite returns one row even for an empty
+    // scope; drop it rather than emit a section holding nothing.
+    const tallies: CatalogueGroupTally[] = rows
+      .filter((r) => r.n > 0)
+      .map((r) => ({
+        groupId: r.group_id,
+        groupName: r.group_name,
+        itemCount: r.n,
+        subtotalMinorUnits: r.minor ?? 0,
+        totalQuantity: r.qty ?? 0,
+        pricedCount: r.priced ?? 0,
+      }));
+    return finalisePartsCatalogueSummary(tallies, locations, now, { groupBy, decimals });
+  }
+
+  /**
+   * One bounded page of a single catalogue section's lines, ordered as the document orders them.
+   *
+   * A page is addressed per-section rather than document-wide because the catalogue's section
+   * order is either the location *hierarchy* or a run of category names compared the way a reader
+   * reads them — both resolved in TypeScript over a bounded set. The caller maps a document
+   * offset onto section slices with `sliceGroupsForPage`; this only has to serve one section's
+   * contiguous run.
+   *
+   * `ref` comes from the section's own {@link partsCatalogueSummary} row, so a page can never
+   * describe a different set from the heading above it — including the two folds that are easy to
+   * lose: an item pointing at a **deleted** location or category still belongs to the trailing
+   * bucket, and two categories that happen to share a name are one section and one predicate.
+   *
+   * Lines are ordered **in SQL**, which is what lets a section be read a page at a time at all.
+   * `name` collates `NOCASE` where the ordering used to be a `localeCompare`, so two names
+   * differing only by an accent may swap places against the old whole-document read; the
+   * insurance schedule's paged read made the same trade (issue #163). The `value` and `quantity`
+   * orders sort by the very expressions the totals are summed from, so a page and its subtotal
+   * cannot disagree about what a line is worth.
+   *
+   * The thumbnail BLOB and the correlated supplier-name lookup are per-row costs, and both are
+   * now paid for a page rather than for a whole inventory; the thumbnail is additionally fetched
+   * only when the Photo column is on.
+   */
+  async partsCatalogueGroupPage(
+    scope: CatalogueScope,
+    ref: CatalogueGroupRef,
+    params: PageParams = {},
+    options: { readonly includePhotos?: boolean; readonly sortBy?: CatalogueSortBy } = {},
+    now: number = nowMs(),
+  ): Promise<Page<CatalogueLine>> {
+    const base = this.baseCurrency();
+    const decimals = this.moneyDecimals();
+    const { limit, offset } = this.resolvePage(params);
+    const scopeFilter = await this.catalogueScopeFilter(scope);
+    if (scopeFilter === null) return this.toPage([], limit, offset);
+    const group = catalogueGroupFilter(ref);
+
+    // The thumbnail BLOB is only fetched when the Photo column is on — an unneeded per-item
+    // BLOB would bloat the payload of a text-only catalogue page.
+    const thumbnailSelect = options.includePhotos ? THUMBNAIL_SUBQUERY : 'NULL AS thumbnail_blob';
+    const sortBy = options.sortBy ?? DEFAULT_CATALOGUE_SORT_BY;
+    // The name/id tail is the pure comparator's stable tiebreak, kept on every ordering.
+    const byName = 'items.name COLLATE NOCASE, items.id';
+    const orderBy =
+      sortBy === 'value'
+        ? `${scheduleLineMinorUnitsSql('items', base, decimals, now)} DESC, ${byName}`
+        : sortBy === 'quantity'
+          ? `${valuedAmountSql('items')} DESC, ${byName}`
+          : byName;
+
+    const rows = await this.driver.query<{
       id: string;
       name: string;
       location_id: string;
@@ -977,82 +1197,53 @@ export class ReportRepository extends BaseRepository {
               ${thumbnailSelect}
          FROM items
          LEFT JOIN categories ON categories.id = items.category_id
-        WHERE items.is_active = 1 AND ${notAVariantParent('items.id')}${filter.clause};`,
-      filter.params,
+        WHERE ${CATALOGUE_ITEM_FILTER}${scopeFilter.clause}${group.clause}
+        ORDER BY ${orderBy}
+        LIMIT ? OFFSET ?;`,
+      [...scopeFilter.params, ...group.params, limit, offset],
     );
 
-    const locationRows = await this.driver.query<{
-      id: string;
-      name: string;
-      parent_id: string | null;
-    }>(`SELECT id, name, parent_id FROM locations;`);
-
-    const items: CatalogueItemInput[] = itemRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      locationId: r.location_id,
-      category: r.category_name,
-      description: r.description,
-      thumbnail: r.thumbnail_blob ?? null,
-      quantity: r.quantity,
-      unitOfMeasure: r.unit_of_measure,
-      condition: (r.condition as CatalogueItemInput['condition']) ?? null,
-      serialNo: r.serial_no,
-      mpn: r.mpn,
-      manufacturer: r.manufacturer,
-      supplier: r.supplier_name,
-      // Money columns are stored in micro-units (issue #286); back to major units at this boundary.
-      unitCost: fromStoredMoney(r.unit_cost),
-      currentValuePerUnit: fromStoredMoney(r.current_value),
-      preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
-      depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
-      // A gauge is priced per unit of *measure* and its count is always 0, so the catalogue
-      // values it from its contents exactly as the insurance schedule does (issue #683) —
-      // otherwise a printed parts list totals a full cylinder at nothing.
-      gauge:
-        r.tracking_mode === 'CONSUMABLE_GAUGE'
-          ? {
-              netValue: r.current_net_value ?? 0,
-              costPerUnitOfMeasure: fromStoredMoney(r.cost_per_unit_of_measure),
-            }
-          : null,
-      purchasePrice: fromStoredMoney(r.purchase_price),
-      acquiredAt: r.acquired_at,
-      warrantyExpiresAt: r.warranty_expires_at,
-      notes: r.notes,
-    }));
-    const locations: CatalogueLocationInput[] = locationRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      parentId: r.parent_id,
-    }));
-
-    return buildPartsCatalogue(items, locations, now, {
-      groupBy: options.groupBy,
-      sortBy: options.sortBy,
-    });
-  }
-
-  /**
-   * How many items a catalogue scope covers — counted, not fetched (issue #338).
-   *
-   * {@link partsCatalogue} reads its whole scope into one document, so "All items" over a large
-   * inventory is unbounded in both the rows it pulls and the pages it would print. The screen
-   * asks this first and only builds the catalogue when the answer is within the printable
-   * ceiling, mirroring how the insurance schedule leads with a bounded summary read (issue
-   * #163). The predicate is character-for-character the one {@link partsCatalogue} filters by,
-   * so the count can never describe a different set from the document.
-   */
-  async partsCatalogueCount(scope: CatalogueScope): Promise<number> {
-    const filter = await this.catalogueScopeFilter(scope);
-    // An empty ad-hoc selection (or a location that no longer exists) covers nothing.
-    if (filter === null) return 0;
-    const row = await this.driver.queryOne<{ count: number }>(
-      `SELECT COUNT(*) AS count FROM items
-        WHERE items.is_active = 1 AND ${notAVariantParent('items.id')}${filter.clause};`,
-      filter.params,
+    const lines = rows.map((r) =>
+      toCatalogueLine(
+        {
+          id: r.id,
+          name: r.name,
+          locationId: r.location_id,
+          category: r.category_name,
+          description: r.description,
+          thumbnail: r.thumbnail_blob ?? null,
+          quantity: r.quantity,
+          unitOfMeasure: r.unit_of_measure,
+          condition: (r.condition as CatalogueItemInput['condition']) ?? null,
+          serialNo: r.serial_no,
+          mpn: r.mpn,
+          manufacturer: r.manufacturer,
+          supplier: r.supplier_name,
+          // Money columns are stored in micro-units (issue #286); back to major units here.
+          unitCost: fromStoredMoney(r.unit_cost),
+          currentValuePerUnit: fromStoredMoney(r.current_value),
+          preferredSupplierCost: fromStoredMoney(r.preferred_supplier_cost),
+          depreciatedPurchasePrice: fromStoredMoney(r.depreciated_purchase_price),
+          // A gauge is priced per unit of *measure* and its count is always 0, so the catalogue
+          // values it from its contents exactly as the insurance schedule does (issue #683) —
+          // otherwise a printed parts list totals a full cylinder at nothing.
+          gauge:
+            r.tracking_mode === 'CONSUMABLE_GAUGE'
+              ? {
+                  netValue: r.current_net_value ?? 0,
+                  costPerUnitOfMeasure: fromStoredMoney(r.cost_per_unit_of_measure),
+                }
+              : null,
+          purchasePrice: fromStoredMoney(r.purchase_price),
+          acquiredAt: r.acquired_at,
+          warrantyExpiresAt: r.warranty_expires_at,
+          notes: r.notes,
+        },
+        now,
+        decimals,
+      ),
     );
-    return row?.count ?? 0;
+    return this.toPage(lines, limit, offset);
   }
 
   /**
