@@ -2042,6 +2042,7 @@
   "scanner.manual.placeholder": "Code eingeben oder einfügen — auch der Kurzcode eines Etiketts",
   "scanner.notice.websiteLink": "Das ist ein Website-Link, kein Gubbins-Code und kein Produkt-Barcode.",
   "scanner.notice.unknownCode": "Kein Artikel in Ihrem Bestand hat diesen Code. Speichern Sie ihn im Barcode-Feld eines Artikels, um den Artikel künftig so zu finden.",
+  "scanner.notice.alreadyScanned": "Bereits gescannt — dieser Code wurde gerade gelesen.",
   "scanner.shortCode.ambiguous": "Mehr als ein Artikel beginnt mit diesem Kurzcode — scannen Sie stattdessen den Code des Etiketts.",
   "scanner.help.shortCode.title": "Kurzcodes",
   "scanner.help.shortCode.body": "der achtstellige Code, der auf jedes Etikett gedruckt wird, z. B. A1B2C3D4. Geben Sie ihn unten ein, wenn der QR-Code oder Barcode zu zerkratzt oder eingerissen ist, um ihn zu scannen.",

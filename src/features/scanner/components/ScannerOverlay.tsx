@@ -33,6 +33,7 @@ import { runBatch, summariseBatch } from '../batch-actions';
 import { ScanFeedback } from '../feedback';
 import type { ScannerEngineStatus } from '../barcode-decoder';
 import { isShortItemCode, isStructuredQrPayload, parseScannedCode } from '../scan-payload';
+import { ScanGate } from '../scan-gate';
 import { initialScannerState, scannerReducer, type ScannerMode } from '../scanner-machine';
 import { ScannerQueueProvider, useScannerQueue } from '../ScannerQueueContext';
 import { useNfcScan } from '../useNfcScan';
@@ -105,6 +106,10 @@ function ScannerOverlayInner({
   // large relative to the analysed pixels on any viewport shape (issue #59).
   const reticleRef = useRef<HTMLDivElement | null>(null);
   const feedback = useRef<ScanFeedback>(new ScanFeedback());
+  // The §6.4 double-scan guard, in front of the resolution work rather than behind it (issue
+  // #512): every decode is offered here before a single repository call, so a label resting in
+  // the viewfinder costs one read per wave of the hand rather than one per animation frame.
+  const gate = useRef<ScanGate>(new ScanGate());
   const queue = useScannerQueue();
   const checkout = useCheckoutItem();
   const move = useMoveItem();
@@ -161,20 +166,50 @@ function ScannerOverlayInner({
     async (raw: string) => {
       const confirmOpts = { beep: beepEnabled, haptics: hapticsEnabled };
 
+      /**
+       * Acknowledge a scan that was deliberately ignored because the same code (or the same
+       * item) has just been dealt with. Batch scanning runs on trusting the confirmation tone,
+       * and a rejected re-scan used to be indistinguishable from a code that failed to read —
+       * so it gets its own, distinctly different tone and a message (issue #512).
+       */
+      const acknowledgeRepeat = () => {
+        feedback.current.repeat(confirmOpts);
+        setNotice(t('scanner.notice.alreadyScanned'));
+      };
+
+      // Gate the *raw decoded string* before any repository call, so the debounce covers every
+      // path — item, location, GTIN, short code and unrecognised alike. A repeat of a code that
+      // resolved is acknowledged; a repeat of one that resolved to nothing stays silent, since a
+      // tone there would claim a scan that never registered.
+      const decision = gate.current.offer(raw);
+      if (decision !== 'accept') {
+        if (decision === 'repeat') acknowledgeRepeat();
+        return;
+      }
+
       // A resolved item (from a Gubbins code, or a retail barcode an item already carries)
       // is confirmed and either queued (Continuous) or shown for a Discrete action.
       const presentItem = (item: Item) => {
-        setNotice(null);
+        // The read resolved, so later frames of the same label get the acknowledgement above
+        // rather than the silence that means "not read".
+        gate.current.resolved(raw);
         setGtinResult(null);
         setLookupResult(null);
         if (state.mode === 'CONTINUOUS') {
-          const added = queue.offer(item.id, item.name);
-          if (added) feedback.current.confirm(confirmOpts);
-        } else {
+          // The queue's own id-keyed guard still has work the raw gate cannot do: two different
+          // codes can name one item. A refusal is acknowledged, not passed over in silence.
+          if (!queue.offer(item.id, item.name)) {
+            acknowledgeRepeat();
+            return;
+          }
+          setNotice(null);
           feedback.current.confirm(confirmOpts);
-          dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view
-          setDiscreteResult(item);
+          return;
         }
+        setNotice(null);
+        feedback.current.confirm(confirmOpts);
+        dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view
+        setDiscreteResult(item);
       };
 
       /**
@@ -202,6 +237,7 @@ function ScannerOverlayInner({
         const short = value.trim().toUpperCase();
         const loc = locationRows.find((l) => shortId(l.id) === short);
         if (!loc) return false;
+        gate.current.resolved(raw);
         setNotice(null);
         feedback.current.confirm(confirmOpts);
         onLocationScanned?.(loc.id);
@@ -218,6 +254,7 @@ function ScannerOverlayInner({
           setNotice('No matching location found.');
           return;
         }
+        gate.current.resolved(raw);
         setNotice(null);
         feedback.current.confirm(confirmOpts);
         onLocationScanned?.(code.id);
@@ -257,6 +294,7 @@ function ScannerOverlayInner({
       // A retail barcode no item carries: offer to create one (recommendation point 1). Never
       // a dead end.
       if (code?.kind === 'gtin') {
+        gate.current.resolved(raw);
         setNotice(null);
         feedback.current.confirm(confirmOpts);
         dispatch({ type: 'REVIEW_QUEUE' }); // pause the live view for the prompt
@@ -316,12 +354,23 @@ function ScannerOverlayInner({
     void handleDecode(value);
   };
 
+  /**
+   * Return to the live viewfinder from a paused review, re-arming every code on the way (issue
+   * #512). Resuming is always a deliberate ask, so the label still in the user's hand must read
+   * immediately rather than stutter for the rest of its cooldown window. Every resume goes
+   * through here, so a future one cannot forget.
+   */
+  const resumeScanning = () => {
+    gate.current.clear();
+    dispatch({ type: 'RESUME_SCANNING' });
+  };
+
   const scanAgain = () => {
     setDiscreteResult(null);
     setGtinResult(null);
     setLookupResult(null);
     setSingleMove('');
-    dispatch({ type: 'RESUME_SCANNING' });
+    resumeScanning();
   };
 
   // Move the single scanned item to a location — the one-id peer of the Continuous
@@ -375,7 +424,7 @@ function ScannerOverlayInner({
     setNotice(summariseBatch('CHECKOUT', outcome, contact));
     queue.clear();
     setBatchName('');
-    dispatch({ type: 'RESUME_SCANNING' });
+    resumeScanning();
   };
 
   const batchMove = async () => {
@@ -385,7 +434,7 @@ function ScannerOverlayInner({
     setNotice(summariseBatch('MOVE', outcome, name));
     queue.clear();
     setMoveTarget('');
-    dispatch({ type: 'RESUME_SCANNING' });
+    resumeScanning();
   };
 
   return createPortal(
@@ -655,7 +704,7 @@ function ScannerOverlayInner({
                 >
                   <CheckoutIcon /> Check out all
                 </Button>
-                <Button variant="outline" onClick={() => dispatch({ type: 'RESUME_SCANNING' })}>
+                <Button variant="outline" onClick={resumeScanning}>
                   Keep scanning
                 </Button>
               </div>
@@ -805,7 +854,7 @@ function ScannerOverlayInner({
             setCheckoutItem(null);
             setDiscreteResult(null);
             setSingleMove('');
-            dispatch({ type: 'RESUME_SCANNING' });
+            resumeScanning();
           }}
         />
       ) : null}

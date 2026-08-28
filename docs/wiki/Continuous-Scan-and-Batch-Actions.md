@@ -23,9 +23,22 @@ Once you've scanned a batch, apply one action to **all** of them together, for e
 > Continuous scan turns a tedious job into a quick sweep: scan every box off the van, then
 > **move all** to *Receiving* in one action instead of editing each item.
 
+## Knowing a scan landed, without looking
+
+Each item that joins the list gets a confirmation beep and a buzz, so you can keep your eyes on
+the shelf rather than the screen. (Both can be turned off under **Settings → Scanning & labels**
+if you'd rather scan quietly.)
+
+A code you scan twice isn't counted twice — the batch tracks distinct items. A repeat gets its own
+**lower, shorter tone** and an *Already scanned* message instead of the usual confirmation, so you
+can hear that it's already on the list rather than being left to wonder. If you hear nothing and no
+message appears, the code wasn't read at all: move a little closer, steady your hand, and try
+again.
+
 > **ℹ️ Note**
-> A code you scan twice isn't counted twice — the batch tracks distinct items, so a quick
-> double-beep won't throw your numbers off.
+> Leaving a label sitting in the viewfinder won't add it over and over. Gubbins settles on a code
+> for a couple of seconds after reading it, so one sweep past a label counts once — and it isn't
+> re-checked against your inventory in the meantime, which keeps a long batch easy on the battery.
 
 ## Related pages
 

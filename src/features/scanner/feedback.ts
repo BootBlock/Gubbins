@@ -12,6 +12,23 @@
 
 type AudioContextCtor = typeof AudioContext;
 
+/** One non-visual signal: a beep of this length and pitch, and a haptic of this length. */
+interface ScanTone {
+  readonly durationMs: number;
+  readonly frequencyHz: number;
+  readonly vibrateMs: number;
+}
+
+/** A scan that landed (§6.5). */
+const CONFIRM_TONE: ScanTone = { durationMs: 90, frequencyHz: 880, vibrateMs: 200 };
+
+/**
+ * A scan that was deliberately ignored (issue #512). Lower and shorter than
+ * {@link CONFIRM_TONE} in all three dimensions, because the whole point is that a user
+ * listening rather than looking can tell the two apart.
+ */
+const REPEAT_TONE: ScanTone = { durationMs: 50, frequencyHz: 440, vibrateMs: 60 };
+
 function getAudioContextCtor(): AudioContextCtor | null {
   if (typeof window === 'undefined') return null;
   return (
@@ -37,7 +54,7 @@ export class ScanFeedback {
   }
 
   /** A short, premium-sounding confirmation beep (§6.5). No-op without Web Audio. */
-  beep(durationMs = 90, frequency = 880): void {
+  beep(durationMs = CONFIRM_TONE.durationMs, frequency = CONFIRM_TONE.frequencyHz): void {
     if (!this.ctx) this.prime();
     const ctx = this.ctx;
     if (!ctx) return;
@@ -60,7 +77,7 @@ export class ScanFeedback {
   }
 
   /** Crisp haptic bump (§6.5). No-op where `navigator.vibrate` is unsupported. */
-  vibrate(pattern: number | number[] = 200): void {
+  vibrate(pattern: number | number[] = CONFIRM_TONE.vibrateMs): void {
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
       try {
         navigator.vibrate(pattern);
@@ -77,8 +94,20 @@ export class ScanFeedback {
    * passes the current flags through here.
    */
   confirm({ beep = true, haptics = true }: { beep?: boolean; haptics?: boolean } = {}): void {
-    if (beep) this.beep();
-    if (haptics) this.vibrate(200);
+    if (beep) this.beep(CONFIRM_TONE.durationMs, CONFIRM_TONE.frequencyHz);
+    if (haptics) this.vibrate(CONFIRM_TONE.vibrateMs);
+  }
+
+  /**
+   * Acknowledge a scan the app deliberately ignored — a label still resting in the viewfinder,
+   * or an item already in the working queue (issue #512). Deliberately *unlike*
+   * {@link ScanFeedback.confirm}: a lower, shorter tone and a brief single bump, so a repeat is
+   * never mistaken for a fresh hit and silence keeps its one meaning — nothing was read at all.
+   * Honours the same user-mutable §6.5 flags as the confirmation.
+   */
+  repeat({ beep = true, haptics = true }: { beep?: boolean; haptics?: boolean } = {}): void {
+    if (beep) this.beep(REPEAT_TONE.durationMs, REPEAT_TONE.frequencyHz);
+    if (haptics) this.vibrate(REPEAT_TONE.vibrateMs);
   }
 
   /** Release the AudioContext when the scanner closes. */
