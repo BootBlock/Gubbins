@@ -87,7 +87,13 @@ const itemRepo = {
     ],
     hasMore: false,
   })),
-  getHistoryForItems: vi.fn(async () => new Map()),
+  getHistoryForItems: vi.fn(
+    async (_itemIds: readonly string[], _perItemLimit: number) =>
+      new Map<
+        string,
+        { id: string; itemId: string; action: string; note: string | null; createdAt: number }[]
+      >(),
+  ),
 };
 
 /** One image for `i1`, pointing at a full-resolution OPFS file (present or not per test). */
@@ -351,6 +357,85 @@ describe('VAULT export — the note embeds a file the zip really carries (issue 
     expect(embedded).toEqual(['NE555 Timer-i1-1.thumb.webp']);
     expect(Object.keys(assets)).toEqual(expect.arrayContaining(embedded.map((n) => `assets/${n}`)));
     expect(Object.keys(assets)).not.toContain('assets/NE555 Timer-i1-1.webp');
+  });
+});
+
+describe('VAULT export — a capped Activity Log says it was capped (issue #610)', () => {
+  /** The one item note the vault writes for `i1`. */
+  function noteFor(files: Record<string, string>): string {
+    const path = Object.keys(files).find((p) => p.endsWith('NE555 Timer.md'))!;
+    return files[path]!;
+  }
+
+  /** The rows of the note's `## Activity` table, header and separator dropped. */
+  function activityRows(note: string): string[] {
+    return note
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('| ') && !line.startsWith('| When |') && !line.startsWith('| --- |'));
+  }
+
+  /**
+   * Serve `total` entries for `i1`, newest first, honouring whatever per-item limit the export
+   * asked for. The limit is what the export uses to *detect* a longer log, so a mock that ignored
+   * it would pass whatever the caller did.
+   */
+  function historyOf(total: number): void {
+    itemRepo.getHistoryForItems.mockImplementation(async (ids, limit) => {
+      const rows = Array.from({ length: Math.min(total, limit) }, (_, n) => ({
+        id: `h${n}`,
+        itemId: 'i1',
+        action: 'ADJUSTED',
+        quantityDelta: 1,
+        netValueDelta: null,
+        // Newest first, as `getHistory` orders: entry 0 is the most recent of `total`.
+        note: `entry ${total - 1 - n}`,
+        metadata: null,
+        createdAt: total - n,
+      }));
+      return new Map(ids.includes('i1') ? [['i1', rows]] : []);
+    });
+  }
+
+  // The default (an empty log) is restored explicitly: `clearAllMocks` clears recorded calls,
+  // not an implementation set by a test.
+  afterEach(() => {
+    itemRepo.getHistoryForItems.mockImplementation(async () => new Map());
+  });
+
+  it('writes every entry, and no notice, for a log that fits', async () => {
+    historyOf(3);
+    await runExport('VAULT', { includeInactive: false });
+    const note = noteFor(zipped[0]!.files);
+    expect(activityRows(note)).toHaveLength(3);
+    expect(note).not.toContain('Showing the most recent');
+  });
+
+  it('caps a longer log at 1000 entries and says so in the note', async () => {
+    // 100 was the old cap and the whole bug: the note rendered a full-looking table over a
+    // truncated read. A log past the new cap is still cut — but the note now admits it.
+    historyOf(1500);
+    await runExport('VAULT', { includeInactive: false });
+    const note = noteFor(zipped[0]!.files);
+
+    // The read asks for one more than it inlines, which is how the longer log is detected at all.
+    expect(itemRepo.getHistoryForItems).toHaveBeenCalledWith(expect.arrayContaining(['i1']), 1001);
+    const rows = activityRows(note);
+    expect(rows).toHaveLength(1000);
+    // The extra entry is dropped, not written: the count in the notice is the count in the table.
+    expect(note).toContain('Showing the most recent 1000 entries.');
+    // What survives is the *newest* slice, so the note starts at the latest entry and the oldest
+    // 500 are the ones left out.
+    expect(rows[0]).toContain('entry 1499');
+    expect(rows[999]).toContain('entry 500');
+  });
+
+  it('writes the whole log, and no notice, at exactly the cap', async () => {
+    // The boundary the `limit + 1` read exists to get right: 1000 entries is a complete log.
+    historyOf(1000);
+    await runExport('VAULT', { includeInactive: false });
+    const note = noteFor(zipped[0]!.files);
+    expect(activityRows(note)).toHaveLength(1000);
+    expect(note).not.toContain('Showing the most recent');
   });
 });
 

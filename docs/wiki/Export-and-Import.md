@@ -25,6 +25,11 @@ Get your data out in whichever form suits:
   > photos stay on the device that took them, so on a second device, or on a photo you have let
   > [[Storage Triage|Storage-Triage]] shrink, the vault embeds the smaller preview instead.
   > Export from the device that holds the originals if you want them at full size.
+
+  > **ℹ️ Note** — an item's note lists its [[activity|Activity-Log]] newest first, up to the most
+  > recent 1000 entries. An item with a longer history than that says so above its Activity table,
+  > so a shortened list is never mistaken for the whole record. Nothing is removed from Gubbins —
+  > the full history stays on the item's Activity tab.
 - **Raw `.sqlite`** — the database file itself, for anyone who wants the data directly.
 - **CSV** — from [[reports|Reports-Overview]], for spreadsheets.
 
