@@ -40,14 +40,23 @@ vi.mock('@/components/icons', async (importOriginal) => {
 });
 
 // Stub sub-components that pull in heavy dependencies.
+// Rendered only when open, so a test can prove a control actually opened the dialog rather
+// than merely existing.
 vi.mock('./components/CreateProjectDialog', () => ({
-  CreateProjectDialog: () => null,
+  CreateProjectDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="create-project-dialog" /> : null,
 }));
 vi.mock('./components/ImportBomDialog', () => ({
-  ImportBomDialog: () => null,
+  ImportBomDialog: ({ open }: { open: boolean }) => (open ? <div data-testid="import-bom-dialog" /> : null),
 }));
+// Exposes the delete callback, which is the only route to "a project was selected and now
+// nothing is" — the state the detail pane's empty branches are chosen between.
 vi.mock('./components/ProjectDetail', () => ({
-  ProjectDetail: () => <div data-testid="project-detail" />,
+  ProjectDetail: ({ projectId, onDeleted }: { projectId: string; onDeleted: () => void }) => (
+    <div data-testid="project-detail">
+      <button type="button" data-testid={`delete-${projectId}`} onClick={onDeleted} />
+    </div>
+  ),
 }));
 
 // ─── controlled query stub ────────────────────────────────────────────────────
@@ -469,5 +478,82 @@ describe('ProjectsScreen — a failed load stays visible on a compact viewport (
     expect(screen.queryByTestId('open-projects-drawer')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(refetch).toHaveBeenCalled();
+  });
+});
+
+describe('ProjectsScreen — first-run explainer (issue #421)', () => {
+  it('explains what a project is when there are none, instead of asking for a selection', () => {
+    projectsState = { isLoading: false, data: { rows: [] } };
+    render(<ProjectsScreen />);
+
+    const intro = screen.getByTestId('projects-intro');
+    expect(intro.textContent).toContain('What is a project?');
+    // Each capability the explainer promises to cover, so a dropped catalog key fails here.
+    for (const heading of [
+      'A bill of materials',
+      'A shopping list, worked out for you',
+      'Reservations',
+      'A budget and a running cost',
+      'Picking and finishing the build',
+    ]) {
+      expect(intro.textContent).toContain(heading);
+    }
+    // "Select a project" is the wrong instruction when there is nothing to select.
+    expect(screen.queryByText('Select a project, or create a new one.')).toBeNull();
+  });
+
+  it('offers both ways to start a project from the explainer', () => {
+    projectsState = { isLoading: false, data: { rows: [] } };
+    render(<ProjectsScreen />);
+
+    fireEvent.click(screen.getByTestId('projects-intro-create'));
+    expect(screen.getByTestId('create-project-dialog')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('projects-intro-import'));
+    expect(screen.getByTestId('import-bom-dialog')).toBeTruthy();
+  });
+
+  it('stays out of the way once there is a project to look at', () => {
+    projectsState = { isLoading: false, data: { rows: [makeProject('p1', 'Bench PSU')] } };
+    render(<ProjectsScreen />);
+    expect(screen.queryByTestId('projects-intro')).toBeNull();
+    expect(screen.getByTestId('project-detail')).toBeTruthy();
+  });
+
+  it('does not claim an empty inventory when a filter emptied the list', () => {
+    projectsState = { isLoading: false, data: { rows: [makeProject('p1', 'Bench PSU')] } };
+    render(<ProjectsScreen />);
+
+    // Filter the only project out of the list, then drop the selection the way deleting the
+    // selected project does — the one way to reach "nothing selected" while a filter is on.
+    fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'zzz' } });
+    fireEvent.click(screen.getByTestId('delete-p1'));
+
+    // The user may well have projects; the filter is simply hiding them. Teaching them what a
+    // project is would be the wrong answer to "your search matched nothing".
+    expect(screen.queryByTestId('projects-intro')).toBeNull();
+    expect(screen.getByText('Select a project, or create a new one.')).toBeTruthy();
+    expect(screen.getByTestId('projects-no-matches')).toBeTruthy();
+  });
+
+  it('waits for the count, not the page, before claiming there are no projects', () => {
+    // An empty *page* of a non-empty set — what the final page becomes when the last project on
+    // it is deleted, until the page clamp moves the list back. "What is a project?" here would
+    // greet someone who has plenty.
+    projectsState = { isLoading: false, data: { rows: [] } };
+    projectCountState = 12;
+    render(<ProjectsScreen />);
+    expect(screen.queryByTestId('projects-intro')).toBeNull();
+  });
+
+  it('does not show the explainer while the list is still loading, or after it failed', () => {
+    projectsState = { isLoading: true };
+    render(<ProjectsScreen />);
+    expect(screen.queryByTestId('projects-intro')).toBeNull();
+    cleanup();
+
+    projectsState = { isLoading: false, isError: true };
+    render(<ProjectsScreen />);
+    expect(screen.queryByTestId('projects-intro')).toBeNull();
   });
 });
