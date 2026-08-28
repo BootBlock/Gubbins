@@ -23,8 +23,9 @@ import { ItemGalleryTileCrashed, withItemCrashBoundary } from './ItemCrashBounda
  *
  * The boundary against {@link ItemCard} is deliberate and is stated in `view-modes.ts`: a card is
  * a record that happens to carry a 44px thumbnail, a gallery tile is a picture with a caption. So
- * this draws no `Surface`, no border, no badge row, no hero metric and no ± stepper — the tiles
- * abut, and what the eye reads is the wall of images rather than the frames around them.
+ * this draws no `Surface`, no badge row, no hero metric and no ± stepper. The only edge is a
+ * hairline ring on the picture itself, which is what the selected state thickens — so what the
+ * eye reads is the wall of images rather than the frames around them.
  *
  * What it does keep is the item's action controls, on the caption line rather than over the
  * picture. The pointer-only body-click shortcut ({@link useCardClickAction}) is only defensible

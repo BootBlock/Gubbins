@@ -6,9 +6,9 @@ import type { Item } from '@/db/repositories';
  * Render tests for the Compact row (issue #444).
  *
  * The mode's claim is that it is a *single line* carrying a name and one field, and that is what
- * is asserted: everything a Data row adds — the corner badge, the stock value, the ± stepper and
- * the full field summary — must be absent, because the moment any of them comes back Compact and
- * Data are the same row with different padding. The action menu is the one thing that stays, for
+ * is asserted: everything a Data row adds — the corner badge, the stock value, and the rest of
+ * the configured field list — must be absent, because the moment any of them comes back Compact
+ * and Data are the same row with different padding. The action menu is the one thing that stays, for
  * the same reason it stays on the gallery tile: the pointer-only body-click shortcut needs a
  * labelled control behind it.
  */
@@ -29,6 +29,15 @@ vi.mock('./ItemActions', async () => {
     }),
   };
 });
+// The two things a Data row adds beside its name that a Compact row must not. Mocked *here* so
+// their absence is falsifiable: querying a testid no component emits would pass whatever the row
+// rendered, which is how the first version of this test managed to assert nothing at all.
+vi.mock('./CardBadge', () => ({
+  CardBadge: () => <span data-testid="card-badge">badge</span>,
+}));
+vi.mock('./ItemStockValue', () => ({
+  ItemStockValue: () => <span data-testid="item-stock-value">stock</span>,
+}));
 vi.mock('@/lib/useFormatters', () => ({
   useFormatters: () => ({
     quantity: (n: number) => String(n),
@@ -99,10 +108,11 @@ describe('ItemCompactRow — one line, one field', () => {
 
   it('carries none of the Data row’s extra furniture', () => {
     renderRow(makeItem());
-    expect(screen.queryByTestId('quantity-stepper')).toBeNull();
-    expect(screen.queryByTestId('gauge-bar')).toBeNull();
-    // The name is a plain span on the line, not a heading with its own block.
-    expect(screen.queryByRole('heading')).toBeNull();
+    // `ItemRow` draws both of these beside its name (see ItemRow.tsx); a Compact line draws
+    // neither. Bring either back and this goes red, which is the whole point — without it
+    // Compact would drift back into being a Data row with less padding.
+    expect(screen.queryByTestId('card-badge')).toBeNull();
+    expect(screen.queryByTestId('item-stock-value')).toBeNull();
   });
 
   it('draws no trailing value when the item fills none of the configured fields', () => {

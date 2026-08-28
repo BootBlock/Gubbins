@@ -29,7 +29,7 @@ import type { LayoutDensity } from '@/state/stores/useLayoutStore';
  * | Mode | Picture | Metadata | Chrome |
  * | --- | --- | --- | --- |
  * | Card | a 44px thumbnail beside the name | the whole configured field list, the hero metric and the ± stepper | a `Surface` card, its badge row and its action footer |
- * | Gallery | the tile itself — a 176px image, or the category glyph in its place | the name and **one** field | none; the pictures abut |
+ * | Gallery | the tile itself — a 176px image, or the category glyph in its place | the name and **one** field | none but a hairline ring round the picture |
  * | Data | none | the whole configured field list, inline, plus the badge and stock value | a bordered strip |
  * | Compact | none | the name and **one** field | none; a single text line |
  *

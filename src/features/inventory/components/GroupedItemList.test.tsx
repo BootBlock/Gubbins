@@ -145,6 +145,7 @@ const PROPS = {
     customFields: new Map(),
     categoryName: () => null,
     categoryGlyph: () => null,
+    categoryGlyphUngated: () => null,
     visibleCustomFieldIds: [] as string[],
   },
 };

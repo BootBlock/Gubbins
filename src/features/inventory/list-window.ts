@@ -29,8 +29,9 @@ export const LIST_ROW_HEIGHT = {
   // carries the action buttons, and the row's own bottom gap. Multi-column like `visual`, so
   // this is the height of a whole row rather than of one item.
   gallery: 244,
-  // One text line plus the row padding and gap — the point of the mode is that it is far
-  // shorter than a `data` row, so a wrong estimate here would undo it before measurement.
+  // Set by the row's own action buttons (32px) rather than by its text, which is shorter — plus
+  // the hairline gap to the next line. The point of the mode is that it is far shorter than a
+  // `data` row, so a wrong estimate here would undo it before measurement corrects it.
   compact: 36,
   table: 48,
 } as const;
