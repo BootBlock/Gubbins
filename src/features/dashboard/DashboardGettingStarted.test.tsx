@@ -64,6 +64,19 @@ describe('DashboardGettingStarted', () => {
     expect(screen.getByTestId('getting-started-import')).toBeTruthy();
   });
 
+  it('drops the barcode clause from the body copy along with the button', () => {
+    // Matched on the trailing clause, not the bare phrase — the Scan button's own label is
+    // "Scan a barcode" too, so a looser pattern would match the button rather than the copy.
+    render(<DashboardGettingStarted />);
+    expect(screen.getByText(/or scan a barcode to get started/i)).toBeTruthy();
+    cleanup();
+
+    useModulesStore.getState().setFeatureIntent('scanner', false);
+    render(<DashboardGettingStarted />);
+    expect(screen.queryByText(/or scan a barcode to get started/i)).toBeNull();
+    expect(screen.getByText(/bring in an existing list as a CSV, to get started/i)).toBeTruthy();
+  });
+
   it('records the matching intent when an action is clicked', () => {
     render(<DashboardGettingStarted />);
     fireEvent.click(screen.getByTestId('getting-started-import'));

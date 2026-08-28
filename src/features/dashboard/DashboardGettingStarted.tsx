@@ -49,7 +49,12 @@ export function DashboardGettingStarted() {
         <PackageIcon aria-hidden />
         <h2 className="text-sm font-semibold text-foreground">{t('dashboard.gettingStarted.heading')}</h2>
       </div>
-      <p className="text-sm text-muted-foreground">{t('dashboard.gettingStarted.body')}</p>
+      {/* The body names the three routes in, so it drops the barcode clause alongside the button
+          it describes — copy that still says "scan a barcode" with no control to do it is the
+          same contradiction one sentence further down the panel. */}
+      <p className="text-sm text-muted-foreground">
+        {t(scannerEnabled ? 'dashboard.gettingStarted.body' : 'dashboard.gettingStarted.bodyNoScan')}
+      </p>
       <div className="flex flex-wrap gap-2">
         <Link
           to="/inventory"

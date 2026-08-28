@@ -236,6 +236,7 @@
   "dashboard.actions.scan": "Scannen",
   "dashboard.gettingStarted.heading": "Willkommen bei Gubbins — fügen Sie Ihr erstes Objekt hinzu",
   "dashboard.gettingStarted.body": "Ihr Inventar ist leer. Fügen Sie etwas von Hand hinzu, importieren Sie eine bestehende Liste als CSV oder scannen Sie einen Barcode, um zu beginnen.",
+  "dashboard.gettingStarted.bodyNoScan": "Ihr Inventar ist leer. Fügen Sie etwas von Hand hinzu oder importieren Sie eine bestehende Liste als CSV, um zu beginnen.",
   "dashboard.gettingStarted.add": "Ein Objekt hinzufügen",
   "dashboard.gettingStarted.import": "Importieren",
   "dashboard.gettingStarted.scan": "Barcode scannen",
