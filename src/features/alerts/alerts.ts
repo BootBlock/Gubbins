@@ -206,10 +206,10 @@ export interface AlertSources {
 
 /**
  * Renders the dates that appear in an alert's human copy. Injected — the way `buildAgenda` takes
- * an `AgendaDateFormatter` — rather than sliced from an ISO string here, so every date the alert
- * centre names reads exactly as the same field does on every other screen: in the user's locale,
- * and on the right day (issue #497). Kept a pure parameter so this seam stays free of React and
- * preferences, and stays exhaustively unit-testable.
+ * an `AgendaDateFormatter` — rather than sliced from an ISO string here, so an alert names a date
+ * in the user's locale, and on the day the seam says that value falls on (issue #497). Kept a
+ * pure parameter so this seam stays free of React and preferences, and stays exhaustively
+ * unit-testable.
  *
  * The two members are not interchangeable, and picking the wrong one is precisely the bug this
  * replaced. `Formatters` satisfies the shape structurally, so a caller passes `useFormatters()`.
@@ -310,7 +310,8 @@ function buildMaintenanceDueAlerts(
       // `dueAtMs` is a wall-clock instant, not a day-grained one, so the copy goes through
       // `date` and not `calendarDate` — reading its UTC components named the wrong day for a
       // service logged near midnight outside UTC, one day off the agenda and the calendar feed
-      // for the very same schedule (issue #497).
+      // for the very same schedule (issue #497). `alert-agenda-date-parity.test.ts` drives this
+      // lane and `buildAgenda` over one schedule and fails if the two days ever part again.
       detail: `Schedule: "${schedule.name}"${schedule.dueAtMs != null ? `. Due ${fmt.date(schedule.dueAtMs)}.` : '.'}`,
       dueAt,
       target: { route: '/inventory', itemId: schedule.itemId, itemName: schedule.itemName },

@@ -2,6 +2,13 @@
  * Drift test: the alert centre and the Upcoming agenda must name the **same day** for the same
  * maintenance schedule (issue #497).
  *
+ * Scope is that one lane, deliberately. The two seams also share three day-grained values —
+ * expiry, warranty and custom-field due dates — but there they already disagree, and have since
+ * #328: the alert centre reads them in UTC (`calendarDate`, which is what a midnight-UTC value
+ * asks for) while `useAgenda` hands `buildAgenda` only `date`, so the agenda renders them in the
+ * host zone and slips them a day west of UTC. That is the agenda's bug, not this one's, and
+ * asserting parity over those lanes here would pin the wrong side of it.
+ *
  * The two seams are separate by design — `buildAlerts` grades what is overdue, `buildAgenda`
  * lays out what is coming — but they read one value, `maintenanceDueAtMs`, and a user reads both.
  * The alert centre used to slice that instant's `toISOString()`, so an evening service west of

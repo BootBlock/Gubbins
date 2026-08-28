@@ -56,9 +56,10 @@ export function useAlerts(): {
   readonly fieldDueTruncated: boolean;
 } {
   const now = nowMs();
-  // Every date in the alert copy goes through the shared formatter seam, so a due/expiry/warranty
-  // date reads in the user's locale and on the same day the agenda, the item editor and the
-  // calendar feed give it (issue #497).
+  // Every date in the alert copy goes through the shared formatter seam, so it reads in the user's
+  // locale rather than as a raw ISO day. It also settles the maintenance lane's disagreement with
+  // the agenda, the schedule editor and the calendar feed, which all read its wall-clock due
+  // instant in the local zone (issue #497; `alert-agenda-date-parity.test.ts` holds that).
   const fmt = useFormatters();
 
   // --- Source queries ---
