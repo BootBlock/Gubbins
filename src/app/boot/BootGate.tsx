@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { useDatabaseBoot } from './useDatabaseBoot';
 import { BootResultProvider } from './boot-context';
 import { acknowledgeDbLoss } from '@/db/db-presence';
@@ -49,5 +50,14 @@ export function BootGate({ children }: { children: ReactNode }) {
       );
     case 'ready':
       return <BootResultProvider value={state.result}>{children}</BootResultProvider>;
+    default:
+      // A component has no declared return type to make the switch exhaustive on its own
+      // (issue #355), so the guard is explicit: adding a `BootState` status without a case
+      // here stops compiling instead of rendering a blank page with neither the route tree
+      // nor an error screen. The fallback is the starting screen rather than `null` — an
+      // unrecognised state means the boot has not finished as far as this gate can tell, and
+      // saying so is honest where a blank page says nothing at all.
+      assertExhaustive(state);
+      return <StartingScreen />;
   }
 }
