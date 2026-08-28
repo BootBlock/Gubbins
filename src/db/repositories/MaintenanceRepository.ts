@@ -78,6 +78,22 @@ const AUTO_USAGE_HOURS = `(CASE WHEN ms.accrue_checkout_hours = 1 THEN (
 const EFFECTIVE_USAGE = `(CASE WHEN ms.accrue_checkout_hours = 1 THEN ${AUTO_USAGE_HOURS} ELSE ms.usage_since_service END)`;
 
 /**
+ * "This schedule (aliased `ms`) is due or overdue" — a TIME schedule past its due instant, or a
+ * USAGE one at or past its interval. The **one** definition of due-ness in SQL: the paged feed
+ * {@link MaintenanceRepository.listDue}, its total {@link MaintenanceRepository.countDue} and the
+ * inventory list's "Maintenance due" filter ({@link maintenanceDueExistsSql}) all embed it, so a
+ * dashboard tile cannot state a figure its own list would disagree with (issue #606). The USAGE
+ * arm in particular was previously spelled out three times.
+ *
+ * Binds `now` (UNIX-ms) **twice**, in order: the TIME cutoff, then the USAGE-accrual window
+ * inside {@link AUTO_USAGE_HOURS}.
+ */
+const SCHEDULE_DUE_PREDICATE = `(
+        (ms.basis = 'TIME'  AND ${TIME_DUE_AT} <= ?)
+        OR (ms.basis = 'USAGE' AND ${EFFECTIVE_USAGE} >= ms.interval_usage)
+      )`;
+
+/**
  * A correlated `EXISTS` predicate that is true for an item with at least one currently
  * due/overdue maintenance schedule — the same "due-ness" {@link MaintenanceRepository.listDue}
  * computes, reused so the inventory list's "Maintenance due" status filter can never drift
@@ -91,10 +107,7 @@ export function maintenanceDueExistsSql(): string {
   return `EXISTS (
     SELECT 1 FROM maintenance_schedules ms
     WHERE ms.item_id = items.id
-      AND (
-        (ms.basis = 'TIME'  AND ${TIME_DUE_AT} <= ?)
-        OR (ms.basis = 'USAGE' AND ${EFFECTIVE_USAGE} >= ms.interval_usage)
-      )
+      AND ${SCHEDULE_DUE_PREDICATE}
   )`;
 }
 
@@ -137,10 +150,7 @@ export class MaintenanceRepository extends BaseRepository {
        JOIN items ON items.id = ms.item_id
        LEFT JOIN locations sl ON sl.id = ms.location_id
        WHERE items.is_active = 1
-         AND (
-           (ms.basis = 'TIME'  AND ${TIME_DUE_AT} <= ?)
-           OR (ms.basis = 'USAGE' AND ${EFFECTIVE_USAGE} >= ms.interval_usage)
-         )
+         AND ${SCHEDULE_DUE_PREDICATE}
        ORDER BY
          CASE WHEN ms.basis = 'TIME' THEN ${TIME_DUE_AT} ELSE 0 END ASC
        LIMIT ? OFFSET ?;`,
@@ -183,15 +193,20 @@ export class MaintenanceRepository extends BaseRepository {
     return this.toPage(mapped, limit, offset);
   }
 
-  /** Count of currently due/overdue schedules (for the dashboard badge). */
+  /**
+   * Count of currently due/overdue schedules — the **total** behind {@link listDue}'s bounded
+   * page, and what the dashboard's Maintenance tile and the alert centre state over its rows.
+   * Embeds the same {@link SCHEDULE_DUE_PREDICATE} and the same `items.is_active` scope, so the
+   * figure and the list cannot answer different questions; `attention-count-parity.test.ts`
+   * drives both over one dataset, on each basis, and compares.
+   */
   async countDue(now: number): Promise<number> {
     const row = await this.driver.queryOne<{ n: number }>(
       `SELECT COUNT(*) AS n
        FROM maintenance_schedules ms
        JOIN items ON items.id = ms.item_id
        WHERE items.is_active = 1
-         AND ((ms.basis = 'TIME' AND ${TIME_DUE_AT} <= ?)
-           OR (ms.basis = 'USAGE' AND ${EFFECTIVE_USAGE} >= ms.interval_usage));`,
+         AND ${SCHEDULE_DUE_PREDICATE};`,
       [now, now],
     );
     return Number(row?.n ?? 0);

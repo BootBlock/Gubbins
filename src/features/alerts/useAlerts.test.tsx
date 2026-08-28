@@ -21,6 +21,9 @@ const h = vi.hoisted(() => ({
   useLowStockItems: vi.fn(),
   useExpiringItems: vi.fn(),
   useDueMaintenance: vi.fn(),
+  useExpiringCount: vi.fn(),
+  useDueMaintenanceCount: vi.fn(),
+  useLowStockCount: vi.fn(),
   useQuery: vi.fn(),
 }));
 
@@ -28,7 +31,13 @@ vi.mock('@/features/lifecycle/hooks', () => ({
   useLowStockItems: h.useLowStockItems,
   useExpiringItems: h.useExpiringItems,
   useDueMaintenance: h.useDueMaintenance,
+  useExpiringCount: h.useExpiringCount,
+  useDueMaintenanceCount: h.useDueMaintenanceCount,
 }));
+
+// The low-stock total is the report repository's existing `COUNT(*)` (issue #606), so it comes
+// from the reports read seam rather than the lifecycle hooks above.
+vi.mock('@/features/reports/queries', () => ({ useLowStockCount: h.useLowStockCount }));
 
 // The warranty and custom-field-due lanes are bespoke `useQuery` calls inside the hook; mock it
 // so no query client or repository is needed and we can capture the `enabled` flag each was
@@ -79,6 +88,16 @@ function laneOf(options: { queryKey?: readonly unknown[] } | undefined): string 
   return String(options?.queryKey?.[1] ?? '');
 }
 
+/**
+ * Is this `useQuery` call the lane's **feed**, rather than the `COUNT(*)` beside it (issue #606)?
+ * Both sit under the same key prefix, so without this the count's `enabled` — which is also
+ * gated on the caller asking for totals — would be read as the feed's and every gating
+ * assertion below would be answering about the wrong query.
+ */
+function isFeed(options: { queryKey?: readonly unknown[] } | undefined): boolean {
+  return options?.queryKey?.at(-1) !== 'count';
+}
+
 /** Put the session on a `granted` authority holding exactly `grants`. */
 function grant(...grants: readonly string[]) {
   useSessionStore.setState({ authority: { mode: 'granted', grants: new Set(grants) } });
@@ -109,11 +128,17 @@ beforeEach(() => {
   );
   // Both bespoke lanes share one spy, so answer by key rather than returning warranty rows to
   // the due-date lane (which would silently grade to "nothing due" and hide a broken gate).
-  h.useQuery.mockImplementation((options: { queryKey?: readonly unknown[] }) =>
-    laneOf(options) === 'field-due-dates'
+  h.useQuery.mockImplementation((options: { queryKey?: readonly unknown[] }) => {
+    if (!isFeed(options)) return { data: undefined, isLoading: false, isError: false };
+    return laneOf(options) === 'field-due-dates'
       ? { data: { rows: FIELD_DUE_ROWS, truncated: false }, isLoading: false, isError: false }
-      : loaded(WARRANTY_ROWS),
-  );
+      : loaded(WARRANTY_ROWS);
+  });
+  // The three hook-shaped totals are only read by a caller that asks for them; the lanes under
+  // test do not, so they answer "not fetched" and never contribute to a lane's alerts.
+  for (const total of [h.useExpiringCount, h.useDueMaintenanceCount, h.useLowStockCount]) {
+    total.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+  }
 });
 
 afterEach(() => {
@@ -131,7 +156,7 @@ function kinds(): Set<AlertKind> {
 /** The `enabled` flag a bespoke lane's `useQuery` was last called with. */
 function laneEnabled(lane: 'warranty-expiring' | 'field-due-dates'): boolean | undefined {
   const calls = h.useQuery.mock.calls as [{ queryKey?: readonly unknown[]; enabled?: boolean }][];
-  return calls.filter(([o]) => laneOf(o) === lane).at(-1)?.[0]?.enabled;
+  return calls.filter(([o]) => laneOf(o) === lane && isFeed(o)).at(-1)?.[0]?.enabled;
 }
 
 /**
@@ -233,6 +258,45 @@ describe('useAlerts — Warranty off', () => {
  * `alerts.test.ts`; what matters here is the wiring — that the hook actually reconciles the
  * store against the live feed, and that it holds off while the feed can't be trusted.
  */
+/**
+ * Which lanes are reported as showing a prefix of themselves (issue #606).
+ *
+ * The page envelope sets `hasMore` from `rows.length === limit`, so a lane holding *exactly* one
+ * page raises it with nothing behind the rows. Believed alone that lane gets a notice reading
+ * "Showing the 100 most urgent of 100." and has its count spoken as a floor, so the lane's own
+ * `COUNT(*)` settles the ambiguity where one has been read.
+ */
+describe('useAlerts — truncation is decided by the total, not by a full page', () => {
+  /** The hook with totals on, its low-stock lane holding `rows` out of a stated `total`. */
+  function truncatedKinds(rows: number, total: number | undefined): Set<AlertKind> {
+    h.useLowStockItems.mockReturnValue({
+      data: {
+        rows: Array.from({ length: rows }, (_, i) => ({ id: `low-${i}`, name: `Low ${i}` })),
+        hasMore: true,
+      },
+      isLoading: false,
+      isError: false,
+    });
+    h.useLowStockCount.mockReturnValue({ data: total, isLoading: false, isError: false });
+    const { result } = renderHook(() => useAlerts({ withTotals: true }));
+    return new Set(result.current.truncatedKinds);
+  }
+
+  it('does not call a lane truncated when its total is the page it returned', () => {
+    expect(truncatedKinds(100, 100).has('low-stock')).toBe(false);
+  });
+
+  it('calls it truncated when the total genuinely exceeds the rows read', () => {
+    expect(truncatedKinds(100, 4231).has('low-stock')).toBe(true);
+  });
+
+  it('falls back to the full page when no total has been read', () => {
+    // Conservative on purpose: with nothing to compare against, a full page may or may not have
+    // more behind it, and saying so beats claiming completeness the hook cannot prove.
+    expect(truncatedKinds(100, undefined).has('low-stock')).toBe(true);
+  });
+});
+
 describe('useAlerts — dismissal pruning', () => {
   const LONG_AGO = Date.now() - 60 * DAY_MS;
 

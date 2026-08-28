@@ -9,13 +9,15 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
-import type { Alert } from './alerts';
+import type { Alert, AlertKind } from './alerts';
 
 /**
- * Whether the stubbed feed reports its custom-field due-date read as truncated (W1a). Mutable so
- * one test can turn it on without a second `vi.mock` factory.
+ * Which lanes the stubbed feed reports as showing a prefix of themselves, and what each lane's
+ * real total is. Mutable so one test can turn a lane's truncation on without a second `vi.mock`
+ * factory.
  */
-let fieldDueTruncated = false;
+let truncatedKinds: AlertKind[] = [];
+let laneTotals: Partial<Record<AlertKind, number>> = {};
 
 /** One custom-field due-date alert, so the `field-due` section exists to hang the notice off. */
 const FIELD_DUE_ALERT: Alert = {
@@ -54,13 +56,15 @@ vi.mock('@/features/export/TabularExportMenu', () => ({
 vi.mock('./useAlerts', () => ({
   useAlerts: () => {
     const dismissals = useDismissedAlertsStore((s) => s.dismissals);
-    const all = fieldDueTruncated ? [ALERT, FIELD_DUE_ALERT] : [ALERT];
+    const all = truncatedKinds.includes('field-due') ? [ALERT, FIELD_DUE_ALERT] : [ALERT];
     return {
       alerts: applyDismissals(all, dismissals, Date.now()),
       allAlerts: all,
       isLoading: false,
       isError: false,
-      fieldDueTruncated,
+      truncatedKinds: new Set(truncatedKinds),
+      laneTotals,
+      readAllAlerts: () => Promise.resolve({ rows: all, truncated: false }),
     };
   },
 }));
@@ -91,7 +95,8 @@ const dismissals = () => useDismissedAlertsStore.getState().dismissals;
 beforeEach(() => {
   localStorage.clear();
   useDismissedAlertsStore.setState({ dismissals: new Map() });
-  fieldDueTruncated = false;
+  truncatedKinds = [];
+  laneTotals = {};
 });
 
 afterEach(cleanup);
@@ -191,24 +196,60 @@ describe('AlertsScreen — export', () => {
 });
 
 /**
- * A capped feed must say so. The custom-field due-date lane reads every page and reports when it
- * stopped (issues #606/#607) — the whole point being that the shortfall is never silent, so the
- * screen has to actually render it, and only against the lane it is about.
+ * A capped feed must say so (issues #606/#607) — the whole point being that the shortfall is
+ * never silent, so the screen has to actually render it, against the lane it is about and no
+ * other. A paged lane can also say how many rows sit behind the cards, because it has its own
+ * `COUNT(*)`; the custom-field lane walks every page and has only a ceiling to report.
  */
-describe('AlertsScreen — the custom-field due-date lane is honest about truncation', () => {
+describe('AlertsScreen — a lane showing a prefix says so', () => {
   it("says so, inside that lane's section, when the read hit its ceiling", () => {
-    fieldDueTruncated = true;
+    truncatedKinds = ['field-due'];
     render(<AlertsScreen />);
 
-    const notice = screen.getByTestId('alerts-field-due-truncated');
+    const notice = screen.getByTestId('alerts-truncated-field-due');
     expect(notice).toBeInTheDocument();
     // Scoped to its own section, not floated above the whole feed — the other four lanes are
     // complete and must not be cast into doubt.
     expect(notice.closest('section')?.getAttribute('aria-labelledby')).toBe('alerts-section-field-due');
   });
 
+  it('quotes the real total on a paged lane, so the cards are not read as the whole set', () => {
+    truncatedKinds = ['low-stock'];
+    laneTotals = { 'low-stock': 4231 };
+    render(<AlertsScreen />);
+
+    const notice = screen.getByTestId('alerts-truncated-low-stock');
+    // The seam groups a large figure, so the notice reads as a number rather than a digit run.
+    expect(notice.textContent).toBe('Showing the 1 most urgent of 4,231.');
+  });
+
+  it('still warns when the lane total has not arrived, since the caveat is the load-bearing half', () => {
+    truncatedKinds = ['low-stock'];
+    render(<AlertsScreen />);
+
+    expect(screen.getByTestId('alerts-truncated-low-stock').textContent).toBe(
+      'Showing the 1 most urgent — there are more.',
+    );
+  });
+
   it('says nothing when the whole set was read', () => {
     render(<AlertsScreen />);
-    expect(screen.queryByTestId('alerts-field-due-truncated')).toBeNull();
+    expect(screen.queryByTestId('alerts-truncated-field-due')).toBeNull();
+    expect(screen.queryByTestId('alerts-truncated-low-stock')).toBeNull();
+  });
+
+  it('speaks the count as a floor while any lane is cut short', () => {
+    truncatedKinds = ['low-stock'];
+    render(<AlertsScreen />);
+
+    expect(screen.getByTestId('alerts-live-region').textContent).toBe(
+      'At least 1 alert requires your attention.',
+    );
+  });
+
+  it('speaks the count plainly when every lane was read whole', () => {
+    render(<AlertsScreen />);
+
+    expect(screen.getByTestId('alerts-live-region').textContent).toBe('1 alert requires your attention.');
   });
 });

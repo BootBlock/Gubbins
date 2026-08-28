@@ -20,7 +20,18 @@
  * the cell captions itself, so the grid never claims an action is something it is not.
  */
 import { useId, useState } from 'react';
-import { Banner, Button, Checkbox, FormField, InfoHint, Input, Modal, Surface } from '@/components/foundry';
+import {
+  Banner,
+  Button,
+  Checkbox,
+  FormField,
+  GlyphPickerButton,
+  InfoHint,
+  Input,
+  Modal,
+  Surface,
+} from '@/components/foundry';
+import { RoleIcon } from '@/components/icons';
 import { useT, type TypedTranslator } from '@/features/i18n';
 import type { Role } from '@/db/repositories/types';
 import {
@@ -54,6 +65,7 @@ import {
 export interface RoleFormValues {
   readonly name: string;
   readonly description: string | null;
+  readonly icon: string | null;
   readonly permissions: readonly string[];
 }
 
@@ -77,11 +89,13 @@ const GRID_TEMPLATE = 'grid grid-cols-[minmax(0,1fr)_repeat(3,4.5rem)] items-cen
 export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFormDialogProps) {
   const t = useT();
   const everythingHintId = useId();
+  const iconFieldId = useId();
   // Seeded with the *translated* text for a still-default built-in role: an operator should edit
   // the wording they can actually read. Saving it back untouched is folded to the shipped English
   // by `toStoredRoleText` at the call site, so an unchanged save leaves the row translatable.
   const [name, setName] = useState(role ? builtinRoleName(role, t) : '');
   const [description, setDescription] = useState(role ? (builtinRoleDescription(role, t) ?? '') : '');
+  const [icon, setIcon] = useState<string | null>(role?.icon ?? null);
   const [model, setModel] = useState<RoleGrantModel>(() => toGrantModel(role?.permissions ?? []));
 
   const trimmedName = name.trim();
@@ -92,6 +106,7 @@ export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFor
     onSubmit({
       name: trimmedName,
       description: description.trim() || null,
+      icon,
       permissions: fromGrantModel(model),
     });
   };
@@ -143,6 +158,25 @@ export function RoleFormDialog({ role, busy, error, onSubmit, onClose }: RoleFor
               onChange={(event) => setDescription(event.target.value)}
             />
           </FormField>
+        </div>
+
+        {/* An explicit <label htmlFor> (a <button> is a labelable element) rather than
+            FormField's implicit-label wrap, which is meant for a single input — the same
+            shape the project and location icon fields use. */}
+        <div>
+          <label htmlFor={iconFieldId} className="mb-field-gap block text-sm font-medium">
+            {t('roles.form.icon.label')}
+          </label>
+          <GlyphPickerButton
+            id={iconFieldId}
+            value={icon}
+            onChange={setIcon}
+            fallback={RoleIcon}
+            placeholder={t('roles.form.icon.placeholder')}
+            title={t('roles.form.icon.title')}
+            disabled={busy}
+            clearable
+          />
         </div>
 
         <Surface className="flex flex-col gap-field-gap-compact p-4">

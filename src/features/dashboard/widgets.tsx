@@ -38,18 +38,20 @@ import { resolveSupplyState } from '@/features/inventory/supply-state';
 import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
 import {
   useExpiringItems,
+  useExpiringCount,
   useLowStockItems,
   useInTransitLines,
   useDueMaintenance,
+  useDueMaintenanceCount,
 } from '@/features/lifecycle/hooks';
-import { useOpenCheckouts } from '@/features/contacts/contacts';
+import { useOpenCheckouts, useOpenCheckoutCounts } from '@/features/contacts/contacts';
 import { daysOverdue, overdueLabel } from '@/features/contacts/overdue';
 import { useOnOrderQtys } from '@/features/purchasing/queries';
 import { useProjects, useBudgetAlerts } from '@/features/projects/projects';
 import { projectBudgetHealth } from '@/features/projects/budget';
 import { useItemCount, useLocationCount } from '@/features/inventory/queries';
 import { useCategories } from '@/features/inventory/categories';
-import { useInventoryValue } from '@/features/reports/queries';
+import { useInventoryValue, useLowStockCount } from '@/features/reports/queries';
 import { useActivityFeed } from '@/features/activity/queries';
 import { describeHistoryEntry } from '@/features/inventory/history-format';
 import { inventorySearchInLocation } from '@/features/inventory/view-params';
@@ -264,6 +266,11 @@ function LowStockWidget() {
   const gaugePercent = usePreferencesStore((s) => s.lowStockGaugePercent);
   const lowStock = useLowStockItems({ qtyThreshold, gaugePercent });
   const rows = lowStock.data?.rows ?? [];
+  // The headline figure is a `COUNT(*)`, not `rows.length`: the feed is one bounded page, so on
+  // a catalogue with more than a page of low items the tile used to read exactly "100" and call
+  // it the total (issue #606). The three rows below are still the most urgent page of it.
+  const total = useLowStockCount();
+  const count = total.data ?? 0;
   const defaults = { qtyThreshold, gaugePercent };
   // Batch the on-order lookups for the whole visible low-stock set in one round-trip (not
   // N+1) — mirrors how the widget already batches its item reads. A covered shortage then
@@ -276,10 +283,10 @@ function LowStockWidget() {
     <WidgetShell
       icon={<LowStockIcon />}
       title={t('dashboard.widget.lowStock.title')}
-      count={rows.length}
-      tone={rows.length > 0 ? 'warning' : 'quiet'}
-      loading={lowStock.isPending}
-      error={lowStock.isError}
+      count={count}
+      tone={count > 0 ? 'warning' : 'quiet'}
+      loading={lowStock.isPending || total.isPending}
+      error={lowStock.isError || total.isError}
       columns={list.columns}
     >
       {rows.length === 0 ? (
@@ -347,15 +354,18 @@ function ExpiringWidget() {
   const fmt = useFormatters();
   const expiring = useExpiringItems(expirySoonWindowDays);
   const rows = expiring.data?.rows ?? [];
+  // A `COUNT(*)` for the same reason as the Low stock tile above (issue #606).
+  const total = useExpiringCount(expirySoonWindowDays);
+  const count = total.data ?? 0;
   const list = useListLayout(3, rows.length);
   return (
     <WidgetShell
       icon={<ExpiryIcon />}
       title={t('dashboard.widget.expiring.title')}
-      count={rows.length}
-      tone={rows.length > 0 ? 'warning' : 'quiet'}
-      loading={expiring.isPending}
-      error={expiring.isError}
+      count={count}
+      tone={count > 0 ? 'warning' : 'quiet'}
+      loading={expiring.isPending || total.isPending}
+      error={expiring.isError || total.isError}
       columns={list.columns}
     >
       {rows.length === 0 ? (
@@ -382,24 +392,28 @@ function ExpiringWidget() {
 function OverdueWidget() {
   const t = useT();
   const openCheckouts = useOpenCheckouts();
-  // One query returns every open loan (see `useOpenCheckouts`); the overdue set is derived from
-  // it in a single pass (no per-checkout round-trip), and the count of the remainder still on
-  // loan but not yet due drives the quiet "escalation" footer below.
+  // `useOpenCheckouts` returns one bounded page of the loan board, so the rows below are the
+  // most urgent loans rather than all of them. Both figures the tile states therefore come from
+  // the repository's own conditional `SUM` over every open loan: derived from the page instead,
+  // "N still on loan" is the remainder of a page — 80 on a board of 300 with 20 late, not 280
+  // (issue #606).
   const now = nowMs();
   const open = openCheckouts.data?.rows ?? [];
   const overdue = open.filter((c) => c.isOverdue);
-  const stillOnLoan = open.length - overdue.length;
+  const counts = useOpenCheckoutCounts();
+  const overdueCount = counts.data?.overdue ?? 0;
+  const stillOnLoan = (counts.data?.open ?? 0) - overdueCount;
   const list = useListLayout(3, overdue.length);
   return (
     <WidgetShell
       icon={<DueDateIcon />}
       title={t('dashboard.widget.overdue.title')}
-      count={overdue.length}
+      count={overdueCount}
       // Danger tone (and the red count) fires only when something is actually late — a board of
       // merely-open, not-yet-due loans stays quiet, so the escalation reads at a glance.
-      tone={overdue.length > 0 ? 'danger' : 'quiet'}
-      loading={openCheckouts.isPending}
-      error={openCheckouts.isError}
+      tone={overdueCount > 0 ? 'danger' : 'quiet'}
+      loading={openCheckouts.isPending || counts.isPending}
+      error={openCheckouts.isError || counts.isError}
       columns={list.columns}
     >
       {overdue.length === 0 ? (
@@ -458,15 +472,18 @@ function MaintenanceWidget() {
   const t = useT();
   const dueMaintenance = useDueMaintenance();
   const rows = dueMaintenance.data?.rows ?? [];
+  // A `COUNT(*)` for the same reason as the Low stock tile (issue #606).
+  const total = useDueMaintenanceCount();
+  const count = total.data ?? 0;
   const list = useListLayout(3, rows.length);
   return (
     <WidgetShell
       icon={<MaintenanceIcon />}
       title={t('dashboard.widget.maintenance.title')}
-      count={rows.length}
-      tone={rows.length > 0 ? 'warning' : 'quiet'}
-      loading={dueMaintenance.isPending}
-      error={dueMaintenance.isError}
+      count={count}
+      tone={count > 0 ? 'warning' : 'quiet'}
+      loading={dueMaintenance.isPending || total.isPending}
+      error={dueMaintenance.isError || total.isError}
       columns={list.columns}
     >
       {rows.length === 0 ? (

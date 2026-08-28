@@ -63,6 +63,14 @@ describe('users, roles and attribution', () => {
       }
     });
 
+    it('seeds each role with the icon its definition names (issue #431)', async () => {
+      const page = await roles.list();
+      for (const role of page.rows) {
+        const source = BUILTIN_ROLES.find((candidate) => candidate.id === role.id)!;
+        expect(role.icon, source.name).toBe(source.icon);
+      }
+    });
+
     it('refuses to delete a built-in role, so no user is stranded on a missing one', async () => {
       // Named rather than taken by position: `list()` orders by name, so `rows[0]` only
       // happened to be Administrator.
@@ -74,6 +82,22 @@ describe('users, roles and attribution', () => {
       const stocker = (await roles.findByName('Stocker'))!;
       const updated = await roles.update(stocker.id, { permissions: ['items:read'] });
       expect(updated.permissions).toEqual(['items:read']);
+    });
+
+    it('stores, replaces and clears a role icon (issue #431)', async () => {
+      const role = await roles.create({ name: 'Front desk', icon: '  Handshake  ' });
+      expect(role.icon).toBe('Handshake');
+
+      expect((await roles.update(role.id, { icon: 'Wrench' })).icon).toBe('Wrench');
+      // A blank is "no icon", not a stored empty string that renders as a missing glyph.
+      expect((await roles.update(role.id, { icon: '   ' })).icon).toBeNull();
+      expect((await roles.update(role.id, { icon: 'Eye' })).icon).toBe('Eye');
+      expect((await roles.update(role.id, { icon: null })).icon).toBeNull();
+    });
+
+    it('leaves a role icon alone when an edit does not mention it', async () => {
+      const role = await roles.create({ name: 'Cellar', icon: 'Boxes' });
+      expect((await roles.update(role.id, { description: 'Downstairs' })).icon).toBe('Boxes');
     });
 
     it('canonicalises grants on write, so an edited role is stored like a seeded one', async () => {
@@ -99,6 +123,23 @@ describe('users, roles and attribution', () => {
     it('seeds System and Admin with a description of their purpose', async () => {
       const page = await users.list();
       expect(page.rows.map((u) => u.description)).toEqual([SYSTEM_USER_DESCRIPTION, ADMIN_USER_DESCRIPTION]);
+    });
+
+    it('stores, replaces and clears a user icon (issue #431)', async () => {
+      const user = await users.create({ username: 'sam', icon: '  Rocket  ' });
+      expect(user.icon).toBe('Rocket');
+
+      expect((await users.update(user.id, { icon: 'Anchor' })).icon).toBe('Anchor');
+      expect((await users.update(user.id, { icon: '   ' })).icon).toBeNull();
+      expect((await users.update(user.id, { email: 'sam@example.com' })).icon).toBeNull();
+      expect((await users.update(user.id, { icon: 'Anchor' })).icon).toBe('Anchor');
+      // An edit that does not mention the icon must leave the chosen one in place.
+      expect((await users.update(user.id, { displayName: 'Sam' })).icon).toBe('Anchor');
+      expect((await users.update(user.id, { icon: null })).icon).toBeNull();
+    });
+
+    it('creates a user with no icon when none is chosen', async () => {
+      expect((await users.create({ username: 'kim' })).icon).toBeNull();
     });
 
     it('never exposes the password triple on the DTO, only whether one is set', async () => {

@@ -276,6 +276,10 @@ const baselineStatements: SqlStatement[] = [
           id          TEXT    PRIMARY KEY NOT NULL,
           name        TEXT    NOT NULL,
           description TEXT,
+          -- Optional icon: a canonical Lucide glyph name (PascalCase), or NULL for the
+          -- default role glyph. The built-in roles below ship with one so a list of roles
+          -- reads at a glance; an operator-defined role starts without one.
+          icon        TEXT,
           -- JSON array of "<subject>:<action>" permission keys. The closed union that
           -- validates them is a phase-2 concern (features/users/permission-registry.ts);
           -- storage deliberately keeps this opaque so the registry can grow without a
@@ -288,7 +292,7 @@ const baselineStatements: SqlStatement[] = [
           created_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           updated_at  INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (is_builtin IN (0, 1)),
-          ${lengthChecks({ name: TEXT_LIMITS.line, description: TEXT_LIMITS.note, permissions: TEXT_LIMITS.payload })}
+          ${lengthChecks({ name: TEXT_LIMITS.line, description: TEXT_LIMITS.note, icon: TEXT_LIMITS.code, permissions: TEXT_LIMITS.payload })}
         ) STRICT;
       `,
   },
@@ -312,10 +316,10 @@ const baselineStatements: SqlStatement[] = [
   // roles in a database and the roles in code cannot drift.
   ...BUILTIN_ROLES.map((role) => ({
     sql: `
-        INSERT INTO roles (id, name, description, permissions, is_builtin)
-        VALUES (?, ?, ?, ?, 1);
+        INSERT INTO roles (id, name, description, icon, permissions, is_builtin)
+        VALUES (?, ?, ?, ?, ?, 1);
       `,
-    params: [role.id, role.name, role.description, JSON.stringify(normaliseGrants(role.grants))],
+    params: [role.id, role.name, role.description, role.icon, JSON.stringify(normaliseGrants(role.grants))],
   })),
   {
     sql: `
@@ -327,6 +331,9 @@ const baselineStatements: SqlStatement[] = [
           -- Free text: what this account is for. Populated at seed time for the two built-in
           -- principals (issue #430); optional for an ordinary account.
           description         TEXT,
+          -- Optional icon: a canonical Lucide glyph name (PascalCase), or NULL for the
+          -- default account glyph (issue #431).
+          icon                TEXT,
           -- All three are NULL together when the user has no password at all, which is a
           -- legitimate configuration on a shared household device where the point is
           -- attribution rather than secrecy (plan §1.1). The iteration count is stored
@@ -352,7 +359,7 @@ const baselineStatements: SqlStatement[] = [
             (password_hash IS NULL AND password_salt IS NULL AND password_iterations IS NULL)
             OR (password_hash IS NOT NULL AND password_salt IS NOT NULL AND password_iterations IS NOT NULL)
           ),
-          ${lengthChecks({ username: TEXT_LIMITS.line, display_name: TEXT_LIMITS.line, email: TEXT_LIMITS.line, description: TEXT_LIMITS.note, disabled_message: TEXT_LIMITS.note })}
+          ${lengthChecks({ username: TEXT_LIMITS.line, display_name: TEXT_LIMITS.line, email: TEXT_LIMITS.line, description: TEXT_LIMITS.note, icon: TEXT_LIMITS.code, disabled_message: TEXT_LIMITS.note })}
         ) STRICT;
       `,
   },

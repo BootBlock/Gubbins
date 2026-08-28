@@ -38,6 +38,7 @@ import {
   useCreateContact,
   useDeleteContact,
   useOpenCheckouts,
+  useOpenCheckoutCounts,
 } from './contacts';
 
 /**
@@ -83,7 +84,17 @@ export function ContactsScreen() {
   } | null>(null);
 
   const onLoan = open.data?.rows ?? [];
-  const overdueCount = onLoan.filter((c) => c.isOverdue).length;
+  // Both figures come from the repository's own count over every open loan, not from the rows in
+  // hand: the list is one bounded page, so counting it states the page size as the board (issue
+  // #606) — the same defect the dictionary below carries a notice for, from #149. When the count
+  // is unavailable they fall back to the rows, exactly as `totalContacts` does below: an
+  // understated figure over a visible list beats announcing "nothing checked out" above one.
+  const loanCounts = useOpenCheckoutCounts();
+  const overdueCount = loanCounts.data?.overdue ?? onLoan.filter((c) => c.isOverdue).length;
+  const onLoanCount = loanCounts.data?.open ?? onLoan.length;
+  // How many open loans the page leaves unreachable — the "On loan" list has no pager of its
+  // own, so this is a notice rather than a control, exactly like the unpaginated dictionary.
+  const hiddenLoans = Math.max(0, onLoanCount - onLoan.length);
 
   const contactRows = contacts.data?.rows ?? [];
   // First-run guide (#424): once either list has something in it, the page speaks for
@@ -148,15 +159,15 @@ export function ContactsScreen() {
          * mounted before data loads so the initial text mutation is announced.
          */}
         <p className="sr-only" role="status" aria-live="polite" data-testid="contacts-on-loan-live">
-          {open.isLoading
+          {open.isLoading || loanCounts.isLoading
             ? 'Loading on-loan items…'
             : open.isError
               ? // The visible error carries its own role="alert"; keep this polite region from
                 // also (mis)reporting an empty list on failure (issue #306).
                 ''
-              : onLoan.length === 0
+              : onLoanCount === 0
                 ? 'Nothing currently checked out.'
-                : `${onLoan.length} ${plural(onLoan.length, 'item')} on loan${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}.`}
+                : `${onLoanCount} ${plural(onLoanCount, 'item')} on loan${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}.`}
         </p>
         <p className="sr-only" role="status" aria-live="polite" data-testid="contacts-count-live">
           {contacts.isError
@@ -226,16 +237,29 @@ export function ContactsScreen() {
               Nothing is currently checked out.
             </Surface>
           ) : (
-            <ul className="space-y-2">
-              {onLoan.map((c) => (
-                <LoanRow
-                  key={c.id}
-                  checkout={c}
-                  onReturn={() => setReturningCheckout(c)}
-                  onRenew={() => setRenewingCheckout(c)}
-                />
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2">
+                {onLoan.map((c) => (
+                  <LoanRow
+                    key={c.id}
+                    checkout={c}
+                    onReturn={() => setReturningCheckout(c)}
+                    onRenew={() => setRenewingCheckout(c)}
+                  />
+                ))}
+              </ul>
+              {hiddenLoans > 0 ? (
+                // The read is bounded and this list has no pager, so say so rather than showing
+                // a truncated board as though it were every loan (issue #606). The rows shown
+                // are the ones that matter — `listOpen` orders dated loans first, soonest due
+                // first — and the export beside the heading still walks every page.
+                <p className="text-xs text-muted-foreground" data-testid="loans-truncated">
+                  {t('contacts.onLoan.truncated', {
+                    vars: { count: hiddenLoans, shown: onLoan.length },
+                  })}
+                </p>
+              ) : null}
+            </>
           )}
         </section>
 

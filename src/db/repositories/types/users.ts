@@ -12,6 +12,7 @@ export interface RoleRow {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
+  readonly icon: string | null;
   /** JSON array of `"<subject>:<action>"` permission keys. Opaque to storage. */
   readonly permissions: string;
   readonly is_builtin: number;
@@ -23,6 +24,12 @@ export interface Role {
   readonly id: string;
   readonly name: string;
   readonly description: string | null;
+  /**
+   * Optional icon: a canonical Lucide glyph name, or NULL for the default role glyph
+   * (issue #431). The built-in roles are seeded with one; an operator-defined role starts
+   * without.
+   */
+  readonly icon: string | null;
   /**
    * The permission keys this role grants, parsed from storage. The closed union that
    * validates them arrives with the permission engine in phase 2; until then this is
@@ -38,12 +45,14 @@ export interface Role {
 export interface CreateRoleInput {
   readonly name: string;
   readonly description?: string | null;
+  readonly icon?: string | null;
   readonly permissions?: readonly string[];
 }
 
 export interface UpdateRoleInput {
   readonly name?: string;
   readonly description?: string | null;
+  readonly icon?: string | null;
   readonly permissions?: readonly string[];
 }
 
@@ -53,6 +62,7 @@ export interface UserRow {
   readonly display_name: string;
   readonly email: string | null;
   readonly description: string | null;
+  readonly icon: string | null;
   readonly password_hash: string | null;
   readonly password_salt: string | null;
   readonly password_iterations: number | null;
@@ -84,6 +94,11 @@ export interface User {
    */
   readonly description: string | null;
   /**
+   * Optional icon: a canonical Lucide glyph name, or NULL for the default account glyph
+   * (issue #431).
+   */
+  readonly icon: string | null;
+  /**
    * Whether the user has a password at all. A user with none is a legitimate configuration
    * on a shared device where the point is attribution rather than secrecy (plan §1.1) — the
    * UI must say so plainly rather than implying a protection that isn't there.
@@ -105,6 +120,7 @@ export interface CreateUserInput {
   readonly displayName?: string;
   readonly email?: string | null;
   readonly description?: string | null;
+  readonly icon?: string | null;
   readonly roleId?: string | null;
 }
 
@@ -113,6 +129,7 @@ export interface UpdateUserInput {
   readonly displayName?: string;
   readonly email?: string | null;
   readonly description?: string | null;
+  readonly icon?: string | null;
   readonly isEnabled?: boolean;
   readonly disabledMessage?: string | null;
   readonly roleId?: string | null;

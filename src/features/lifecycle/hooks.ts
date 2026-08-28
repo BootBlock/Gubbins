@@ -205,6 +205,24 @@ export function useExpiringItems(
 }
 
 /**
+ * How many perishables are expiring inside the same window {@link useExpiringItems} feeds from.
+ *
+ * The feed is one bounded page, so a caller that states a figure over it must not count the rows
+ * it was handed — past a hundred that figure *is* the page size, presented as the total (issue
+ * #606). This is the `COUNT(*)` behind the same predicate.
+ */
+export function useExpiringCount(
+  withinDays: number = EXPIRY_SOON_WINDOW_DAYS,
+  options?: { enabled?: boolean },
+) {
+  return useQuery({
+    queryKey: inventoryKeys.expiringWithinCount(withinDays),
+    queryFn: () => getItemRepository().countExpiringWithin(withinDays, nowMs()),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
  * Active items running low on stock (§3 "Low Stock Alerts" widget) — low discrete
  * quantities and low consumable-gauge percentages interleaved by urgency. Thresholds
  * default to the repository constants; passing them as a key segment keeps the cache
@@ -354,6 +372,18 @@ export function useDueMaintenance(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: inventoryKeys.maintenanceDue(),
     queryFn: () => getMaintenanceRepository().listDue(nowMs(), { limit: 100 }),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * How many maintenance schedules are currently due — the total behind {@link useDueMaintenance}'s
+ * bounded page, for the reason {@link useExpiringCount} exists (issue #606).
+ */
+export function useDueMaintenanceCount(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: inventoryKeys.maintenanceDueCount(),
+    queryFn: () => getMaintenanceRepository().countDue(nowMs()),
     enabled: options?.enabled ?? true,
   });
 }
