@@ -274,6 +274,20 @@ describe('buildCatalogImportPlan — update path (match by sku)', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildCatalogImportPlan — error collection', () => {
+  it('reports an unclosed quote instead of silently dropping the merged rows (issue #591)', () => {
+    const csv = ['name,quantity', 'Widget,2', '"Bad part,3', 'Gadget,4'].join('\r\n');
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toEqual([{ sourceRow: 0, message: expect.stringContaining('never closed') }]);
+  });
+
+  it('keeps an inch mark in a name rather than swallowing the rest of the file (issue #591)', () => {
+    const csv = ['name,quantity', '3/4" ball valve,5', 'Widget,2'].join('\r\n');
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toEqual([]);
+    expect(plan.create.map((c) => c.input.name)).toEqual(['3/4" ball valve', 'Widget']);
+  });
+
   it('collects a validation error for a row with a negative quantity', () => {
     const csv = 'name,quantity\r\nBad Item,-5\r\n';
     const plan = buildCatalogImportPlan(csv, null, []);

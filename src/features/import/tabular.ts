@@ -209,11 +209,13 @@ function naiveWidths(sample: string, delimiter: string): number[] {
  * common reason a delimiter sniff mis-fires, and every importer inherits the answer, so it is
  * worth reading the sample properly.
  *
- * Where the whole text ends inside an unclosed quote, that reading is worthless — the codec has
- * merged every later line into one cell — so the widths are re-measured with quoting ignored.
- * The file *is* delimited and will be told so; {@link extractTableRows} then reports the
- * unclosed quote, which is far more use to the reader than falling through to a line list and
- * offering each merged line as an item (issue #591).
+ * Only where that reading finds nothing, *and* the sample ended inside an unclosed quote, are
+ * the widths re-measured with quoting ignored. The quote has merged every later line into one
+ * cell, so the codec is describing the merge rather than the file; the quote-blind widths still
+ * show the delimiter, and saying the text is delimited is what lets {@link extractTableRows}
+ * report the unclosed quote instead of falling through to a line list and offering each merged
+ * line as an item (issue #591). Second place only: a properly quoted cell holding a delimiter
+ * unbalances the quote-blind count, so this must never pre-empt the codec's own verdict.
  */
 function delimiterConsistency(
   sample: string,
@@ -221,30 +223,28 @@ function delimiterConsistency(
   truncated: boolean,
 ): { consistent: boolean; columns: number } {
   const read = readDelimited(sample, delimiter);
-
-  // An unclosed quote in a sample that is *not* truncated is a real defect in the file rather
-  // than an artefact of sampling, and it has merged every later line into one cell — so the
-  // codec's widths are worthless here and the quote-blind ones are read instead. (A truncated
-  // sample is left to the dropped-last-row rule below, which already covers a quoted cell
-  // straddling the cut.)
-  if (read.unterminatedQuote && !truncated) {
-    // Two lines minimum: a single line carrying a stray quote is far more likely a free-form
-    // note than a table, and a line list is the more forgiving reading of it.
-    const widths = naiveWidths(sample, delimiter);
-    if (widths.length < 2) return { consistent: false, columns: 0 };
-    const columns = widths[0]!;
-    return { consistent: columns > 1 && widths.every((w) => w === columns), columns };
-  }
-
   const parsed = read.rows.filter((row) => row.some((c) => c.trim().length > 0));
   // A sample cut off mid-file may have severed the final row (or left a quoted cell unclosed,
   // which swallows the remainder into one field). Its width proves nothing, so drop it — but
   // only while at least one whole row is left to judge by.
   const rows = truncated && parsed.length > 1 ? parsed.slice(0, -1) : parsed;
-  if (rows.length === 0) return { consistent: false, columns: 0 };
-  const columns = rows[0]!.length;
-  const consistent = columns > 1 && rows.every((row) => row.length === columns);
-  return { consistent, columns };
+  const columns = rows.length > 0 ? rows[0]!.length : 0;
+  if (columns > 1 && rows.every((row) => row.length === columns)) {
+    return { consistent: true, columns };
+  }
+
+  // The codec made no sense of the sample. An unclosed quote explains why, and the quote-blind
+  // widths may still show a table. Two lines minimum: a single line carrying a stray quote is
+  // far more likely a free-form note than a table, and a line list is the kinder reading of it.
+  if (read.unterminatedQuote) {
+    const widths = naiveWidths(sample, delimiter);
+    const naive = widths.length >= 2 ? widths[0]! : 0;
+    if (naive > 1 && widths.every((w) => w === naive)) {
+      return { consistent: true, columns: naive };
+    }
+  }
+
+  return { consistent: false, columns };
 }
 
 /**
@@ -548,8 +548,8 @@ export interface ExtractTableOptions {
  */
 export const UNTERMINATED_QUOTE_NOTE =
   'A quoted value is never closed — the text ends inside a double-quote, so everything after ' +
-  'it was read as a single cell. Check for a stray " (a double-quote inside a cell must be ' +
-  'written twice, as "").';
+  'it was read as a single cell. Look for a stray " that opens a cell. Inside a quoted cell, a ' +
+  'double-quote you want to keep is written twice, as "".';
 
 /** Build a synthetic header row (`Column 1 … Column n`) for headerless input. */
 function syntheticHeaders(width: number): string[] {

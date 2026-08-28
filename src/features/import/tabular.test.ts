@@ -96,6 +96,23 @@ describe('detectImportFormat', () => {
     expect(detectImportFormat('name,quantity\n"broken,5\nWidget,2')).toBe('csv');
   });
 
+  it('lets the codec win over the quote-blind widths when both could answer', () => {
+    // The quote-blind re-measure must never pre-empt the codec: a properly quoted cell holding
+    // a comma unbalances the naive count, so leading with it would report this file as a line
+    // list — the exact fallback the fix exists to avoid.
+    const csv = ['Name,Qty,Note', 'Widget,2,"a, b"', 'Gadget,4,"unclosed', 'Bolt,6,ok'].join('\n');
+    expect(detectImportFormat(csv)).toBe('csv');
+    // Same reason, one line: the codec reads `a,b,"c` as three cells, so no re-measure is needed.
+    expect(detectImportFormat('a,b,"c')).toBe('csv');
+  });
+
+  it('still detects CSV when the very first line of a long file opens a quote', () => {
+    // Past the 10-line detection sample the merged row is the only row, so the drop-the-last-row
+    // rule has nothing left to judge by and the quote-blind widths are what answer.
+    const rows = Array.from({ length: 12 }, (_, i) => `item${i},${i}`).join('\n');
+    expect(detectImportFormat(`"Name,Qty\n${rows}`)).toBe('csv');
+  });
+
   it('still reads a single free-form line with a stray quote as a line list', () => {
     // One line carrying an unmatched quote is a note, not a table; only a multi-line block
     // earns the quote-blind re-measure above.
