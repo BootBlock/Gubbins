@@ -38,6 +38,7 @@
   "settings.pagination.size.description": "Wie viele Einträge jede Seite zeigt, wenn die Seitennummerierung aktiv ist ({min}–{max}).",
   "settings.pagination.size.hint": "Die Anzahl der Einträge, die pro Seite angezeigt werden, wenn **Lange Listen paginieren** aktiv ist. Sie können sie auch über die Seitensteuerung am Fuß jeder paginierten Liste ändern — es ist dieselbe gemeinsame Einstellung.\n\nBereich {min}–{max}.",
   "settings.deadStock.label": "Schwelle für Ladenhüter",
+  "settings.labelBaseUrl.insecureHost": "Gubbins lässt sich nicht über eine einfache http://-Adresse öffnen — mit diesem Host gedruckte Codes führen daher zu einem Fehler. Verwenden Sie https:// (oder localhost zum Testen).",
   "settings.labelBaseUrl.tooLongForQr": "Dieser Host ist zu lang — gedruckte Etiketten hätten keinen QR-Code. Verwenden Sie einen kürzeren Namen oder eine kürzere Adresse.",
   "settings.deadStock.description": "Wie lange Bestand unbewegt liegen muss, bis er als Ladenhüter gilt ({min}–{max}).",
   "settings.deadStock.hint": "Wie lange Bestand **unbewegt** liegen muss, bis ihn der Bericht *Ladenhüter* meldet.\n\nGemeldet werden nur Artikel, die Sie dafür ausgewählt haben — aktivieren Sie die Meldung für einen einzelnen Artikel oder für einen Lagerort, damit alles dort Gelagerte erfasst wird. Ein einzelner Lagerort kann diese Schwelle für seinen eigenen Inhalt ebenfalls überschreiben.\n\nBereich {min}–{max} Tage.",

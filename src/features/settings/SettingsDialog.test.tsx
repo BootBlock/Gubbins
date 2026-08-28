@@ -147,6 +147,34 @@ describe('SettingsDialog — Live camera scanning off', () => {
   });
 });
 
+describe('SettingsDialog — Link host security warning (issue #509)', () => {
+  /** Type a host into the Link host field and return the rendered warnings. */
+  function typeHost(value: string) {
+    renderTab('Scanning & labels');
+    fireEvent.change(screen.getByTestId('setting-label-base-url'), { target: { value } });
+  }
+
+  it('warns that a plain-http host cannot open the app', () => {
+    typeHost('http://gubbins.local');
+    expect(screen.queryByTestId('label-base-url-insecure')).not.toBeNull();
+    expect(screen.getByTestId('setting-label-base-url')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('stays quiet for an https host, and for the localhost a dev server serves', () => {
+    typeHost('https://gubbins.local');
+    expect(screen.queryByTestId('label-base-url-insecure')).toBeNull();
+    cleanup();
+    typeHost('http://localhost:5173');
+    expect(screen.queryByTestId('label-base-url-insecure')).toBeNull();
+  });
+
+  it('promotes a scheme-less host to https, so the preview shows a link that can open', () => {
+    typeHost('gubbins.local');
+    expect(screen.getByTestId('label-base-url-preview').textContent).toContain('https://gubbins.local/');
+    expect(screen.queryByTestId('label-base-url-insecure')).toBeNull();
+  });
+});
+
 describe('SettingsDialog — Expiry tracking off', () => {
   it('drops the expiring-soon window row but keeps the low-stock thresholds', () => {
     useModulesStore.getState().setFeatureIntent('perishables', false);

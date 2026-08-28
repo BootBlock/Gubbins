@@ -106,10 +106,11 @@ function buildDeepLink(param: string, id: string, baseUrl: string): string {
  * printed from a `localhost` dev server — or from one device's IP — is useless on a
  * phone. The optional `override` (Settings → "Link host") replaces the derived base
  * entirely, so codes can point at a stable name every device can reach, e.g.
- * `http://gubbins.local/`.
+ * `https://gubbins.local/`.
  *
  * `override` is forgiving: a full URL (`https://gubbins.local/Gubbins/`) is used as-is,
- * and a bare host (`gubbins.local:8080`) is assumed to be `http://`. A blank or
+ * and a bare host (`gubbins.local:8080`) is assumed to be `https://` — see
+ * {@link isInsecureLabelBaseUrl} for why plain `http://` is the wrong guess. A blank or
  * unparseable override falls back to the derived default. When there is no `origin`
  * (no DOM — tests/SSR) and no usable override, returns `'#'` so callers still emit a
  * hash-only link the in-app scanner can parse. Never throws.
@@ -126,17 +127,59 @@ export function resolveLabelBaseUrl(override: string, origin: string | null, bas
 }
 
 /**
+ * Hostnames a browser still treats as a **secure context** over plain `http://`: the loopback
+ * set, plus the `*.localhost` names browsers resolve to it. Everything else must be `https://`.
+ */
+function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  if (host === '::1' || host === '0:0:0:0:0:0:0:1') return true;
+  return host.startsWith('127.');
+}
+
+/**
+ * True when a resolved label base **cannot open Gubbins at all**: a plain `http://` address
+ * that is not loopback is never a secure context, and the boot gate treats that as fatal
+ * (`support-diagnosis.ts` → `'insecure-context'`) because OPFS is unavailable there. Codes
+ * printed against such a base scan to the boot-failure screen, never to the item — and a
+ * label is physical, so the only fix is to reprint the sheet. Settings warns on this before
+ * anything is printed.
+ */
+export function isInsecureLabelBaseUrl(base: string): boolean {
+  try {
+    const url = new URL(base);
+    return url.protocol === 'http:' && !isLoopbackHostname(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pick the scheme for a **scheme-less** "Link host". `https:` for anything but loopback:
+ * Gubbins needs a secure context to boot, so the old `http:` guess turned `gubbins.local`
+ * into a base no scanned label could ever open. A loopback name keeps `http:`, which is
+ * both what a dev server serves and still a secure context.
+ */
+function guessScheme(hostish: string): 'http' | 'https' {
+  try {
+    return isLoopbackHostname(new URL(`http://${hostish}`).hostname) ? 'http' : 'https';
+  } catch {
+    return 'https';
+  }
+}
+
+/**
  * Parse a user-typed "Link host" into a normalised absolute base URL, or `null` when it
- * is blank or cannot be made into an `http(s)` URL. Tries the value verbatim first, then
- * prefixed with `http://` so a scheme-less host still resolves.
+ * is blank or cannot be made into an `http(s)` URL. A value carrying its own scheme is
+ * used verbatim; a scheme-less one is prefixed by {@link guessScheme}.
  */
 function parseOverrideBase(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  // Assume `http://` only when the value carries no scheme of its own (so a lone
-  // `http://` isn't "helpfully" turned into `http://http://…`).
+  // Guess a scheme only when the value carries none of its own (so a lone `http://` isn't
+  // "helpfully" turned into `http://http://…`).
   const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
-  const candidate = hasScheme ? trimmed : `http://${trimmed}`;
+  const candidate = hasScheme ? trimmed : `${guessScheme(trimmed)}://${trimmed}`;
   try {
     const url = new URL(candidate);
     if ((url.protocol === 'http:' || url.protocol === 'https:') && url.hostname) return url.href;

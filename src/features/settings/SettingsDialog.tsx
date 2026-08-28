@@ -44,7 +44,7 @@ import {
   SystemThemeIcon,
 } from '@/components/icons';
 import { SCANNER_SYMBOLOGY_OPTIONS } from '@/features/scanner/scanner-formats';
-import { buildItemQrUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
+import { buildItemQrUrl, isInsecureLabelBaseUrl, resolveLabelBaseUrl } from '@/features/scanner/scan-payload';
 import { fitsInQr } from '@/features/scanner/qr-code';
 import { hasOcr } from '@/lib/env/feature-detection';
 import { cn } from '@/lib/utils';
@@ -1350,11 +1350,12 @@ export default function SettingsDialog({
           <SettingsSection icon={<QrCodeIcon />} title="Labels &amp; QR codes">
             <SettingRow
               label="Link host"
-              description="The web address printed QR codes and barcodes point to. Leave blank to use whatever address you open this app from."
+              description="The web address printed QR codes and barcodes point to — an https:// one, or localhost. Leave blank to use whatever address you open this app from."
               hintSize="md"
               hint={
                 'The base web address that **printed QR codes and barcodes** point to. Scanning a label opens that item in Gubbins at this host.\n\n' +
-                'Leave it **blank** to use whatever address you currently open the app from. Set a stable name every device on your network can reach — e.g. `http://gubbins.local` — so labels printed from a dev server or one device keep working when scanned from a phone. The preview below shows the exact link a code will carry.'
+                'Leave it **blank** to use whatever address you currently open the app from. Set a stable name every device on your network can reach — e.g. `https://gubbins.local` — so labels printed from a dev server or one device keep working when scanned from a phone. The preview below shows the exact link a code will carry.\n\n' +
+                'It must be an **`https://`** address (or `localhost`): browsers only grant Gubbins the storage it needs on a secure one, so a code pointing at a plain `http://` host opens to an error instead of the item. Include the **whole** address — any folder the app is served from too, e.g. `https://example.com/Gubbins/` — because this replaces the address entirely.'
               }
             >
               <LabelBaseUrlControl />
@@ -1687,6 +1688,7 @@ const SAMPLE_ITEM_ID = '1f0a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8';
 function LabelBaseUrlControl() {
   const t = useT();
   const warningId = useId();
+  const insecureId = useId();
   const stored = usePreferencesStore((s) => s.labelBaseUrl);
   const setLabelBaseUrl = usePreferencesStore((s) => s.setLabelBaseUrl);
   const [draft, setDraft] = useState(stored);
@@ -1700,6 +1702,10 @@ function LabelBaseUrlControl() {
   // A host long enough to push the deep-link past the largest QR symbol would silently cost
   // every printed code its QR, so say so here — while it can still be shortened.
   const tooLongForQr = !fitsInQr(example);
+  // A plain `http://` host is not a secure context, so the app cannot boot there at all — every
+  // code printed against it would scan to the boot-failure screen. Labels are physical and the
+  // only recovery is a reprint, so this is worth saying at the point of entry.
+  const insecureHost = isInsecureLabelBaseUrl(resolved);
 
   return (
     <div className="flex w-72 max-w-full flex-col gap-1.5">
@@ -1710,13 +1716,16 @@ function LabelBaseUrlControl() {
         inputMode="url"
         autoComplete="off"
         spellCheck={false}
-        placeholder="http://gubbins.local"
+        placeholder="https://gubbins.local"
         className="h-9 w-full rounded-lg border border-border bg-input/40 px-3 text-sm text-foreground shadow-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => setLabelBaseUrl(draft)}
-        aria-invalid={tooLongForQr || undefined}
-        aria-describedby={tooLongForQr ? warningId : undefined}
+        aria-invalid={tooLongForQr || insecureHost || undefined}
+        aria-describedby={
+          [tooLongForQr ? warningId : null, insecureHost ? insecureId : null].filter(Boolean).join(' ') ||
+          undefined
+        }
       />
       <p className="break-all text-xs text-muted-foreground" data-testid="label-base-url-preview">
         {usingDefault ? 'Using this device’s address — codes link to ' : 'Codes link to '}
@@ -1730,6 +1739,16 @@ function LabelBaseUrlControl() {
           data-testid="label-base-url-too-long"
         >
           {t('settings.labelBaseUrl.tooLongForQr')}
+        </p>
+      ) : null}
+      {insecureHost ? (
+        <p
+          id={insecureId}
+          role="alert"
+          className="text-xs text-destructive"
+          data-testid="label-base-url-insecure"
+        >
+          {t('settings.labelBaseUrl.insecureHost')}
         </p>
       ) : null}
     </div>
