@@ -10,6 +10,7 @@ import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
 import { ProjectRepository } from './ProjectRepository';
 import { LocationRepository } from './LocationRepository';
+import { toDueDateInputValue } from '@/lib/date-input';
 
 describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
   let driver: MemoryDriver;
@@ -32,6 +33,36 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
   async function makeItem(name: string, quantity: number): Promise<string> {
     const item = await items.create({ name, quantity });
     return item.id;
+  }
+
+  /**
+   * Run `body` as though the machine sat at a fixed UTC offset, by shifting the three local
+   * `Date` getters the date-input seam reads. Deliberately leaves `toISOString()` alone, so a
+   * value rendered through UTC still comes out as UTC — which is exactly the difference the
+   * issue #516 test is looking for. Restores the prototype however `body` ends.
+   */
+  async function withUtcOffset(offsetMinutes: number, body: () => Promise<void>): Promise<void> {
+    const proto = Date.prototype;
+    const original = {
+      getFullYear: proto.getFullYear,
+      getMonth: proto.getMonth,
+      getDate: proto.getDate,
+    };
+    const shifted = (d: Date) => new Date(d.getTime() + offsetMinutes * 60_000);
+    proto.getFullYear = function (this: Date) {
+      return shifted(this).getUTCFullYear();
+    };
+    proto.getMonth = function (this: Date) {
+      return shifted(this).getUTCMonth();
+    };
+    proto.getDate = function (this: Date) {
+      return shifted(this).getUTCDate();
+    };
+    try {
+      await body();
+    } finally {
+      Object.assign(proto, original);
+    }
   }
 
   describe('ContactRepository', () => {
@@ -298,6 +329,35 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       const renewed = history.rows.find((h) => h.action === 'LOAN_RENEWED');
       expect(renewed).toBeDefined();
       expect(renewed?.metadata).toMatchObject({ from: originalDue, to: newDue, checkoutId: checkout.id });
+    });
+
+    it('names the borrower’s own day in the note, west of UTC (issue #516)', async () => {
+      // A due date is anchored at *local* 23:59:59, which is already the next day in UTC anywhere
+      // behind it — so a note rendered through `toISOString()` claimed the 21st while the renew
+      // editor, the loans list and the agenda all read the same instant back as the 20th. The note
+      // is permanent and cannot be recomputed, so the day it names has to be right when written.
+      //
+      // `process.env.TZ` does not take effect inside a Vitest worker (the isolate has already
+      // cached its zone), so the zone is simulated instead: the three local getters
+      // `toDueDateInputValue` reads are shifted by a fixed offset, leaving `toISOString()` —
+      // the call this test exists to catch — untouched.
+      const itemId = await makeItem('Impact driver', 1);
+      // 2026-07-16 and 2026-07-20 at 23:59:59 local, four hours behind UTC.
+      const originalDue = Date.UTC(2026, 6, 17, 3, 59, 59);
+      const newDue = Date.UTC(2026, 6, 21, 3, 59, 59);
+
+      await withUtcOffset(-4 * 60, async () => {
+        // The days every screen shows for those instants, read back through the due-date seam.
+        expect(toDueDateInputValue(originalDue)).toBe('2026-07-16');
+        expect(toDueDateInputValue(newDue)).toBe('2026-07-20');
+
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', dueDate: originalDue });
+        await checkouts.renew(checkout.id, { dueDate: newDue });
+      });
+
+      const history = await items.getHistory(itemId);
+      const renewed = history.rows.find((h) => h.action === 'LOAN_RENEWED');
+      expect(renewed?.note).toBe('Loan due date changed from 2026-07-16 to 2026-07-20.');
     });
 
     it('clears the due date to null (an open-ended loan is a valid renew)', async () => {
