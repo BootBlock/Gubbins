@@ -12,6 +12,7 @@ import {
   getAssetBookingRepository,
   type ConvertBookingInput,
   type CreateBookingInput,
+  type UpdateBookingInput,
 } from '@/db/repositories';
 import { agendaKeys } from '@/features/calendar/keys';
 import { checkoutKeys, contactKeys } from '@/features/contacts/keys';
@@ -61,7 +62,29 @@ export function useCreateBooking() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateBookingInput) => getAssetBookingRepository().create(input),
-    onSettled: () => invalidateBookings(client),
+    onSettled: () => {
+      invalidateBookings(client);
+      // Booking "for" a name not yet in the dictionary creates that contact (§4 Ergonomics).
+      void client.invalidateQueries({ queryKey: contactKeys.all });
+    },
+  });
+}
+
+/**
+ * Amend an existing booking — its contact, dates or note (issue #659).
+ *
+ * Invalidates the contact keys as well as the booking views: naming a borrower who is not yet in
+ * the dictionary creates that contact, so the contacts list and its pickers are stale afterwards.
+ */
+export function useUpdateBooking() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateBookingInput }) =>
+      getAssetBookingRepository().update(id, input),
+    onSettled: () => {
+      invalidateBookings(client);
+      void client.invalidateQueries({ queryKey: contactKeys.all });
+    },
   });
 }
 

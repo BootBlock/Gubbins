@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
-import type { Item } from '@/db/repositories';
+import { BARCODE_MATCH_LIMIT, type Item } from '@/db/repositories';
 
 /**
  * Behaviour tests for the {@link ScannerOverlay} Discrete result card's quick actions (the
@@ -24,8 +24,9 @@ let scanResult: Item | null = null;
 // What a typed/scanned short code resolves to (issue #338) — empty, one item, or ambiguous.
 let shortCodeMatches: Item[] = [];
 // What an item's stored Barcode field resolves to, and every value the overlay looked up —
-// the scanner resolves *any* symbology it captured, not only a valid GTIN (issue #506).
-let barcodeMatch: Item | null = null;
+// the scanner resolves *any* symbology it captured, not only a valid GTIN (issue #506). More
+// than one match is the shared-barcode case the picker exists for (issue #513).
+let barcodeMatches: Item[] = [];
 const barcodeQueries: string[] = [];
 // Every id the overlay asked the repository for. The count is the point: the double-scan guard
 // has to sit in *front* of the read, or a label resting in the viewfinder costs one round-trip
@@ -88,9 +89,9 @@ vi.mock('@/db/repositories', async (importOriginal) => ({
       idQueries.push(id);
       return Promise.resolve(scanResult);
     },
-    getByBarcode: (value: string) => {
+    findByBarcode: (value: string) => {
       barcodeQueries.push(value);
-      return Promise.resolve(barcodeMatch);
+      return Promise.resolve(barcodeMatches);
     },
     findByShortCode: () => Promise.resolve(shortCodeMatches),
   }),
@@ -182,7 +183,7 @@ async function scan(item: Item, props: Partial<React.ComponentProps<typeof Scann
 beforeEach(() => {
   scanResult = null;
   shortCodeMatches = [];
-  barcodeMatch = null;
+  barcodeMatches = [];
   barcodeQueries.length = 0;
   idQueries.length = 0;
   feedbackCalls.confirm = 0;
@@ -392,7 +393,7 @@ describe('ScannerOverlay — a stored barcode of any symbology (issue #506)', ()
   };
 
   it('resolves a Code 128 part label to the item that carries it', async () => {
-    barcodeMatch = { ...baseItem, barcode: 'RS-482-9021' };
+    barcodeMatches = [{ ...baseItem, barcode: 'RS-482-9021' }];
     render(<ScannerOverlay open onClose={vi.fn()} />);
 
     enter('RS-482-9021');
@@ -403,7 +404,7 @@ describe('ScannerOverlay — a stored barcode of any symbology (issue #506)', ()
   });
 
   it('looks a retail barcode up by its canonical GTIN, as before', async () => {
-    barcodeMatch = { ...baseItem, barcode: EAN13 };
+    barcodeMatches = [{ ...baseItem, barcode: EAN13 }];
     render(<ScannerOverlay open onClose={vi.fn()} />);
 
     enter(`  ${EAN13}  `);
@@ -414,7 +415,7 @@ describe('ScannerOverlay — a stored barcode of any symbology (issue #506)', ()
 
   it('prefers a stored barcode over a printed short code when both could match', async () => {
     // Eight hex characters is both a label's short code and a value an item may record.
-    barcodeMatch = baseItem;
+    barcodeMatches = [baseItem];
     shortCodeMatches = [{ ...baseItem, id: 'item-2', name: 'Short-code item' }];
     render(<ScannerOverlay open onClose={vi.fn()} />);
 
@@ -433,12 +434,122 @@ describe('ScannerOverlay — a stored barcode of any symbology (issue #506)', ()
   });
 });
 
+/**
+ * A barcode two items share names a set, not a record (issue #513). Nothing in the app stops the
+ * duplicate arising — two variants of one product, a duplicated item that kept its code — and the
+ * scanner used to open whichever was created last without a word, so a ± adjustment landed on the
+ * wrong record. It now asks, the way an ambiguous short code already did.
+ */
+describe('ScannerOverlay — a barcode shared by two items (issue #513)', () => {
+  const other: Item = { ...baseItem, id: 'item-2', name: 'NE555 timer (sealed)', locationId: 'loc-2' };
+  const enter = (value: string) => {
+    fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value } });
+    fireEvent.click(screen.getByTestId('scanner-manual-submit'));
+  };
+
+  it('asks which item was meant instead of opening the most recent one', async () => {
+    barcodeMatches = [baseItem, other];
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter(EAN13);
+
+    const picker = await screen.findByTestId('scanner-barcode-choice');
+    // Both candidates are offered — neither is presented as *the* match…
+    expect(picker).toHaveTextContent('NE555 timer');
+    expect(picker).toHaveTextContent('NE555 timer (sealed)');
+    // …the scanned code is named, so the user can see what is shared…
+    expect(picker).toHaveTextContent(EAN13);
+    // …and nothing has been opened for action yet, so no ± lands on a guess.
+    expect(screen.queryByTestId('scanner-discrete-result')).toBeNull();
+    // The ambiguity is announced, not only drawn — the notice region is this screen's SR channel.
+    expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/More than one item/i);
+  });
+
+  it('tells two same-named items apart by location and short code', async () => {
+    barcodeMatches = [baseItem, other];
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter(EAN13);
+
+    // `loc-2` is a loaded location ("Shelf B"); `loc-1` is not, so that row says so rather than
+    // rendering a bare id. Without this line the two rows would read identically.
+    const row = await screen.findByTestId('scanner-barcode-choice-item-2');
+    expect(row).toHaveTextContent('Shelf B');
+    expect(screen.getByTestId('scanner-barcode-choice-item-1')).toHaveTextContent('No location');
+  });
+
+  it('opens the item the user picks, with the actions an unambiguous scan would have given', async () => {
+    barcodeMatches = [baseItem, other];
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter(EAN13);
+    fireEvent.click(await screen.findByTestId('scanner-barcode-choice-item-2'));
+
+    const card = await screen.findByTestId('scanner-discrete-result');
+    expect(card).toHaveTextContent('NE555 timer (sealed)');
+    // The picker is done, not stacked underneath the result.
+    expect(screen.queryByTestId('scanner-barcode-choice')).toBeNull();
+    // …and the chosen item is the one the ± stepper will move.
+    expect(screen.getByTestId('scanner-adjust-quantity')).toBeInTheDocument();
+  });
+
+  it('queues the picked item and resumes scanning in Continuous mode', async () => {
+    barcodeMatches = [baseItem, other];
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    const toggle = screen.getByRole('button', { name: /Continuous/ });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+    enter(EAN13);
+    fireEvent.click(await screen.findByTestId('scanner-barcode-choice-item-2'));
+
+    // Back at the live view — a batch scan must not strand the user on a paused card after every
+    // shared code — and no Discrete result card, which is the other thing the pick must not do.
+    await waitFor(() => expect(screen.queryByTestId('scanner-barcode-choice')).toBeNull());
+    expect(screen.queryByTestId('scanner-discrete-result')).toBeNull();
+
+    // The pick really went into the queue: a second, unambiguous code naming the same item is
+    // refused by the queue's id-keyed guard, which only has something to refuse if it is there.
+    barcodeMatches = [other];
+    enter('RS-482-9021');
+
+    await waitFor(() => expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/already scanned/i));
+  });
+
+  it('says how many carry the code, and admits when it is showing only the first few', async () => {
+    barcodeMatches = Array.from({ length: BARCODE_MATCH_LIMIT }, (_, n) => ({
+      ...baseItem,
+      id: `item-${n}`,
+      name: `Copy ${n}`,
+    }));
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter(EAN13);
+
+    // At the repository's cap the list may be a prefix of the real set, so the copy says "at
+    // least" rather than stating a total it cannot know.
+    const picker = await screen.findByTestId('scanner-barcode-choice');
+    expect(picker).toHaveTextContent(new RegExp(`At least ${BARCODE_MATCH_LIMIT} items`, 'i'));
+  });
+
+  it('goes back to scanning when the user picks none of them', async () => {
+    barcodeMatches = [baseItem, other];
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter(EAN13);
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan again' }));
+
+    await waitFor(() => expect(screen.queryByTestId('scanner-barcode-choice')).toBeNull());
+    expect(screen.queryByTestId('scanner-discrete-result')).toBeNull();
+  });
+});
+
 describe('ScannerOverlay — unknown barcode product lookup (issue #59)', () => {
   it('offers a lookup for an unknown barcode and carries the found product into Add item', async () => {
     const onCreateFromBarcode = vi.fn();
     render(<ScannerOverlay open onClose={vi.fn()} onCreateFromBarcode={onCreateFromBarcode} />);
 
-    // Scan a valid retail barcode no item carries (getByBarcode → null) via the manual seam.
+    // Scan a valid retail barcode no item carries (findByBarcode → []) via the manual seam.
     fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value: EAN13 } });
     fireEvent.click(screen.getByTestId('scanner-manual-submit'));
     await screen.findByTestId('scanner-gtin-result');
@@ -572,7 +683,7 @@ describe('ScannerOverlay — a re-scan in Continuous mode (issue #512)', () => {
     // The label QR resolves the item; its stored barcode resolves the *same* item. Two distinct
     // raw strings, so only the queue's id-keyed guard can catch this one.
     scanResult = baseItem;
-    barcodeMatch = baseItem;
+    barcodeMatches = [baseItem];
     enterContinuous();
 
     enter(UUID);

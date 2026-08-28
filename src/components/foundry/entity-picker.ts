@@ -69,10 +69,11 @@ export interface PickerSelectionParams<T> extends PickerRowAccess<T> {
    */
   readonly setText: (next: string, committed: boolean) => void;
   /**
-   * The row `value` identifies, once the caller has read it. Only consulted when the value came
-   * from *outside* the box — that is what the picker needs a name for.
+   * The row `value` identifies, once the caller has read it — `null` where the read has landed and
+   * found nothing. Only consulted when the value came from *outside* the box: that is the only
+   * case in which the picker needs a name it did not write itself.
    */
-  readonly resolved?: T;
+  readonly resolved?: T | null;
 }
 
 /**
@@ -124,7 +125,7 @@ export function usePickerSelection<T>({
       return;
     }
     // Set from outside: wait for the row, so the box shows its name rather than an id.
-    if (resolved !== undefined && accessRef.current.idFor(resolved) === valueId) {
+    if (resolved !== undefined && resolved !== null && accessRef.current.idFor(resolved) === valueId) {
       emittedRef.current = valueId;
       setText(accessRef.current.labelFor(resolved), true);
     }

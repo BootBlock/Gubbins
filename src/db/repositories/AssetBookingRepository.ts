@@ -45,6 +45,7 @@ import type {
   CreateBookingInput,
   Page,
   PageParams,
+  UpdateBookingInput,
 } from './types';
 
 /**
@@ -152,6 +153,69 @@ export class AssetBookingRepository extends BaseRepository {
   }
 
   /**
+   * Amend an open booking in place — its contact, its day range and its note (issue #659).
+   *
+   * A booking can legitimately be made with **no** contact (the form invites it: "leave blank if
+   * you're only reserving the slot"), and `asset_bookings.contact_id` is `ON DELETE SET NULL`, so
+   * deleting a contact strips the borrower from their future bookings as well. Either way
+   * {@link convertToCheckout} then refuses the booking for want of a borrower — and before this
+   * existed the only exits were Cancel and Delete, both of which release the reserved slot. This
+   * is the recovery: name the borrower (or correct the dates) and the reservation survives.
+   *
+   * Only the fields present in `input` change; see {@link UpdateBookingInput}. A terminal booking
+   * is not editable — a cancelled or converted booking is a record of what happened, and the
+   * conversion has already copied the note and dates onto a loan that owns them from then on.
+   *
+   * A moved range is re-checked for clashes exactly as {@link create} does, **excluding the
+   * booking's own row** — otherwise every edit would collide with the reservation it is editing.
+   */
+  async update(id: string, input: UpdateBookingInput): Promise<AssetBooking> {
+    this.assertPermission('bookings:write');
+    this.assertWritable();
+    const booking = await this.requireBooking(id);
+    if (booking.cancelledAt !== null) {
+      throw new DbError('SQLITE_CONSTRAINT', 'A cancelled booking cannot be edited.');
+    }
+    if (booking.convertedCheckoutId !== null) {
+      throw new DbError('SQLITE_CONSTRAINT', 'A booking that was checked out cannot be edited.');
+    }
+
+    const sets: string[] = [];
+    const params: SqlValue[] = [];
+
+    if (input.startDate !== undefined || input.endDate !== undefined) {
+      const { start, end } = normaliseDayRange(
+        input.startDate ?? booking.startDate,
+        input.endDate ?? booking.endDate,
+      );
+      const clash = findFirstOverlap({ start, end }, await this.activeRanges(booking.itemId, id));
+      if (clash) {
+        throw new DbError('SQLITE_CONSTRAINT', 'This asset is already booked for an overlapping date range.');
+      }
+      sets.push('start_date = ?', 'end_date = ?');
+      params.push(start, end);
+    }
+
+    if (input.contactId !== undefined || input.contactName !== undefined) {
+      sets.push('contact_id = ?');
+      params.push(await this.resolveContactRef(input.contactId, input.contactName));
+    }
+
+    if (input.note !== undefined) {
+      sets.push('note = ?');
+      params.push(input.note?.trim() || null);
+    }
+
+    if (sets.length > 0) {
+      await this.driver.execute(`UPDATE asset_bookings SET ${sets.join(', ')} WHERE id = ?;`, [
+        ...params,
+        id,
+      ]);
+    }
+    return (await this.getById(id))!;
+  }
+
+  /**
    * Convert a booking into an active checkout: delegate the stock decrement + serialised
    * double-out guard to {@link CheckoutRepository.checkout}, then stamp the booking's
    * `converted_checkout_id`. The loan due date defaults to the booking's end day.
@@ -211,10 +275,13 @@ export class AssetBookingRepository extends BaseRepository {
         derivedIds,
       }));
 
-    await this.driver.execute('UPDATE asset_bookings SET converted_checkout_id = ? WHERE id = ?;', [
-      checkout.id,
-      id,
-    ]);
+    // A booking converted with a borrower supplied at this moment (issue #659) had none of its
+    // own, so the stamp records who it actually went to as well. Without it the booking reads
+    // "checked out" to nobody for the rest of its life, in the list and in every export.
+    await this.driver.execute(
+      'UPDATE asset_bookings SET converted_checkout_id = ?, contact_id = ? WHERE id = ?;',
+      [checkout.id, booking.contactId ?? checkout.contactId, id],
+    );
     return { booking: (await this.getById(id))!, checkout };
   }
 
@@ -292,12 +359,17 @@ export class AssetBookingRepository extends BaseRepository {
 
   // --- internals -----------------------------------------------------------------
 
-  /** Active (non-terminal) day-ranges for an asset, for the overlap check. */
-  private async activeRanges(itemId: string): Promise<OverlapCandidate[]> {
+  /**
+   * Active (non-terminal) day-ranges for an asset, for the overlap check. `excludeId` omits one
+   * booking from the candidates — {@link update} passes the booking being edited, which would
+   * otherwise always clash with itself.
+   */
+  private async activeRanges(itemId: string, excludeId?: string): Promise<OverlapCandidate[]> {
     const rows = await this.driver.query<{ id: string; start_date: number; end_date: number }>(
       `SELECT id, start_date, end_date FROM asset_bookings
-       WHERE item_id = ? AND cancelled_at IS NULL AND converted_checkout_id IS NULL;`,
-      [itemId],
+       WHERE item_id = ? AND cancelled_at IS NULL AND converted_checkout_id IS NULL
+         AND (? IS NULL OR id <> ?);`,
+      [itemId, excludeId ?? null, excludeId ?? null],
     );
     return rows.map((r) => ({ id: r.id, start: Number(r.start_date), end: Number(r.end_date) }));
   }

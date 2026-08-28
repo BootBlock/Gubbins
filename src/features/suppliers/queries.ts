@@ -129,7 +129,12 @@ export function useSupplierByName(name: string) {
 export function useSupplier(id: string | undefined) {
   return useQuery({
     queryKey: supplierKeys.detail(id ?? ''),
-    queryFn: () => getSupplierRepository().getById(id!),
+    // `getById` answers `undefined` for a record that isn't there, which TanStack Query
+    // refuses as query data — it logs "Query data cannot be undefined" and marks the query
+    // errored. Deleting the supplier you are looking at refetches this key before the screen
+    // drops the selection, so that is a reachable state. `null` says the same thing in a
+    // value the cache accepts.
+    queryFn: async () => (await getSupplierRepository().getById(id!)) ?? null,
     enabled: Boolean(id),
   });
 }

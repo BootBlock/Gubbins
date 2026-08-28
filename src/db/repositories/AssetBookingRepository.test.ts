@@ -134,8 +134,14 @@ describe('AssetBookingRepository (Phase 78 — time-based asset booking)', () =>
     const itemId = await serialisedAsset();
     const booking = await bookings.create({ itemId, startDate: day(1), endDate: day(2) });
     await expect(bookings.convertToCheckout(booking.id)).rejects.toBeInstanceOf(DbError);
-    const { checkout } = await bookings.convertToCheckout(booking.id, { contactName: 'Grace' });
+    const { checkout, booking: stamped } = await bookings.convertToCheckout(booking.id, {
+      contactName: 'Grace',
+    });
     expect(checkout.itemId).toBe(itemId);
+    // The borrower named at conversion is recorded on the booking too, so it no longer reads as
+    // checked out to nobody in the list and the export (issue #659).
+    expect(stamped.contactId).toBe(checkout.contactId);
+    expect(stamped.contactId).not.toBeNull();
   });
 
   it('refuses to convert a booking whose asset has since been decommissioned (#661)', async () => {
@@ -182,6 +188,103 @@ describe('AssetBookingRepository (Phase 78 — time-based asset booking)', () =>
       [booking.id],
     );
     expect(Number(tomb?.n)).toBe(1);
+  });
+
+  // --- editing a booking (issue #659) -------------------------------------------
+
+  it('names a borrower on a contactless booking, so it can then be checked out', async () => {
+    const itemId = await serialisedAsset();
+    const booking = await bookings.create({ itemId, startDate: day(1), endDate: day(2) });
+    await expect(bookings.convertToCheckout(booking.id)).rejects.toBeInstanceOf(DbError);
+
+    const updated = await bookings.update(booking.id, { contactName: 'Grace' });
+    expect(updated.contactId).not.toBeNull();
+
+    const { checkout } = await bookings.convertToCheckout(booking.id);
+    expect(checkout.itemId).toBe(itemId);
+  });
+
+  it('recovers a booking whose contact was deleted (ON DELETE SET NULL)', async () => {
+    const itemId = await serialisedAsset();
+    const booking = await bookings.create({
+      itemId,
+      startDate: day(1),
+      endDate: day(2),
+      contactName: 'Ada',
+    });
+    // Deleting the contact strips the borrower from the booking rather than blocking the delete.
+    await driver.execute('DELETE FROM contacts WHERE id = ?;', [booking.contactId!]);
+    expect((await bookings.getById(booking.id))?.contactId).toBeNull();
+    await expect(bookings.convertToCheckout(booking.id)).rejects.toBeInstanceOf(DbError);
+
+    await bookings.update(booking.id, { contactName: 'Ada' });
+    const { checkout } = await bookings.convertToCheckout(booking.id);
+    expect(checkout.itemId).toBe(itemId);
+  });
+
+  it('clears the contact when the name is cleared', async () => {
+    const itemId = await serialisedAsset();
+    const booking = await bookings.create({
+      itemId,
+      startDate: day(1),
+      endDate: day(2),
+      contactName: 'Ada',
+    });
+    const updated = await bookings.update(booking.id, { contactName: null });
+    expect(updated.contactId).toBeNull();
+  });
+
+  it('leaves a field alone when the input omits it', async () => {
+    const itemId = await serialisedAsset();
+    const booking = await bookings.create({
+      itemId,
+      startDate: day(1),
+      endDate: day(2),
+      contactName: 'Ada',
+      note: 'trade show',
+    });
+    const updated = await bookings.update(booking.id, { note: 'rescheduled' });
+    expect(updated.contactId).toBe(booking.contactId);
+    expect(updated.startDate).toBe(dayStart(1));
+    expect(updated.endDate).toBe(dayStart(2));
+    expect(updated.note).toBe('rescheduled');
+  });
+
+  it('moves the dates, snapping to whole UTC days and ignoring its own reservation', async () => {
+    const itemId = await serialisedAsset();
+    const booking = await bookings.create({ itemId, startDate: day(1), endDate: day(5) });
+    // The new range overlaps the booking's *current* one — which must not count as a clash.
+    const updated = await bookings.update(booking.id, { startDate: day(3), endDate: day(7) });
+    expect(updated.startDate).toBe(dayStart(3));
+    expect(updated.endDate).toBe(dayStart(7));
+  });
+
+  it('still refuses a move that overlaps another booking of the same asset', async () => {
+    const itemId = await serialisedAsset();
+    const first = await bookings.create({ itemId, startDate: day(1), endDate: day(2) });
+    await bookings.create({ itemId, startDate: day(5), endDate: day(7) });
+
+    await expect(bookings.update(first.id, { endDate: day(6) })).rejects.toBeInstanceOf(DbError);
+    // The refused edit changed nothing.
+    const unchanged = await bookings.getById(first.id);
+    expect(unchanged?.endDate).toBe(dayStart(2));
+  });
+
+  it('refuses to edit a cancelled or converted booking', async () => {
+    const itemId = await serialisedAsset('Printer A');
+    const cancelled = await bookings.create({ itemId, startDate: day(1), endDate: day(2) });
+    await bookings.cancel(cancelled.id);
+    await expect(bookings.update(cancelled.id, { contactName: 'Ada' })).rejects.toBeInstanceOf(DbError);
+
+    const otherId = await serialisedAsset('Printer B');
+    const converted = await bookings.create({
+      itemId: otherId,
+      startDate: day(1),
+      endDate: day(2),
+      contactName: 'Ada',
+    });
+    await bookings.convertToCheckout(converted.id);
+    await expect(bookings.update(converted.id, { note: 'late' })).rejects.toBeInstanceOf(DbError);
   });
 
   it('lists bookable assets (active serialised + single-unit discrete only)', async () => {

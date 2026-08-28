@@ -1,0 +1,104 @@
+name: End-to-end browser smoke
+
+# `scripts/browser-smoke.mjs` is the only coverage the project has for the layers the unit
+# suites mock away: OPFS, `SharedArrayBuffer`, the real sqlite-wasm worker, the service worker,
+# and a genuine export/import round-trip. Until this workflow existed it was invoked by hand or
+# not at all, so it drifted out of step with the app and stopped being a gate (issue #600).
+#
+# It is not on every push: one run is ~25 minutes, which is far too slow to sit in front of a
+# merge. Instead it runs nightly against `main`, on demand, and on any pull request that edits
+# the suite or this workflow — so a change to the smoke itself is still proven before it lands.
+#
+# It drives the **dev server**, which is the only server it can drive: several steps import app
+# modules by their source path (`/src/db/repositories/index.ts`) and one reaches for a storage
+# test seam the app only exposes in a DEV build. Cross-origin isolation is not the reason — the
+# dev and preview servers both send COOP/COEP — but a production build serves neither of those,
+# and a run against `vite preview` fails a dozen checks for that reason alone.
+#
+# The build step is still needed: the suite's PWA update-handshake block serves `dist/` from its
+# own in-process static server, and skips itself when `dist/index.html` is absent. So the job
+# builds first, then drives the dev server — and the run covers the real service worker too.
+on:
+  schedule:
+    # Nightly, at an off-peak minute (a round hour is the busiest slot on hosted runners).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/browser-smoke.mjs'
+      - '.github/workflows/e2e.yml'
+
+# Least-privilege: the run only needs to read the checkout.
+permissions:
+  contents: read
+
+# A 25-minute job is worth superseding: a newer commit on the same ref makes the in-flight run
+# moot. Scheduled runs share the `main` group, so two nightlies can never overlap either.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Browser smoke (Playwright)
+    runs-on: ubuntu-latest
+    # Comfortably above the ~25-minute local run plus install/build, so a genuinely hung suite
+    # is killed rather than burning the default 6-hour ceiling.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Same Node the other jobs pin, so the lockfile resolves identically.
+          node-version: 25
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The suite drives the maintainer's preinstalled Edge locally; a hosted runner has none,
+      # so install Playwright's own Chromium (same engine) and select it below.
+      - name: Install the Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # Only so `dist/` exists for the PWA update-handshake block, which serves it itself.
+      - name: Build the app
+        run: npm run build
+
+      - name: Start the dev server
+        run: |
+          npm run dev -- --port 5173 --strictPort > dev-server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://localhost:5173/Gubbins/; then
+              echo "dev server is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "dev server did not come up within 60s"
+          cat dev-server.log
+          exit 1
+
+      - name: Run the browser smoke suite
+        env:
+          SMOKE_BASE: http://localhost:5173/Gubbins/
+          # Playwright's bundled Chromium rather than a channel — a hosted runner has no Edge.
+          SMOKE_BROWSER_CHANNEL: chromium
+          # A hosted runner is markedly slower than a developer machine at the sqlite-wasm boot,
+          # the OPFS writes and the virtualised re-renders every wait sits behind. Scaling costs
+          # a green run nothing — a wait only runs to its budget when something has failed.
+          SMOKE_TIMEOUT_SCALE: '3'
+        run: node scripts/browser-smoke.mjs
+
+      # The suite captures a full-page screenshot mid-run; keep it when the run fails so a
+      # failure can be read without reproducing the whole 25 minutes locally.
+      - name: Upload the smoke screenshot
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-screenshot
+          path: scripts/.smoke-screenshot.png
+          if-no-files-found: ignore
