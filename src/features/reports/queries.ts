@@ -305,8 +305,9 @@ export function useSpendAnalytics(
   windowDays: number = DEFAULT_ANALYTICS_WINDOW,
   options?: ReportQueryOptions,
 ) {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: reportKeys.spend(windowDays, SPEND_BUCKETS),
+    queryKey: reportKeys.spend(windowDays, SPEND_BUCKETS, currency),
     queryFn: () => getReportRepository().spendAnalytics(windowDays, SPEND_BUCKETS),
     enabled: options?.enabled ?? true,
     staleTime: ANALYTICS_STALE_TIME_MS,
@@ -326,8 +327,9 @@ export function useSalesAnalytics(
   windowDays: number = DEFAULT_ANALYTICS_WINDOW,
   options?: ReportQueryOptions,
 ) {
+  const currency = useValuationCurrency();
   return useQuery({
-    queryKey: reportKeys.sales(windowDays, SALES_BUCKETS),
+    queryKey: reportKeys.sales(windowDays, SALES_BUCKETS, currency),
     queryFn: () => getReportRepository().salesAnalytics(windowDays, SALES_BUCKETS),
     enabled: options?.enabled ?? true,
     staleTime: ANALYTICS_STALE_TIME_MS,
