@@ -585,14 +585,15 @@ const SETTLE = {
     deposit: 1.1,
     /** …spread over neighbouring columns by distance (tiny lookup table, index = |offset|). */
     kernel: [1, 0.6, 0.25] as const,
-    /** Mound height cap (css px): build-up visibly grows over time, then holds. */
+    /** The deepest a column may ever hold (css px) — the ceiling {@link capacity} scales from. */
     maxDepth: 9,
     /**
-     * Fraction of {@link maxDepth} a column may actually hold, low → high (issue #437). A real
-     * drift's crest is never level, and a uniform cap is exactly what produced the hard white
-     * line this replaces: every column across a wide card saturated at the same y. The capacity
-     * instead undulates along the surface ({@link snowMoundCapacity}), so the crest that a
-     * saturated drift converges on is a rolling one.
+     * Fraction of {@link maxDepth} a given column actually holds, low → high (issue #437). One
+     * shared ceiling makes a saturated drift level, and a level crest across a wide card reads as
+     * a hard white line rather than as snow. The capacity instead undulates along the surface
+     * ({@link snowMoundCapacity}), so a drift converges on a rolling crest. It carries the alpha
+     * with it: {@link alpha} ramps against `maxDepth`, so a shallower stretch of the same drift
+     * stays a little more translucent, exactly as thinner snow does.
      */
     capacity: [0.5, 1] as const,
     /**
@@ -867,8 +868,9 @@ function columnNoise(col: number, wavelength: number, seed: number): number {
  */
 export function snowMoundCapacity(col: number): number {
   const t = SETTLE.snow;
+  // The seeds sit clear of those flow-field's event schedules use, so the two never correlate.
   const n =
-    0.65 * columnNoise(col, t.capacityWavelength, 0) + 0.35 * columnNoise(col, t.capacityWavelength / 3, 7);
+    0.65 * columnNoise(col, t.capacityWavelength, 60) + 0.35 * columnNoise(col, t.capacityWavelength / 3, 61);
   return t.maxDepth * lerp(t.capacity[0], t.capacity[1], clamp(n, 0, 1));
 }
 

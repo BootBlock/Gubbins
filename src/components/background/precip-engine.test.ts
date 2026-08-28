@@ -868,9 +868,9 @@ describe('snow drift saturation (issue #437)', () => {
     for (let i = 1; i <= 24000; i++) pump(i * 50);
     ctrl.stop();
 
-    // A settled crest sits *on* the control top; the only other curve the layer paints is a
-    // wind-plaster strip hanging down the face, whose control point is below it — so the drift's
-    // top edge is exactly the captured points at or above the control top.
+    // A settled crest sits *on* the control top. This map reports no bottom edges, so no hanging
+    // under-fringe can be drawn, and the only other curve the layer paints is a wind-plaster
+    // strip down a face — whose control point is *below* the top. Hence the filter.
     const crest = crestYs.filter((y) => y <= TOP);
     expect(crest.length).toBeGreaterThan(50);
     // Only the final render's profile matters — earlier ones are the drift still growing.
