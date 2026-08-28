@@ -27,8 +27,9 @@ function part(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   };
 }
 
-// The unassigned location is first because it is what the destination field starts on — the
-// picker has to be able to show its own default before a choice is made.
+// The unassigned location is in the list because it is what the destination field starts on:
+// the picker resolves its trigger label from the options, so without it the field would
+// have no default to show.
 const LOCATIONS = [
   { id: UNASSIGNED_LOCATION_ID, name: 'Unassigned' },
   { id: 'loc1', name: 'Garage' },
@@ -220,6 +221,7 @@ describe('FinaliseAssemblyDialog — outcome wiring (issue #492)', () => {
 
   it('forgets the choice when the dialog is cancelled', async () => {
     const { user, onClose } = renderDialog([part()]);
+    await user.type(screen.getByLabelText('New location name'), 'Lamp box');
     await user.click(screen.getByRole('radio', { name: /Permanent consumption/ }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -227,6 +229,7 @@ describe('FinaliseAssemblyDialog — outcome wiring (issue #492)', () => {
     expect(mutate).not.toHaveBeenCalled();
     // The next opening starts fresh: a stale consuming outcome must not be one click from running.
     expect(screen.getByRole('radio', { name: /Container/ })).toBeChecked();
+    // The name typed before cancelling is cleared too, so it cannot reappear on the next build.
     expect(screen.getByLabelText('New location name')).toHaveValue('');
   });
 });
