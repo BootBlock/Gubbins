@@ -15,8 +15,14 @@ export const agendaKeys = {
   /** The prefix every agenda lane is built from; invalidate this to refresh them all. */
   all: ['agenda'] as const,
   maintenance: () => [...agendaKeys.all, 'maintenance'] as const,
-  warranty: (lookaheadDays: number) => [...agendaKeys.all, 'warranty', lookaheadDays] as const,
-  expiry: (lookaheadDays: number) => [...agendaKeys.all, 'expiry', lookaheadDays] as const,
+  /**
+   * The two dated item lanes are bounded at *both* ends (issue #607), so both bounds are part of
+   * the key — a cached page read under a different window is a different set of rows.
+   */
+  warranty: (lookaheadDays: number, lookbackDays: number) =>
+    [...agendaKeys.all, 'warranty', lookaheadDays, lookbackDays] as const,
+  expiry: (lookaheadDays: number, lookbackDays: number) =>
+    [...agendaKeys.all, 'expiry', lookaheadDays, lookbackDays] as const,
   checkouts: () => [...agendaKeys.all, 'checkouts'] as const,
   reorder: () => [...agendaKeys.all, 'reorder'] as const,
   bookings: () => [...agendaKeys.all, 'bookings'] as const,

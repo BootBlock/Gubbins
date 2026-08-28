@@ -37,6 +37,30 @@ import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
 import { nowMs } from '@/lib/clock';
 
+/**
+ * Page params for a dated feed, plus an optional **lower** bound on the date being selected.
+ *
+ * Both dated item feeds ({@link ItemFeedRepository.listExpiring},
+ * {@link ItemFeedRepository.listWarrantyExpiring}) select everything at or before a cutoff and
+ * order ascending, so their first page is the oldest end of the set. That is right for a widget
+ * asking "what lapses in the next fortnight", and destructive for a caller asking for a
+ * century-wide horizon: the page it gets back is the hundred *longest-expired* rows and nothing
+ * upcoming (issue #607). `since` lets such a caller bound how far back the feed reaches, so the
+ * rows it does return are the ones it means.
+ *
+ * Omitted = unbounded past, the behaviour every existing caller relies on.
+ */
+export type DatedFeedParams = PageParams & {
+  /**
+   * Lower bound on the selected date, inclusive, as a UNIX-ms instant. Expressed in ms for both
+   * feeds even though warranty dates are stored as TEXT — the caller thinks in instants, and each
+   * feed compares `since` in exactly the frame it already compares its cutoff in: the warranty
+   * feed converts to 'YYYY-MM-DD', the expiry feed compares raw ms. The two therefore round a
+   * boundary date the same way their cutoffs do, which can differ by a day at the very edge.
+   */
+  readonly since?: number;
+};
+
 /** Tuning for {@link ItemFeedRepository.applicableStatuses} (mirrors the list's status filter). */
 export interface ApplicableStatusParams {
   /** Injected clock (UNIX-ms) for the time-based statuses; defaults to `nowMs()`. */
@@ -175,21 +199,36 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
      * would put every lot-only item at the head of the list regardless of its date, since
      * SQLite sorts NULL first ascending.
      */
-    async listExpiring(before: number, params: PageParams = {}): Promise<Page<Item>> {
+    async listExpiring(before: number, params: DatedFeedParams = {}): Promise<Page<Item>> {
       const { limit, offset } = this.resolvePage(params);
+      // Optional lower bound. Without one the cutoff alone selects *every* dated perishable ever,
+      // however long ago it lapsed — fine for a "what expires in the next week" widget whose
+      // cutoff is a week away, wrong for the Upcoming agenda, whose cutoff is a century away and
+      // whose ascending order then puts the oldest history first (issue #607).
+      //
+      // Written as a bound rather than an appended clause so the statement stays one constant
+      // template (`query-row-shape.test.ts` can only check a shape it can prepare). A null `since`
+      // satisfies the first arm, and SQLite short-circuits `OR`, so the unbounded caller does not
+      // pay for a second evaluation of the effective-expiry subquery.
+      const since = params.since ?? null;
       const rows = await this.driver.query<ItemRowNoThumbnail>(
         // The expiry predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the widget feed and the filter can never diverge.
         `SELECT ${ITEM_READ_COLUMNS_NO_THUMBNAIL} FROM items
          WHERE is_active = 1 AND ${expiringPredicateSql()}
+           AND (? IS NULL OR ${effectiveExpirySql()} >= ?)
          ORDER BY ${effectiveExpirySql()} ASC LIMIT ? OFFSET ?;`,
-        [before, limit, offset],
+        [before, since, since, limit, offset],
       );
       return this.toPage(rows.map(rowToItem), limit, offset);
     }
 
     /** Convenience: perishables expiring within `withinDays` of `now` (inclusive). */
-    async listExpiringWithin(withinDays: number, now: number, params: PageParams = {}): Promise<Page<Item>> {
+    async listExpiringWithin(
+      withinDays: number,
+      now: number,
+      params: DatedFeedParams = {},
+    ): Promise<Page<Item>> {
       return this.listExpiring(addCalendarDays(now, withinDays), params);
     }
 
@@ -256,7 +295,7 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
     async listWarrantyExpiring(
       withinDays: number,
       now: number,
-      params: PageParams = {},
+      params: DatedFeedParams = {},
     ): Promise<Page<Item>> {
       const { limit, offset } = this.resolvePage(params);
       // ISO date string for now + window. `warranty_expires_at` is stored as TEXT
@@ -264,14 +303,19 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       // We include items already past expiry (warranty_expires_at <= today) as well
       // as those expiring within the window (warranty_expires_at <= cutoff date).
       const cutoff = new Date(addCalendarDays(now, withinDays)).toISOString().slice(0, 10);
+      // Optional lower bound, converted into the same TEXT-date frame as the cutoff. See
+      // {@link listExpiring} for why an unbounded past is wrong for a century-wide window, and
+      // why this is a bound rather than an appended clause.
+      const since = params.since === undefined ? null : new Date(params.since).toISOString().slice(0, 10);
       const rows = await this.driver.query<ItemRowNoThumbnail>(
         // The warranty predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the alert-centre feed and the filter can never diverge.
         `SELECT ${ITEM_READ_COLUMNS_NO_THUMBNAIL} FROM items
          WHERE is_active = 1 AND ${warrantyExpiringPredicateSql()}
+           AND (? IS NULL OR warranty_expires_at >= ?)
          ORDER BY warranty_expires_at ASC, name COLLATE NOCASE ASC
          LIMIT ? OFFSET ?;`,
-        [cutoff, limit, offset],
+        [cutoff, since, since, limit, offset],
       );
       return this.toPage(rows.map(rowToItem), limit, offset);
     }
