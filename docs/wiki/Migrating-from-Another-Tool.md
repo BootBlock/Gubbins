@@ -44,6 +44,12 @@ Package, RoHS, your own **Customer NO.** and the order total are folded into the
 > Because the **LCSC part number** lands in the SKU field, importing a *later* order with the
 > match set to **SKU / MPN** updates the parts you already have instead of duplicating them —
 > handy for restocking the same components.
+>
+> **⚠️ Mind the quantity column, though.** An imported quantity is the **count on hand**, not an
+> amount to add (see [[Export & import|Export-and-Import]]), so an order line for 50 sets a part
+> you already hold 200 of to *50* rather than raising it to 250. Leave the quantity column
+> unmapped on a restock import — set the mapping for that column to **(ignore)** — and top the
+> counts up from the item itself.
 
 ## Nothing is lost
 

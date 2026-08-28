@@ -64,11 +64,13 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { getFormatters } from '@/lib/format';
 import {
   buildCatalogCsv,
+  buildCatalogNameLookup,
   buildItemsExport,
   buildJsonExport,
   buildProjectVault,
   buildVault,
   type CatalogCustomFieldColumn,
+  type CatalogNameLookup,
   type VaultBuild,
   type VaultItem,
   type VaultLocation,
@@ -283,6 +285,26 @@ async function collectCustomFieldColumns(items: readonly Item[]): Promise<{
 }
 
 /**
+ * Resolve the readable location paths and category names the catalogue CSV writes (issue #596).
+ *
+ * A location is keyed to its **full** path (`Workshop / Cabinet A / Drawer 3`) via the same
+ * {@link toLocationExportRows} the location list and the vault's folder notes use, so all three
+ * spell an ancestry identically — and so a bare `Drawer 1` that exists in two rooms is written
+ * as the one the item is really in, rather than a name that names both. Where even the path is
+ * shared, {@link buildCatalogNameLookup} drops it and the row keeps its id.
+ */
+async function collectCatalogNames(): Promise<CatalogNameLookup> {
+  const [locations, categories] = await Promise.all([
+    getLocationRepository().listAll(),
+    getCategoryRepository().listAll(),
+  ]);
+  return buildCatalogNameLookup(
+    toLocationExportRows(locations).map((r) => ({ id: r.location.id, name: r.location.name, path: r.path })),
+    categories,
+  );
+}
+
+/**
  * Resolve each item's tag names for the catalogue export (issue #141).
  *
  * Tags live in the `item_tags` join rather than on the item row, so they are read separately —
@@ -474,9 +496,13 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
     // Tags come from their own join (issue #141), so they are read alongside rather than
     // being carried on the item row.
     const tagsByItem = await collectItemTags(allItems);
+    // Readable location paths and category names for the two columns that used to hold raw
+    // UUIDs (issue #596). Whole-set reads for the same reason the vault's are (issue #148): a
+    // capped page would leave every item past it exporting an id again, which is the defect.
+    const names = await collectCatalogNames();
     const name = `gubbins-catalog-${stamp()}.csv`;
     download(
-      new Blob([buildCatalogCsv(allItems, columns, valuesByItem, tagsByItem)], {
+      new Blob([buildCatalogCsv(allItems, columns, valuesByItem, tagsByItem, names)], {
         type: 'text/csv;charset=utf-8',
       }),
       name,

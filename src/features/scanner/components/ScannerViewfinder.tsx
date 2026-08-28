@@ -78,10 +78,12 @@ export function ScannerViewfinder({
             ref={reticleRef}
             className="relative size-[min(28rem,80vmin)] overflow-hidden rounded-3xl border-2 border-white/70 shadow-[0_0_0_100vmax_rgba(0,0,0,0.45)]"
           >
-            <div
-              className="animate-scanline absolute inset-x-0 h-0.5 -translate-y-1/2 bg-gradient-to-r from-transparent via-primary to-transparent"
-              aria-hidden
-            />
+            {/* A full-height track that translates by its own height, carrying the 2px bar at its
+                top edge — so the sweep animates on `transform` rather than on `top`. See the
+                `gubbins-scanline` keyframe. */}
+            <div className="animate-scanline absolute inset-0" aria-hidden>
+              <div className="absolute inset-x-0 top-0 h-0.5 -translate-y-1/2 bg-gradient-to-r from-transparent via-primary to-transparent" />
+            </div>
           </div>
           {/* Live status + guidance. "Scanning…" is the plain answer to "is anything happening?";
               the hint says what to point at. */}

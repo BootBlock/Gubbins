@@ -498,6 +498,24 @@ export interface ExtractImportOptions {
   readonly decimalSeparator?: string;
 }
 
+/**
+ * A one-cell header test for {@link detectImportFormat}: does this line name the item's
+ * **name** column? It is what separates a single-column CSV — `name` over three part names —
+ * from a free-form list of four items, which are otherwise the same shape. Without it the
+ * header row imports as an item (issue #408).
+ *
+ * Deliberately only the name column, though `inferColumnMapping` would resolve `sku`, `notes`,
+ * `stock` or a custom field's name just as readily. A lone column of anything *but* the name
+ * builds rows with no name, and every one of them is an error the importer cannot create — so
+ * promoting such a file would trade one junk item for an import that lands nothing at all. A
+ * file headed `sku` stays a line list, exactly as before. No custom field is consulted for the
+ * same reason: a custom field can only outrank a core column for a gauge field, and the name
+ * is not one, so no catalogue can change this answer.
+ */
+function isNameHeader(cell: string): boolean {
+  return inferColumnMapping([cell])[0] === 'name';
+}
+
 /** Assemble a tabular extraction, inferring the initial mapping from the headers. */
 function tabularExtraction(
   format: ImportFormat,
@@ -530,7 +548,7 @@ function emptyExtraction(format: ImportFormat, note: string): ImportExtraction {
  */
 export function extractImport(text: string, options: ExtractImportOptions = {}): ImportExtraction {
   const customFields = options.customFields ?? [];
-  const format = options.format ?? detectImportFormat(text);
+  const format = options.format ?? detectImportFormat(text, { isHeaderCell: isNameHeader });
 
   if (format === 'lines') {
     // A line list defaults each item to quantity 1 (a new item is unlikely to be
@@ -620,6 +638,13 @@ export interface ImportPreviewRow {
   readonly status: 'create' | 'update' | 'error';
   /** Present when `status === 'error'`. */
   readonly message?: string;
+  /**
+   * What an `update` row will do to the matched item's on-hand count: what it holds now, and
+   * what the file asks for (issue #592). Absent whenever the import will not move the stock —
+   * the row states no quantity, states the one the item already holds, or is a create or an
+   * error — so the preview can show the raw cell for what it is rather than implying a change.
+   */
+  readonly quantityChange?: { readonly from: number; readonly to: number };
 }
 
 /** First column index whose mapping targets the given core field, or `-1`. */
@@ -632,6 +657,10 @@ function indexOfField(mapping: ColumnMapping, field: 'name' | 'quantity' | 'sku'
  * row — showing the resolved name / quantity / SKU and whether the row will create,
  * update, or be skipped as an error. This is what the "Import text" tab renders so
  * the user can confirm the extraction looks right before committing.
+ *
+ * The quantity cell is the file's own, so on a matched row it says what was *asked for*, not
+ * what will happen. `quantityChange` carries the second half of that answer — the count the item
+ * holds today — for the rows whose stock the import will actually move (issue #592).
  */
 export function buildPreviewRows(
   dataRows: readonly (readonly string[])[],
@@ -642,6 +671,14 @@ export function buildPreviewRows(
   for (const c of plan.create) status.set(c.sourceRow, { status: 'create' });
   for (const u of plan.update) status.set(u.sourceRow, { status: 'update' });
   for (const e of plan.errors) status.set(e.sourceRow, { status: 'error', message: e.message });
+
+  // Only the rows whose stock actually moves, so the preview's quantity column distinguishes
+  // "this many will be counted in" from "this is what the cell said" (issue #592).
+  const stockChanges = new Map(
+    plan.update
+      .filter((u) => u.stock !== undefined)
+      .map((u) => [u.sourceRow, { from: u.stock!.before, to: u.stock!.counted }] as const),
+  );
 
   const nameIdx = indexOfField(mapping, 'name');
   const qtyIdx = indexOfField(mapping, 'quantity');
@@ -660,6 +697,7 @@ export function buildPreviewRows(
       manufacturer: cell(row, manuIdx),
       status: outcome.status,
       ...(outcome.message ? { message: outcome.message } : {}),
+      ...(stockChanges.has(sourceRow) ? { quantityChange: stockChanges.get(sourceRow)! } : {}),
     };
   });
 }

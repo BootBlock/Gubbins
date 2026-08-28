@@ -25,9 +25,40 @@ export interface MediaQueryLike {
 /** Resolve a media query to an observable `MediaQueryList`, or `null` if unsupported. */
 export type MediaQueryProvider = (query: string) => MediaQueryLike | null;
 
-/** Default provider — the real `matchMedia`, feature-detected. */
-export const defaultMediaQueryProvider: MediaQueryProvider = (query) =>
-  typeof matchMedia === 'function' ? matchMedia(query) : null;
+/**
+ * One `MediaQueryList` per query string, for the whole document (issue #419).
+ *
+ * `matchMedia(q)` mints a *new* list object each call: the query is re-parsed and the result
+ * registered with the engine's media-query evaluator. That is per-consumer work, and the app has
+ * consumers per *row* — a `Tooltip` and a `Menu` inside every item card each ask the same
+ * question, so a screen of cards built and threw away dozens of identical lists, and did it again
+ * every time the virtualiser recycled a row during a scroll. The lists are immutable handles onto
+ * a global fact, so sharing one per query is free: each hook still attaches and detaches its own
+ * `change` listener, and the set of distinct queries in the app is a handful of constants.
+ */
+const mediaQueryCache = new Map<string, MediaQueryLike | null>();
+
+/**
+ * The `matchMedia` the cache above was filled from. Nothing replaces `matchMedia` in the browser,
+ * but a test suite replaces it constantly — and a cache that outlived the function it was built
+ * from would hand one test the previous test's stub. Keying on the function makes the cache say
+ * what it actually means: these lists came from *this* `matchMedia`.
+ */
+let cachedMatchMedia: typeof matchMedia | null = null;
+
+/** Default provider — the real `matchMedia`, feature-detected, one list per distinct query. */
+export const defaultMediaQueryProvider: MediaQueryProvider = (query) => {
+  const fn = typeof matchMedia === 'function' ? matchMedia : null;
+  if (fn !== cachedMatchMedia) {
+    mediaQueryCache.clear();
+    cachedMatchMedia = fn;
+  }
+  const cached = mediaQueryCache.get(query);
+  if (cached !== undefined) return cached;
+  const media = fn ? fn(query) : null;
+  mediaQueryCache.set(query, media);
+  return media;
+};
 
 /**
  * `true` when the user prefers reduced motion, updating live. Pass a fake `provider`

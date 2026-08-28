@@ -16,6 +16,8 @@ import type {
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { truncateByCodePoints } from '@/lib/text-limits';
 import { toDateInputValue } from '@/lib/date-input';
+import { foldName } from '@/lib/name-fold';
+import { foldLocationPath, isLocationPathCell } from '@/features/inventory/labels/location-path';
 import { isoTimestamp } from './export-every-page';
 import {
   buildTabularExport,
@@ -179,6 +181,9 @@ export const CATALOG_CSV_COLUMNS = [
   'barcode',
   'serialNumber',
   'quantity',
+  // Written as the location's full path and the category's name rather than their stored ids
+  // (issue #596), under the readable headers in {@link CATALOG_CSV_HEADERS}. See
+  // {@link CatalogNameLookup} for why, and for what happens when a name cannot be resolved.
   'locationId',
   'categoryId',
   'trackingMode',
@@ -216,6 +221,25 @@ export const CATALOG_CSV_COLUMNS = [
 
 type CatalogCsvColumn = (typeof CATALOG_CSV_COLUMNS)[number];
 
+/**
+ * Headers that differ from the column key (issue #596).
+ *
+ * `locationId` and `categoryId` are the *Item* fields the cell is read from, but the cell holds
+ * a human-readable location path and category name, so a header saying `…Id` would name
+ * something the column does not contain. Both replacements are existing import synonyms, so the
+ * file still auto-maps with no manual column step — which `catalog-roundtrip.test.ts` asserts
+ * against the emitted header row rather than against this table.
+ */
+const CATALOG_CSV_HEADERS = {
+  locationId: 'location',
+  categoryId: 'category',
+} as const satisfies Partial<Record<CatalogCsvColumn, string>>;
+
+/** The header a catalogue column is written under: its override, else the column key itself. */
+function catalogCsvHeader(col: CatalogCsvColumn): string {
+  return (CATALOG_CSV_HEADERS as Partial<Record<CatalogCsvColumn, string>>)[col] ?? col;
+}
+
 /** The gauge sub-object's fields, which sit one level down on the item rather than flat. */
 const GAUGE_CSV_COLUMNS = [
   'unitOfMeasure',
@@ -243,7 +267,19 @@ function isGaugeColumn(col: CatalogCsvColumn): col is GaugeCsvColumn {
  * Map a logical catalog-CSV column to the Item field that holds the value. `tags` is handled by
  * the caller (it comes from a separate map, not the item row), so it is excluded here.
  */
-function catalogCsvValue(item: Item, col: Exclude<CatalogCsvColumn, 'tags'>): TabularCell {
+function catalogCsvValue(
+  item: Item,
+  col: Exclude<CatalogCsvColumn, 'tags'>,
+  names: CatalogNameLookup,
+): TabularCell {
+  // Names, not ids (issue #596). The fallback is the stored id, so a location or category the
+  // caller could not resolve still exports something the importer can match inside this same
+  // database, rather than the row losing where it lives.
+  if (col === 'locationId') return names.locationPathById?.get(item.locationId) ?? item.locationId;
+  if (col === 'categoryId') {
+    if (item.categoryId === null) return null;
+    return names.categoryNameById?.get(item.categoryId) ?? item.categoryId;
+  }
   // `sku` and `mpn` refer to the same field; export as `sku` so the importer
   // auto-maps it without requiring a manual column selection.
   if (col === 'sku') return item.mpn;
@@ -286,6 +322,87 @@ export interface CatalogCustomFieldColumn {
 const IMAGE_CELL_MARKER = '[image]';
 
 /**
+ * The readable names the catalogue CSV writes in place of the stored `locationId` /
+ * `categoryId` (issue #596).
+ *
+ * The two columns that say *where everything is* held raw UUIDs, which made the sheet
+ * unreadable to a person and meaningless to any database other than the one that produced it.
+ * Both maps are resolved by the caller (they need repositories this pure builder must not
+ * touch), and both are optional: a missing map, or a missing entry, falls back to the id.
+ *
+ * Locations are keyed to their **full path** (`Workshop / Cabinet A / Drawer 3`) rather than
+ * their bare name, because nothing stops two `Drawer 1`s and a bare name would then name
+ * neither of them. `catalog-import.ts` resolves a path, a bare name and an id alike.
+ */
+export interface CatalogNameLookup {
+  /** Location id → full path, root first. */
+  readonly locationPathById?: ReadonlyMap<string, string>;
+  /** Category id → name. */
+  readonly categoryNameById?: ReadonlyMap<string, string>;
+}
+
+/**
+ * Build the {@link CatalogNameLookup} from the resolved locations and categories, keeping only
+ * the names that identify exactly one row (issue #596).
+ *
+ * A name is dropped rather than written when two rows share it, which leaves
+ * {@link catalogCsvValue} falling back to the stored id for those rows. Nothing enforces
+ * uniqueness on either side — two categories may be called `Spares`, and two locations may sit
+ * under one parent as `Drawer 1` — and writing the shared name would take a row that used to
+ * round-trip exactly and make it unimportable, because the importer cannot tell which of the two
+ * it names. Readability is worth having for the rows it is honest for, and no row's place is
+ * worth losing for it.
+ *
+ * @internal Exported for unit tests only.
+ */
+export function buildCatalogNameLookup(
+  locations: readonly { readonly id: string; readonly name: string; readonly path: string }[],
+  categories: readonly { readonly id: string; readonly name: string }[],
+): CatalogNameLookup {
+  // A location is judged by the index the importer will really answer its cell from
+  // ({@link isLocationPathCell}): a nested location's cell is a path and is compared against
+  // paths, but a root's cell is a single segment and is compared against *names* — so a root
+  // whose name a nested location repeats is not writable, however unique its path is.
+  const pathCounts = tally(locations.map((l) => foldLocationPath(l.path)));
+  const nameCounts = tally(locations.map((l) => foldName(l.name)));
+  const writable = locations.filter((l) =>
+    isLocationPathCell(l.path)
+      ? pathCounts.get(foldLocationPath(l.path)) === 1
+      : nameCounts.get(foldName(l.name)) === 1,
+  );
+  return {
+    locationPathById: new Map(writable.map((l) => [l.id, l.path])),
+    categoryNameById: unambiguous(
+      categories.map((c) => [c.id, c.name]),
+      foldName,
+    ),
+  };
+}
+
+/** How many times each key appears. */
+function tally(keys: readonly string[]): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * Id → label, with every label borne by more than one id removed.
+ *
+ * `fold` is the importer's own comparison key — {@link foldName} — passed in rather than
+ * restated, because "unique enough to write" and "resolvable on the way back" have to be the
+ * same question. A looser fold here would export `Größe` and `GRÖSSE` as names and have the
+ * importer reject both as ambiguous, which is the round-trip this function exists to protect.
+ */
+function unambiguous(
+  pairs: readonly (readonly [string, string])[],
+  fold: (raw: string) => string,
+): ReadonlyMap<string, string> {
+  const counts = tally(pairs.map(([, label]) => fold(label)));
+  return new Map(pairs.filter(([, label]) => counts.get(fold(label)) === 1));
+}
+
+/**
  * Build a catalog CSV that round-trips through the Phase 67 import wizard
  * without requiring manual column mapping (headers match the auto-detection
  * synonyms). RFC-4180 quoting, CRLF rows.
@@ -301,21 +418,26 @@ const IMAGE_CELL_MARKER = '[image]';
  * item that is absent from the map simply has no tags. The names are joined with `,` — the
  * separator the tag editor itself reserves, so no tag name can contain one — and the shared
  * serialiser quotes the cell.
+ *
+ * `names` (issue #596) supplies the readable location path and category name written under the
+ * `location` / `category` headers; see {@link CatalogNameLookup}. Omitting it writes the stored
+ * ids, which is what every caller did before.
  */
 export function buildCatalogCsv(
   items: readonly Item[],
   customFields: readonly CatalogCustomFieldColumn[] = [],
   valuesByItem: ReadonlyMap<string, Readonly<Record<string, string | null>>> = new Map(),
   tagsByItem: ReadonlyMap<string, readonly string[]> = new Map(),
+  names: CatalogNameLookup = {},
 ): string {
   const seen = new Set<string>();
   const custom = customFields.filter((c) => (seen.has(c.fieldId) ? false : (seen.add(c.fieldId), true)));
 
   const columns: readonly TabularColumn<Item>[] = [
     ...CATALOG_CSV_COLUMNS.map((col) => ({
-      header: col,
+      header: catalogCsvHeader(col),
       value: (item: Item) =>
-        col === 'tags' ? (tagsByItem.get(item.id)?.join(', ') ?? null) : catalogCsvValue(item, col),
+        col === 'tags' ? (tagsByItem.get(item.id)?.join(', ') ?? null) : catalogCsvValue(item, col, names),
     })),
     ...custom.map((c) => ({
       header: c.header,

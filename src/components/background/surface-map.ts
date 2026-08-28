@@ -36,6 +36,8 @@
  * a card sliding under a sticky header) that resolve themselves on the next rebuild.
  */
 
+import { HOVER_NONE_QUERY } from '@/lib/env/device';
+
 /** Width of one lookup column in css px. Small enough for mound curves, few enough to stay tiny. */
 export const COLUMN_WIDTH = 4;
 
@@ -491,9 +493,27 @@ export function trackSurfaces(): SurfaceTracker {
   addEventListener('scroll', request, { capture: true, passive: true });
   addEventListener('resize', request);
   document.addEventListener('visibilitychange', onVisibility);
-  // Pointer enter/leave over controls, delegated at the root (capture so it sees every target).
-  root.addEventListener('pointerover', onPointerOver, { capture: true, passive: true });
-  root.addEventListener('pointerout', onPointerOut, { capture: true, passive: true });
+  /*
+   * Pointer enter/leave over controls, delegated at the root (capture so it sees every target) —
+   * but only where a hover lift can actually happen (issue #419).
+   *
+   * The lift this follows is a CSS `:hover` response. On a device that cannot hover there is
+   * none, so every one of these reads returns the same resting zero — yet `pointerover` and
+   * `pointerout` still fire on a tap, and each one starts a `requestAnimationFrame` poll that
+   * spends 350ms doing a `getBoundingClientRect` plus a `getComputedStyle` per frame. That is a
+   * forced layout every frame for a third of a second after each tap, to follow an animation the
+   * device never plays. {@link HOVER_NONE_QUERY} is the same question the `touch:` CSS variant
+   * asks — and is the constant that variant is checked against — so a touchscreen laptop, which
+   * hovers with its mouse, keeps the effect. Where `matchMedia` is unavailable the answer is
+   * "assume it can hover": the poll idles on its own when nothing is hovered, so guessing wrong
+   * that way costs nothing, while guessing the other way would silently drop the lift on a
+   * desktop.
+   */
+  const canHover = typeof matchMedia !== 'function' || !matchMedia(HOVER_NONE_QUERY).matches;
+  if (canHover) {
+    root.addEventListener('pointerover', onPointerOver, { capture: true, passive: true });
+    root.addEventListener('pointerout', onPointerOut, { capture: true, passive: true });
+  }
   const observer = typeof MutationObserver === 'function' ? new MutationObserver(request) : null;
   observer?.observe(document.body, { childList: true, subtree: true });
   const periodic = setInterval(request, PERIODIC_REBUILD_MS);

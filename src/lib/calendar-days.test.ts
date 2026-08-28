@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import { repoPath } from '../test/repo-path';
 import {
   addCalendarDays,
+  localDayWindowCutoff,
   nextUtcDay,
   startOfLocalDay,
   startOfUtcDay,
@@ -82,6 +83,36 @@ describe('nextUtcDay', () => {
     const noon = Date.UTC(2026, 0, 15, 12);
     expect(nextUtcDay(noon) - startOfUtcDay(noon)).toBe(86_400_000);
     expect(startOfUtcDay(nextUtcDay(noon))).toBe(nextUtcDay(noon));
+  });
+});
+
+describe('localDayWindowCutoff (structural)', () => {
+  // Two readings of the same local calendar day — the pair a rolling window used to answer
+  // differently (issue #498).
+  const morning = new Date(2026, 6, 25, 9, 0).getTime();
+  const evening = new Date(2026, 6, 25, 20, 30).getTime();
+
+  it('is a function of the local calendar day, not the time of day', () => {
+    // Holds in every zone, this one included: a wall-clock-stepped boundary carries `now`'s time
+    // of day, so these two would differ by 11½ hours and straddle a stored midnight.
+    expect(localDayWindowCutoff(evening, 30)).toBe(localDayWindowCutoff(morning, 30));
+    expect(localDayWindowCutoff(evening, 0)).toBe(localDayWindowCutoff(morning, 0));
+  });
+
+  it('lands on a midnight UTC, the frame day-grained columns are stored in', () => {
+    const cutoff = localDayWindowCutoff(morning, 30);
+    expect(startOfUtcDay(cutoff)).toBe(cutoff);
+  });
+
+  it('names the day `days` local calendar days on, and inverts utcDayToLocalDay', () => {
+    const boundary = addCalendarDays(startOfLocalDay(morning), 30);
+    expect(utcDayToLocalDay(localDayWindowCutoff(morning, 30))).toBe(boundary);
+  });
+
+  it('steps whole days, forwards and backwards', () => {
+    const today = localDayWindowCutoff(morning, 0);
+    expect(localDayWindowCutoff(morning, 1) - today).toBe(86_400_000);
+    expect(today - localDayWindowCutoff(morning, -1)).toBe(86_400_000);
   });
 });
 

@@ -10,7 +10,7 @@
  */
 
 import { WARRANTY_SOON_WINDOW_DAYS } from '@/db/repositories/constants';
-import { addCalendarDays, startOfLocalDay, utcDayToLocalDay } from '@/lib/calendar-days';
+import { localDayWindowCutoff, startOfLocalDay, utcDayToLocalDay } from '@/lib/calendar-days';
 
 /**
  * Days before warranty expiry at which status changes from `active` to `expiring-soon`.
@@ -57,10 +57,13 @@ export function warrantyStatus(item: AssetLifecycleItem, now: number): WarrantyS
   // onto the local calendar (utcDayToLocalDay, issue #323) and compare local days.
   if (utcDayToLocalDay(expiryMs) < startOfLocalDay(now)) return 'expired';
 
-  // Calendar-day window (issue #325), mirroring `expiryStatus`: the warranty is expiring-soon once
-  // its expiry is within N whole calendar days of now, so the boundary does not slip an hour across
-  // a DST change.
-  if (expiryMs <= addCalendarDays(now, WARRANTY_EXPIRING_SOON_DAYS)) return 'expiring-soon';
+  // Calendar-day window (issues #325, #498), mirroring `expiryStatus`: the warranty is
+  // expiring-soon once its expiry day is within N whole calendar days of *today*.
+  // `localDayWindowCutoff` anchors the window at local midnight and returns the boundary day in the
+  // midnight-UTC frame `expiryMs` was parsed into, so both sides name days — measuring from the
+  // wall-clock instant instead made the badge flip between active and expiring-soon as the day went
+  // on. The same call binds the `warrantyExpiringPredicateSql` cutoff.
+  if (expiryMs <= localDayWindowCutoff(now, WARRANTY_EXPIRING_SOON_DAYS)) return 'expiring-soon';
 
   return 'active';
 }

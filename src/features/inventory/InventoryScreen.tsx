@@ -597,7 +597,11 @@ function InventoryWorkspace() {
     if (!paginated || matchCount.isPlaceholderData) return;
     if (totalPages > 0 && page > totalPages) setPage(totalPages, { replace: true });
   }, [paginated, totalPages, page, setPage, matchCount.isPlaceholderData]);
-  const flatLocations = flat.data?.rows ?? [];
+  // Memoised for its *identity*, not its cost: it is passed to every rendered row, and each row is
+  // `memo`-compared prop by prop. A bare `?? []` mints a fresh empty array on every render, so
+  // until the locations query settles, every keystroke in the search box re-rendered every card
+  // (issue #419).
+  const flatLocations = useMemo(() => flat.data?.rows ?? [], [flat.data]);
   // The selected location's live row (with its item count), for the compact summary card.
   //
   // Taken from the **tree**, not the flat list: the summary card draws a cube-utilisation bar,

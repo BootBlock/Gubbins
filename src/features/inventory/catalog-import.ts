@@ -24,6 +24,12 @@ import { assertPermissions } from '@/features/users/assert-permission';
 import { currentAuthority } from '@/features/users/current-authority';
 import { fromDateInputValue, toDateInputValue } from '@/lib/date-input';
 import { foldName } from '@/lib/name-fold';
+import {
+  foldLocationPath,
+  fullLocationPath,
+  isLocationPathCell,
+  type LocationPathNode,
+} from './labels/location-path';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';
@@ -132,8 +138,11 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   barcode: 'Barcode',
   serialNumber: 'Serial number',
   quantity: 'Quantity',
-  locationId: 'Location ID',
-  categoryId: 'Category ID',
+  // Named for what the column may hold rather than for the field it lands in (issue #596): a
+  // path, a name or an id all resolve, and "Location ID" told the user only the least useful of
+  // the three.
+  locationId: 'Location',
+  categoryId: 'Category',
   trackingMode: 'Tracking mode',
   unitOfMeasure: 'Unit of measure',
   grossCapacity: 'Gross capacity',
@@ -785,6 +794,27 @@ export interface CatalogCreate {
   readonly tags?: readonly string[];
 }
 
+/**
+ * The on-hand quantity change one update row asks for (issue #592).
+ *
+ * Quantity is deliberately absent from {@link CatalogUpdate.input}: `items.quantity` is derived
+ * from the `item_stock` ledger by trigger, so no column write can move it. The figure is carried
+ * here instead and applied through `ItemRepository.adjustQuantity`, which moves the ledger and
+ * logs the change to the item's history.
+ */
+export interface CatalogStockChange {
+  /** What the matched item held when the plan was built — what the preview compares against. */
+  readonly before: number;
+  /** The absolute on-hand quantity the file states. */
+  readonly counted: number;
+  /**
+   * The item's home placement at plan time — the one `adjustQuantity` absorbs the change at.
+   * Carried so the apply step can tell whether a *decrease* fits there before writing anything;
+   * a whole-item figure says nothing about which drawer the missing units left.
+   */
+  readonly atLocationId: string;
+}
+
 /** A fully-validated row destined for {@link ItemRepository.update}. */
 export interface CatalogUpdate {
   readonly sourceRow: number;
@@ -795,6 +825,23 @@ export interface CatalogUpdate {
   readonly fieldValues?: CustomFieldValues;
   /** The item's whole tag set — see {@link CatalogCreate.tags}. */
   readonly tags?: readonly string[];
+  /**
+   * The row's on-hand quantity, when it differs from what the matched item already holds
+   * (issue #592). Absent when the row states no quantity or states the one the item is already
+   * at — an import that changes nothing must not write a history entry saying it did.
+   */
+  readonly stock?: CatalogStockChange;
+  /**
+   * Where the row asks the item to be moved to, when its own location cell resolved to somewhere
+   * other than where the item is (issue #592). Applied through `ItemRepository.move`, which
+   * consolidates the item's placements at the target — `location_id` is not a field on
+   * {@link UpdateItemInput} either.
+   *
+   * A row that states no location of its own never moves the item, **even when the dialog
+   * supplies a batch default location**: that default answers "where do the new items go?", not
+   * "gather the whole catalogue here".
+   */
+  readonly moveToLocationId?: string;
 }
 
 /** A row that failed validation or had a duplicate match key (never thrown). */
@@ -897,6 +944,29 @@ function serialisedQuantityError(data: CatalogRowData, mode: TrackingMode): stri
 }
 
 /**
+ * Why the matched item's on-hand quantity cannot be changed by an import, or `null` when it can.
+ *
+ * The quantity lands through `ItemRepository.adjustQuantity`, which reconciles DISCRETE stock
+ * only, so this repeats that method's tracking-mode guard at dry-run time — the same treatment
+ * the unlimited-supply and serialised-quantity invariants get above. Reported per row rather than
+ * applied and lost: the preview shows the figure, so the row must either move the stock or say
+ * why it will not (issue #592). Held to `adjustQuantity`'s real behaviour by the drift test in
+ * `catalog-import-stock.test.ts`.
+ */
+function updateQuantityError(existing: Item): string | null {
+  switch (existing.trackingMode) {
+    case 'DISCRETE':
+      return null;
+    case 'SERIALISED':
+      return `"${existing.name}" is serialised, so it is one instance and its quantity is always 1 — import one row per unit rather than a count.`;
+    case 'CONSUMABLE_GAUGE':
+      return `"${existing.name}" is a consumable gauge, so its level is measured rather than counted — set it from the item's gauge, not an imported quantity.`;
+    case 'UNTRACKED':
+      return `"${existing.name}" is untracked, so it has no on-hand count for an import to change — switch it to Bulk first.`;
+  }
+}
+
+/**
  * Mirror the gauge DB CHECK at dry-run time (issue #341): a `CONSUMABLE_GAUGE` item's unit of
  * measure and gross capacity are mandatory, the capacity must be above zero, and — the one part
  * the CHECK itself misses — the net remaining cannot exceed the capacity, an invariant every
@@ -962,6 +1032,12 @@ function toUpdateInput(data: CatalogRowData): UpdateItemInput {
   if (data.reorderQty !== undefined) Object.assign(result, { reorderQty: data.reorderQty ?? null });
   if (data.categoryId !== undefined) Object.assign(result, { categoryId: data.categoryId ?? null });
   if (data.isUnlimited !== undefined) Object.assign(result, { isUnlimited: data.isUnlimited });
+  // Quantity and location are deliberately absent too, and for a harder reason than choice:
+  // `items.quantity` is derived from the `item_stock` ledger by trigger, and `location_id` moves
+  // only alongside the placements it summarises, so neither is a field on `UpdateItemInput` at
+  // all. They ride beside this input on the plan entry instead — see `CatalogUpdate.stock` and
+  // `CatalogUpdate.moveToLocationId` (issue #592).
+  //
   // The gauge columns are deliberately absent (issue #341): an update never rewrites an item's
   // gauge configuration — that is the gauge editor's job, which re-bases the level rather than
   // overwriting it — so they are read only when *creating*. Reporting them here instead would
@@ -1065,7 +1141,23 @@ export interface BuildPlanOptions {
    * as does a name held by more than one location, which the tree is expected to allow
    * (issue #593); the user disambiguates by putting the location's id in the cell.
    */
-  readonly locations?: readonly { readonly id: string; readonly name: string }[];
+  readonly locations?: readonly {
+    readonly id: string;
+    readonly name: string;
+    /**
+     * The parent, so a cell holding a **full path** (`Workshop / Drawer 1`) resolves — which is
+     * what the catalogue CSV exports, and the form that separates two locations of the same
+     * name (issue #596). Omitted, a location is indexed by its bare name alone.
+     */
+    readonly parentId?: string | null;
+  }[];
+  /**
+   * Known categories, so a `categoryId` cell holding a category **name** resolves to its id
+   * (issue #596). A cell that already holds a known id passes through. When omitted, category
+   * cells are passed through verbatim (legacy behaviour); see {@link resolveCategoryId} for what
+   * an unresolvable one costs.
+   */
+  readonly categories?: readonly { readonly id: string; readonly name: string }[];
   /**
    * Batch default location id, applied to every row that does not specify its own
    * location. Chosen from the import dialog's "Location" dropdown.
@@ -1160,29 +1252,71 @@ function groupByKey<T>(
   return grouped;
 }
 
-/** How a raw location cell resolved against the known locations. */
-type LocationResolution =
+/**
+ * How a raw location **or category** cell resolved against the known rows.
+ *
+ * Named for the reference rather than for locations alone since a category cell resolves the
+ * same three ways (issue #596): categories have no uniqueness either, so a name that names two
+ * of them has to be reported rather than picked from.
+ */
+type ReferenceResolution =
   | { readonly kind: 'resolved'; readonly id: string }
   | { readonly kind: 'unknown' }
   | { readonly kind: 'ambiguous'; readonly ids: readonly string[] };
 
+/** Read one grouped lookup, collapsing the bucket to a {@link ReferenceResolution}. */
+function fromCandidates(candidates: readonly string[] | undefined): ReferenceResolution {
+  if (candidates === undefined || candidates.length === 0) return { kind: 'unknown' };
+  if (candidates.length > 1) return { kind: 'ambiguous', ids: candidates };
+  return { kind: 'resolved', id: candidates[0]! };
+}
+
 /**
- * Resolve a raw location cell (an id or a name) against the known locations. An exact
- * id match wins; otherwise a folded name match. A name held by more than one location
- * resolves to `ambiguous` rather than to one of them, and an unmatched name to `unknown`
- * — the caller turns either into a row error.
+ * Resolve a raw location cell against the known locations. An exact id match wins, then a full
+ * **path** (`Workshop / Drawer 1`, what the catalogue CSV writes — issue #596), then a folded
+ * bare name. A path or a name held by more than one location resolves to `ambiguous` rather
+ * than to one of them, and an unmatched cell to `unknown` — the caller turns either into a row
+ * error.
+ *
+ * The path is matched before the bare name because it is the more specific of the two: a name
+ * two rooms repeat is exactly what a path exists to separate, and trying the name first would
+ * report an ambiguity the cell had already resolved.
  */
 function resolveLocationId(
   raw: string,
   byId: ReadonlyMap<string, string>,
-  byName: ReadonlyMap<string, readonly string[]>,
-): LocationResolution {
+  idsByPath: ReadonlyMap<string, readonly string[]>,
+  idsByName: ReadonlyMap<string, readonly string[]>,
+): ReferenceResolution {
   const trimmed = raw.trim();
   if (byId.has(trimmed)) return { kind: 'resolved', id: trimmed };
-  const candidates = byName.get(foldName(trimmed));
-  if (candidates === undefined || candidates.length === 0) return { kind: 'unknown' };
-  if (candidates.length > 1) return { kind: 'ambiguous', ids: candidates };
-  return { kind: 'resolved', id: candidates[0]! };
+  // Only a cell that actually spells a path is answered by the path map. A single-segment cell
+  // is the *same question* as a bare name — a root location's full path is its own name — and
+  // answering it from the path map would hand back that root while a nested location of the
+  // same name went unmentioned, which is the silent wrong-room outcome issue #593 removed.
+  if (isLocationPathCell(trimmed)) {
+    const byPath = fromCandidates(idsByPath.get(foldLocationPath(trimmed)));
+    if (byPath.kind !== 'unknown') return byPath;
+  }
+  return fromCandidates(idsByName.get(foldName(trimmed)));
+}
+
+/**
+ * Resolve a raw category cell (an id or a name) against the known categories (issue #596).
+ *
+ * Categories are flat, so there is no path to fall back to. Before this the cell was handed to
+ * the database verbatim, so a *name* — which is what the catalogue CSV now exports, and what a
+ * person editing a sheet writes — planned as importable and then failed the row on a foreign
+ * key with the raw SQLite text (issue #407).
+ */
+function resolveCategoryId(
+  raw: string,
+  byId: ReadonlyMap<string, string>,
+  idsByName: ReadonlyMap<string, readonly string[]>,
+): ReferenceResolution {
+  const trimmed = raw.trim();
+  if (byId.has(trimmed)) return { kind: 'resolved', id: trimmed };
+  return fromCandidates(idsByName.get(foldName(trimmed)));
 }
 
 /** Cap on how many candidates an ambiguity message spells out before it summarises the rest. */
@@ -1197,6 +1331,37 @@ function listCandidates(values: readonly string[]): string {
   const shown = values.slice(0, MAX_LISTED_CANDIDATES).map((v) => `"${v}"`);
   const rest = values.length - shown.length;
   return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+}
+
+/** {@link groupByKey}, reduced to the ids each key claims — the shape both resolvers read. */
+function idsGroupedBy<T extends { readonly id: string }>(
+  rows: readonly T[],
+  keyOf: (row: T) => string | null,
+  normalise: (raw: string) => string,
+): Map<string, string[]> {
+  return new Map([...groupByKey(rows, keyOf, normalise)].map(([key, rs]) => [key, rs.map((r) => r.id)]));
+}
+
+/**
+ * The row error for an ambiguous location cell.
+ *
+ * The path is offered as the fix only when writing one would actually separate the candidates —
+ * that is, when some candidate's path differs from what the user wrote. Two locations of the
+ * same name at *top level* share their path as well as their name, so telling the user to write
+ * the full path there is advice they have already taken; the id is all that is left.
+ */
+function ambiguousLocationMessage(
+  raw: string,
+  ids: readonly string[],
+  pathById: ReadonlyMap<string, string>,
+): string {
+  const shared = isLocationPathCell(raw) ? 'this path' : 'this name';
+  const pathHelps = ids.some((id) => {
+    const path = pathById.get(id);
+    return path !== undefined && foldLocationPath(path) !== foldLocationPath(raw);
+  });
+  const fix = pathHelps ? "Use its full path, or the location's id" : "Use the location's id";
+  return `Ambiguous location "${raw}" — ${ids.length} locations share ${shared}. ${fix} instead (${listCandidates(ids)}).`;
 }
 
 /**
@@ -1276,9 +1441,29 @@ export function buildImportPlanFromRows(
   const locations = options.locations ?? [];
   const resolveLocations = locations.length > 0;
   const locationById = new Map(locations.map((l) => [l.id, l.id]));
-  const locationIdsByName = new Map(
-    [...groupByKey(locations, (l) => l.name, foldName)].map(([key, ls]) => [key, ls.map((l) => l.id)]),
+  const locationIdsByName = idsGroupedBy(locations, (l) => l.name, foldName);
+  // The full path a `location` cell now holds (issue #596), grouped the same way: two
+  // identically-named siblings give one path two owners, and nothing stops that —
+  // `LocationRepository.create` checks the name is non-empty and no more — so a path is
+  // reported ambiguous rather than assumed unique.
+  const locationNodes: LocationPathNode[] = locations.map((l) => ({
+    id: l.id,
+    name: l.name,
+    parentId: l.parentId ?? null,
+  }));
+  const locationPathById = new Map(locationNodes.map((n) => [n.id, fullLocationPath(n, locationNodes)]));
+  const locationIdsByPath = idsGroupedBy(
+    locationNodes,
+    (n) => locationPathById.get(n.id) ?? null,
+    foldLocationPath,
   );
+  // Presence of the option, not the length of it: a database with no categories at all would
+  // otherwise fall back to the pass-through and hand a name to the foreign key (issue #407) in
+  // exactly the case where *every* name is unresolvable. `undefined` still means "no repository
+  // to ask", which is the legacy call from `text-import` and from unit tests.
+  const resolveCategories = options.categories !== undefined;
+  const categoryById = new Map((options.categories ?? []).map((c) => [c.id, c.id]));
+  const categoryIdsByName = idsGroupedBy(options.categories ?? [], (c) => c.name, foldName);
 
   // Lookup maps from existing items, holding every item that claims a key so an ambiguous one is
   // reported rather than resolved to whichever item was read last (issue #593). Both index through
@@ -1322,8 +1507,13 @@ export function buildImportPlanFromRows(
     // locations; otherwise the batch default (if any) applies. An unresolvable name is
     // a row error so the item is never silently created in the wrong place.
     const rawLocation = raw.core.locationId ?? null;
+    // Whether the *row itself* named a location, remembered before the batch default fills the
+    // gap. A matched item is moved only when its own cell says so (issue #592) — the default is
+    // "where do the new items go?", and letting it move every matched item would relocate a whole
+    // catalogue on an import that never mentioned locations.
+    const locationStatedByRow = rawLocation !== null;
     if (rawLocation !== null && resolveLocations) {
-      const resolved = resolveLocationId(rawLocation, locationById, locationIdsByName);
+      const resolved = resolveLocationId(rawLocation, locationById, locationIdsByPath, locationIdsByName);
       if (resolved.kind === 'unknown') {
         errors.push({ sourceRow, message: `Unknown location "${rawLocation}".` });
         continue;
@@ -1331,13 +1521,32 @@ export function buildImportPlanFromRows(
       if (resolved.kind === 'ambiguous') {
         errors.push({
           sourceRow,
-          message: `Ambiguous location "${rawLocation}" — ${resolved.ids.length} locations share this name. Use the location's id instead (${listCandidates(resolved.ids)}).`,
+          message: ambiguousLocationMessage(rawLocation, resolved.ids, locationPathById),
         });
         continue;
       }
       raw.core.locationId = resolved.id;
     } else if (rawLocation === null && options.defaultLocationId !== undefined) {
       raw.core.locationId = options.defaultLocationId;
+    }
+
+    // Resolve the category the same way (issue #596), through {@link resolveCategoryId}. A
+    // blank cell still clears the category, so only a non-empty one is resolved.
+    const rawCategory = raw.core.categoryId ?? null;
+    if (rawCategory !== null && resolveCategories) {
+      const resolved = resolveCategoryId(rawCategory, categoryById, categoryIdsByName);
+      if (resolved.kind === 'unknown') {
+        errors.push({ sourceRow, message: `Unknown category "${rawCategory}".` });
+        continue;
+      }
+      if (resolved.kind === 'ambiguous') {
+        errors.push({
+          sourceRow,
+          message: `Ambiguous category "${rawCategory}" — ${resolved.ids.length} categories share this name. Use the category's id instead (${listCandidates(resolved.ids)}).`,
+        });
+        continue;
+      }
+      raw.core.categoryId = resolved.id;
     }
 
     const { data: coerced, unreadable } = coerceRow(raw.core);
@@ -1434,12 +1643,42 @@ export function buildImportPlanFromRows(
         errors.push({ sourceRow, message: unlimitedError });
         continue;
       }
+      // A stated quantity that already matches the item is not a change — it is what an exported
+      // catalogue looks like coming back in — so it plans nothing and is never reported.
+      const wantsStock = data.quantity !== undefined && data.quantity !== existingItem.quantity;
+      if (wantsStock) {
+        const quantityError = updateQuantityError(existingItem);
+        if (quantityError) {
+          errors.push({ sourceRow, message: quantityError });
+          continue;
+        }
+      }
+      // A move needs a location the plan actually *resolved*. With no known locations supplied
+      // the cell passes through verbatim (the legacy behaviour documented on
+      // {@link BuildPlanOptions.locations}), and handing a raw spreadsheet name to `move` as an
+      // id would only trade a dropped cell for a foreign-key error. Every production caller
+      // supplies them.
+      const wantsMove =
+        resolveLocations &&
+        locationStatedByRow &&
+        data.locationId !== undefined &&
+        data.locationId !== existingItem.locationId;
       updates.push({
         sourceRow,
         itemId: existingItem.id,
         input: toUpdateInput(data),
         ...withFieldValues(fieldValues),
         ...withTags(data.tags),
+        ...(wantsStock
+          ? {
+              stock: {
+                before: existingItem.quantity,
+                counted: data.quantity!,
+                atLocationId: existingItem.locationId,
+              },
+            }
+          : {}),
+        ...(wantsMove ? { moveToLocationId: data.locationId! } : {}),
       });
     } else {
       // No match → create. A name is required for creates.
@@ -1484,6 +1723,24 @@ export interface CatalogItemRepository {
    * back to per-row {@link create}.
    */
   createMany?(inputs: readonly CreateItemInput[]): Promise<Item[]>;
+  /**
+   * Move an item wholesale to another location, consolidating its placements there (issue #592).
+   * Optional so the lightweight test doubles that never map a location column keep compiling; a
+   * plan that *does* ask for a move through a repository without it reports the row rather than
+   * dropping the move silently — which is the defect this whole seam exists to fix.
+   */
+  move?(id: string, locationId: string): Promise<Item>;
+  /**
+   * Move a DISCRETE item's on-hand stock by a signed delta, logging the change (issue #592).
+   * Optional on the same terms as {@link move}.
+   */
+  adjustQuantity?(id: string, delta: number, note?: string): Promise<Item>;
+  /**
+   * Where an item's stock currently sits, per location (issue #592). Read before a *decrease*, to
+   * check the draw fits the placement {@link adjustQuantity} will take it from. Optional on the
+   * same terms as {@link move}; without it a decrease is refused rather than risked.
+   */
+  listStock?(itemId: string): Promise<readonly { readonly locationId: string; readonly quantity: number }[]>;
 }
 
 /**
@@ -1544,6 +1801,11 @@ export interface CatalogApplyResult {
  *
  * Rows that appear in `plan.errors` are already invalid and are NOT applied; only
  * the valid `create` and `update` entries are processed.
+ *
+ * An `update` entry's on-hand quantity and location are applied through `move` /
+ * `adjustQuantity` (issue #592) rather than the item row, because neither is a column the row
+ * owns; a failure there is recorded against the row's `error` and still counts as an update,
+ * since the item's own fields did land.
  *
  * Custom-field values (Phase 72) on a `create`/`update` entry are persisted through
  * the supplied `categories.setItemFieldValues` — the existing custom-field write path
@@ -1629,11 +1891,16 @@ export async function applyCatalogImportPlan(
   for (const entry of plan.update) {
     try {
       await repo.update(entry.itemId, entry.input);
+      // The move runs before the count: a shortfall is drawn out of the item's primary location
+      // alone, so an item split across drawers has to be gathered first or the draw asks that
+      // one placement for units it does not hold.
+      const stockError = await applyStockAndLocation(repo, entry);
       const sideError = await applyRowSideEffects(categories, tags, entry.itemId, entry, false);
+      const error = [stockError, sideError].filter((m): m is string => m !== undefined).join(' ');
       rows.push({
         sourceRow: entry.sourceRow,
         kind: 'updated',
-        ...(sideError ? { error: sideError } : {}),
+        ...(error.length > 0 ? { error } : {}),
       });
     } catch (err) {
       rows.push({
@@ -1649,6 +1916,108 @@ export async function applyCatalogImportPlan(
   const skipped = rows.filter((r) => r.kind === 'skipped').length;
 
   return { created, updated, skipped, rows };
+}
+
+/**
+ * Apply the two parts of an update row that are not columns on the item at all — where it lives
+ * and how much of it there is (issue #592).
+ *
+ * Both go through the repository methods that already own them: `move` consolidates the item's
+ * per-location placements at the target, and `adjustQuantity` moves the stock ledger by the
+ * variance and logs it to the item's history. Neither can be expressed as an `UpdateItemInput`
+ * field — `items.quantity` is trigger-derived from the ledger — which is precisely why the
+ * importer used to show both and write neither.
+ *
+ * The delta is measured from the quantity the plan was built against, so it applies as the
+ * relative movement the preview described. Like the whole-item branch of a cycle count, it is
+ * **not** captured as an absolute assertion, so the same import run on two devices before they
+ * sync applies the correction twice — the hazard `withAssertedCount` describes
+ * (`db/repositories/stock-batches.ts`). An assertion is per `stock_batches` row, and a
+ * whole-item figure does not name a lot.
+ *
+ * `ItemRepository.reconcile` states an absolute count and composes its own note from live
+ * figures, which would be the better fit but for the note itself: it reads "Cycle count of
+ * <location>: …", and a spreadsheet arriving in the importer is not a cycle count of anywhere.
+ * Writing that would be a false ledger entry of exactly the kind this issue is about, so the
+ * change goes through `adjustQuantity`, whose note the caller supplies.
+ *
+ * The move is attempted first — see the caller — because `adjustQuantity` draws a shortfall from
+ * the item's primary location only. Where there is no move to gather the item, a decrease the
+ * home placement cannot cover is refused outright — see {@link drawTooWideToLand}.
+ *
+ * Like {@link applyRowSideEffects} this never throws: a failure is returned as a message so the
+ * item's own update is not rolled back, and both halves are attempted so a row that got the
+ * location wrong *and* the count wrong says so once.
+ */
+/**
+ * Why a decrease cannot be applied, or `null` when it can (issue #592).
+ *
+ * `adjustQuantity` checks the delta against the item's grand total and then draws it from the
+ * home placement alone, discarding whatever that placement could not cover. On an item split
+ * across drawers a whole-item count would therefore empty the home placement, leave the rest
+ * where it was, and still write the full variance to the ledger — a figure the item never
+ * reached, recorded as though it had.
+ *
+ * A row that names a location never gets here: its move gathers every placement at the target
+ * first, so the draw always fits. Nor does an *increase*, which lands in one place regardless.
+ */
+async function drawTooWideToLand(
+  repo: CatalogItemRepository,
+  entry: CatalogUpdate,
+  draw: number,
+): Promise<string | null> {
+  const stock = entry.stock;
+  if (stock === undefined) return null;
+  // A gathered item is a single placement by construction — see the caller's ordering.
+  if (entry.moveToLocationId !== undefined) return null;
+  if (!repo.listStock) {
+    return 'The quantity was not changed: this repository cannot check where the stock sits.';
+  }
+  const placements = await repo.listStock(entry.itemId);
+  const atHome = placements.find((p) => p.locationId === stock.atLocationId)?.quantity ?? 0;
+  if (atHome >= draw) return null;
+  return "The quantity was not changed: this item's stock sits in more than one location, and an imported count says nothing about which one lost units. Count each location with a stock-take, or add a location column to the file.";
+}
+
+async function applyStockAndLocation(
+  repo: CatalogItemRepository,
+  entry: CatalogUpdate,
+): Promise<string | undefined> {
+  const messages: string[] = [];
+
+  if (entry.moveToLocationId !== undefined) {
+    if (!repo.move) {
+      messages.push('The location was ignored: this repository cannot move items.');
+    } else {
+      try {
+        await repo.move(entry.itemId, entry.moveToLocationId);
+      } catch (err) {
+        messages.push(err instanceof Error ? err.message : 'Unknown error moving the item.');
+      }
+    }
+  }
+
+  if (entry.stock !== undefined) {
+    const delta = entry.stock.counted - entry.stock.before;
+    const unlandable = delta < 0 ? await drawTooWideToLand(repo, entry, -delta) : null;
+    if (!repo.adjustQuantity) {
+      messages.push('The quantity was ignored: this repository cannot adjust stock.');
+    } else if (unlandable !== null) {
+      messages.push(unlandable);
+    } else {
+      try {
+        await repo.adjustQuantity(
+          entry.itemId,
+          delta,
+          `Quantity set to ${entry.stock.counted} by an import (was ${entry.stock.before}).`,
+        );
+      } catch (err) {
+        messages.push(err instanceof Error ? err.message : 'Unknown error adjusting the quantity.');
+      }
+    }
+  }
+
+  return messages.length > 0 ? messages.join(' ') : undefined;
 }
 
 /**
