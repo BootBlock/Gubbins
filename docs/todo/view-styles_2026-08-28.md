@@ -37,9 +37,10 @@ components ([`InventoryScreen.tsx:1365-1380`](../../src/features/inventory/Inven
 with pagination and the item-count control hidden.
 
 That split is the single most useful fact for costing anything below. A new **per-item** view is a
-new row renderer plus a row-height entry — small, and it inherits virtualisation, selection,
-grouping, sorting, filtering and the URL state for free. A new **whole-collection** view is a new
-screen-sized component that must fetch its own set, and inherits none of that.
+row renderer plus a row-height entry, and it inherits virtualisation, selection, grouping, sorting,
+filtering and the URL state for free. A new **whole-collection** view is a screen-sized component
+that must fetch its own set, and inherits none of that. The split bounds the work; it does not by
+itself make a per-item view cheap, because the renderer can still be the hard part.
 
 ## 2. What Gubbins can key a view on
 
