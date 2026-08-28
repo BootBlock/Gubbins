@@ -730,6 +730,8 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
         supplierId: farnell.id,
         supplierName: 'Farnell',
         supplierKey: farnell.id,
+        currency: null,
+        hasMixedCurrency: false,
         lines: [
           {
             itemId: item.id,
@@ -738,6 +740,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
             orderQty: 3,
             onOrder: 0,
             unitCost: 1.25,
+            currency: null,
           },
         ],
       },

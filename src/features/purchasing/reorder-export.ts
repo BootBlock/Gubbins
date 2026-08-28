@@ -25,7 +25,7 @@ export interface ReorderExportRow {
    * The ISO code {@link unitCost} is quoted in — the supplier's own, or the base currency for a
    * line that names none. A bare cost column told a mixed-currency plan's two prices apart by
    * nothing at all once it left the app (issue #569), so the code travels with the figure.
-   * Blank only when the line has no cost and the base currency is unknown.
+   * Blank only when the line names no currency of its own and the base currency is unknown.
    */
   readonly currency: string;
 }
