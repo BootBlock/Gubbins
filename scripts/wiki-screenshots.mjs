@@ -309,6 +309,84 @@ if (!alreadySeeded) {
   await addWish('Cordless impact driver', 120);
 }
 
+/**
+ * Give an item a **synthetic** photo, so the photo-led views (Card, Gallery) document what they
+ * actually look like in use rather than a wall of "no image" glyphs (issue #444).
+ *
+ * The picture is generated in-page on a canvas, for the same two reasons the location photo is
+ * (see below): the repo stays free of binary fixtures, and the sample can never be a real
+ * photograph of a real thing. Each item gets its own hue, so the wall reads as several distinct
+ * pictures rather than one repeated tile.
+ */
+async function addItemPhoto(itemName, hue) {
+  const card = page
+    .locator('#main-content')
+    .getByRole('heading', { name: itemName })
+    .locator('xpath=ancestor::div[contains(@class,"select-none")][1]');
+  await card.first().getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: 'Edit details' }).click();
+  const dialog = page.getByRole('dialog').first();
+  // "Images" is a section *inside* the "Media & docs" rail tab, not a tab of its own.
+  await dialog.getByRole('tab', { name: 'Media & docs' }).click();
+  await dialog.getByRole('heading', { name: 'Images' }).waitFor({ state: 'visible', timeout: 8000 });
+
+  const bytes = await page.evaluate(async (h) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 600;
+    canvas.height = 600;
+    const g = canvas.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 600, 600);
+    grad.addColorStop(0, `hsl(${h} 45% 62%)`);
+    grad.addColorStop(1, `hsl(${(h + 40) % 360} 40% 34%)`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 600, 600);
+    g.fillStyle = 'rgba(255,255,255,0.22)';
+    for (let i = 0; i < 5; i += 1) g.fillRect(0, 60 + i * 110, 600, 26);
+    g.fillStyle = 'rgba(0,0,0,0.28)';
+    g.beginPath();
+    g.arc(420, 200, 110, 0, Math.PI * 2);
+    g.fill();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.9));
+    return Array.from(new Uint8Array(await blob.arrayBuffer()));
+  }, hue);
+
+  await dialog
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({ name: 'sample.webp', mimeType: 'image/webp', buffer: Buffer.from(bytes) });
+  await page.waitForTimeout(2000);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(600);
+}
+
+// Photograph a few of the seeded items. Guarded as one step: without photos the Card and Gallery
+// shots are still captured, just with the no-image fallback the app draws.
+try {
+  await gotoInventory();
+  const photographed = [
+    ['Cordless Drill', 28],
+    ['Raspberry Pi 5 (8GB)', 150],
+    ['Label Printer', 210],
+    ['Multimeter', 330],
+    ['USB-C Cable 1m', 95],
+  ];
+  for (const [name, hue] of photographed) {
+    const card = page
+      .locator('#main-content')
+      .getByRole('heading', { name })
+      .locator('xpath=ancestor::div[contains(@class,"select-none")][1]')
+      .first();
+    if (!(await card.isVisible().catch(() => false))) continue;
+    // Skip an item that already carries a photo, so a re-run against a seeded profile does not
+    // stack a second identical image onto every one of them.
+    if ((await card.locator('img').count()) > 0) continue;
+    await addItemPhoto(name, hue);
+  }
+} catch (err) {
+  failed += 1;
+  console.warn(`  ✗ item photos — ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // ── Captures ─────────────────────────────────────────────────────────────────
 console.log('Capturing screenshots…');
 
@@ -538,6 +616,38 @@ try {
 } catch (err) {
   failed += 1;
   console.warn(`  ✗ inventory-table.png — ${err instanceof Error ? err.message : String(err)}`);
+}
+
+// The Gallery and Compact views (issue #444) — More → View → <mode>, captured the same way as
+// the Table shot above. Each restores Card afterwards so a failure in one does not leave the
+// following steps looking at the wrong view.
+for (const [name, mode, height] of [
+  ['inventory-gallery', 'Gallery', 640],
+  ['inventory-compact', 'Compact', 470],
+]) {
+  try {
+    await gotoInventory();
+    await page.getByRole('button', { name: 'More inventory actions' }).click();
+    await page.getByRole('menuitem', { name: /^View:/ }).click();
+    await page.getByRole('menuitemradio', { name: mode }).click();
+    await page.waitForTimeout(500);
+    // Cropped below the app header, so the shot is the list itself rather than a sliced toolbar.
+    await shot(name, null, {
+      settle: 500,
+      clip: { x: 0, y: 96, width: VIEWPORT.width, height },
+    });
+  } catch (err) {
+    failed += 1;
+    console.warn(`  ✗ ${name}.png — ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // Restore Card view for the later shots, whether or not the capture succeeded.
+  try {
+    await page.getByRole('button', { name: 'More inventory actions' }).click();
+    await page.getByRole('menuitem', { name: /^View:/ }).click();
+    await page.getByRole('menuitemradio', { name: 'Card' }).click();
+  } catch {
+    // The menu may already be closed on a mid-step failure; the next gotoInventory recovers.
+  }
 }
 
 // The pagination control (issue #20) — enable "Paginate list", shrink the page size so the

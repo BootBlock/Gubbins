@@ -28,8 +28,10 @@ export function describeLocationContents(itemCount: number, subLocationCount: nu
 /**
  * Shown in the item pane when the selected location holds no items of its own but *does*
  * nest other locations (the "drill down" case). Rather than a dead-end empty banner, each
- * child location is offered as a clickable card (Visual density) or row (Data density) that
- * navigates into it — mirroring the two item presentations so the pane reads consistently.
+ * child location is offered as a clickable card or row that navigates into it — following the
+ * shape of the current View so the pane reads consistently with the list it replaces. The
+ * *locations* here are not items, so the four per-item modes reduce to two shapes: the modes
+ * that stack one thing per line get the row, and the multi-column modes get the card.
  *
  * Each child is a real `<button>` labelled with its name and contents summary: keyboard
  * operable and announced by screen readers. The Visual card reuses the {@link Surface}
@@ -67,16 +69,19 @@ export function SubLocationNav({
     }
   }
 
+  // Data and Compact both stack one entry per line; Card and Gallery both pack a grid. The
+  // whole-collection views (`map` / `treemap`) never reach here — the screen intercepts them
+  // above the list — but they fall on the grid side, which is the safe shape for a wide pane.
+  const stacked = density === 'data' || density === 'compact';
+
   return (
     <div className="min-h-0 flex-1 overflow-auto px-1 pt-2" data-testid="sub-location-nav">
       <p className="px-1 pb-3 text-sm text-muted-foreground">
         No items here — open a location to see what's inside.
       </p>
       <div
-        className={density === 'data' ? 'flex flex-col gap-1.5 pb-4' : 'grid gap-4 pb-4'}
-        style={
-          density === 'data' ? undefined : { gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }
-        }
+        className={stacked ? 'flex flex-col gap-1.5 pb-4' : 'grid gap-4 pb-4'}
+        style={stacked ? undefined : { gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
       >
         {childLocations.map((loc) => {
           const summary = describeLocationContents(loc.itemCount, subLocationCounts.get(loc.id) ?? 0);
@@ -88,7 +93,7 @@ export function SubLocationNav({
           const label = snippet
             ? `Open ${loc.name} — ${summary}. ${snippet}`
             : `Open ${loc.name} — ${summary}`;
-          return density === 'data' ? (
+          return stacked ? (
             <button
               key={loc.id}
               type="button"

@@ -1,8 +1,8 @@
 /**
  * Per-item render containment for the inventory list (issue #313).
  *
- * The list renders the same item three ways — {@link ItemCard}, {@link ItemRow} and
- * {@link ItemTableRow} — inside a virtualised scroller with nothing between a row and the
+ * The list renders the same item five ways — {@link ItemCard}, {@link ItemGalleryTile},
+ * {@link ItemRow}, {@link ItemCompactRow} and {@link ItemTableRow} — inside a virtualised scroller with nothing between a row and the
  * route. One item whose data trips a render error would otherwise take the whole screen down
  * to the route error page, hiding the hundreds of rows that are perfectly fine.
  *
@@ -18,7 +18,7 @@ import type { Item } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { ContainedErrorBoundary } from '@/app/error/ContainedErrorBoundary';
 
-/** The message itself — one line, muted-warning, shared by all three shapes. */
+/** The message itself — one line, muted-warning, shared by every shape. */
 function CrashMessage({ className }: { className?: string }) {
   const t = useT();
   return (
@@ -60,6 +60,36 @@ export function ItemRowCrashed({ ariaPosInSet, ariaSetSize }: CrashedListItemPro
       aria-posinset={ariaPosInSet}
       aria-setsize={ariaSetSize}
       className="flex select-none items-center gap-4 rounded-lg border border-border/60 bg-card/40 px-4 py-2.5"
+    >
+      <CrashMessage />
+    </div>
+  );
+}
+
+/** Gallery stand-in — a picture-box-shaped blank, so the wall keeps its grid (issue #444). */
+export function ItemGalleryTileCrashed({ ariaPosInSet, ariaSetSize }: CrashedListItemProps) {
+  return (
+    <div
+      role="listitem"
+      aria-posinset={ariaPosInSet}
+      aria-setsize={ariaSetSize}
+      className="flex select-none flex-col gap-1.5"
+    >
+      <div className="grid h-44 w-full place-items-center rounded-xl bg-secondary/40 ring-1 ring-border/50">
+        <CrashMessage />
+      </div>
+    </div>
+  );
+}
+
+/** Compact stand-in — matches {@link ItemCompactRow}'s single unframed line (issue #444). */
+export function ItemCompactRowCrashed({ ariaPosInSet, ariaSetSize }: CrashedListItemProps) {
+  return (
+    <div
+      role="listitem"
+      aria-posinset={ariaPosInSet}
+      aria-setsize={ariaSetSize}
+      className="flex select-none items-center gap-2 rounded-md px-2"
     >
       <CrashMessage />
     </div>

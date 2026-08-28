@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listRowCount, resolveListRow } from './list-window';
+import { LIST_ROW_HEIGHT, listRowCount, resolveListRow } from './list-window';
 
 describe('listRowCount', () => {
   it('counts whole rows for an untrimmed window (firstItemIndex 0)', () => {
@@ -70,5 +70,21 @@ describe('resolveListRow', () => {
     expect(row.end).toBe(51);
     expect(row.resident).toBe(true);
     expect(row.aboveWindow).toBe(false);
+  });
+});
+
+/**
+ * The estimates the virtualiser starts from. They are corrected by measurement, so an exact
+ * number is not what matters — what matters is that Compact's estimate encodes the claim the
+ * mode is *for* (issue #444). A Compact row estimated at a Data row's height would reserve twice
+ * the space it needs, and the mode would look no denser until every row had been measured.
+ */
+describe('LIST_ROW_HEIGHT', () => {
+  it('estimates a Compact line at well under a Data row', () => {
+    expect(LIST_ROW_HEIGHT.compact).toBeLessThan(LIST_ROW_HEIGHT.data * 0.75);
+  });
+
+  it('estimates a Gallery row at picture height, not row height', () => {
+    expect(LIST_ROW_HEIGHT.gallery).toBeGreaterThan(LIST_ROW_HEIGHT.data);
   });
 });

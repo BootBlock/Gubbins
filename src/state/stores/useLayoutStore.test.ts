@@ -36,7 +36,10 @@ describe('normaliseDensity / normaliseGrouping', () => {
     expect(normaliseDensity(density)).toBe(density);
   });
 
-  it.each([['compact'], [''], [undefined], [null], [0], [{}], [['visual']]])(
+  // 'compact' was this list's stand-in for a retired mode until it became a real one (#444);
+  // 'ultra-compact' keeps a plausible-but-unknown string in the set, which is the case that
+  // matters — a persisted value from a build this one has never heard of.
+  it.each([['ultra-compact'], [''], [undefined], [null], [0], [{}], [['visual']]])(
     'falls back to the default for %p',
     (value) => {
       expect(normaliseDensity(value)).toBe(DEFAULT_DENSITY);

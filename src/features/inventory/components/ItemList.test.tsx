@@ -45,7 +45,9 @@ const BASE_PROPS = {
     customFields: new Map(),
     categoryName: () => null,
     categoryGlyph: () => null,
+    categoryGlyphUngated: () => null,
     values: undefined,
+    itemTags: undefined,
   },
 };
 

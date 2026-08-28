@@ -28,6 +28,12 @@ export interface CardFieldsConfigBundle {
    */
   readonly categoryGlyph: (categoryId: string | null) => string | null;
   /**
+   * The same glyph *without* the decorative-watermark gate — what the Gallery tile draws when an
+   * item has no photo (issue #444). There the glyph is the picture, not a texture behind one, so
+   * the setting that turns card watermarks off must not empty the tile.
+   */
+  readonly categoryGlyphUngated: (categoryId: string | null) => string | null;
+  /**
    * The `category_fields.id`s of the *visible* custom fields — what the per-window value fetch
    * reads, and all it reads (issue #560). Empty in the default configuration, which is what
    * skips that fetch altogether; naming the fields rather than answering "are there any?" is
@@ -102,10 +108,22 @@ export function useCardFieldsConfig(): CardFieldsConfigBundle {
   const categoryName = (categoryId: string | null): string | null =>
     categoryId ? (categoryNamesById.get(categoryId) ?? null) : null;
 
-  // Null when the global watermark setting is off, so a card never renders the glyph and the
-  // memoised card sees a stable null — no per-card subscription to the setting.
-  const categoryGlyph = (categoryId: string | null): string | null =>
-    categoryWatermarks && categoryId ? (categoryGlyphsById.get(categoryId) ?? null) : null;
+  const categoryGlyphUngated = (categoryId: string | null): string | null =>
+    categoryId ? (categoryGlyphsById.get(categoryId) ?? null) : null;
 
-  return { order, customFields, categoryName, categoryGlyph, visibleCustomFieldIds, hasTagsField };
+  // Null when the global watermark setting is off, so a card never renders the glyph and the
+  // memoised card sees a stable null — no per-card subscription to the setting. Derived from the
+  // ungated resolver rather than repeating the lookup, so the two can only differ by the gate.
+  const categoryGlyph = (categoryId: string | null): string | null =>
+    categoryWatermarks ? categoryGlyphUngated(categoryId) : null;
+
+  return {
+    order,
+    customFields,
+    categoryName,
+    categoryGlyph,
+    categoryGlyphUngated,
+    visibleCustomFieldIds,
+    hasTagsField,
+  };
 }

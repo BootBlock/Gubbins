@@ -1,7 +1,9 @@
 # Additional inventory View styles — grounding research (2026-08-28)
 
-> **Status:** 🟢 ACTIVE — research complete, nothing implemented. `V1`–`V4` are the recommended
-> shortlist; `V5`–`V8` are held; §7 records what was rejected and why.
+> **Status:** 🟢 ACTIVE — **V1 (Gallery) and V2 (Compact list) shipped 2026-08-28**; `V3`–`V4`
+> remain shortlisted and unbuilt, `V5`–`V8` held, §7 records what was rejected and why. §1 and §3
+> describe the View axis *before* those two landed and are kept as the research record; the
+> paragraphs marked **Shipped** say what changed.
 
 Answers issue [#444](https://github.com/BootBlock/Gubbins/issues/444): *what other visual styles do
 people want when they browse an inventory or a collection, and which of them should Gubbins add?*
@@ -17,8 +19,8 @@ data Gubbins actually holds. Every claim about the codebase was checked by searc
 ## 1. Where the View axis stands today
 
 The **View** axis is the inventory grid's "how is this drawn" control, orthogonal to grouping
-(how the list is arranged) and sorting (how it is ordered). Five modes exist, listed in
-[`view-modes.ts`](../../src/features/inventory/view-modes.ts):
+(how the list is arranged) and sorting (how it is ordered). Five modes existed when this was
+written, listed in [`view-modes.ts`](../../src/features/inventory/view-modes.ts):
 
 | Mode | Key | Draws |
 | --- | --- | --- |
@@ -35,6 +37,10 @@ system enforces that: `ItemDensity` is `Exclude<LayoutDensity, 'map' | 'treemap'
 **whole-collection visualisations**, intercepted before the list and rendered by their own
 components ([`InventoryScreen.tsx:1365-1380`](../../src/features/inventory/InventoryScreen.tsx#L1365-L1380)),
 with pagination and the item-count control hidden.
+
+**Shipped.** V1 and V2 added two more per-item modes — `gallery` and `compact` — so the control
+now offers seven. Both went in as full modes, not as Card options; §4's V1 fork is answered under
+that heading.
 
 That split is the single most useful fact for costing anything below. A new **per-item** view is a
 row renderer plus a row-height entry, and it inherits virtualisation, selection, grouping, sorting,
@@ -80,16 +86,19 @@ table, board, timeline, calendar, list, gallery and chart
 grid/table, list, gallery, calendar, timeline and kanban/board — and that is about as close to a
 consensus vocabulary as this space has.
 
-Gubbins holds three of those six on the View axis, two of them loosely. Table is exact. Card is a
-responsive multi-column grid of photo-led cards
-([`GroupedItemList.tsx:396`](../../src/features/inventory/components/GroupedItemList.tsx#L396) lays
-it out as `repeat(auto-fill, minmax(VISUAL_CARD_MIN_WIDTH, 1fr))`, and that constant is 280px),
-which is structurally a **gallery** rather than a distinct type.
-Data stands in for **list**, though at 60px a row it is a dense row rather than the minimal single
-line the comparators mean. Calendar exists, but as a
+When this was written Gubbins held three of those six on the View axis, two of them loosely. Table
+was exact. Card is a responsive multi-column grid of photo-led cards, which is structurally a
+**gallery** rather than a distinct type. Data stood in for **list**, though at 60px a row it is a
+dense row rather than the minimal single line the comparators mean. Calendar exists, but as a
 [separate screen](../../src/features/calendar/CalendarScreen.tsx) rather than a way of looking at
-the inventory. Only **timeline** and **board** are absent outright, and `map` and `treemap` match
+the inventory. Only **timeline** and **board** were absent outright, and `map` and `treemap` match
 nothing on the list — they are Gubbins' own additions to the vocabulary.
+
+**Shipped.** With V1 and V2 in, Gubbins now holds **four** of the six outright — grid/table,
+gallery, list and, still separately, calendar — and neither of the two loose fits is doing
+stand-in duty any more: Gallery is a gallery in the comparators' sense rather than a grid of
+cards, and Compact is the minimal single line they mean by "list", with Card and Data left to be
+themselves. **Timeline** and **board** (V5 and V4) remain the only two absent.
 
 **Collector and home-inventory tools** are built around a different idea: the collection should
 *look like* the collection. CLZ sells cover art as the point of the app, and its release notes
@@ -154,6 +163,21 @@ fork here, and it should be settled before any code:
 The second is the better first move. It reaches the same visual result, and if it proves popular the
 mode can follow with the tile design already settled.
 
+**Shipped — as a sixth mode, not as Card options.** The fork was settled the other way once the
+two tiles were drawn side by side, because the premise above turned out to be wrong: Card is *not*
+already a gallery. Its picture is a 44px thumbnail beside the name, and the rest of the card is a
+labelled field list, a hero metric, a ± stepper and an action footer. Reaching the Gallery tile
+from it would have meant options that hid four of those five things — which is not an option, it
+is a second mode wearing the first one's name. Drawn as its own mode the boundary states itself: a
+card is a record with a picture on it, a tile is a picture with a caption. The boundaries between
+all four per-item modes are written down in
+[`view-modes.ts`](../../src/features/inventory/view-modes.ts) so the next one added has to say
+where it sits.
+
+The no-photo case went the way this section expected: the category glyph fills the picture box,
+ungated by the card-watermark setting (in Gallery the glyph *is* the picture), with a neutral
+package glyph behind it for an item that has neither.
+
 *Data.* `item_images.thumbnail_blob`, already loaded for Card. Nothing new.
 
 *Cost.* Small either way. One decision is unavoidable in both: what an item with **no** photo looks
@@ -176,6 +200,12 @@ as a minimal layout, and Gubbins has no equivalent of it.
 
 *Cost.* The smallest change on this page. It is close enough to Data that the two should be
 specified together, so they do not converge into the same thing.
+
+**Shipped.** Specified against Data as this warned, and the separation held: Compact drops the
+corner badge, the stock value and the whole field summary, keeping the name, one value and the
+action menu on a single unframed line at roughly half a Data row's height. The "one value" is the
+first of the user's configured card fields that the item has actually filled — the same rule as
+the Gallery caption, so the picker (backlog E1) governs both rather than a second preference.
 
 ### V3 — Shelf
 
@@ -231,18 +261,25 @@ and is not is worse than one that plainly is not, so the first version must not 
 
 Adding a mode is not only the drawing. Each one needs, in the same change:
 
-1. A `LAYOUT_DENSITIES` entry ([`useLayoutStore.ts:35`](../../src/state/stores/useLayoutStore.ts#L35)),
+1. A `LAYOUT_DENSITIES` entry ([`useLayoutStore.ts`](../../src/state/stores/useLayoutStore.ts)),
    and — if it is per-item — a `LIST_ROW_HEIGHT` entry
-   ([`list-window.ts:25`](../../src/features/inventory/list-window.ts#L25)). The row-height object
+   ([`list-window.ts`](../../src/features/inventory/list-window.ts)). The row-height object
    is indexed by `ItemDensity`, so `tsc` rejects a new per-item mode until the entry is added.
-   A multi-column mode also needs a branch in `useColumns`
-   ([`ItemList.tsx:358`](../../src/features/inventory/components/ItemList.tsx#L358)), which today
-   packs more than one item per virtual row for `visual` only.
+   Since V1/V2 the per-item render fork is one `switch` in
+   [`ItemPresentation.tsx`](../../src/features/inventory/components/ItemPresentation.tsx), and the
+   layout answers (column width, row and section classes) are data in
+   [`density-layout.ts`](../../src/features/inventory/density-layout.ts) — so a mode is a case and
+   a record entry rather than a branch in each of the three call sites. A multi-column mode needs
+   only a `DENSITY_COLUMN_WIDTH` value; `useColumns` reads it.
 2. A descriptor in [`view-modes.ts`](../../src/features/inventory/view-modes.ts) with an icon and a
    `labelKey`, plus that key in `en.json` **and** `de.json`. The catalog-drift test holds the
-   English `label` byte-identical to `en.json`, so the two cannot drift silently.
+   English `label` byte-identical to `en.json`, so the two cannot drift silently, and
+   `view-modes.test.ts` fails if the descriptor list and `LAYOUT_DENSITIES` disagree — a mode in
+   the union with no descriptor is unreachable from the menu.
 3. A `normaliseDensity` path, because a persisted value from an older release must still land
-   somewhere.
+   somewhere. In practice this is free: it reconciles against `LAYOUT_DENSITIES` itself, so
+   step 1 supplies it — but check the store's own test fixtures, which name a
+   plausible-but-unknown density that a new mode could accidentally make real.
 4. Wiki coverage. The View control is user-facing, so [`docs/wiki`](../wiki) must describe any mode
    that ships, with a regenerated screenshot.
 
@@ -265,6 +302,9 @@ deliberately rather than one at a time. Settle V1's fork first: a Card option, o
 
 Each of the other two has a question to answer before it is scheduled, and neither is a coding
 question:
+
+**Shipped.** V1 and V2 landed together as one change, as recommended. What remains below is
+unchanged and unstarted.
 
 - **V3 — does a shelf mean anything outside `grouping=location`?** It is grouped by construction, so
   it either forces that grouping or defines a fallback. Answer it with a throwaway prototype, not on

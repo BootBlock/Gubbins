@@ -22,7 +22,18 @@
  * the flat list and the grouped view's large sections so a row reserves the same space
  * whichever way the inventory is arranged.
  */
-export const LIST_ROW_HEIGHT = { data: 60, visual: 232, table: 48 } as const;
+export const LIST_ROW_HEIGHT = {
+  data: 60,
+  visual: 232,
+  // A gallery tile is its fixed-height picture (176px) plus the name line, the caption row that
+  // carries the action buttons, and the row's own bottom gap. Multi-column like `visual`, so
+  // this is the height of a whole row rather than of one item.
+  gallery: 244,
+  // One text line plus the row padding and gap — the point of the mode is that it is far
+  // shorter than a `data` row, so a wrong estimate here would undo it before measurement.
+  compact: 36,
+  table: 48,
+} as const;
 
 /**
  * Absolute number of virtual rows spanning everything loaded so far: the resident

@@ -25,14 +25,23 @@ import { adoptUnversioned, normaliseArray, normaliseBoolean, normaliseOneOf } fr
  * and the **whole-collection** visualisations that draw the inventory as a single picture:
  *
  * - `visual` — large image cards, ample whitespace (the "Visual-Heavy" view).
+ * - `gallery` — a photo-first tile: the picture *is* the tile, captioned with the name and one
+ *   field. Where `visual` is a metadata card that happens to carry a thumbnail, this is a
+ *   picture wall (issue #444).
  * - `data` — dense, one-per-line rows optimised for scanning many records (the "Data-Heavy" view).
+ * - `compact` — one text line per item: the name and one field, no photo and no row chrome. The
+ *   tightest per-item view, roughly half the height of a `data` row (issue #444).
  * - `table` — a spreadsheet-style grid: aligned columns under a sticky header, one row per item.
  * - `map` — a spatial map of the location hierarchy: nested tiles sized by how much stock sits in
  *   each place and tinted by how full it is — a "where is my stuff / what's full" lens.
  * - `treemap` — a value treemap: tiles whose area is proportional to the stock value they hold,
  *   grouped by category (or by location under the grouping axis).
+ *
+ * The four per-item modes are deliberately spread across two axes — how much of the picture is
+ * shown, and how much metadata comes with it — so no two of them collapse into each other. The
+ * table in `features/inventory/view-modes.ts` states where each boundary is drawn.
  */
-export const LAYOUT_DENSITIES = ['data', 'visual', 'table', 'map', 'treemap'] as const;
+export const LAYOUT_DENSITIES = ['data', 'visual', 'gallery', 'compact', 'table', 'map', 'treemap'] as const;
 
 export type LayoutDensity = (typeof LAYOUT_DENSITIES)[number];
 
