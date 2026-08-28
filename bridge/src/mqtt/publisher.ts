@@ -64,6 +64,13 @@ export interface MqttPublisherOptions {
 }
 
 export interface MqttPublisher extends EventSink {
+  /**
+   * Narrows {@link EventSink.deliver}'s `void | Promise<void>` to `void`: publishing hands the
+   * packet to the client's own buffer and returns, so this sink never returns a promise. Stated
+   * in the type so a caller holding a concrete `MqttPublisher` has nothing to await or to handle
+   * a rejection on — only a caller holding the general `EventSink` does.
+   */
+  deliver(events: readonly BridgeEvent[]): void;
   /** Begin connecting to the broker (and reconnecting until {@link stop}). */
   start(): void;
   /** Project the driver and publish the retained state (+ discovery when the layout changed). */

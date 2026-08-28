@@ -168,7 +168,17 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
           deliver: (event) => {
             for (const sink of sinks) {
               try {
-                sink.deliver([event]);
+                // A sink may be async (the webhook deliverer is). `onLookupResolved` is a
+                // synchronous read-path hook with nothing to await into, so the promise is
+                // deliberately fire-and-forget — but it still needs its own rejection handler:
+                // this `try/catch` only ever sees a *synchronous* throw, so an async failure
+                // would escape it and surface as an unhandled rejection, which ends the process.
+                const delivery = sink.deliver([event]);
+                if (delivery) {
+                  void delivery.catch((err: unknown) => {
+                    console.error(`Lookup event delivery failed: ${errorDetail(err)}`);
+                  });
+                }
               } catch (err) {
                 console.error(`Lookup event delivery failed: ${errorDetail(err)}`);
               }
