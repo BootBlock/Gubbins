@@ -55,7 +55,7 @@ export function BoardSizeButtons({
   /** The card's current span — its button reads as pressed. */
   readonly size: { readonly w: number; readonly h: number };
   readonly onResize: (w: number, h: number) => void;
-  /** Which sizes are refused (off the board, or overlapping a neighbour), keyed by {@link sizeKey}. */
+  /** Which sizes are refused (they would overlap a neighbour), keyed by {@link sizeKey}. */
   readonly disabled: Readonly<Record<string, boolean>>;
   /** Translated accessible name for each size's button, keyed by {@link sizeKey}. */
   readonly labels: Readonly<Record<string, string>>;

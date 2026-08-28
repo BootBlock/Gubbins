@@ -400,9 +400,10 @@ describe('moveWidget — a swap must fully vacate the subject cells', () => {
     expect(moveWidget(layout, 'a', 0, 1)).toBe(layout);
   });
 
-  it('refuses a one-column nudge that would land a swapped 2x1 card back under the subject', () => {
+  it('still moves a wide card sideways past a card the move never touches', () => {
     const layout: DashboardLayout = [span('a', 0, 0, 2, 1), span('b', 0, 1, 2, 1)];
-    // Moving 'a' one column right overlaps nothing on its own row, so this is a plain move.
+    // The guard must not over-reach: 'b' sits on the row below, so nothing overlaps the target
+    // and this is a plain move with no swap in it at all.
     expect(moveWidget(layout, 'a', 1, 0)).toEqual([span('a', 1, 0, 2, 1), span('b', 0, 1, 2, 1)]);
   });
 
