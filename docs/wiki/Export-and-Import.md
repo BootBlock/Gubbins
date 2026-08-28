@@ -115,9 +115,10 @@ going through the item importer first.
 > **ℹ️ Note**
 > Every row is matched against your catalogue by one column — the **match key**, either the
 > item's **name** or its **SKU/MPN** — and the review shows each row as *create* or *update*
-> before anything is written. Matching ignores capitals, spacing and how an accent was typed, so
-> a supplier sheet spelling `widget a` updates the `Widget A` you already have rather than adding
-> a second one.
+> before anything is written. Matching **by name** ignores capitals, spacing and how an accent was
+> typed, so a supplier sheet spelling `widget a` updates the `Widget A` you already have rather
+> than adding a second one. A **SKU/MPN** is a manufacturer's code rather than something you
+> typed, so it has to match exactly.
 >
 > Neither a name nor a SKU/MPN has to be unique in Gubbins, so a value can belong to **more than
 > one** item. Where it does, the row is flagged in the review naming the items it could mean,

@@ -763,13 +763,13 @@ describe('buildCatalogImportPlan — match keys fold (issue #593)', () => {
     expect(plan.update[0]!.itemId).toBe('item-1');
   });
 
-  it('matches an existing item by SKU/MPN case-insensitively', () => {
+  it('leaves SKU/MPN unfolded — it is a part number, not a typed name (issue #679)', () => {
     const existing = [stubItem('item-1', 'NPN Transistor', 'bc547')];
-    const plan = buildCatalogImportPlan('sku,manufacturer\r\nBC547,Fairchild\r\n', null, existing, {
+    const plan = buildCatalogImportPlan('sku,name\r\nBC547,NPN Transistor\r\n', null, existing, {
       matchKey: 'sku',
     });
-    expect(plan.update).toHaveLength(1);
-    expect(plan.update[0]!.itemId).toBe('item-1');
+    expect(plan.update).toHaveLength(0);
+    expect(plan.create).toHaveLength(1);
   });
 
   it('resolves a location name case-insensitively', () => {

@@ -1042,10 +1042,11 @@ export interface BuildPlanOptions {
    * - `'sku'`  — match by SKU/MPN (`mpn` on the item record).
    * Defaults to `'name'`.
    *
-   * Either key is compared through `foldName`, so a spreadsheet spelling a name in a different
-   * case updates the item that is there rather than creating a second one. Neither key is unique
-   * in the schema, so a value held by two items collects a row error naming the candidates
-   * instead of updating whichever was read last (issue #593).
+   * A name is compared through `foldName`, so a spreadsheet spelling a name in a different case
+   * updates the item that is there rather than creating a second one; a SKU/MPN is compared
+   * verbatim (see `matchKeyFold`). Neither key is unique in the schema, so a value held by two
+   * items collects a row error naming the candidates instead of updating whichever was read
+   * last (issue #593).
    */
   readonly matchKey?: MatchKey;
   /**
@@ -1111,6 +1112,23 @@ export function normaliseTrackingMode(raw: string): TrackingMode | null {
 }
 
 /**
+ * The comparison key for a match value, per match key.
+ *
+ * A **name** compares through {@link foldName}, the one fold the app uses for every natural key
+ * a human types, so `widget a` finds the `Widget A` that is already there and a name typed with
+ * a combining accent finds its composed form.
+ *
+ * A **SKU/MPN** compares trimmed and verbatim, as this importer always has. It is a
+ * manufacturer's part number rather than a name a user typed, and `mpn` is deliberately not a
+ * folded key: `ItemRepository.findByMatchKey` records the same decision for the same reason
+ * (issue #679). Widening it is a separate question from this one, and the answer is not
+ * `foldName` — that would put a third rule on a column that already has two.
+ */
+function matchKeyFold(matchKey: MatchKey, value: string): string {
+  return matchKey === 'name' ? foldName(value) : value.trim();
+}
+
+/**
  * Group rows by a natural key, keeping **every** row that claims a key rather than the last
  * one to be read (issue #593).
  *
@@ -1121,16 +1139,20 @@ export function normaliseTrackingMode(raw: string): TrackingMode | null {
  * which is a silent wrong answer: the wrong item is updated, or the item lands in the wrong
  * place. Collecting the candidates lets the caller report the ambiguity instead of guessing.
  *
- * Keys are compared through {@link foldName}, the one fold the app uses for every human-typed
- * natural key, so `widget a` matches `Widget A` and a combining accent matches its NFC form.
- * Rows whose key selector returns `null` (an item with no MPN) are skipped.
+ * `normalise` decides what counts as the same key — {@link matchKeyFold} for a match key,
+ * {@link foldName} for a location name. Rows whose selector returns `null` or a blank value
+ * (an item with no MPN) are skipped.
  */
-function groupByFoldedKey<T>(rows: readonly T[], keyOf: (row: T) => string | null): Map<string, T[]> {
+function groupByKey<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => string | null,
+  normalise: (raw: string) => string,
+): Map<string, T[]> {
   const grouped = new Map<string, T[]>();
   for (const row of rows) {
     const raw = keyOf(row);
     if (raw === null || raw.trim().length === 0) continue;
-    const key = foldName(raw);
+    const key = normalise(raw);
     const bucket = grouped.get(key);
     if (bucket) bucket.push(row);
     else grouped.set(key, [row]);
@@ -1255,15 +1277,22 @@ export function buildImportPlanFromRows(
   const resolveLocations = locations.length > 0;
   const locationById = new Map(locations.map((l) => [l.id, l.id]));
   const locationIdsByName = new Map(
-    [...groupByFoldedKey(locations, (l) => l.name)].map(([key, ls]) => [key, ls.map((l) => l.id)]),
+    [...groupByKey(locations, (l) => l.name, foldName)].map(([key, ls]) => [key, ls.map((l) => l.id)]),
   );
 
-  // Build fast lookup maps from existing items. Both are grouped rather than assigned, so a key
-  // held by two items is reported to the user instead of resolving to whichever was read last
-  // (issue #593), and both fold, so the importer matches a human-typed name the same way the
-  // rest of the app does.
-  const byName = groupByFoldedKey(existingItems, (item) => item.name);
-  const byMpn = groupByFoldedKey(existingItems, (item) => item.mpn);
+  // Lookup maps from existing items, holding every item that claims a key so an ambiguous one is
+  // reported rather than resolved to whichever item was read last (issue #593). Both index through
+  // `matchKeyFold`, the same function the row lookup below keys on, so the two cannot drift apart.
+  const byName = groupByKey(
+    existingItems,
+    (item) => item.name,
+    (raw) => matchKeyFold('name', raw),
+  );
+  const byMpn = groupByKey(
+    existingItems,
+    (item) => item.mpn,
+    (raw) => matchKeyFold('sku', raw),
+  );
 
   // Track keys already seen in THIS import to catch intra-CSV duplicates (the second
   // occurrence is an error, not silently dropped, so the user sees the conflict).
@@ -1369,10 +1398,10 @@ export function buildImportPlanFromRows(
       continue;
     }
 
-    // Check for intra-CSV duplicates. Keyed on the fold, so two rows differing only in case
-    // collide here rather than both claiming the same existing item further down.
-    const matchFold = foldName(matchValue);
-    const prior = seenKeys.get(matchFold);
+    // Check for intra-CSV duplicates, on the same key the catalogue lookup below uses — so two
+    // name rows differing only in case collide here rather than both claiming one existing item.
+    const rowKey = matchKeyFold(matchKey, matchValue);
+    const prior = seenKeys.get(rowKey);
     if (prior !== undefined) {
       errors.push({
         sourceRow,
@@ -1380,11 +1409,11 @@ export function buildImportPlanFromRows(
       });
       continue;
     }
-    seenKeys.set(matchFold, sourceRow);
+    seenKeys.set(rowKey, sourceRow);
 
     // Match against existing items. A key held by more than one item is an error naming the
     // candidates, not a guess at which one the row meant (issue #593).
-    const candidates = (matchKey === 'name' ? byName : byMpn).get(matchFold) ?? [];
+    const candidates = (matchKey === 'name' ? byName : byMpn).get(rowKey) ?? [];
     if (candidates.length > 1) {
       errors.push({
         sourceRow,
