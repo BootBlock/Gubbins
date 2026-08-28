@@ -1,10 +1,11 @@
 /**
- * useDialogBehaviour — the shared `aria-modal` contract behind every Foundry dialog
- * surface (spec §3): {@link Modal} and {@link Drawer}.
+ * useDialogBehaviour — the shared `aria-modal` contract behind every modal surface in the app
+ * (spec §3): the Foundry {@link Modal} and {@link Drawer}, and the two full-screen camera
+ * takeovers that are portals rather than primitives (`ScannerOverlay`, `BarcodeScanDialog`).
  *
- * Both are modal dialogs that differ only in how they are painted — one is a centred panel,
- * the other slides in from the edge — so the behaviour they must get *exactly* right is
- * identical, and lives here once:
+ * They are all modal dialogs that differ only in how they are painted — a centred panel, a
+ * panel sliding in from the edge, a viewfinder covering the viewport — so the behaviour they
+ * must get *exactly* right is identical, and lives here once:
  *
  * - **Modal stack.** Dialogs open on top of one another (the "New location" dialog inside
  *   "Add item"; the same dialog opened from the locations drawer). Only the topmost may

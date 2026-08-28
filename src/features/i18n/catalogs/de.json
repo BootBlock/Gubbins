@@ -2091,6 +2091,7 @@
   "activity.announce.empty": "Keine neue Aktivität.",
   "activity.announce.count.one": "{count} neues Ereignis wird angezeigt.",
   "activity.announce.count.other": "{count} neue Ereignisse werden angezeigt.",
+  "scanner.title": "Scanner",
   "scanner.torch.turnOn": "Licht einschalten",
   "scanner.torch.turnOff": "Licht ausschalten",
   "scanner.torch.tooltip": "**Licht** — beleuchtet einen dunklen Schrank, ein Regal oder eine Garage mit dem Licht der Kamera.\n\nWird nur angeboten, wenn die Kamera eines hat.",

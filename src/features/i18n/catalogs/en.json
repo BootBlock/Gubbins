@@ -2091,6 +2091,7 @@
   "activity.announce.empty": "No recent activity.",
   "activity.announce.count.one": "Showing {count} recent event.",
   "activity.announce.count.other": "Showing {count} recent events.",
+  "scanner.title": "Scanner",
   "scanner.torch.turnOn": "Turn the torch on",
   "scanner.torch.turnOff": "Turn the torch off",
   "scanner.torch.tooltip": "**Torch** — light up a dark cupboard, shelf or garage with the camera's own light.\n\nOnly offered where the camera has one.",

@@ -194,21 +194,25 @@ use, so link it yourself: open the item it belongs to, put the code in its **Bar
 (the **Scan** button beside the field reads it straight off the label), and every later scan finds
 that item.
 
+## Keyboard and screen readers
+
+While the scanner is open it takes the whole screen and the whole keyboard. `Tab` moves between the
+scanner's own controls and stays there — it can't step onto the screen behind, which the camera
+view is covering. Keyboard shortcuts are off for the same reason: they would act on a screen you
+can't see. A screen reader announces the scanner when it opens, and reads it as a dialog rather
+than as part of the page underneath.
+
 ## Leaving the scanner
 
 Three ways out, all the same: the **✕** at the top of the screen, the `Escape` key, or your
 device's **Back** button or edge swipe. On an installed app Back is usually the easiest of the
 three one-handed, and it returns you to the screen you opened the scanner from rather than
-navigating anywhere else.
+navigating anywhere else. However you leave, the cursor goes back to wherever you opened the
+scanner from, so you can carry on by keyboard.
 
 > **⚠️ Heads-up**
 > Leaving clears anything queued in a [[continuous scan|Continuous-Scan-and-Batch-Actions]] that
 > you haven't applied yet. Apply the batch first if you want to keep it.
-
-While the scanner is open it takes the whole screen and the whole keyboard. `Tab` moves between the
-scanner's own controls and stays there — it can't step onto the screen underneath, which is hidden
-behind the camera view. A screen reader announces the scanner when it opens. When you leave, the
-cursor goes back to the **Scan** button you started from.
 
 ## Related pages
 

@@ -378,8 +378,10 @@ function ScannerOverlayInner({
   // re-deriving a piece of it (issue #540). That is: modal-stack registration, so only the
   // topmost surface handles the keyboard and the explainer/checkout Modals it opens take
   // precedence while they are up; focus parked on the aria-labelled container on open and
-  // restored to the "Scan" button on close; a Tab trap, which is what stops Tab walking out of
-  // the overlay into an inventory screen the user cannot see — and which stands aside while
+  // restored on close to whatever opened the scanner — the Inventory "Scan" button, or wherever
+  // focus sat when a `scan` intent raised it from another screen; a Tab trap, which stops Tab
+  // walking out of
+  // the overlay into the screen behind it — and which stands aside while
   // focus is in the viewfinder's portaled camera picker (issue #135), a menu that owns its own
   // keyboard contract; Escape; and the system Back gesture, the *only* back affordance an
   // installed PWA has, which used to navigate the screen out from under a shelf's worth of
@@ -535,7 +537,7 @@ function ScannerOverlayInner({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4 pt-safe-gutter-top pr-safe-gutter-right pl-safe-gutter-left">
         <ScanIcon className="size-5 shrink-0" />
         <span id={titleId} className="min-w-0 flex-1 truncate font-semibold">
-          Scanner
+          {t('scanner.title')}
         </span>
         {/* The wrapper takes the whole second line so the toggle drops below the title; the
             pill inside stays sized to its two buttons rather than stretching across it. */}
