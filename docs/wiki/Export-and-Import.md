@@ -107,6 +107,16 @@ and walks you through a review before anything is written:
   in as the item's SKU automatically — handy for turning an invoice or order confirmation
   straight into items.
 
+> **ℹ️ Note**
+> A file of **items** with just one column has no commas or tabs to give it away, so Gubbins
+> decides by its first line. A line naming the item **Name** column — `name`, `Item name` — is read as a
+> header, and the lines under it become the items. Any other first line is read as a free-form
+> list, where every line becomes an item.
+>
+> If the first line really was an item and Gubbins took it for a header, untick **The first row
+> is a header row** and set the column to **Name** under **Map columns**. The review shows what
+> will be created before anything is written.
+
 A [[project's bill of materials|Projects-and-BOM]] and a
 [[purchase list|Purchase-Orders]] each import from where you're working, using the same format
 detection — so a BOM export, a supplier basket or a typed shopping list can be brought in without

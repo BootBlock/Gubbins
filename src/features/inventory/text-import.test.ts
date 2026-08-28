@@ -395,6 +395,40 @@ describe('extractImport', () => {
     expect(ex.mapping).toEqual(['name', 'quantity', 'sku']);
   });
 
+  it('reads a single-column CSV as a table, not as four free-form items (issue #408)', () => {
+    // `name` over three part names has no delimiter to detect, so it used to fall through to
+    // the free-form parser — which imported the header row as an item called "name".
+    const ex = extractImport('name\r\nWidget A\r\nWidget B\r\nWidget C\r\n');
+    expect(ex.format).toBe('csv');
+    expect(ex.isTabular).toBe(true);
+    expect(ex.headerRow).toEqual(['name']);
+    expect(ex.mapping).toEqual(['name']);
+    expect(ex.dataRows).toEqual([['Widget A'], ['Widget B'], ['Widget C']]);
+  });
+
+  it('promotes a lone column only when its header is the name column', () => {
+    // Any other column builds rows with no name, every one of which the importer must reject —
+    // so a `sku` header stays a line list rather than becoming an import that lands nothing.
+    expect(extractImport('Item Name\nWidget A\nWidget B').format).toBe('csv');
+    expect(extractImport('sku\nABC-1\nABC-2').format).toBe('lines');
+    expect(extractImport('mpn\nW-1\nW-2').format).toBe('lines');
+    expect(extractImport('Resistance\n10k\n4k7').format).toBe('lines');
+  });
+
+  it('keeps a header-led list whose lines carry commas free-form, losing nothing (issue #408)', () => {
+    // Read as a one-column CSV this would split on the comma and keep only `Widget`, dropping
+    // the rest of the name silently. The delimiter proves the file is not one column.
+    const ex = extractImport('name\nWidget, the big one\nSprocket');
+    expect(ex.format).toBe('lines');
+    expect(ex.dataRows.map((row) => row[0])).toEqual(['name', 'Widget, the big one', 'Sprocket']);
+  });
+
+  it('leaves a one-column list whose first line is not a header as a line list', () => {
+    const ex = extractImport('Widget A\nWidget B\nWidget C');
+    expect(ex.format).toBe('lines');
+    expect(ex.dataRows).toHaveLength(3);
+  });
+
   it('honours a forced format override', () => {
     // Text that would auto-detect as a line list, forced to CSV.
     const ex = extractImport('Widget, the big one\nSprocket', { format: 'csv' });
