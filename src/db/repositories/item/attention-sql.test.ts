@@ -117,9 +117,21 @@ describe('attention SQL predicates', () => {
     it('treats a zero floor as off, on the item and on the global fallback alike', async () => {
       await items.create({ name: 'OptedOut', quantity: 0, reorderPoint: 0 });
       await items.create({ name: 'OnBlanket', quantity: 0 });
+      // The gauge arm has its own floor, and its own opt-out: an emptied gauge at a 0% floor.
+      await items.create({
+        name: 'GaugeOptedOut',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        reorderGaugePercent: 0,
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 0 },
+      });
+      await items.create({
+        name: 'GaugeOnBlanket',
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 0 },
+      });
 
-      expect(await selected(lowStockPredicateSql(), BINDS)).toEqual(['OnBlanket']);
-      // Blanket off: the opted-out item stays out, and the one relying on it drops away too.
+      expect(await selected(lowStockPredicateSql(), BINDS)).toEqual(['GaugeOnBlanket', 'OnBlanket']);
+      // Blanket off: the opted-out items stay out, and the ones relying on it drop away too.
       expect(await selected(lowStockPredicateSql(), [0, 0, 0, 0])).toEqual([]);
     });
 
@@ -180,7 +192,12 @@ describe('attention SQL predicates', () => {
       drawerId = (await locations.create({ name: 'Drawer A' })).id;
     });
 
-    /** Write a lot directly, so a depleted or undated one can be seeded exactly. */
+    /**
+     * Write a lot directly. These pin the fragment itself rather than a repository read, so the
+     * row is seeded to the exact shape under test — depleted, undated, or both — instead of
+     * being arrived at through a receipt. (`ItemRepository.batch-expiry.test.ts` covers the
+     * receipt path, at the repository altitude.)
+     */
     async function addLot(
       itemId: string,
       key: string,
