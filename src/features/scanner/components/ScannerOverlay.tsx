@@ -354,15 +354,23 @@ function ScannerOverlayInner({
     void handleDecode(value);
   };
 
-  const scanAgain = () => {
-    // A deliberate ask for another scan: re-arm every code, so the label still in the user's
-    // hand reads immediately instead of stuttering for the rest of its cooldown window.
+  /**
+   * Return to the live viewfinder, re-arming every code on the way (issue #512). Going back to
+   * scanning is always a deliberate ask, so the label still in the user's hand must read
+   * immediately rather than stutter for the rest of its cooldown window. Every route back goes
+   * through here, so a future one cannot forget.
+   */
+  const resumeScanning = () => {
     gate.current.clear();
+    dispatch({ type: 'RESUME_SCANNING' });
+  };
+
+  const scanAgain = () => {
     setDiscreteResult(null);
     setGtinResult(null);
     setLookupResult(null);
     setSingleMove('');
-    dispatch({ type: 'RESUME_SCANNING' });
+    resumeScanning();
   };
 
   // Move the single scanned item to a location — the one-id peer of the Continuous
@@ -415,10 +423,8 @@ function ScannerOverlayInner({
     const outcome = await runBatch(ids(), (id) => checkout.mutateAsync({ itemId: id, contactName: contact }));
     setNotice(summariseBatch('CHECKOUT', outcome, contact));
     queue.clear();
-    // The batch has been applied, so the labels it covered are fair game again.
-    gate.current.clear();
     setBatchName('');
-    dispatch({ type: 'RESUME_SCANNING' });
+    resumeScanning();
   };
 
   const batchMove = async () => {
@@ -427,10 +433,8 @@ function ScannerOverlayInner({
     const name = locationRows.find((l) => l.id === moveTarget)?.name ?? 'the location';
     setNotice(summariseBatch('MOVE', outcome, name));
     queue.clear();
-    // The batch has been applied, so the labels it covered are fair game again.
-    gate.current.clear();
     setMoveTarget('');
-    dispatch({ type: 'RESUME_SCANNING' });
+    resumeScanning();
   };
 
   return createPortal(
@@ -695,7 +699,7 @@ function ScannerOverlayInner({
                 >
                   <CheckoutIcon /> Check out all
                 </Button>
-                <Button variant="outline" onClick={() => dispatch({ type: 'RESUME_SCANNING' })}>
+                <Button variant="outline" onClick={resumeScanning}>
                   Keep scanning
                 </Button>
               </div>
@@ -845,7 +849,7 @@ function ScannerOverlayInner({
             setCheckoutItem(null);
             setDiscreteResult(null);
             setSingleMove('');
-            dispatch({ type: 'RESUME_SCANNING' });
+            resumeScanning();
           }}
         />
       ) : null}

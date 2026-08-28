@@ -9,7 +9,7 @@
  */
 import { createContext, useCallback, useContext, useMemo, useReducer, useRef, type ReactNode } from 'react';
 import { CooldownMap } from './cooldown';
-import { emptyQueue, queueReducer, type ScannedEntry } from './queue-reducer';
+import { emptyQueue, hasEntry, queueReducer, type ScannedEntry } from './queue-reducer';
 
 interface ScannerQueueValue {
   readonly entries: readonly ScannedEntry[];
@@ -34,16 +34,16 @@ export function ScannerQueueProvider({ children }: { children: ReactNode }) {
       if (!cooldown.current.accept(itemId, now)) return false;
       // Bound the map to the ids seen in the last window, however long the overlay stays open.
       cooldown.current.prune(now);
-      // The reducer refuses an id the queue already holds (§6.4 belt-and-braces), which the
-      // time-based guard cannot see once its window has elapsed — and two different codes (a
-      // label QR and the item's own barcode) name the same item inside one window. Report that
-      // refusal rather than a success, so the caller acknowledges the repeat instead of playing
-      // a confirmation for an entry that never landed (issue #512).
-      if (state.entries.some((e) => e.itemId === itemId)) return false;
+      // The §6.4 belt-and-braces guard catches what the time-based one cannot: two different
+      // codes (a label QR and the item's own barcode) naming the same item, and a window that
+      // has since elapsed. It is asked here, through the reducer's own predicate, because the
+      // reducer would only refuse silently — and a caller told "accepted" plays a confirmation
+      // for an entry that never landed (issue #512).
+      if (hasEntry(state, itemId)) return false;
       dispatch({ type: 'ADD', entry: { itemId, name, scannedAt: now } });
       return true;
     },
-    [state.entries],
+    [state],
   );
 
   const remove = useCallback((itemId: string) => dispatch({ type: 'REMOVE', itemId }), []);

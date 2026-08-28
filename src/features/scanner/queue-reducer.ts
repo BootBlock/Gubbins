@@ -26,11 +26,20 @@ export type QueueAction =
 
 export const emptyQueue: QueueState = { entries: [] };
 
+/**
+ * Whether the queue already lists `itemId` — the §6.4 belt-and-braces guard. Exported because
+ * a pure reducer cannot tell its caller that it refused an action, and the scanner has to know:
+ * a refused scan is acknowledged rather than confirmed. One predicate, so the answer the caller
+ * acts on and the answer the reducer acts on cannot drift apart.
+ */
+export function hasEntry(state: QueueState, itemId: string): boolean {
+  return state.entries.some((e) => e.itemId === itemId);
+}
+
 export function queueReducer(state: QueueState, action: QueueAction): QueueState {
   switch (action.type) {
     case 'ADD':
-      // Ignore a duplicate item id already in the queue (§6.4 belt-and-braces).
-      if (state.entries.some((e) => e.itemId === action.entry.itemId)) return state;
+      if (hasEntry(state, action.entry.itemId)) return state;
       return { entries: [...state.entries, action.entry] };
 
     case 'REMOVE': {

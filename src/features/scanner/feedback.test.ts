@@ -53,22 +53,22 @@ describe('ScanFeedback.confirm — mutable beep/haptic gating (§6.5)', () => {
  */
 describe('ScanFeedback.repeat — the "already scanned" acknowledgement (issue #512)', () => {
   it('is a lower, shorter tone and a briefer bump than the confirmation', () => {
+    // Read both signals off the calls the class actually makes, so retuning *either* tone into
+    // the other's territory fails here. The contract is the difference, not either literal.
     const { fb, beep, vibrate } = spies();
     fb.confirm();
-    const [confirmDuration, confirmFrequency] = beep.mock.calls[0] as [number?, number?];
-    const [confirmPattern] = vibrate.mock.calls[0] as [number | number[]];
+    const [confirmDuration, confirmFrequency] = beep.mock.calls[0] as [number, number];
+    const [confirmPattern] = vibrate.mock.calls[0] as [number];
 
     beep.mockClear();
     vibrate.mockClear();
     fb.repeat();
-    const [repeatDuration, repeatFrequency] = beep.mock.calls[0] as [number?, number?];
-    const [repeatPattern] = vibrate.mock.calls[0] as [number | number[]];
+    const [repeatDuration, repeatFrequency] = beep.mock.calls[0] as [number, number];
+    const [repeatPattern] = vibrate.mock.calls[0] as [number];
 
-    // `confirm` leaves the beep's defaults in place, so read them off the class rather than
-    // restating them here — the contract is the *difference*, not either literal.
-    expect(repeatFrequency ?? 880).toBeLessThan(confirmFrequency ?? 880);
-    expect(repeatDuration ?? 90).toBeLessThan(confirmDuration ?? 90);
-    expect(repeatPattern).toBeLessThan(confirmPattern as number);
+    expect(repeatFrequency).toBeLessThan(confirmFrequency);
+    expect(repeatDuration).toBeLessThan(confirmDuration);
+    expect(repeatPattern).toBeLessThan(confirmPattern);
   });
 
   it('honours the same beep/haptic preferences as the confirmation', () => {

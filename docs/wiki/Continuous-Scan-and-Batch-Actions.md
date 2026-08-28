@@ -31,8 +31,9 @@ if you'd rather scan quietly.)
 
 A code you scan twice isn't counted twice — the batch tracks distinct items. A repeat gets its own
 **lower, shorter tone** and an *Already scanned* message instead of the usual confirmation, so you
-can hear the difference between "that one's already on the list" and "that didn't read at all".
-Silence means the code wasn't read: move a little closer, steady your hand, and try again.
+can hear that it's already on the list rather than being left to wonder. If you hear nothing and no
+message appears, the code wasn't read at all: move a little closer, steady your hand, and try
+again.
 
 > **ℹ️ Note**
 > Leaving a label sitting in the viewfinder won't add it over and over. Gubbins settles on a code

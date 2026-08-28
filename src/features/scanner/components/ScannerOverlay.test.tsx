@@ -545,3 +545,25 @@ describe('ScannerOverlay — a re-scan in Continuous mode (issue #512)', () => {
     expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/No matching item found/i);
   });
 });
+
+/**
+ * Discrete mode had no double-scan guard at all before the gate reached it, so going back to
+ * the viewfinder has to re-arm every code — the label is still in the user's hand, and asking
+ * to scan again is a deliberate act, not a stutter to be swallowed (issue #512).
+ */
+describe('ScannerOverlay — returning to the viewfinder re-arms the guard (issue #512)', () => {
+  it('reads the same label again straight after "Scan again"', async () => {
+    await scan(baseItem);
+    expect(idQueries).toEqual([UUID]);
+    expect(feedbackCalls).toEqual({ confirm: 1, repeat: 0 });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scan again' }));
+    fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value: UUID } });
+    fireEvent.click(screen.getByTestId('scanner-manual-submit'));
+
+    // Well inside the 2000 ms window, and it still resolves and confirms.
+    await screen.findByTestId('scanner-discrete-result');
+    expect(idQueries).toEqual([UUID, UUID]);
+    expect(feedbackCalls).toEqual({ confirm: 2, repeat: 0 });
+  });
+});
