@@ -250,7 +250,7 @@ describe('normaliseVisualCardMetricFallback', () => {
 
 describe('the Locations search box (issue #446)', () => {
   it('passes every offered choice through unchanged', () => {
-    for (const { value } of LOCATION_SEARCH_VISIBILITY_OPTIONS) {
+    for (const value of LOCATION_SEARCH_VISIBILITY_OPTIONS) {
       expect(normaliseLocationSearchVisibility(value)).toBe(value);
     }
   });

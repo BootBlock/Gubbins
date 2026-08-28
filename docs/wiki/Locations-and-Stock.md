@@ -103,9 +103,10 @@ once you have **more than ten** locations. You can override that either way.
 - **Off** — never show it, and give the row of space back to the tree.
 
 > **ℹ️ Note**
-> Hiding the box also clears anything typed in it, so the tree is never left narrowed by a search
-> you can no longer see. It changes nothing about your locations — only whether the box is on
-> screen.
+> The built-in **Unassigned** and **In Transit** locations don't count towards the ten — only the
+> ones you made yourself. Hiding the box also clears anything typed in it, so the tree is never
+> left narrowed by a search you can no longer see. It changes nothing about your locations — only
+> whether the box is on screen.
 
 Search matches the **whole path**, not just the location's own name, and every word you type has
 to appear somewhere on it. So `garage bin` finds *Garage → Shelf A → Bin 3*, and typing just

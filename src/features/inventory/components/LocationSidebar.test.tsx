@@ -573,11 +573,27 @@ describe('LocationSidebar — hiding the search box (issue #446)', () => {
 
   it('counts archived locations too, so "Show archived" never moves the box', () => {
     const rows = manyLocations(LOCATION_SEARCH_AUTO_THRESHOLD + 1);
-    // One of them is archived, so the *visible* tree is back at the threshold while the list
-    // itself is past it. The box stays — it tracks the locations you have, not the ones on screen.
+    // Archive one on both sides of the fixture, exactly as the refetched query would carry it: the
+    // tree prunes on its own nodes, the count reads the flat list. That leaves the *visible* tree
+    // back at the threshold while the list itself is past it — and the box stays, because it
+    // tracks the locations you have, not the ones currently on screen.
+    rows.tree = rows.tree.map((n, i) => (i === 0 ? { ...n, archivedAt: 1 } : n));
     rows.flat = rows.flat.map((loc, i) => (i === 0 ? { ...loc, archivedAt: 1 } : loc));
     renderRows(rows);
+    expect(screen.queryByRole('treeitem', { name: 'Location 0' })).toBeNull();
     expect(box()).toBeTruthy();
+  });
+
+  it('ignores the seeded system locations, which every install already has', () => {
+    // Ten of the user's own plus two system rows is twelve locations in the list — but only ten
+    // the user made, which is not "more than ten", so the box stays away.
+    const rows = manyLocations(LOCATION_SEARCH_AUTO_THRESHOLD);
+    const system = (id: string, name: string) => node(id, name, [], { isSystem: true });
+    rows.tree = [...rows.tree, system('unassigned', 'Unassigned'), system('transit', 'In transit')];
+    rows.flat = rows.tree.map(({ children: _children, ...loc }) => loc);
+    renderRows(rows);
+    expect(screen.getByRole('treeitem', { name: 'Unassigned' })).toBeTruthy();
+    expect(box()).toBeNull();
   });
 
   it('shows the box in a small tree when the user pins it On', () => {

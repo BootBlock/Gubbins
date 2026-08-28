@@ -133,6 +133,11 @@ export function LocationSidebar({
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const archivedCount = useMemo(() => flat.filter((l) => l.archivedAt).length, [flat]);
+  // How many locations the user has actually made — the seeded system rows (Unassigned, In
+  // Transit) are on every install and would otherwise put a nine-location inventory over the
+  // search box's threshold. Archived ones still count: they are locations the user made, and
+  // leaving them out would move the box whenever "Show archived" is ticked.
+  const ownedCount = useMemo(() => flat.filter((l) => !l.isSystem).length, [flat]);
   // Hide archived branches (and their subtrees) unless the user opts in; navigation,
   // counts and rendering all operate on the same filtered view for consistency.
   const visibleTree = useMemo(
@@ -190,12 +195,10 @@ export function LocationSidebar({
   const searchRef = useRef<HTMLInputElement>(null);
   // Whether the box is on screen at all (issue #446). A small tree is quicker to read than to
   // search, so `auto` — the shipped default — only earns the box its row of vertical space once
-  // the tree is big enough; `on`/`off` pin it. Counted over the *whole* location list rather than
-  // the archived-filtered `visibleFlat`, so ticking "Show archived" can't make the box appear and
-  // disappear underneath a user mid-search.
+  // the tree is big enough; `on`/`off` pin it.
   const searchVisible = showLocationSearch(
     usePreferencesStore((s) => s.locationSearchVisibility),
-    flat.length,
+    ownedCount,
   );
   const searching = searchVisible && search.trim().length > 0;
   // Escape clears the box before it means anything else, via the shared searchable-surface seam.

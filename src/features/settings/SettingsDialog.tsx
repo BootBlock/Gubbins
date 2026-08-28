@@ -1163,9 +1163,9 @@ export default function SettingsDialog({
                 onChange={(value) =>
                   prefs.setLocationSearchVisibility(value as typeof prefs.locationSearchVisibility)
                 }
-                options={LOCATION_SEARCH_VISIBILITY_OPTIONS.map((o) => ({
-                  value: o.value,
-                  label: t(`settings.locations.search.option.${o.value}`),
+                options={LOCATION_SEARCH_VISIBILITY_OPTIONS.map((value) => ({
+                  value,
+                  label: t(`settings.locations.search.option.${value}`),
                 }))}
               />
             </SettingRow>

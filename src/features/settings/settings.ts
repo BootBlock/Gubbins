@@ -349,17 +349,25 @@ export type LocationSearchVisibility = 'auto' | 'off' | 'on';
 /** The default — size the search box to the location count. */
 export const DEFAULT_LOCATION_SEARCH_VISIBILITY: LocationSearchVisibility = 'auto';
 
-/** Choices for the Settings "Locations search box" control (default listed first). */
+/**
+ * Choices for the Settings "Locations search box" control, in the order they are offered
+ * (default first). Values only — each option's label is read from the message catalog
+ * (`settings.locations.search.option.*`), so there is one copy of the English to drift from.
+ */
 export const LOCATION_SEARCH_VISIBILITY_OPTIONS = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'on', label: 'On' },
-  { value: 'off', label: 'Off' },
-] as const satisfies readonly { value: LocationSearchVisibility; label: string }[];
+  'auto',
+  'on',
+  'off',
+] as const satisfies readonly LocationSearchVisibility[];
 
 /**
  * How many locations `auto` wants before it shows the search box. Below this a glance down the
  * tree finds the location faster than typing does; above it, hand-expanding branches starts to
  * cost more than the row of space the box takes.
+ *
+ * Counted over the locations the *user* made. The two seeded system rows (Unassigned, In Transit)
+ * are on every install, so counting them would show the box to someone with nine locations of
+ * their own and make the number the Settings copy quotes wrong.
  */
 export const LOCATION_SEARCH_AUTO_THRESHOLD = 10;
 
@@ -369,11 +377,7 @@ export const LOCATION_SEARCH_AUTO_THRESHOLD = 10;
  * the sidebar in a state that is neither shown nor hidden.
  */
 export function normaliseLocationSearchVisibility(value: unknown): LocationSearchVisibility {
-  return normaliseOneOf(
-    value,
-    LOCATION_SEARCH_VISIBILITY_OPTIONS.map((o) => o.value),
-    DEFAULT_LOCATION_SEARCH_VISIBILITY,
-  );
+  return normaliseOneOf(value, LOCATION_SEARCH_VISIBILITY_OPTIONS, DEFAULT_LOCATION_SEARCH_VISIBILITY);
 }
 
 /**
