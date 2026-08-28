@@ -11,6 +11,7 @@ import { LocationRepository } from './LocationRepository';
 import { ProjectRepository } from './ProjectRepository';
 import { ReportRepository } from './ReportRepository';
 import { assemblyId } from './project/assembly';
+import { BOM_RECEIPT_RACE_MESSAGE } from './receipt-guard';
 
 describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
   let driver: MemoryDriver;
@@ -464,6 +465,61 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(received.receivedQty).toBe(4);
     expect((await items.getById(item.id))?.quantity).toBe(4);
     expect(await projects.inTransitQtyForItem(item.id)).toBe(0);
+  });
+
+  // --- overlapping receipts (issue #485) -----------------------------------------
+
+  it('rejects the loser of two overlapping BOM-line receipts instead of double-counting stock', async () => {
+    const p = await projects.create({ name: 'P' });
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const shelf = await locations.create({ name: 'Shelf A' });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 10 });
+    await projects.setProcurement(line.id, 'IN_TRANSIT');
+
+    // Both receipts plan against the same received_qty of 0 — the stale read the issue describes.
+    const first = projects.receiveLine(line.id, { locationId: shelf.id, quantity: 10 });
+    const second = projects.receiveLine(line.id, { locationId: shelf.id, quantity: 10 });
+
+    await first;
+    await expect(second).rejects.toMatchObject({
+      name: 'DbError',
+      message: BOM_RECEIPT_RACE_MESSAGE,
+    });
+
+    // The line and the ledger agree: 10 received on the line, 10 units on the shelf.
+    const settledLine = (await projects.listLines(p.id)).rows[0]!;
+    expect(settledLine.receivedQty).toBe(10);
+    expect(settledLine.procurementStatus).toBe('RECEIVED');
+    expect((await items.getById(item.id))?.quantity).toBe(10);
+    const history = await items.getHistory(item.id);
+    expect(history.rows.filter((h) => h.action === 'RECEIVED')).toHaveLength(1);
+    // The remainder no longer over-reports what is still arriving.
+    expect(await projects.inTransitQtyForItem(item.id)).toBe(0);
+  });
+
+  it('leaves nothing half-applied when a partial receipt loses the race', async () => {
+    const p = await projects.create({ name: 'P' });
+    const item = await items.create({ name: 'IC', quantity: 0 });
+    const shelf = await locations.create({ name: 'Shelf A' });
+    const line = await projects.addLine(p.id, { itemId: item.id, requiredQty: 10 });
+    await projects.setProcurement(line.id, 'IN_TRANSIT');
+
+    const settled = await Promise.allSettled([
+      projects.receiveLine(line.id, { locationId: shelf.id, quantity: 4 }),
+      projects.receiveLine(line.id, { locationId: shelf.id, quantity: 6 }),
+    ]);
+    const rejections = settled.filter((r) => r.status === 'rejected');
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]).toMatchObject({ reason: { message: BOM_RECEIPT_RACE_MESSAGE } });
+
+    // Whichever landed, the line's total equals the units on the shelf and the status still
+    // reads IN_TRANSIT — the loser's stock, ledger entry and status write all rolled back.
+    const settledLine = (await projects.listLines(p.id)).rows[0]!;
+    expect([4, 6]).toContain(settledLine.receivedQty);
+    expect(settledLine.procurementStatus).toBe('IN_TRANSIT');
+    expect((await items.getById(item.id))?.quantity).toBe(settledLine.receivedQty);
+    const history = await items.getHistory(item.id);
+    expect(history.rows.filter((h) => h.action === 'RECEIVED')).toHaveLength(1);
   });
 
   it('exposes the system-locked In-Transit location', async () => {

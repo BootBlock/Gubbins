@@ -38,6 +38,11 @@ import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './b
 import { historyStatement } from './item/history';
 import { rowToPurchaseOrder, rowToPurchaseOrderLine } from './mappers';
 import { addStockStatement, stockRowId } from './stock';
+import {
+  PO_RECEIPT_RACE_MESSAGE,
+  receivedQtyDeltaStatement as guardedReceivedQtyWrite,
+  runReceiptWrite,
+} from './receipt-guard';
 import { addBatchStatement, placementDeltaStatements, runStockDraw } from './stock-batches';
 import { SupplierRepository } from './SupplierRepository';
 import { tombstoneStatement } from './tombstone';
@@ -121,62 +126,11 @@ function cleanOrderedQty(value: number): number {
 }
 
 /**
- * The user-facing sentence for a receipt or return that lost a race — see
- * {@link receivedQtyDeltaStatement}. An authored sentence under a constraint code is kept
- * verbatim by the error-copy seam (issue #311), exactly as `STOCK_DRAW_RACE_MESSAGE` is.
- */
-export const PO_RECEIPT_RACE_MESSAGE =
-  'This purchase-order line changed while the receipt was being saved. ' +
-  'Check the received quantity and try again.';
-
-/**
- * The compare-and-swap write of a line's cumulative `received_qty` (issue #298).
- *
- * A receipt is planned from a read of the line taken *before* the transaction, but the stock
- * statement it pairs with is **relative** (`addBatchStatement` adds units to the ledger). Writing
- * the plan's absolute total back therefore let two overlapping receipts each add their units while
- * the second's write silently replaced the first's total — the order reading 10 received against 20
- * units on the shelf, permanently and invisibly.
- *
- * So the write is relative *and* gated on the line still holding the value the plan was built from.
- * When it doesn't, the guard writes the sentinel `-1`, which trips the line's
- * `CHECK (received_qty >= 0)` and rolls the whole transaction back — the stock, the ledger entry and
- * the status snapshot with it, so nothing is half-applied. That constraint is the same backstop
- * `runStockDraw` leans on for an overlapping stock draw (issue #302), and {@link runReceiptWrite}
- * translates it the same way so the loser reads a plain sentence rather than constraint text.
- *
+ * The {@link guardedReceivedQtyWrite} compare-and-swap, bound to the purchase-order line table.
  * `delta` is signed: a receipt adds, a return subtracts.
  */
 function receivedQtyDeltaStatement(lineId: string, expectedQty: number, delta: number): SqlStatement {
-  return {
-    sql: `UPDATE purchase_order_lines
-             SET received_qty = CASE WHEN received_qty = ? THEN received_qty + ? ELSE -1 END
-           WHERE id = ?;`,
-    params: [expectedQty, delta, lineId],
-  };
-}
-
-/**
- * True when the {@link receivedQtyDeltaStatement} guard's sentinel tripped the line's
- * `CHECK (received_qty >= 0)`. Keyed on the message alone rather than the code, for the reason
- * `isQuantityFloorViolation` documents: the three drivers report the very same failure under
- * different codes, so a code set would silently miss in the browser.
- */
-export function isReceivedQtyGuardViolation(error: unknown): boolean {
-  if (!(error instanceof DbError)) return false;
-  return /CHECK constraint failed:\s*received_qty >= 0/i.test(error.message);
-}
-
-/** Run a receipt/return write, translating the guard's abort into plain validation copy. */
-async function runReceiptWrite(run: () => Promise<void>): Promise<void> {
-  try {
-    await run();
-  } catch (error) {
-    if (isReceivedQtyGuardViolation(error)) {
-      throw new DbError('SQLITE_CONSTRAINT', PO_RECEIPT_RACE_MESSAGE, { cause: error });
-    }
-    throw error;
-  }
+  return guardedReceivedQtyWrite('purchase_order_lines', lineId, expectedQty, delta);
 }
 
 export class PurchaseOrderRepository extends BaseRepository {
@@ -466,7 +420,7 @@ export class PurchaseOrderRepository extends BaseRepository {
 
     statements.push(await this.statusSnapshotStatement(line.poId, lineId, plan.nextReceivedQty));
 
-    await runReceiptWrite(() => this.driver.transaction(statements));
+    await runReceiptWrite(() => this.driver.transaction(statements), PO_RECEIPT_RACE_MESSAGE);
 
     return (await this.getLine(lineId))!;
   }
@@ -542,7 +496,7 @@ export class PurchaseOrderRepository extends BaseRepository {
 
     statements.push(await this.statusSnapshotStatement(line.poId, lineId, plan.nextReceivedQty));
 
-    await runReceiptWrite(() => runStockDraw(this.driver, statements));
+    await runReceiptWrite(() => runStockDraw(this.driver, statements), PO_RECEIPT_RACE_MESSAGE);
 
     return (await this.getLine(lineId))!;
   }

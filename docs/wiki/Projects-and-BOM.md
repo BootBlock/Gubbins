@@ -108,6 +108,13 @@ Reservations are released when a project is completed or archived.
 **Where to find it:** the item's **Reservations** panel is on the **Supplier & ops** tab of the
 item's detail screen.
 
+> **⚠️ Heads-up**
+> If the *same* BOM line is received twice at the same moment on one device — in two windows, say —
+> only the first goes through. The second is turned down with a message asking you to check the
+> received quantity and try again, so the quantity on the line and the stock on your shelf stay in
+> step. Receipts recorded on two *different* devices are settled when those devices next
+> [[sync|Cloud-Sync]], so it is worth checking the line afterwards.
+
 ## Costing & the shopping list
 
 A project can total its cost, and toggle how it's **costed** (for example, what you'd pay to buy
