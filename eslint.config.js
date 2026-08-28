@@ -186,8 +186,12 @@ export default tseslint.config(
     rules: { ...asyncSafetyRules },
   },
 
-  // Tests: vitest globals (globals: true), browser env via happy-dom. Parsed
-  // syntactically only — no project service, so no type-aware rules run here.
+  // Tests: vitest globals (globals: true), browser env via happy-dom. This block adds globals
+  // and relaxes `no-explicit-any`; it does not set a parser, so whatever an earlier block
+  // established still stands. In practice that means the APP's tests are parsed syntactically
+  // only (no block points the project service at them, and `tsconfig.app.json` excludes them
+  // from the program anyway), while the BRIDGE's tests keep the project service — and therefore
+  // the type-aware rules — from the block above.
   {
     files: ['**/*.test.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
     languageOptions: {

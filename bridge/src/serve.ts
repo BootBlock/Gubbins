@@ -170,9 +170,11 @@ export async function startBridge(env: Env = process.env): Promise<RunningBridge
               try {
                 // A sink may be async (the webhook deliverer is). `onLookupResolved` is a
                 // synchronous read-path hook with nothing to await into, so the promise is
-                // deliberately fire-and-forget — but it still needs its own rejection handler:
-                // this `try/catch` only ever sees a *synchronous* throw, so an async failure
-                // would escape it and surface as an unhandled rejection, which ends the process.
+                // deliberately fire-and-forget — but it still needs its own rejection handler,
+                // because this `try/catch` only ever sees a *synchronous* throw. No sink rejects
+                // today (each swallows its own errors, as `EventSink` asks), so this is a guard
+                // rather than a live fix; nothing enforces that contract, and an unhandled
+                // rejection here would end the whole server, not just the delivery.
                 const delivery = sink.deliver([event]);
                 if (delivery) {
                   void delivery.catch((err: unknown) => {
