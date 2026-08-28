@@ -15,6 +15,7 @@ import {
   groupByKind,
   maintenanceDueAtMs,
   STALE_DISMISSAL_DAYS,
+  type AlertDateFormatters,
   type AlertKind,
   type AlertDismissal,
   type AlertDismissals,
@@ -48,6 +49,29 @@ function sources(overrides: Partial<AlertSources>): AlertSources {
   return { ...EMPTY, ...overrides };
 }
 
+/**
+ * Date renderers for the copy, shaped exactly like the real `Formatters` bundle the app passes
+ * in: `date` renders in the **host** zone, `calendarDate` in **UTC**. The host zone is pinned to
+ * `America/New_York` here (rather than left to whatever the test machine is set to) so the two
+ * genuinely differ, and a lane that reaches for the wrong one names the wrong day and fails.
+ */
+const NY_DATE = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'America/New_York',
+});
+const UTC_DATE = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+const FMT: AlertDateFormatters = {
+  date: (at) => NY_DATE.format(new Date(at)),
+  calendarDate: (at) => UTC_DATE.format(new Date(at)),
+};
+
 /** Fixed "now" — 2025-07-01 midnight UTC. */
 const NOW = ms('2025-07-01');
 
@@ -57,7 +81,7 @@ const NOW = ms('2025-07-01');
 
 describe('buildAlerts — low-stock lane', () => {
   it('returns an empty list when no low-stock items are provided', () => {
-    expect(buildAlerts(EMPTY, NOW)).toHaveLength(0);
+    expect(buildAlerts(EMPTY, NOW, FMT)).toHaveLength(0);
   });
 
   it('produces one warning alert per low-stock item', () => {
@@ -65,7 +89,7 @@ describe('buildAlerts — low-stock lane', () => {
       { id: 'item-1', name: 'Widget A' },
       { id: 'item-2', name: 'Widget B' },
     ];
-    const alerts = buildAlerts(sources({ lowStock: low }), NOW);
+    const alerts = buildAlerts(sources({ lowStock: low }), NOW, FMT);
     expect(alerts).toHaveLength(2);
     for (const a of alerts) {
       expect(a.kind).toBe('low-stock');
@@ -76,23 +100,23 @@ describe('buildAlerts — low-stock lane', () => {
 
   it('sets deterministic ids prefixed with "low-stock:"', () => {
     const low: LowStockSource[] = [{ id: 'abc', name: 'Screw' }];
-    const [alert] = buildAlerts(sources({ lowStock: low }), NOW);
+    const [alert] = buildAlerts(sources({ lowStock: low }), NOW, FMT);
     expect(alert.id).toBe('low-stock:abc');
   });
 
   it('includes the item name in the title', () => {
     const low: LowStockSource[] = [{ id: 'x', name: 'Blue Resistor' }];
-    const [alert] = buildAlerts(sources({ lowStock: low }), NOW);
+    const [alert] = buildAlerts(sources({ lowStock: low }), NOW, FMT);
     expect(alert.title).toContain('Blue Resistor');
   });
 
   it('sets dueAt to null for low-stock alerts', () => {
-    const [alert] = buildAlerts(sources({ lowStock: [{ id: 'y', name: 'Y' }] }), NOW);
+    const [alert] = buildAlerts(sources({ lowStock: [{ id: 'y', name: 'Y' }] }), NOW, FMT);
     expect(alert.dueAt).toBeNull();
   });
 
   it('sets itemId on the target', () => {
-    const [alert] = buildAlerts(sources({ lowStock: [{ id: 'z', name: 'Z' }] }), NOW);
+    const [alert] = buildAlerts(sources({ lowStock: [{ id: 'z', name: 'Z' }] }), NOW, FMT);
     expect(alert.target.itemId).toBe('z');
   });
 });
@@ -104,19 +128,19 @@ describe('buildAlerts — low-stock lane', () => {
 describe('buildAlerts — expiry lane', () => {
   it('skips items with no expiry date', () => {
     const exp: ExpirySource[] = [{ id: 'item-1', name: 'Milk', effectiveExpiryDate: null }];
-    expect(buildAlerts(sources({ expiring: exp }), NOW)).toHaveLength(0);
+    expect(buildAlerts(sources({ expiring: exp }), NOW, FMT)).toHaveLength(0);
   });
 
   it('skips items whose expiry is in the future beyond the "soon" window', () => {
     const farFuture = NOW + 60 * 86_400_000; // 60 days out
     const exp: ExpirySource[] = [{ id: 'item-1', name: 'Honey', effectiveExpiryDate: farFuture }];
-    expect(buildAlerts(sources({ expiring: exp }), NOW)).toHaveLength(0);
+    expect(buildAlerts(sources({ expiring: exp }), NOW, FMT)).toHaveLength(0);
   });
 
   it('produces a warning alert for expiring-soon items', () => {
     const soonExpiry = NOW + 5 * 86_400_000; // 5 days out → within 30-day window
     const exp: ExpirySource[] = [{ id: 'item-1', name: 'Yoghurt', effectiveExpiryDate: soonExpiry }];
-    const [alert] = buildAlerts(sources({ expiring: exp }), NOW);
+    const [alert] = buildAlerts(sources({ expiring: exp }), NOW, FMT);
     expect(alert.kind).toBe('expiry');
     expect(alert.severity).toBe('warning');
     expect(alert.title).toContain('Expiring soon');
@@ -126,7 +150,7 @@ describe('buildAlerts — expiry lane', () => {
   it('produces a critical alert for already-expired items', () => {
     const pastExpiry = NOW - 86_400_000; // yesterday
     const exp: ExpirySource[] = [{ id: 'item-1', name: 'Bread', effectiveExpiryDate: pastExpiry }];
-    const [alert] = buildAlerts(sources({ expiring: exp }), NOW);
+    const [alert] = buildAlerts(sources({ expiring: exp }), NOW, FMT);
     expect(alert.kind).toBe('expiry');
     expect(alert.severity).toBe('critical');
     expect(alert.title).toContain('Expired');
@@ -136,7 +160,7 @@ describe('buildAlerts — expiry lane', () => {
     const exp: ExpirySource[] = [
       { id: 'perishable-1', name: 'Cheese', effectiveExpiryDate: ms('2025-06-30') },
     ];
-    const [alert] = buildAlerts(sources({ expiring: exp }), NOW);
+    const [alert] = buildAlerts(sources({ expiring: exp }), NOW, FMT);
     expect(alert.id).toBe('expiry:perishable-1:2025-06-30:expired');
   });
 
@@ -145,8 +169,8 @@ describe('buildAlerts — expiry lane', () => {
     const exp: ExpirySource[] = [
       { id: 'perishable-1', name: 'Cheese', effectiveExpiryDate: ms('2025-07-02') },
     ];
-    const [soon] = buildAlerts(sources({ expiring: exp }), NOW);
-    const [expired] = buildAlerts(sources({ expiring: exp }), ms('2025-07-04'));
+    const [soon] = buildAlerts(sources({ expiring: exp }), NOW, FMT);
+    const [expired] = buildAlerts(sources({ expiring: exp }), ms('2025-07-04'), FMT);
 
     expect(soon.severity).toBe('warning');
     expect(expired.severity).toBe('critical');
@@ -161,10 +185,12 @@ describe('buildAlerts — expiry lane', () => {
     const first = buildAlerts(
       sources({ expiring: [{ id: 'p1', name: 'Yoghurt', effectiveExpiryDate: ms('2025-07-03') }] }),
       NOW,
+      FMT,
     )[0];
     const rebatched = buildAlerts(
       sources({ expiring: [{ id: 'p1', name: 'Yoghurt', effectiveExpiryDate: ms('2025-07-10') }] }),
       NOW,
+      FMT,
     )[0];
     expect(first.id).not.toBe(rebatched.id);
   });
@@ -185,7 +211,7 @@ describe('buildAlerts — maintenance-due lane', () => {
         dueAtMs: NOW - 86_400_000,
       },
     ];
-    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW);
+    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW, FMT);
     expect(alert.kind).toBe('maintenance-due');
     expect(alert.severity).toBe('critical');
     expect(alert.title).toContain('Generator');
@@ -194,11 +220,16 @@ describe('buildAlerts — maintenance-due lane', () => {
 
   it('gives a completed-then-re-due TIME schedule a new id (issue #644)', () => {
     const base = { id: 'sched-1', name: 'Oil change', itemId: 'item-x', itemName: 'Generator' };
-    const before = buildAlerts(sources({ maintenanceDue: [{ ...base, dueAtMs: ms('2025-06-30') }] }), NOW)[0];
+    const before = buildAlerts(
+      sources({ maintenanceDue: [{ ...base, dueAtMs: ms('2025-06-30') }] }),
+      NOW,
+      FMT,
+    )[0];
     // Logged the work; the schedule's next due date lands inside the old dismissal's grace period.
     const after = buildAlerts(
       sources({ maintenanceDue: [{ ...base, dueAtMs: ms('2025-07-14') }] }),
       ms('2025-07-15'),
+      FMT,
     )[0];
     expect(before.id).not.toBe(after.id);
   });
@@ -207,7 +238,7 @@ describe('buildAlerts — maintenance-due lane', () => {
     const due: MaintenanceDueSource[] = [
       { id: 's9', name: 'Service', itemId: 'i9', itemName: 'Lathe', dueAtMs: null },
     ];
-    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW);
+    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW, FMT);
     expect(alert.id).toBe('maintenance-due:s9:undated:due');
   });
 
@@ -216,7 +247,7 @@ describe('buildAlerts — maintenance-due lane', () => {
     const due: MaintenanceDueSource[] = [
       { id: 's1', name: 'Calibrate', itemId: 'i1', itemName: 'Laser', dueAtMs: dueMs },
     ];
-    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW);
+    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW, FMT);
     expect(alert.dueAt).toBe(new Date(dueMs).toISOString());
   });
 
@@ -224,7 +255,7 @@ describe('buildAlerts — maintenance-due lane', () => {
     const due: MaintenanceDueSource[] = [
       { id: 's2', name: 'Service', itemId: 'i2', itemName: 'Lathe', dueAtMs: null },
     ];
-    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW);
+    const [alert] = buildAlerts(sources({ maintenanceDue: due }), NOW, FMT);
     expect(alert.dueAt).toBeNull();
   });
 });
@@ -244,20 +275,20 @@ describe('buildAlerts — warranty lane', () => {
 
   it('skips items without warrantyExpiresAt (Phase-66 field absent)', () => {
     const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: null }];
-    expect(buildAlerts(sources({ warrantyItems: items }), NOW)).toHaveLength(0);
+    expect(buildAlerts(sources({ warrantyItems: items }), NOW, FMT)).toHaveLength(0);
   });
 
   it('skips items whose warranty is still active', () => {
     const futureExpiry = new Date(NOW + 90 * 86_400_000).toISOString().slice(0, 10);
     const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: futureExpiry }];
-    expect(buildAlerts(sources({ warrantyItems: items }), NOW)).toHaveLength(0);
+    expect(buildAlerts(sources({ warrantyItems: items }), NOW, FMT)).toHaveLength(0);
   });
 
   it('produces a warning alert for warranty expiring-soon', () => {
     // Within 30 days but not yet expired.
     const soonDate = new Date(NOW + 10 * 86_400_000).toISOString().slice(0, 10);
     const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: soonDate }];
-    const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW);
+    const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW, FMT);
     expect(alert.kind).toBe('warranty-due');
     expect(alert.severity).toBe('warning');
     expect(alert.title).toContain('expiring soon');
@@ -267,7 +298,7 @@ describe('buildAlerts — warranty lane', () => {
   it('produces a critical alert for expired warranties', () => {
     const expiredDate = new Date(NOW - 86_400_000).toISOString().slice(0, 10);
     const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: expiredDate }];
-    const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW);
+    const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW, FMT);
     expect(alert.kind).toBe('warranty-due');
     expect(alert.severity).toBe('critical');
     expect(alert.title).toContain('expired');
@@ -276,22 +307,22 @@ describe('buildAlerts — warranty lane', () => {
   it('encodes warrantyExpiresAt in the id so a date change creates a new alert', () => {
     const date = '2025-06-15';
     const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: date }];
-    const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW);
+    const [alert] = buildAlerts(sources({ warrantyItems: items }), NOW, FMT);
     expect(alert.id).toBe(`warranty-due:asset-1:${date}:expired`);
   });
 
   it('gives the expired warranty a different id from the expiring-soon one (issue #644)', () => {
     const date = new Date(NOW + 10 * 86_400_000).toISOString().slice(0, 10);
     const items: WarrantySource[] = [{ ...baseAsset, warrantyExpiresAt: date }];
-    const [soon] = buildAlerts(sources({ warrantyItems: items }), NOW);
-    const [expired] = buildAlerts(sources({ warrantyItems: items }), NOW + 40 * 86_400_000);
+    const [soon] = buildAlerts(sources({ warrantyItems: items }), NOW, FMT);
+    const [expired] = buildAlerts(sources({ warrantyItems: items }), NOW + 40 * 86_400_000, FMT);
     expect(soon.severity).toBe('warning');
     expect(expired.severity).toBe('critical');
     expect(soon.id).not.toBe(expired.id);
   });
 
   it('produces no alerts when warrantyItems is an empty array', () => {
-    expect(buildAlerts(sources({ warrantyItems: [] }), NOW)).toHaveLength(0);
+    expect(buildAlerts(sources({ warrantyItems: [] }), NOW, FMT)).toHaveLength(0);
   });
 });
 
@@ -309,7 +340,7 @@ describe('buildAlerts — severity ordering', () => {
         { id: 'e2', name: 'Already expired', effectiveExpiryDate: expiredMs },
       ],
     });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     expect(alerts[0].severity).toBe('critical');
     expect(alerts[1].severity).toBe('warning');
   });
@@ -319,7 +350,7 @@ describe('buildAlerts — severity ordering', () => {
       lowStock: [{ id: 'item-1', name: 'Screw' }],
       expiring: [{ id: 'item-2', name: 'Milk', effectiveExpiryDate: NOW - 1 }],
     });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     // expired milk (critical) should come before low-stock screw (warning)
     const criticalFirst = alerts[0];
     expect(criticalFirst.severity).toBe('critical');
@@ -346,7 +377,7 @@ describe('buildAlerts — dueAt ordering', () => {
       itemName: 'Tool B',
       dueAtMs: ms('2025-06-20'),
     };
-    const alerts = buildAlerts(sources({ maintenanceDue: [due1, due2] }), NOW);
+    const alerts = buildAlerts(sources({ maintenanceDue: [due1, due2] }), NOW, FMT);
     // Both are overdue (critical); s2 is earlier so should appear first.
     expect(alerts[0].id).toBe('maintenance-due:s2:2025-06-20:overdue');
     expect(alerts[1].id).toBe('maintenance-due:s1:2025-06-25:overdue');
@@ -361,7 +392,7 @@ describe('buildAlerts — dueAt ordering', () => {
     });
     // t1 is overdue → critical; u1 has no dueAtMs so severity depends on now comparison
     // but let's just verify the one with a dueAt isn't pushed after null
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     const withDate = alerts.find((a) => a.dueAt !== null);
     const withoutDate = alerts.find((a) => a.dueAt === null);
     if (withDate && withoutDate) {
@@ -386,7 +417,7 @@ function dismissals(...entries: readonly (readonly [string, number | null, numbe
 describe('applyDismissals', () => {
   it('returns all alerts when there are no dismissals', () => {
     const s = sources({ lowStock: [{ id: 'x', name: 'X' }] });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     expect(applyDismissals(alerts, new Map(), NOW)).toHaveLength(1);
   });
 
@@ -397,7 +428,7 @@ describe('applyDismissals', () => {
         { id: 'b', name: 'B' },
       ],
     });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     const result = applyDismissals(alerts, dismissals(['low-stock:a', null]), NOW);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('low-stock:b');
@@ -405,32 +436,32 @@ describe('applyDismissals', () => {
 
   it('returns an empty list when all alerts are dismissed', () => {
     const s = sources({ lowStock: [{ id: 'c', name: 'C' }] });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     expect(applyDismissals(alerts, dismissals(['low-stock:c', null]), NOW)).toHaveLength(0);
   });
 
   it('ignores dismissal ids that do not match any alert', () => {
     const s = sources({ lowStock: [{ id: 'd', name: 'D' }] });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     expect(applyDismissals(alerts, dismissals(['low-stock:nonexistent', null]), NOW)).toHaveLength(1);
   });
 
   it('keeps an alert hidden while its snooze is still running', () => {
     const s = sources({ lowStock: [{ id: 'e', name: 'E' }] });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     expect(applyDismissals(alerts, dismissals(['low-stock:e', NOW + DAY]), NOW)).toHaveLength(0);
   });
 
   it('shows the alert again once its snooze has elapsed', () => {
     const s = sources({ lowStock: [{ id: 'f', name: 'F' }] });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     const snoozed = dismissals(['low-stock:f', NOW - 1]);
     expect(applyDismissals(alerts, snoozed, NOW)).toHaveLength(1);
   });
 
   it('treats a snooze deadline of exactly now as elapsed', () => {
     const s = sources({ lowStock: [{ id: 'g', name: 'G' }] });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     expect(applyDismissals(alerts, dismissals(['low-stock:g', NOW]), NOW)).toHaveLength(1);
   });
 });
@@ -553,6 +584,7 @@ describe('alertKindFromId', () => {
         ],
       }),
       NOW,
+      FMT,
     );
     expect(all).toHaveLength(4);
     for (const alert of all) expect(alertKindFromId(alert.id)).toBe(alert.kind);
@@ -578,7 +610,7 @@ describe('groupByKind', () => {
       lowStock: [{ id: 'a', name: 'A' }],
       expiring: [{ id: 'b', name: 'B', effectiveExpiryDate: NOW - 1 }],
     });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     const groups = groupByKind(alerts);
     expect(groups.has('low-stock')).toBe(true);
     expect(groups.has('expiry')).toBe(true);
@@ -593,7 +625,7 @@ describe('groupByKind', () => {
         { id: 'y', name: 'Y' },
       ],
     });
-    const alerts = buildAlerts(s, NOW);
+    const alerts = buildAlerts(s, NOW, FMT);
     const groups = groupByKind(alerts);
     expect(groups.get('low-stock')).toHaveLength(2);
   });
@@ -631,7 +663,7 @@ describe('maintenanceDueAtMs', () => {
 
 describe('buildAlerts — empty sources', () => {
   it('returns an empty array when all sources are empty', () => {
-    expect(buildAlerts(EMPTY, NOW)).toHaveLength(0);
+    expect(buildAlerts(EMPTY, NOW, FMT)).toHaveLength(0);
   });
 });
 
@@ -661,33 +693,37 @@ describe('buildAlerts — custom-field due-date lane (W1a)', () => {
   });
 
   it('produces a warning alert for a date inside its notice period', () => {
-    const [alert] = buildAlerts(sources({ fieldDue: [source()] }), NOW);
+    const [alert] = buildAlerts(sources({ fieldDue: [source()] }), NOW, FMT);
     expect(alert.kind).toBe('field-due');
     expect(alert.severity).toBe('warning');
     expect(alert.title).toBe('Renewal date due soon — Studio insurance');
   });
 
   it('produces a critical alert once the date has passed', () => {
-    const [alert] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(-2) })] }), NOW);
+    const [alert] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(-2) })] }), NOW, FMT);
     expect(alert.severity).toBe('critical');
     expect(alert.title).toBe('Renewal date passed — Studio insurance');
   });
 
   it('re-grades the feed, dropping a date that has moved beyond its notice period', () => {
     // A stale cached row: the query included it, but by this render it is no longer imminent.
-    expect(buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(90) })] }), NOW)).toHaveLength(0);
+    expect(buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(90) })] }), NOW, FMT)).toHaveLength(0);
   });
 
   it('encodes the date in the id, so moving a deadline lifts an earlier dismissal', () => {
-    const [first] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(1) })] }), NOW);
-    const [moved] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(2) })] }), NOW);
+    const [first] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(1) })] }), NOW, FMT);
+    const [moved] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(2) })] }), NOW, FMT);
     expect(first.id).not.toBe(moved.id);
     expect(first.id.startsWith('field-due:i1:d1:')).toBe(true);
   });
 
   it('gives the overdue alert a different id from the due-soon one (issue #644)', () => {
-    const [soon] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(1) })] }), NOW);
-    const [overdue] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(1) })] }), NOW + 3 * DAY);
+    const [soon] = buildAlerts(sources({ fieldDue: [source({ dueAt: storedDay(1) })] }), NOW, FMT);
+    const [overdue] = buildAlerts(
+      sources({ fieldDue: [source({ dueAt: storedDay(1) })] }),
+      NOW + 3 * DAY,
+      FMT,
+    );
     expect(soon.severity).toBe('warning');
     expect(overdue.severity).toBe('critical');
     expect(soon.id).not.toBe(overdue.id);
@@ -699,17 +735,19 @@ describe('buildAlerts — custom-field due-date lane (W1a)', () => {
         fieldDue: [source(), source({ defId: 'd2', fieldName: 'Inspection due' })],
       }),
       NOW,
+      FMT,
     );
     expect(alerts).toHaveLength(2);
     expect(new Set(alerts.map((a) => a.id)).size).toBe(2);
   });
 
   it('names the field in the detail, and the notice period it was judged against', () => {
-    const [alert] = buildAlerts(sources({ fieldDue: [source({ leadDays: 1 })] }), NOW);
+    const [alert] = buildAlerts(sources({ fieldDue: [source({ leadDays: 1 })] }), NOW, FMT);
     // 3 days out with 1 day's notice would not fire; use a date inside the shorter window.
     const [inWindow] = buildAlerts(
       sources({ fieldDue: [source({ leadDays: 1, dueAt: storedDay(1) })] }),
       NOW,
+      FMT,
     );
     expect(alert).toBeUndefined();
     expect(inWindow.detail).toContain('"Renewal date"');
@@ -717,7 +755,7 @@ describe('buildAlerts — custom-field due-date lane (W1a)', () => {
   });
 
   it('deep-links to the item, seeding the search so it is on screen on arrival', () => {
-    const [alert] = buildAlerts(sources({ fieldDue: [source()] }), NOW);
+    const [alert] = buildAlerts(sources({ fieldDue: [source()] }), NOW, FMT);
     expect(alert.target).toEqual({
       route: '/inventory',
       itemId: 'i1',
