@@ -25,9 +25,14 @@ import {
 const DEFAULT_FILE_NAME = 'gubbins-sync.json';
 
 // Minimal typings — the File System Access API is not fully in lib.dom.
+interface FsWritable {
+  write(data: string): Promise<void>;
+  close(): Promise<void>;
+  abort?(): Promise<void>;
+}
 interface FsFileHandle {
   getFile(): Promise<File>;
-  createWritable(): Promise<{ write(data: string): Promise<void>; close(): Promise<void> }>;
+  createWritable(): Promise<FsWritable>;
 }
 interface FsDirectoryHandle extends PersistableDirectoryHandle {
   name: string;
@@ -91,11 +96,38 @@ export class FileSystemCloudProvider implements CloudProvider {
     }
   }
 
+  /**
+   * Replace the shared snapshot file with `snapshot`.
+   *
+   * Issue #650: a write that fails must release the stream rather than drop it. `createWritable`
+   * stages into a swap file beside the target (Chromium: `gubbins-sync.json.crswap`) which only
+   * `close()` commits and only `abort()` discards, so a rejected `write()` that does neither
+   * strands that file in the folder the user nominated for syncing — where their cloud client then
+   * replicates it to every other device — and leaves the stream open for the rest of the session.
+   * Aborting there also matches `writePlainDatabaseFile` in `src/db/db-storage.ts`: a partial
+   * snapshot must never commit over the good one.
+   *
+   * A failed `close()` is already terminal for the stream, so aborting it reclaims nothing (per
+   * the Streams spec an abort of an errored stream resolves without reaching the sink). The one
+   * `catch` still covers both, because the alternative is a branch whose only effect is to skip a
+   * call that is a no-op anyway.
+   */
   async pushSnapshot(snapshot: SyncSnapshot): Promise<void> {
     const handle = await this.dir.getFileHandle(this.fileName, { create: true });
     const writable = await handle.createWritable();
-    await writable.write(snapshotToBackupJson(snapshot));
-    await writable.close();
+    try {
+      await writable.write(snapshotToBackupJson(snapshot));
+      await writable.close();
+    } catch (err) {
+      // Best-effort: a host may not implement `abort`, and a release that fails must not mask the
+      // failure the caller needs to see.
+      try {
+        await writable.abort?.();
+      } catch {
+        // Nothing useful to do about a failed release; the error below is the news.
+      }
+      throw err;
+    }
   }
 }
 
