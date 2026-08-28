@@ -13,6 +13,8 @@ import {
   applyInventoryViewPatch,
   decodeInventoryView,
   encodeInventoryView,
+  inventorySearchFor,
+  inventorySearchInLocation,
   parseInventorySearch,
   DEFAULT_INVENTORY_VIEW,
   type InventoryView,
@@ -110,6 +112,28 @@ describe('encode ↔ decode — a bookmarked view reopens as itself', () => {
     const backwards = encodeInventoryView({ ...DEFAULT_INVENTORY_VIEW, statuses: [second!, first!] });
     expect(forwards.status).toBe(`${first},${second}`);
     expect(backwards).toEqual(forwards);
+  });
+});
+
+describe('the deep-link builders', () => {
+  // Every screen that links an item into the inventory goes through these, so what they produce
+  // has to be what the screen reads back — a link nobody can decode is a broken deep link, and
+  // the failure would be silent (the plain list, no error).
+  it('builds a link the screen decodes as that search', () => {
+    const params = inventorySearchFor('  Brass widget  ');
+    expect(decodeInventoryView(parseInventorySearch({ ...params })).search).toBe('Brass widget');
+  });
+
+  it('builds a link the screen decodes as that location scope', () => {
+    const params = inventorySearchInLocation('loc-7');
+    expect(decodeInventoryView(parseInventorySearch({ ...params })).locationId).toBe('loc-7');
+  });
+
+  it('narrows on that axis alone, leaving every other at its default', () => {
+    expect(inventorySearchFor('drill')).toEqual({ q: 'drill' });
+    expect(inventorySearchInLocation('loc-7')).toEqual({ loc: 'loc-7' });
+    // An empty query is not a narrowing, so it writes nothing rather than `?q=`.
+    expect(inventorySearchFor('   ')).toEqual({});
   });
 });
 

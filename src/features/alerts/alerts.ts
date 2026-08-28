@@ -30,6 +30,7 @@ import {
   type AssetLifecycleItem,
 } from '@/features/inventory/asset-lifecycle';
 import { expiryStatus } from '@/features/lifecycle/expiry';
+import { inventorySearchFor, type InventorySearchParams } from '@/features/inventory/view-params';
 import { fieldDueStatus } from '@/features/lifecycle/field-due';
 import { addCalendarDays } from '@/lib/calendar-days';
 import { plural } from '@/lib/plural';
@@ -69,12 +70,12 @@ export interface AlertTarget {
  */
 export function alertTargetLink(target: AlertTarget): {
   readonly to: string;
-  readonly search?: Record<string, string>;
+  readonly search?: InventorySearchParams;
 } {
-  // `q` is the Inventory screen's quick-search param; no other route reads it, so the name is
-  // only spliced in for that destination.
+  // Only the Inventory screen reads a search of this shape, so the name is spliced in for that
+  // destination alone — and through the screen's own builder, never a literal here.
   return target.route === '/inventory' && target.itemName
-    ? { to: target.route, search: { q: target.itemName } }
+    ? { to: target.route, search: inventorySearchFor(target.itemName) }
     : { to: target.route };
 }
 

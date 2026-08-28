@@ -62,7 +62,7 @@ import { ScannerOverlay } from '@/features/scanner/components/ScannerOverlay';
 import type { ProductLookupResultPayload } from '@/features/scraping';
 import { ExportWizard } from '@/features/export/ExportWizard';
 import type { Item, ItemStatusFilter } from '@/db/repositories';
-import { SORT_DIRECTIONS, useLayoutStore } from '@/state/stores/useLayoutStore';
+import { SORT_DIRECTIONS, useLayoutStore, type InventorySort } from '@/state/stores/useLayoutStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFeature } from '@/features/modules/useFeature';
 import { usePermission } from '@/features/users/usePermission';
@@ -175,10 +175,11 @@ function InventoryWorkspace() {
   const setDefaultPageSize = usePreferencesStore((s) => s.setDefaultPageSize);
   // Every axis this screen filters on — the location scope, the quick search, the attention
   // chips, the category/tag facets, "Show removed" and the page — is the `/inventory` URL
-  // (issue #574). So a navigation away and back, a reload or a PWA update all land on the list
-  // the user left, Back undoes the last narrowing, and a filtered view can be bookmarked or sent
-  // to someone. The screen keeps no filter state of its own; `useInventoryView` decodes the URL
-  // and its setters navigate.
+  // (issue #574). So Back undoes the last narrowing, a reload or a PWA update lands on the list
+  // the user was reading, and a filtered view can be bookmarked or sent to someone. (A *fresh*
+  // navigation to `/inventory` — the nav bar, the hotkey — carries no search params and so still
+  // opens the plain list, which is what a link to a screen ought to mean.) The screen keeps no
+  // filter state of its own; `useInventoryView` decodes the URL and its setters navigate.
   const { view, setView } = useInventoryView();
   const page = view.page;
   const setPage = useCallback(
@@ -355,7 +356,7 @@ function InventoryWorkspace() {
   );
 
   // Consume a one-shot intent handed over from elsewhere (the dashboard hero's Add/Scan quick
-  // actions, the command palette, a hotkey): open the relevant dialog, then clear it. Driven off
+  // actions, the Getting-started panel, a hotkey): open the relevant dialog, then clear it. Driven off
   // the store so it fires whether this screen is mounting fresh from the navigation or is already
   // on screen. The *view* axes a caller used to hand over the same way — a search to seed, a
   // location to scope to — are URL search params now (issue #574), so those callers simply link
@@ -584,28 +585,18 @@ function InventoryWorkspace() {
   const listStatus = paginated ? pageItems : active;
   // Total pages for the control, from the filtered count (only fetched while paginating).
   const totalPages = pageCount(matchCount.data ?? 0, defaultPageSize);
-  // Snap back to page 1 whenever the query feeding the list changes, so a narrowing filter or a
-  // re-ordering can't strand the user on a page that no longer names the same rows. A filter axis
-  // resets the page in the very navigation that applies it (see `applyInventoryViewPatch`); this
-  // catches the inputs that are *preferences* rather than search params — the sort order, the page
-  // size, and the thresholds the status chips judge against. It compares against what it last saw
-  // rather than firing on mount, or a `?page=3` deep link would rewrite itself back to page 1 the
-  // moment it arrived. (`filters` is memoised, and holds the URL's two lists by identity, so
-  // turning a page does not itself count as a change here.)
-  const lastQuery = useRef({ filters, defaultPageSize });
+  // If the result set shrinks below the current page (e.g. items removed, or a narrower filter),
+  // clamp back into range. A correction rather than a navigation the user made, so it replaces:
+  // Back from here should leave the screen, not step onto a page that no longer exists.
+  //
+  // It waits for a count that is actually about the current filters. `useItemCount` holds the
+  // previous number while a new one loads (`keepPreviousData`), and that stale number is for a
+  // *different* result set — clamping against it would rewrite a page the user had just returned
+  // to with Back.
   useEffect(() => {
-    if (lastQuery.current.filters === filters && lastQuery.current.defaultPageSize === defaultPageSize) {
-      return;
-    }
-    lastQuery.current = { filters, defaultPageSize };
-    if (page !== 1) setPage(1, { replace: true });
-  }, [filters, defaultPageSize, page, setPage]);
-  // If the result set shrinks below the current page (e.g. items removed), clamp back into range.
-  // A correction, not a navigation the user made, so it replaces rather than pushes — Back from
-  // here should leave the screen, not step onto a page that no longer exists.
-  useEffect(() => {
-    if (paginated && totalPages > 0 && page > totalPages) setPage(totalPages, { replace: true });
-  }, [paginated, totalPages, page, setPage]);
+    if (!paginated || matchCount.isPlaceholderData) return;
+    if (totalPages > 0 && page > totalPages) setPage(totalPages, { replace: true });
+  }, [paginated, totalPages, page, setPage, matchCount.isPlaceholderData]);
   const flatLocations = flat.data?.rows ?? [];
   // The selected location's live row (with its item count), for the compact summary card.
   //
@@ -682,6 +673,26 @@ function InventoryWorkspace() {
     : isVizMode
       ? `view-${density}`
       : `view-${density}-${selectedLocationId ?? 'all'}`;
+
+  // Re-ordering or re-slicing the list means the page the user is on no longer names the same
+  // rows, so both controls start again at the top. Done at the control rather than in an effect
+  // watching the query: an effect cannot tell a preference change from a Back onto an entry that
+  // held different filters, and would rewrite the very page Back had just restored. Neither
+  // choice is a search param, so neither can arrive from the URL.
+  const changeSort = useCallback(
+    (next: InventorySort) => {
+      setInventorySort(next);
+      setPage(1, { replace: true });
+    },
+    [setInventorySort, setPage],
+  );
+  const changePageSize = useCallback(
+    (size: number) => {
+      setDefaultPageSize(size);
+      setPage(1, { replace: true });
+    },
+    [setDefaultPageSize, setPage],
+  );
 
   const selectedIds = useMemo(() => new Set(selected.keys()), [selected]);
   // Keep `onToggle`'s only external read (the location-name lookup) behind a ref so the
@@ -923,7 +934,7 @@ function InventoryWorkspace() {
                   <MenuAction
                     key={mode.value}
                     onSelect={() =>
-                      setInventorySort({ field: mode.value, direction: initialDirection(mode.value) })
+                      changeSort({ field: mode.value, direction: initialDirection(mode.value) })
                     }
                     selected={inventorySort.field === mode.value}
                     selectionRole="radio"
@@ -938,7 +949,7 @@ function InventoryWorkspace() {
                       <MenuAction
                         key={direction}
                         icon={direction === 'asc' ? <SortAscIcon /> : <SortDescIcon />}
-                        onSelect={() => setInventorySort({ field: inventorySort.field, direction })}
+                        onSelect={() => changeSort({ field: inventorySort.field, direction })}
                         selected={inventorySort.direction === direction}
                         selectionRole="radio"
                       >
@@ -1455,7 +1466,7 @@ function InventoryWorkspace() {
                       pageCount={totalPages}
                       onPageChange={setPage}
                       pageSize={defaultPageSize}
-                      onPageSizeChange={setDefaultPageSize}
+                      onPageSizeChange={changePageSize}
                       pageSizeOptions={PAGE_SIZE_PRESETS}
                       minPageSize={PAGE_SIZE_BOUNDS.min}
                       maxPageSize={PAGE_SIZE_BOUNDS.max}

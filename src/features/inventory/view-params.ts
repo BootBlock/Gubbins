@@ -3,10 +3,10 @@
  *
  * Every axis the list filters on — the selected location, the quick search, the attention chips,
  * the category/tag facets, "Show removed" and the current page — used to live in component
- * `useState`, so a navigation away and back, a reload or a PWA update put the user back at
- * "everything, page 1". Moving them into the URL makes the address bar the single source of truth:
- * the view survives a reload, Back undoes the last narrowing, and a filtered list can be
- * bookmarked or shared.
+ * `useState`, so a reload, a PWA update or a Back press put the user back at "everything, page 1"
+ * and no filtered list could be linked to. Moving them into the URL makes the address bar the
+ * single source of truth: the view survives a reload, Back undoes the last narrowing, and a
+ * filtered list can be bookmarked or shared.
  *
  * ## Why two shapes
  *
@@ -27,7 +27,7 @@ import { ITEM_STATUS_FILTERS, type ItemStatusFilter } from '@/db/repositories';
  * `status` and `tags` are comma-separated lists; `removed` is only ever present as `true` (its
  * absence is the default); `page` is absent on page 1.
  */
-export interface InventorySearchParams {
+export type InventorySearchParams = {
   readonly loc?: string;
   readonly q?: string;
   readonly status?: string;
@@ -35,7 +35,7 @@ export interface InventorySearchParams {
   readonly tags?: string;
   readonly removed?: true;
   readonly page?: number;
-}
+};
 
 /** The decoded view state the screen works in. */
 export interface InventoryView {
@@ -153,6 +153,23 @@ export function encodeInventoryView(view: InventoryView): InventorySearchParams 
     ...(view.includeInactive ? { removed: true as const } : {}),
     ...(view.page > 1 ? { page: Math.floor(view.page) } : {}),
   };
+}
+
+/**
+ * Search params that open the Inventory screen on one query's matches.
+ *
+ * Every screen that deep-links an item into the inventory — the command palette, the alert
+ * centre's "View in inventory", a reminder notification, a data-hygiene jump-to-fix row — goes
+ * through here rather than writing `{ q: name }` itself, so the param name has exactly one
+ * definition and renaming it cannot silently break a link.
+ */
+export function inventorySearchFor(query: string): InventorySearchParams {
+  return encodeInventoryView({ ...DEFAULT_INVENTORY_VIEW, search: query.trim() });
+}
+
+/** Search params that open the Inventory screen scoped to one location. Same rule as above. */
+export function inventorySearchInLocation(locationId: string): InventorySearchParams {
+  return encodeInventoryView({ ...DEFAULT_INVENTORY_VIEW, locationId });
 }
 
 /**

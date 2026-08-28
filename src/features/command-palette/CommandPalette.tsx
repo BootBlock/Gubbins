@@ -48,6 +48,7 @@ import {
   EditIcon,
 } from '@/components/icons';
 import { cn } from '@/lib/utils';
+import { inventorySearchFor } from '@/features/inventory/view-params';
 import { rankFuzzy } from '@/lib/fuzzy';
 import { PALETTE_DESTINATIONS, type PaletteDestination } from '@/components/nav/nav-destinations';
 import { useHotkeyHints } from '@/features/hotkeys/useHotkeyHints';
@@ -230,7 +231,7 @@ function PaletteBody({ onClose }: { readonly onClose: () => void }) {
   // default and the panel's primary); the raw query opens the whole match set (the "see all" row).
   const openInInventory = (search: string) => {
     onClose();
-    void navigate({ to: '/inventory', search: { q: search } });
+    void navigate({ to: '/inventory', search: inventorySearchFor(search) });
   };
 
   const select = (index: number) => {

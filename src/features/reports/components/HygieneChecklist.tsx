@@ -3,6 +3,7 @@ import { SuccessIcon, WarningIcon } from '@/components/icons';
 import type { Formatters } from '@/lib/format';
 import { requestHighlight } from '@/lib/highlight';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
+import { inventorySearchFor } from '@/features/inventory/view-params';
 import type { HygieneReport, HygieneSample, HygieneSection } from '../data-hygiene';
 
 /**
@@ -61,7 +62,7 @@ function HygieneRow({ section, formatters }: { section: HygieneSection; formatte
           <li key={sample.id} className="flex flex-wrap items-baseline gap-x-2 text-xs">
             <Link
               to="/inventory"
-              search={{ q: sample.name }}
+              search={inventorySearchFor(sample.name)}
               onClick={() => openInInventory(sample)}
               className="font-medium text-primary underline-offset-2 hover:underline"
             >

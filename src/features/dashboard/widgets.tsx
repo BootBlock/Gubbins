@@ -52,6 +52,7 @@ import { useCategories } from '@/features/inventory/categories';
 import { useInventoryValue } from '@/features/reports/queries';
 import { useActivityFeed } from '@/features/activity/queries';
 import { describeHistoryEntry } from '@/features/inventory/history-format';
+import { inventorySearchInLocation } from '@/features/inventory/view-params';
 import { IN_TRANSIT_LOCATION_ID } from '@/db/repositories/constants';
 import type { FeatureId } from '@/features/modules/feature-registry';
 import { nowMs } from '@/lib/clock';
@@ -773,7 +774,7 @@ export const DASHBOARD_WIDGETS: readonly WidgetDefinition[] = [
     to: '/inventory',
     // Land scoped to the system In-Transit location (spec §4 "liminal procurement") rather
     // than the plain, unfiltered list — that's where incoming stock actually sits.
-    search: { loc: IN_TRANSIT_LOCATION_ID },
+    search: inventorySearchInLocation(IN_TRANSIT_LOCATION_ID),
     feature: 'purchase-orders',
     permission: 'purchase-orders:read',
     Component: InTransitWidget,

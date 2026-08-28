@@ -2,8 +2,7 @@ import { create } from 'zustand';
 
 /**
  * A one-shot "intent" handed to the Inventory screen from elsewhere in the app (the dashboard
- * hero quick-actions, the Getting-started panel, the command palette, a global hotkey, a Reports
- * data-hygiene row).
+ * hero quick-actions, the Getting-started panel, a global hotkey, a Reports data-hygiene row).
  *
  * What remains here is deliberately narrow: the screen's *view* — which location it is scoped to,
  * what is in the quick-search box, which chips and facets are on, which page — is expressed in the
