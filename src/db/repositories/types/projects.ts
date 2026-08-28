@@ -55,10 +55,17 @@ export interface ProjectWithCount extends Project {
  * case-insensitive substring of the project's **name** — what the list actually prints, so a
  * match is always visible as the reason the row is there — and `status` narrows to one stage of
  * the build lifecycle (the everyday "hide the finished ones").
+ *
+ * `statuses` is the same narrowing over a *set* of stages, for the questions a single stage
+ * cannot ask — "how many projects are still live?" is every status bar the terminal ones
+ * (`ACTIVE_PROJECT_STATUSES`), which the Dashboard's Projects tile counts (issue #573). Both may
+ * be given, in which case a project must satisfy both. An **empty** `statuses` array matches
+ * nothing, which is what "none of these stages" means.
  */
 export interface ProjectFilter {
   readonly search?: string;
   readonly status?: ProjectStatus;
+  readonly statuses?: readonly ProjectStatus[];
 }
 
 /**

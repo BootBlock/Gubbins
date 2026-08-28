@@ -38,6 +38,12 @@ uses **Modular UI** intent.
   week / all). The picker is a "Nav tile counts" section in **Settings → Dashboard**, one row per
   tile, feature-gated (a hidden tile shows no picker). Inventory (item total) and Contacts (all)
   stay single-metric — no picker.
+  - **Superseded by issue #573:** the zero-fetch selectors above counted one page of `MAX_PAGE_SIZE`
+    rows, so a badge was really "how many of the first hundred match" — and a filtered tile could
+    read 0 because the page boundary, not the collection, was empty. Every metric is now a
+    `COUNT(*)` with its predicate resolved by the database, so `countProjects`,
+    `countPurchaseOrders` and `countBookings` no longer exist. The metric config, the picker and
+    the tone mechanism below are unchanged.
   - **Deferred to land with A2:** the "problem" metrics — Projects → *over-budget*, Inventory →
     *low-stock / out-of-stock*, POs → *overdue*. Each needs data **not** on the nav-count path
     (over-budget needs the budget-alerts spend feed; low/out-of-stock need an accurate count

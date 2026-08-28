@@ -40,6 +40,7 @@ import type {
   AssetBookingRow,
   AssetBookingWithNames,
   BookableAsset,
+  BookingCountFilter,
   Checkout,
   ConvertBookingInput,
   CreateBookingInput,
@@ -71,6 +72,19 @@ const BOOKING_CONVERSION_NAMESPACE = '9b7c1f0a-1950-4e00-8b00-000000000542';
 export function bookingConversionId(kind: string, bookingId: string): Promise<string> {
   return uuidv5(`${kind}:${bookingId}`, BOOKING_CONVERSION_NAMESPACE);
 }
+
+/**
+ * A **live** booking — neither cancelled nor already converted to a loan — over an enclosing
+ * `asset_bookings b`. The OPEN/CANCELLED/CONVERTED state is derived from two nullable columns
+ * rather than stored, so "still a booking" is a two-column test, written here once and used by
+ * every read that cares: {@link AssetBookingRepository.list} and
+ * {@link AssetBookingRepository.listForItem} sort live bookings first by it,
+ * {@link AssetBookingRepository.listUpcoming} and the overlap check filter by it, and so does any
+ * {@link AssetBookingRepository.count} that excludes terminal bookings.
+ * Exported so `query-row-shape.test.ts` can resolve the span and prepare the statements that embed
+ * it — nothing outside this module should use it.
+ */
+export const LIVE_BOOKING = `b.cancelled_at IS NULL AND b.converted_checkout_id IS NULL`;
 
 interface BookingJoinRow extends AssetBookingRow {
   readonly item_name: string;
@@ -300,7 +314,7 @@ export class AssetBookingRepository extends BaseRepository {
       'WHERE b.item_id = ?',
       [itemId],
       params,
-      '(b.cancelled_at IS NULL AND b.converted_checkout_id IS NULL) DESC, b.start_date ASC',
+      `(${LIVE_BOOKING}) DESC, b.start_date ASC`,
     );
   }
 
@@ -314,12 +328,7 @@ export class AssetBookingRepository extends BaseRepository {
    * the tiebreak costs nothing and makes paging correct.
    */
   async list(params: PageParams = {}): Promise<Page<AssetBookingWithNames>> {
-    return this.listJoined(
-      '',
-      [],
-      params,
-      '(b.cancelled_at IS NULL AND b.converted_checkout_id IS NULL) DESC, b.start_date ASC, b.id ASC',
-    );
+    return this.listJoined('', [], params, `(${LIVE_BOOKING}) DESC, b.start_date ASC, b.id ASC`);
   }
 
   /**
@@ -331,12 +340,50 @@ export class AssetBookingRepository extends BaseRepository {
     // Keep a booking until the end of its last booked day. Bookings store midnight UTC (issue #320),
     // so the "start of today" cut-off is taken in UTC too, keeping it in one frame with `end_date`.
     const cutoff = startOfUtcDay(now);
-    return this.listJoined(
-      'WHERE b.cancelled_at IS NULL AND b.converted_checkout_id IS NULL AND b.end_date >= ?',
-      [cutoff],
-      params,
-      'b.start_date ASC',
+    return this.listJoined(`WHERE ${LIVE_BOOKING} AND b.end_date >= ?`, [cutoff], params, 'b.start_date ASC');
+  }
+
+  /**
+   * How many bookings match `filter` (issue #573) — the Dashboard's Bookings tile.
+   *
+   * A count rather than `rows.length` over a page because the tile's figure is read as a fact
+   * about the whole calendar: counting a capped page of a list ordered live-first-then-soonest
+   * meant a long booking history could push every upcoming booking past the page boundary, and
+   * the badge then said there was nothing coming up at all.
+   *
+   * The scopes share this method — and {@link LIVE_BOOKING} — with the lists above, so what the
+   * badge counts and what the screen shows cannot part company:
+   *
+   * - `{}` — every booking, terminal ones included (what {@link list} pages through).
+   * - `{ liveOnly: true, endsOnOrAfter }` — still upcoming, as {@link listUpcoming} defines it:
+   *   live, and not yet past its last booked day.
+   * - `{ liveOnly: true, startsFrom, startsBefore }` — live bookings *starting* in a window.
+   *
+   * Every bound is a midnight-UTC day-start UNIX-ms, matching how the columns are stored
+   * (issue #320); `startsBefore` is exclusive so a 7-day window cannot double-count its edge.
+   */
+  async count(filter: BookingCountFilter = {}): Promise<number> {
+    // One whole statement whose optional bounds are neutralised by their own bound parameters —
+    // the shape `activeRanges` already uses — rather than a WHERE assembled from clauses. It
+    // keeps the SQL a constant, so `query-row-shape.test.ts` can prepare it against the schema.
+    const row = await this.driver.queryOne<{ n: number }>(
+      `SELECT COUNT(*) AS n
+         FROM asset_bookings b
+        WHERE (? = 0 OR (${LIVE_BOOKING}))
+          AND (? IS NULL OR b.end_date >= ?)
+          AND (? IS NULL OR b.start_date >= ?)
+          AND (? IS NULL OR b.start_date < ?);`,
+      [
+        filter.liveOnly ? 1 : 0,
+        filter.endsOnOrAfter ?? null,
+        filter.endsOnOrAfter ?? null,
+        filter.startsFrom ?? null,
+        filter.startsFrom ?? null,
+        filter.startsBefore ?? null,
+        filter.startsBefore ?? null,
+      ],
     );
+    return Number(row?.n ?? 0);
   }
 
   /**
@@ -366,9 +413,9 @@ export class AssetBookingRepository extends BaseRepository {
    */
   private async activeRanges(itemId: string, excludeId?: string): Promise<OverlapCandidate[]> {
     const rows = await this.driver.query<{ id: string; start_date: number; end_date: number }>(
-      `SELECT id, start_date, end_date FROM asset_bookings
-       WHERE item_id = ? AND cancelled_at IS NULL AND converted_checkout_id IS NULL
-         AND (? IS NULL OR id <> ?);`,
+      `SELECT b.id, b.start_date, b.end_date FROM asset_bookings b
+       WHERE b.item_id = ? AND ${LIVE_BOOKING}
+         AND (? IS NULL OR b.id <> ?);`,
       [itemId, excludeId ?? null, excludeId ?? null],
     );
     return rows.map((r) => ({ id: r.id, start: Number(r.start_date), end: Number(r.end_date) }));

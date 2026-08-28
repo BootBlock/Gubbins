@@ -54,6 +54,7 @@ import type {
   CreatePurchaseOrderInput,
   CreatePurchaseOrderLineInput,
   PurchaseOrder,
+  PurchaseOrderCountFilter,
   PurchaseOrderLine,
   PurchaseOrderLineRow,
   PurchaseOrderRow,
@@ -99,6 +100,39 @@ export function onOrderQtyForItemSql(itemIdExpr: string): string {
             WHERE l.item_id = ${itemIdExpr}
               AND ${ON_ORDER_LINE_PREDICATE})`;
 }
+
+/**
+ * The `WHERE` predicate for a purchase order that is still **open** — effective status neither
+ * RECEIVED nor CANCELLED — over an enclosing `purchase_orders po` (issue #573).
+ *
+ * This is {@link derivePoStatus} expressed in SQL, and therefore the one derivation in the
+ * codebase that exists twice: a status the database can filter on is not stored, and counting
+ * open orders in JavaScript means first reading every order, which is the capped-page bug the
+ * predicate exists to fix. The two are held together by
+ * `PurchaseOrderRepository.open-count-parity.test.ts`, which drives both over the same orders.
+ * It is exported so `query-row-shape.test.ts` can resolve the span and prepare the statement that
+ * embeds it — nothing outside this module should use it.
+ *
+ * Read it the way `derivePoStatus` reads: CANCELLED is authoritative and never open; DRAFT is
+ * authoritative and always open; otherwise the order is RECEIVED (so not open) exactly when
+ * something has been received and the receipts cover everything ordered. The `MAX`/`MIN` clamps
+ * mirror the guards in `derivePoStatus` so a malformed snapshot is read the same way by both.
+ */
+export const OPEN_PURCHASE_ORDER_WHERE = `po.status <> 'CANCELLED'
+       AND (
+         po.status = 'DRAFT'
+         OR NOT EXISTS (
+           -- The projected column is an aggregate so this reads as an aggregate query with a
+           -- single implicit group; HAVING then keeps that one row only for a received order,
+           -- and EXISTS is false for every other. (A plain 'SELECT 1' here is rejected by
+           -- SQLite as a HAVING clause on a non-aggregate query.)
+           SELECT SUM(MIN(MAX(l.received_qty, 0), MAX(l.ordered_qty, 0)))
+             FROM purchase_order_lines l
+            WHERE l.po_id = po.id
+           HAVING SUM(MIN(MAX(l.received_qty, 0), MAX(l.ordered_qty, 0))) > 0
+              AND SUM(MIN(MAX(l.received_qty, 0), MAX(l.ordered_qty, 0))) >= SUM(MAX(l.ordered_qty, 0))
+         )
+       )`;
 
 /** Trim a string field; an all-whitespace value becomes null (a genuinely absent field). */
 function cleanText(value: string | null | undefined): string | null {
@@ -164,12 +198,25 @@ export class PurchaseOrderRepository extends BaseRepository {
   }
 
   /**
-   * How many purchase orders exist in total — the denominator behind the Orders tab's
-   * pagination (issue #149). Orders accumulate for as long as the inventory is used, so the
-   * master list pages server-side rather than showing a capped read as if it were the lot.
+   * How many purchase orders exist — the denominator behind the Orders tab's pagination
+   * (issue #149), and the Dashboard tile's figure (issue #573). Orders accumulate for as long as
+   * the inventory is used, so both page or count server-side rather than showing a capped read as
+   * if it were the lot.
+   *
+   * `{ open: true }` narrows to the orders still outstanding. That is the *effective* status,
+   * which is derived from the lines' receipt totals rather than stored, so the predicate is
+   * {@link OPEN_PURCHASE_ORDER_WHERE} restating `derivePoStatus` in SQL — the one place in the
+   * codebase where the derivation exists twice. `PurchaseOrderRepository.open-count-parity.test.ts`
+   * drives both sides over the same orders and fails when they disagree.
    */
-  async count(): Promise<number> {
-    const row = await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM purchase_orders;');
+  async count(filter: PurchaseOrderCountFilter = {}): Promise<number> {
+    // Two whole statements rather than one with an interpolated WHERE: every span here is a
+    // module constant, so `query-row-shape.test.ts` can prepare both against the real schema.
+    const row = filter.open
+      ? await this.driver.queryOne<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM purchase_orders po WHERE ${OPEN_PURCHASE_ORDER_WHERE};`,
+        )
+      : await this.driver.queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM purchase_orders;');
     return Number(row?.n ?? 0);
   }
 

@@ -17,45 +17,52 @@
  * The Inventory / Projects / Purchase-orders / Bookings tiles are **configurable** (backlog
  * A1): the user can re-point them at a different metric from Settings → Dashboard. The choice
  * is a Tier-2 preference (`navCountMetrics`); the available metrics, their labels, spoken nouns
- * and attention tone are the `NAV_COUNT_METRIC_CONFIG` SSOT. Most metrics are a **pure selector**
- * over the same rows the tile's read hook already loads — so switching costs no extra fetch.
+ * and attention tone are the `NAV_COUNT_METRIC_CONFIG` SSOT.
+ *
+ * **Every metric is a true count, resolved by the database** (issue #573). It used to be a
+ * selector over the rows the tile's own read hook had already loaded — but those hooks read a
+ * single page of `MAX_PAGE_SIZE`, so the badge was really "how many of the first hundred rows
+ * match". Contacts stuck at 100 for good; worse, the filtered tiles could read `0` because the
+ * page boundary, not the collection, was empty — a hundred open purchase orders sitting behind a
+ * hundred newer received ones, or every upcoming booking pushed off the page by a long history.
+ * A badge on the hub is read as a fact about the whole collection, so each is now asked as a
+ * `COUNT(*)` with its predicate pushed into SQL, exactly as Inventory's already were.
  *
  * A subset are **"problem" metrics** (backlog A2) that count something needing attention, so the
  * pill takes a warning/danger tone instead of the group hue (`tone` on the resolved
- * {@link NavCount}; {@link DashboardNav} maps it to a token). These read a small dedicated count
- * query — Projects → *over-budget* via `useBudgetAlerts`, Inventory → *low-stock* via
- * `useLowStockCount` (a true count, not the 100-capped list) / *out-of-stock* via
- * `useOutOfStockCount` — each **gated so it only fetches when that metric is the tile's current
- * choice**. (Purchase-order "overdue" is deliberately absent: a PO has no expected-delivery
- * column, so it is not derivable.) Contacts stays single-metric, so it has no picker.
+ * {@link NavCount}; {@link DashboardNav} maps it to a token) — Projects → *over-budget* via
+ * `useBudgetAlerts`, Inventory → *low-stock* / *out-of-stock*. (Purchase-order "overdue" is
+ * deliberately absent: a PO has no expected-delivery column, so it is not derivable.) Contacts
+ * stays single-metric, so it has no picker.
+ *
+ * Where a tile's metric chooses between two count queries, the unselected one is **gated so it
+ * never fetches**: a tile costs one small query, not one per metric it could have shown.
  *
  * Feeds (Upcoming / Activity) and the settings-y System tiles carry no count; Alerts keeps
  * its own dedicated attention badge in {@link DashboardNav}. A destination is omitted from
  * the returned map until its query has data, so a card never flashes a stale/`0` while its
  * count is still loading — and a genuine `0` is dropped by the caller (nothing to show).
  *
- * The reads reuse the existing per-domain hooks (same query keys → shared cache, no extra
- * fetch when a widget already loaded them), and the "what counts as active/open/…" filters
- * live here so {@link DashboardNav} stays pure presentation.
+ * The reads reuse the existing per-domain count hooks (same query keys → shared cache, and the
+ * domains' own writes already invalidate them), so {@link DashboardNav} stays pure presentation.
  */
-import { useBookings } from '@/features/bookings/bookings';
-import { useContacts } from '@/features/contacts/contacts';
+import { useBookingCount, type BookingCountScope } from '@/features/bookings/bookings';
+import { useContactCount } from '@/features/contacts/contacts';
 import { useItemCount } from '@/features/inventory/queries';
 import { projectBudgetHealth, type BudgetAlertFigures } from '@/features/projects/budget';
-import { useBudgetAlerts, useProjects } from '@/features/projects/projects';
-import { usePurchaseOrders } from '@/features/purchasing/queries';
+import { useBudgetAlerts, useProjectCount } from '@/features/projects/projects';
+import { usePurchaseOrderCount } from '@/features/purchasing/queries';
 import { useLowStockCount, useOutOfStockCount } from '@/features/reports/queries';
 import {
   navCountOption,
   normaliseNavCountMetric,
+  NAV_COUNT_METRIC_CONFIG,
   type NavCountRoute,
   type NavCountTone,
 } from '@/features/settings/settings';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import type { AppRoutePath } from '@/components/nav/nav-destinations';
-import { nowMs } from '@/lib/clock';
-import { MS_PER_DAY } from '@/db/repositories/constants';
-import { startOfUtcDay } from '@/lib/calendar-days';
+import { ACTIVE_PROJECT_STATUSES, type ProjectFilter } from '@/db/repositories';
 
 /** One counted tile's badge: the figure, the spoken nouns and the attention tone. */
 export interface NavCount {
@@ -73,33 +80,6 @@ export interface NavCount {
 }
 
 /**
- * The instant at the start of today — the cut-off for a booking still being upcoming. Taken in UTC
- * because bookings store midnight UTC (issue #320), so the comparison against `startDate`/`endDate`
- * stays in one time frame.
- */
-function startOfToday(): number {
-  return startOfUtcDay(nowMs());
-}
-
-// --- pure count selectors: (rows, metric) → count -----------------------------
-// Each operates only on rows the tile's existing read hook already loaded (bounded sets
-// fetched whole at `limit: 100`), so the badge matches exactly what the destination shows.
-
-type ProjectRow = { readonly status: string };
-type PurchaseOrderRow = { readonly effectiveStatus: string };
-type BookingRow = {
-  readonly startDate: number;
-  readonly endDate: number;
-  readonly cancelledAt: number | null;
-  readonly convertedCheckoutId: string | null;
-};
-/** Projects: all projects, or only the *active* ones (default — not finished or shelved). */
-export function countProjects(rows: readonly ProjectRow[], metric: string): number {
-  if (metric === 'all') return rows.length;
-  return rows.filter((p) => p.status !== 'COMPLETED' && p.status !== 'ARCHIVED').length;
-}
-
-/**
  * Projects over budget (backlog A2): count of budgeted projects whose spend so far or projected
  * final cost has passed the budget. Shares {@link projectBudgetHealth} with the Dashboard
  * "Budget alerts" widget, so the count and the widget can never drift; `listBudgetAlerts` already
@@ -111,48 +91,28 @@ export function countOverBudgetProjects(rows: readonly BudgetAlertFigures[], war
   return rows.filter((a) => projectBudgetHealth(a, warnPercent).over).length;
 }
 
-/** Purchase orders: all orders, or only the *open* ones (default — not RECEIVED / CANCELLED). */
-export function countPurchaseOrders(rows: readonly PurchaseOrderRow[], metric: string): number {
-  if (metric === 'all') return rows.length;
-  return rows.filter((po) => po.effectiveStatus !== 'RECEIVED' && po.effectiveStatus !== 'CANCELLED').length;
-}
-
-/**
- * Bookings: every booking, only those *starting this week* (the next 7 days), or the
- * *upcoming* ones (default). A live booking is one neither cancelled nor converted to a loan;
- * dates are midnight-UTC day-start UNIX-ms, so "upcoming" compares the last day against the start of
- * today (an all-day booking is still upcoming on its final day) and "this week" is a rolling 7-day
- * window from the start of today.
- */
-export function countBookings(rows: readonly BookingRow[], metric: string): number {
-  if (metric === 'all') return rows.length;
-  const live = rows.filter((b) => !b.cancelledAt && !b.convertedCheckoutId);
-  if (metric === 'thisWeek') {
-    const start = startOfToday();
-    // Seven UTC days from the start of today. A UTC day is exactly MS_PER_DAY (no DST), so the window
-    // edge stays on a UTC midnight aligned with the stored booking dates (issue #320).
-    const end = start + 7 * MS_PER_DAY;
-    return live.filter((b) => b.startDate >= start && b.startDate < end).length;
-  }
-  const cutoff = startOfToday();
-  return live.filter((b) => b.endDate >= cutoff).length;
-}
-
 /** Build a tile's {@link NavCount} from its resolved metric and computed count (carries the tone). */
 function navCountFor(route: NavCountRoute, metric: string, count: number): NavCount {
   const opt = navCountOption(route, metric);
   return { count, noun: opt.noun, nounPlural: opt.nounPlural, tone: opt.tone ?? 'neutral' };
 }
 
-/** Resolve a configurable tile's current metric and build its {@link NavCount} from a row selector. */
-function configurable(
-  route: NavCountRoute,
-  metrics: Record<NavCountRoute, string>,
-  count: (metric: string) => number,
-): NavCount {
-  const metric = normaliseNavCountMetric(route, metrics[route] ?? '');
-  return navCountFor(route, metric, count(metric));
-}
+/** The Bookings tile's metric ids, taken from the config rather than restated. */
+type BookingsMetric = (typeof NAV_COUNT_METRIC_CONFIG)['/bookings']['options'][number]['value'];
+
+/**
+ * The booking-count scope each Bookings metric asks for — the one place the tile's vocabulary
+ * ("thisWeek") meets the booking domain's ("startingThisWeek").
+ *
+ * The `satisfies` is what makes it total: adding a metric to `NAV_COUNT_METRIC_CONFIG` without
+ * saying what it counts fails to compile here, rather than leaving a tile quietly showing the
+ * upcoming count under a new label.
+ */
+const BOOKING_SCOPE_BY_METRIC: Record<string, BookingCountScope> = {
+  all: 'all',
+  upcoming: 'upcoming',
+  thisWeek: 'startingThisWeek',
+} satisfies Record<BookingsMetric, BookingCountScope>;
 
 /**
  * The badge per counted destination, keyed by route. A key is present only once its source
@@ -163,19 +123,31 @@ export function useNavCounts(): Partial<Record<AppRoutePath, NavCount>> {
   const metrics = usePreferencesStore((s) => s.navCountMetrics);
   const budgetWarnPercent = usePreferencesStore((s) => s.budgetWarnPercent);
 
-  // Resolve the configurable tiles whose metric may need a *dedicated* count query up front,
-  // so those queries can be gated on the choice — an unselected problem metric must not fetch.
+  // Resolve every configurable tile's metric up front: each chooses *which* count query runs, and
+  // the ones it did not choose are gated off so a tile costs one query rather than one per metric.
   const inventoryMetric = normaliseNavCountMetric('/inventory', metrics['/inventory'] ?? '');
   const projectsMetric = normaliseNavCountMetric('/projects', metrics['/projects'] ?? '');
+  const purchaseOrdersMetric = normaliseNavCountMetric('/purchase-orders', metrics['/purchase-orders'] ?? '');
+  const bookingsMetric = normaliseNavCountMetric('/bookings', metrics['/bookings'] ?? '');
 
-  const itemCount = useItemCount();
+  const itemCount = useItemCount({}, inventoryMetric === 'total');
   const lowStock = useLowStockCount({ enabled: inventoryMetric === 'lowStock' });
   const outOfStock = useOutOfStockCount({ enabled: inventoryMetric === 'outOfStock' });
-  const projects = useProjects();
+
+  // "Active" is every status bar the terminal ones, asked of the database rather than applied to a
+  // page of rows — see ACTIVE_PROJECT_STATUSES, which derives the set from PROJECT_STATUSES.
+  const projectFilter: ProjectFilter = projectsMetric === 'all' ? {} : { statuses: ACTIVE_PROJECT_STATUSES };
+  const projectCount = useProjectCount(projectFilter, {
+    enabled: projectsMetric !== 'overBudget',
+    // Switching the tile's metric changes the filter, so a held-over figure would be the other
+    // metric's number under this one's label. The tile shows no pill until the new count lands.
+    keepPrevious: false,
+  });
   const budgetAlerts = useBudgetAlerts({ enabled: projectsMetric === 'overBudget' });
-  const purchaseOrders = usePurchaseOrders();
-  const contacts = useContacts();
-  const bookings = useBookings();
+
+  const purchaseOrderCount = usePurchaseOrderCount(purchaseOrdersMetric === 'all' ? {} : { open: true });
+  const contactCount = useContactCount();
+  const bookingCount = useBookingCount(BOOKING_SCOPE_BY_METRIC[bookingsMetric] ?? 'upcoming');
 
   const counts: Partial<Record<AppRoutePath, NavCount>> = {};
 
@@ -193,7 +165,8 @@ export function useNavCounts(): Partial<Record<AppRoutePath, NavCount>> {
     counts['/inventory'] = navCountFor('/inventory', inventoryMetric, itemCount.data);
   }
 
-  // Projects — a row selector (active / all), or the over-budget count from the budget feed.
+  // Projects — the filtered project count (active / all), or the over-budget count from the
+  // budget feed, which is already every budgeted project rather than a page of them.
   if (projectsMetric === 'overBudget') {
     if (budgetAlerts.data) {
       counts['/projects'] = navCountFor(
@@ -202,31 +175,29 @@ export function useNavCounts(): Partial<Record<AppRoutePath, NavCount>> {
         countOverBudgetProjects(budgetAlerts.data, budgetWarnPercent),
       );
     }
-  } else if (projects.data) {
-    counts['/projects'] = navCountFor(
-      '/projects',
-      projectsMetric,
-      countProjects(projects.data.rows, projectsMetric),
+  } else if (typeof projectCount.data === 'number') {
+    counts['/projects'] = navCountFor('/projects', projectsMetric, projectCount.data);
+  }
+
+  if (typeof purchaseOrderCount.data === 'number') {
+    counts['/purchase-orders'] = navCountFor(
+      '/purchase-orders',
+      purchaseOrdersMetric,
+      purchaseOrderCount.data,
     );
   }
 
-  if (purchaseOrders.data) {
-    counts['/purchase-orders'] = configurable('/purchase-orders', metrics, (m) =>
-      countPurchaseOrders(purchaseOrders.data.rows, m),
-    );
-  }
-
-  if (contacts.data) {
+  if (typeof contactCount.data === 'number') {
     counts['/contacts'] = {
-      count: contacts.data.rows.length,
+      count: contactCount.data,
       noun: 'contact',
       nounPlural: 'contacts',
       tone: 'neutral',
     };
   }
 
-  if (bookings.data) {
-    counts['/bookings'] = configurable('/bookings', metrics, (m) => countBookings(bookings.data.rows, m));
+  if (typeof bookingCount.data === 'number') {
+    counts['/bookings'] = navCountFor('/bookings', bookingsMetric, bookingCount.data);
   }
 
   return counts;
