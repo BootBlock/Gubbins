@@ -79,9 +79,16 @@ table, board, timeline, calendar, list, gallery and chart
 grid/table, list, gallery, calendar, timeline and kanban/board — and that is about as close to a
 consensus vocabulary as this space has.
 
-Gubbins holds two of those six on the View axis: Table, and Data as a denser list. Calendar exists,
-but as a [separate screen](../../src/features/calendar/CalendarScreen.tsx) rather than a way of
-looking at the inventory. Gallery, timeline and board are absent entirely.
+Gubbins holds three of those six on the View axis, two of them loosely. Table is exact. Card is a
+responsive multi-column grid of photo-led cards
+([`GroupedItemList.tsx:396`](../../src/features/inventory/components/GroupedItemList.tsx#L396) lays
+it out as `repeat(auto-fill, minmax(VISUAL_CARD_MIN_WIDTH, 1fr))`, and that constant is 280px),
+which is structurally a **gallery** rather than a distinct type.
+Data stands in for **list**, though at 60px a row it is a dense row rather than the minimal single
+line the comparators mean. Calendar exists, but as a
+[separate screen](../../src/features/calendar/CalendarScreen.tsx) rather than a way of looking at
+the inventory. Only **timeline** and **board** are absent outright, and `map` and `treemap` match
+nothing on the list — they are Gubbins' own additions to the vocabulary.
 
 **Collector and home-inventory tools** are built around a different idea: the collection should
 *look like* the collection. CLZ sells cover art as the point of the app, and its release notes
@@ -89,9 +96,10 @@ record adding cover thumbnails to the plain list view ([CLZ](https://clz.com/)).
 whole identity was a wooden shelf with the spines out, and that is still what it is remembered for
 two decades on ([The Big Bookcase](https://www.bigbookcase.com/articles/delicious-library)).
 
-The gap between the two families is the finding: Gubbins' existing five modes are all
-**workspace-family** views. Nothing in it is built to make a collection look good, and that is the
-half a collector judges an app on.
+The gap between the two families is the finding: Gubbins' five modes all sit in the
+**workspace-family** vocabulary, and none of them is built to make a collection *look* like one.
+Whether that matters depends on an audience assumption this document cannot test — that some of
+Gubbins' users are collectors rather than stock-keepers. Note it as an assumption, not a fact.
 
 **What users actually ask for — a small negative result.** The two paragraphs above are product
 documents, so they show what each vendor *built*, not what anyone *requested*. The nearest thing to
@@ -103,14 +111,14 @@ view type at all**. What it does return is
 and a cluster about sort order not surviving a refresh and about thumbnails.
 
 Two things follow. First, nobody is asking for view styles *by name*, so §4's ordering rests on
-inference rather than on demand — say so, and do not dress it up. Second, and more useful: the
-requests that *do* exist are for **configurability within a mode**, and Gubbins has already built
-that. The card-field picker (backlog E1, [`card-fields.ts`](../../src/features/inventory/card-fields.ts))
-chooses and orders the attributes a card shows, and the Table view's middle columns are that same
-picker's output ([`ItemTable.tsx:32-34`](../../src/features/inventory/components/ItemTable.tsx#L32-L34)).
-So the one thing the comparator's users demonstrably want is a thing Gubbins already does — which
-is a reason to trust that the remaining gap really is a missing *style*, and not a reason to spend
-on configurability first.
+inference rather than on demand. Say so, and do not dress it up. Second, of the three themes the
+search did surface, the one about presentation — choosing which columns a table shows — is already
+built here. The card-field picker (backlog E1,
+[`card-fields.ts`](../../src/features/inventory/card-fields.ts)) chooses and orders the attributes a
+card shows, and the Table view's middle columns are that same picker's output
+([`ItemTable.tsx:32-34`](../../src/features/inventory/components/ItemTable.tsx#L32-L34)). The other
+two themes — sort order surviving a refresh, and thumbnails — are not view-style questions and are
+out of scope here.
 
 A keyword search of one tracker is thin evidence. Treat it as a prompt to look harder, not as a
 settled answer.
@@ -127,16 +135,28 @@ question answered before they can be scheduled, and §8 says which.
 A photo-first grid with the metadata reduced to a caption: image, name, and one configurable line.
 Bigger images than Card, several to a row, no chrome between them.
 
-*Why.* Gallery is one of the six types both workspace tools name, and Gubbins has no equivalent.
-Card is a card with a photo *in* it, which is not the same thing as a wall of photos. It is also the
-cheapest way to close the §3 gap, because a photo-led grid is what the collector family is built
-around.
+*Why.* This is the collector family's whole idea, at the size the photo is the point rather than a
+thumbnail on a card.
+
+*But note the overlap, because it decides the shape of the work.* Card is **already** a gallery
+structurally — a responsive multi-column grid of photo-led cards (§3). What separates Gallery from
+Card is not the layout but the **tile**: larger image, less metadata, no card chrome. So there is a
+fork here, and it should be settled before any code:
+
+- **As a sixth mode.** Honest if the tile differs enough to be a different way of reading the list.
+  Costs a renderer, a `LIST_ROW_HEIGHT` entry, an icon and two catalog keys.
+- **As Card options** — image size, and whether the card's field list is shown. Cheaper, and it is
+  the same shape as the one presentation request §3's tracker sample actually found. Gubbins already
+  owns the picker that would carry it
+  ([`card-fields.ts`](../../src/features/inventory/card-fields.ts)).
+
+The second is the better first move. It reaches the same visual result, and if it proves popular the
+mode can follow with the tile design already settled.
 
 *Data.* `item_images.thumbnail_blob`, already loaded for Card. Nothing new.
 
-*Cost.* A renderer, a row-height entry, an icon, two catalog keys. It needs one decision the other
-views do not: what an item with **no** photo looks like, because a gallery of placeholders is worse
-than a list. The category glyph watermark
+*Cost.* Small either way. One decision is unavoidable in both: what an item with **no** photo looks
+like, because a wall of placeholders is worse than a list. The category glyph watermark
 ([`CategoryGlyphWatermark.tsx`](../../src/features/inventory/components/CategoryGlyphWatermark.tsx))
 is the obvious fallback.
 
@@ -145,9 +165,11 @@ is the obvious fallback.
 One line per item, no photo, no card: the name and the key field. Denser than Data.
 
 *Why.* It is the other half of the same axis, and the cheap one. Data is dense *for a row with a
-thumbnail*; a user scanning 4,000 fasteners wants neither the thumbnail nor the row height it
-forces. Both workspace tools name a "list" type separate from their table, and Notion
-describes its own as a minimal layout.
+thumbnail* — 60px a row
+([`list-window.ts:25`](../../src/features/inventory/list-window.ts#L25)) — which is still three or
+four times a text line. Whether anyone wants the tighter option is untested here; the argument is
+only that both comparators name a "list" type separate from their table, Notion describes its own
+as a minimal layout, and Gubbins has no equivalent of it.
 
 *Data.* None beyond what a row already reads.
 
@@ -167,18 +189,18 @@ nobody has asked for this, so it is a bet on the collector half rather than a re
 
 *Data.* `location_id` plus the first image. Optionally `quantity`, for the width of a stack.
 
-*Cost.* Higher than V1 and V2, and the honest risk on this list. It is per-item, but it is grouped
-by construction, so it either forces `grouping=location` or has to define what it means without one.
-Prototype it before committing to it.
+*Cost.* Higher than V1 and V2, and the honest risk on this list — it is per-item, but grouped by
+construction, which is the open question §8 sets out.
 
 ### V4 — Board
 
 Columns of cards, grouped by a chosen axis — category, tag, location or status — with a count per
 column.
 
-*Why.* It is on both workspace lists, and it answers a real inventory question the current views
-answer badly: *what is the shape of the pile?* Sixty items across four categories is legible as four
-columns and illegible as a list.
+*Why.* It is on both comparators' lists, and it makes one question legible that the current views
+answer badly: *what is the shape of the pile?* Sixty items across four categories read as four
+columns; as a list they read as sixty rows. That is a claim about the drawing, not about anyone
+having asked for it.
 
 *Data.* Category, tag, location and status all exist, and all four are already faceted.
 
@@ -193,9 +215,10 @@ and is not is worse than one that plainly is not, so the first version must not 
   [Calendar screen](../../src/features/calendar/CalendarScreen.tsx) already answers "what is coming
   up" from the agenda seam. Revisit only if a *per-item* time question turns up that Calendar
   answers badly.
-- **V6 — Comparison.** Two to four items side by side, field against field. Wanted whenever a
-  collection holds near-duplicates. It is arguably a selection action rather than a view mode, which
-  is why it is held rather than shortlisted.
+- **V6 — Comparison.** Two to four items side by side, field against field. The case for it is that
+  a collection with near-duplicates makes the difference between two rows hard to see, not that
+  anyone has asked. It is also arguably a selection action rather than a view mode, which is the
+  reason it is held rather than shortlisted.
 - **V7 — Fill wall.** Every gauge item as a bar, sorted by how empty it is. Narrow, because it
   serves one tracking mode, but it serves that mode better than anything currently does.
 - **V8 — Label sheet.** The inventory laid out as it would print. The
@@ -237,11 +260,18 @@ Adding a mode is not only the drawing. Each one needs, in the same change:
 
 Take V1 and V2 together as one change. They share the renderer plumbing, they are the two cheapest,
 and shipping them at once forces the Card / Gallery / Data / Compact boundaries to be drawn
-deliberately rather than one at a time. V3 wants a throwaway prototype before it is scheduled. V4
-wants its read-only columns settled as a design decision before any code is written.
+deliberately rather than one at a time. Settle V1's fork first: a Card option, or a sixth mode.
 
-Nothing here is urgent. §3's negative result says no comparable tool's users are asking for a new
-view type, and the one thing they *are* asking for is already built here. So this is a quality bet
-on the collector half of the audience rather than a gap anyone has reported — which is the right
-framing for scheduling it, and the reason V1 and V2 lead: they are the two that cost least if the
-bet is wrong.
+Each of the other two has a question to answer before it is scheduled, and neither is a coding
+question:
+
+- **V3 — does a shelf mean anything outside `grouping=location`?** It is grouped by construction, so
+  it either forces that grouping or defines a fallback. Answer it with a throwaway prototype, not on
+  paper.
+- **V4 — is a board with read-only columns still worth having?** Nothing Gubbins can group by is
+  draggable, so the answer decides whether V4 exists at all.
+
+Nothing here is urgent. §3 found no comparable tool's users asking for a new view type, and the one
+presentation request it did find is already built here. So the shortlist is a quality bet on the
+audience assumption §3 names, not a response to a reported gap — which is the honest framing for
+scheduling it, and the reason V1 and V2 lead. They cost least if the assumption is wrong.
