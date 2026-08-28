@@ -87,11 +87,22 @@ describe('the checks that back the manifest up (§9.1 defence-in-depth)', () => 
 
   it('has the worker refuse a fetch, a lookup and a data fetch from any other sender', () => {
     const worker = extensionSource('background.ts');
-    // One refusal per request kind, plus the queue flush that hands over a captured payload.
-    expect(worker.match(/if \(!fromApp\) \{/g)).toHaveLength(3);
-    expect(worker).toContain("active?.kind === 'PWA_READY'");
-    expect(worker).toContain('&& fromApp');
     expect(worker).toContain('const fromApp = isAppSender(sender);');
+    // The three request kinds are narrowed to one `BackgroundRequest` before the sender is
+    // checked, so they share a single refusal — which has to come BEFORE the dispatch, or a
+    // foreign page's request would be served on its way to being refused.
+    const dispatch = worker.slice(worker.indexOf('const request = asBackgroundRequest(bag);'));
+    expect(dispatch).not.toBe('');
+    const refusal = dispatch.indexOf('if (!fromApp) {');
+    expect(refusal).toBeGreaterThan(-1);
+    for (const kind of ['FETCH', 'LOOKUP', 'DATA_FETCH']) {
+      const dispatched = dispatch.indexOf(`case '${kind}':`);
+      expect(dispatched).toBeGreaterThan(-1);
+      expect(refusal).toBeLessThan(dispatched);
+    }
+    // The queue flush that hands over a captured payload keeps its own check.
+    expect(worker).toContain("bag?.kind === 'PWA_READY'");
+    expect(worker).toContain('&& fromApp');
   });
 });
 

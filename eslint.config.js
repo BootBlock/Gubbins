@@ -205,12 +205,23 @@ export default tseslint.config(
     },
   },
 
-  // Browser-context extension code (content script + background/service worker).
+  // Browser-context extension code (content script + background/service worker), with the same
+  // type-aware async-safety rules as the app and the bridge. It could not have them before
+  // `extension/tsconfig.json` existed — the project service had no program to point at, which is
+  // the only reason this block used to set globals alone (#557, #601). The background worker is
+  // the strongest case for them: an unhandled rejection there is invisible, since nobody has a
+  // service-worker console open.
   {
     files: ['extension/src/**/*.ts'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.worker, chrome: 'readonly' },
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+        warnOnUnsupportedTypeScriptVersion: false,
+      },
     },
+    rules: { ...asyncSafetyRules },
   },
 
   // Node-side tooling: Vite config, build/test scripts, extension build.

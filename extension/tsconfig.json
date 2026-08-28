@@ -1,0 +1,58 @@
+{
+  // The companion browser extension is a separate build target (extension/build.mjs bundles
+  // its three entry points with Vite in library mode). Library mode *strips* types without
+  // checking them, and this directory is in neither `tsconfig.app.json` ("include": ["src"])
+  // nor `bridge/tsconfig.json` — so until this config existed the extension was the only
+  // TypeScript in the repo with no compiler behind it (issue #557).
+  //
+  // It deliberately does NOT extend the app's tsconfig: that one is a project-referenced,
+  // React/JSX build for `src` only. This stands alone, with the browser + service-worker libs
+  // the extension actually runs against and the same strictness the app and bridge use.
+  //
+  // The seam this exists to guard is the shared source: each entry point imports the app's real
+  // `src/features/scraping/**` modules by relative path (the parsers, the error taxonomy and —
+  // critically — the `isAllowedSupplierUrl` / `isAllowedLookupUrl` allow-list gate that keeps the
+  // privileged background worker from becoming a fetch proxy for an arbitrary origin). An
+  // app-side signature change can therefore break the extension without any extension file being
+  // touched, exactly as it can break the bridge. `npm run type-check` now covers both.
+  "compilerOptions": {
+    "target": "ES2022",
+    // The content script and the injected active-tab bundle run in a page (DOM); the background
+    // service worker runs as a WebWorker. `chrome.*` is not from a @types package — each entry
+    // point hand-declares the minimal slice of the API it uses.
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    "module": "ESNext",
+    // Bundler resolution mirrors the app tsconfig, so the app's extensionless imports resolve
+    // here too. Vite does the emitting; this config only ever type-checks.
+    "moduleResolution": "bundler",
+    "types": [],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "useUnknownInCatchVariables": true,
+
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+
+    // Same alias the app and bridge use, so a shared module that imports itself via `@/`
+    // resolves to the one real source rather than being re-resolved or forked.
+    "paths": {
+      "@/*": ["../src/*"]
+    }
+  },
+  // The app's Vite env declaration comes along for the same reason the bridge pulls it in:
+  // shared `src/**` modules that read `import.meta.env` must type-check here too.
+  "include": ["src/**/*.ts", "../src/vite-env.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

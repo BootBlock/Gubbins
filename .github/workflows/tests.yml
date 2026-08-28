@@ -95,6 +95,15 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      # The extension is bundled, not type-checked, by its own build (Vite library mode strips
+      # types without checking them), so `type-check` above is what proves its sources compile.
+      # This step proves they still *bundle*: the three entry points import the app's real
+      # `src/features/scraping/**` modules, so an app-side change can break the bundle — a
+      # removed export, a newly circular import — while every type stays valid. It is three
+      # small library builds and costs a few seconds (issue #557).
+      - name: Build the browser extension
+        run: npm run build:extension
+
       # Link/image integrity for the staged wiki. The publish workflow gates on this too, but
       # running it here means a broken `[[link]]` fails the PR that introduced it rather than
       # the publish that would have shipped it.
