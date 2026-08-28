@@ -92,11 +92,12 @@ export const TAG_FIELD = 'tag';
  * - `date-text` — a bare `YYYY-MM-DD` TEXT column. Fixed-width ISO dates sort
  *   lexicographically in date order, so `<`/`>` are plain string comparisons.
  */
-type FieldKind = 'fts-text' | 'id-text' | 'numeric' | 'boolean' | 'enum' | 'money' | 'date-ms' | 'date-text';
+export type ItemFieldKind =
+  'fts-text' | 'id-text' | 'numeric' | 'boolean' | 'enum' | 'money' | 'date-ms' | 'date-text';
 
 interface ItemFieldMeta {
   readonly column: string;
-  readonly kind: FieldKind;
+  readonly kind: ItemFieldKind;
   /** For `enum` fields only: the exact stored values the column's `CHECK` constraint allows. */
   readonly values?: readonly string[];
 }
@@ -178,6 +179,20 @@ const ITEM_FIELDS: Readonly<Record<string, ItemFieldMeta>> = {
  * only be extended together.
  */
 export const ITEM_FIELD_NAMES: readonly string[] = Object.keys(ITEM_FIELDS);
+
+/**
+ * Every scalar item field {@link ITEM_FIELDS} accepts, mapped to how it is compared.
+ *
+ * Exported for the same reason as {@link ITEM_FIELD_NAMES}: the two surfaces above this one
+ * restate the vocabulary in their own terms — the text grammar's alias table
+ * (`src/features/search/parse-text-query.ts`) and the Visual Builder's field list
+ * (`src/features/search/fields.ts`) — and each carries its own notion of a field's kind. A
+ * drift test over all three (`src/features/search/field-registries.test.ts`, issue #247) fails
+ * the build when a field is added here without a spelling to reach it or a control to build it.
+ */
+export const ITEM_FIELD_KINDS: Readonly<Record<string, ItemFieldKind>> = Object.fromEntries(
+  Object.entries(ITEM_FIELDS).map(([field, meta]) => [field, meta.kind]),
+);
 
 /**
  * The `items` columns every `fts-text` field in {@link ITEM_FIELDS} routes CONTAINS through,

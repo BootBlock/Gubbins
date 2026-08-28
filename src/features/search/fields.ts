@@ -3,8 +3,9 @@
  * labels live here, kept out of the SQL-generation layer ({@link parseASTtoSQL},
  * which only knows raw field identifiers). The builder exposes the fields that map
  * cleanly to one of its input controls — text, number, date, yes/no, a fixed-choice
- * picker, a capability or a custom field; id-keyed fields the parser also supports
- * (category, location) are deliberately omitted until there's a picker UI.
+ * picker, a capability or a custom field. The id-keyed fields the parser also supports
+ * have no value picker yet, so `category` is offered as a `presence` field only (issue #139)
+ * and `location` is omitted altogether.
  *
  * Kept free of UI/React imports: `parse-text-query` depends on this module and the bridge
  * depends on that, so the enum *labels* live in the UI-only `enum-options` beside it.
