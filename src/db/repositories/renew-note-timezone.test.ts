@@ -30,6 +30,8 @@ interface RenewProbe {
   readonly note: string | null;
   /** The two days the renew editor shows for the same instants, via `toDueDateInputValue`. */
   readonly shown: readonly [string, string];
+  /** The child's own July UTC offset, in minutes behind UTC — proof it took the zone on. */
+  readonly offsetMinutes: number;
 }
 
 /**
@@ -73,6 +75,7 @@ function probeZone(zone: string): RenewProbe {
     process.stdout.write(JSON.stringify({
       note: row ? row.note : null,
       shown: [toDueDateInputValue(from), toDueDateInputValue(to)],
+      offsetMinutes: new Date(Date.UTC(2026, 6, 20, 12)).getTimezoneOffset(),
     }));
     await driver.close();
   `;
@@ -84,12 +87,21 @@ function probeZone(zone: string): RenewProbe {
   return JSON.parse(out) as RenewProbe;
 }
 
+/**
+ * `offsetMinutes` is each zone's July offset, in minutes *behind* UTC. Asserting it is what stops
+ * a silent false pass: a Node build without full time-zone data would ignore `TZ` and run the
+ * probe in UTC, where the bug this file exists for is invisible and the mutated code passes too.
+ */
 const ZONES = [
-  { zone: 'America/New_York', probe: probeZone('America/New_York') },
-  { zone: 'Asia/Tokyo', probe: probeZone('Asia/Tokyo') },
+  { zone: 'America/New_York', offsetMinutes: 240, probe: probeZone('America/New_York') },
+  { zone: 'Asia/Tokyo', offsetMinutes: -540, probe: probeZone('Asia/Tokyo') },
 ] as const;
 
-describe.each(ZONES)('the LOAN_RENEWED note in $zone', ({ probe }) => {
+describe.each(ZONES)('the LOAN_RENEWED note in $zone', ({ offsetMinutes, probe }) => {
+  it('really ran in that zone', () => {
+    expect(probe.offsetMinutes).toBe(offsetMinutes);
+  });
+
   it('names the days the user picked', () => {
     expect(probe.note).toBe('Loan due date changed from 2026-07-16 to 2026-07-20.');
   });
