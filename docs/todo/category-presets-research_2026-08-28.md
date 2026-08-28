@@ -1,7 +1,8 @@
 # Category presets — research into what the library is still missing
 
-> **Status:** 🟢 ACTIVE — research complete; no presets implemented yet. Tier 1 (12 presets), the
-> two new picker sections, and the shared-field-name defect in §3 are the next slice of work.
+> **Status:** 🟢 ACTIVE — research complete; no presets implemented yet. Tier 1 (12 presets) and
+> the two new picker sections are the next slice of work. The shared-field-name defect §3 reports
+> is a separate piece of work, filed and fixed on its own.
 
 Issue [#443](https://github.com/BootBlock/Gubbins/issues/443) asks two things: what *new*
 `Category` presets are worth adding to `CATEGORY_PRESETS`, and what custom fields each one should
@@ -23,7 +24,7 @@ declared in `PRESET_SECTION_IDS`. The distribution is heavily skewed:
 | `media` | 7 | Book, Movie, Blu-rays, DVDs, Vinyl record, Video games (physical), Vintage movie posters |
 | `workshop` | 4 | Tools, Fastener, Adhesive, Wood stock |
 | `containers` | 4 | Tool bag, First aid kit, Storage tote, Gridfinity bin |
-| `crafts` | 4 | 3D Filament, Fabric, Paint (hobby), Model kit |
+| `crafts` | 4 | 3D Filament, Fabric, Paint, Model kit |
 | `electronics` | 3 | Battery, Electronic component, Cable |
 | `household` | 3 | Food, Clothing, Vintage kitchenware |
 
@@ -93,9 +94,9 @@ Both consequences land on presets, because a preset import is just a create-cate
 > `Form factor`, `Speed`, `Form` and `Weight` are all names two different domains want, with two
 > different option lists, and the second one to be imported quietly gets the first one's options.
 
-**The existing library already has eight names carrying two types**, so two importable presets are
-mutually exclusive today — importing the second fails part-way, leaving a half-populated category
-behind:
+**The existing library already breaks this in both directions.** Eight names carry two *types*, so
+the two presets holding them are mutually exclusive today — importing the second throws part-way,
+leaving a half-populated category behind:
 
 | Field name | Types in the library |
 | --- | --- |
@@ -108,17 +109,23 @@ behind:
 | `Scale` | `TEXT` and `SELECT` |
 | `Size` | `TEXT` and `SELECT` |
 
-**This is a bug, not a wart, and it should be filed and fixed separately from adding presets.** The
-fix is per-pair — either settle on one type, or make the losing name specific (`Card colour`,
-`Case material`, `Print edition`). It also wants the test the situation is asking for: a unit test
-over `CATEGORY_PRESETS` asserting that every field **name** maps to exactly one `fieldType` across
-the whole library, and that two presets declaring the same `SELECT` name declare the same options.
-That test fails today, which is the point of writing it.
+And the silent half is already happening too: **`Metal` is a `SELECT` in three presets with three
+different option lists** (Coin; Copperware & brass ornaments; Gold & silver bullion), and **`Form`
+is a `SELECT` in two** (Gold & silver bullion; Wood stock). Whichever is imported first decides
+what the other's dropdown offers, permanently and with no error.
 
-Every field set proposed below was checked against all 224 distinct field names in the library and
-against the other proposals. It introduces **no** new type conflict and no new silent option
-capture; where a natural name was already taken by a different option list, the proposal uses a
-more specific one and says so.
+**This is a bug, not a wart, and it should be filed and fixed separately from adding presets.** The
+fix is per-name — either settle on one type and one option list, or make the losing name specific
+(`Card colour`, `Case material`, `Print edition`, `Bullion metal`, `Timber form`). It also wants the
+test the situation is asking for: a unit test over `CATEGORY_PRESETS` asserting that every field
+**name** maps to exactly one `fieldType` across the whole library, and that two presets declaring
+the same `SELECT` name declare the same options. That test fails today on both counts, which is the
+point of writing it.
+
+Every field set proposed below was checked against all 224 distinct field names in the library, and
+against the other proposals, for both failure modes. It introduces **no** new type conflict and no
+new silent option capture; where a natural name was already taken by a different option list, the
+proposal uses a more specific one and says so.
 
 ## 4. Two new sections are needed
 
@@ -127,10 +134,15 @@ cheap in code and not free in copy: `PRESET_SECTION_IDS`, the `SECTION_LABEL_KEY
 `CategoryPresetPicker.tsx`, and a translated label in **every** catalog (`en.json` *and*
 `de.json` — the catalog tests enforce full coverage).
 
-| New section | Holds | Why not an existing section |
-| --- | --- | --- |
-| `home-garden` | Seeds, Plant, Garden chemicals, Garden machinery | `household` reads as *indoors*; a lawnmower under "Household" is a poor fit, and four garden presets would swamp a three-preset section |
-| `vehicle` | Vehicle, Vehicle part, Tyres, Fluids & lubricants | Nothing in the taxonomy covers a car, and `workshop` means the bench, not the driveway |
+| New section | Tier 1 members | Later candidates (§7) | Why not an existing section |
+| --- | --- | --- | --- |
+| `home-garden` | Seeds, Plant | Garden chemicals, Garden machinery, Camping gear | `household` reads as *indoors*, and a lawnmower filed under "Household" is a poor fit. Tier 1 already adds four presets to `household`; putting the garden there too turns it into the catch-all section |
+| `vehicle` | Vehicle, Vehicle part | Tyres | Nothing in the taxonomy covers a car, and `workshop` means the bench, not the driveway |
+
+Both sections ship with two presets, which is enough for the test suite (a section must not be
+empty) and enough for the rail to read as a real category. "Fluids & lubricants" is deliberately
+absent: §7 has not settled whether it belongs here or in `workshop`, and this table is not the
+place to decide it.
 
 A third grouping — `health`, for `Medication`, supplements and PPE — is **not** recommended yet.
 Three presets is a thin section, and a sparsely populated rail entry looks broken. Put `Medication`
@@ -141,11 +153,11 @@ in `household` for now, and revisit if the health set grows.
 These are the presets a general-purpose home inventory is most visibly missing. Field types are the
 real `FIELD_TYPES` values from `src/db/repositories/constants.ts`.
 
-### 5.1 `appliance` — Appliance (`household`, 🔌)
+### 5.1 `appliance` — Appliance (`household`, 🧺)
 
-The item every home-inventory checklist surveyed names first, and the one whose details are hardest
-to find when they are wanted: the filter size, the warranty expiry, the model number behind the
-machine. Serialised, warranted, maintained.
+The consumer home-inventory and insurance checklists consulted all list appliances prominently, and
+an appliance's details are among the hardest to find when they are wanted: the filter size, the
+warranty expiry, the model number behind the machine. Serialised, warranted, maintained.
 
 - Category defaults: `defaultTrackingMode: 'SERIALISED'`, `defaultCondition: 'GOOD'`,
   `defaultWarrantyMonths: 24`, `defaultMaintenanceBasis: 'TIME'`,
@@ -156,7 +168,7 @@ machine. Serialised, warranted, maintained.
   `Installed on` (DATE), `Consumable part` (TEXT), `Energy rating` (TEXT), `Manual` (URL),
   `Service record` (LONG_TEXT).
 
-### 5.2 `vehicle` — Vehicle (`vehicle`, 🚗)
+### 5.2 `vehicle` — Vehicle (`vehicle`, 🚙)
 
 - Category defaults: `defaultTrackingMode: 'SERIALISED'`, `defaultMaintenanceBasis: 'USAGE'`,
   `defaultMaintenanceIntervalUsage: 10000`.
@@ -167,7 +179,7 @@ machine. Serialised, warranted, maintained.
 - "Roadworthiness test", not "MOT" — the library is not UK-only, and MOT means nothing outside
   Great Britain.
 
-### 5.3 `vehicle-part` — Vehicle part (`vehicle`, 🔩)
+### 5.3 `vehicle-part` — Vehicle part (`vehicle`, 🛞)
 
 - Fields: `Part number` (TEXT), `Manufacturer` (TEXT, reuses), `Fits vehicle` (TEXT),
   `Part category` (SELECT — Filter, Brake, Belt/hose, Electrical, Body, Engine, Suspension,
@@ -187,12 +199,14 @@ matters. This is a category schema, not health advice — the user records what 
   Other), `Strength` (TEXT), `Active ingredient` (TEXT), `Prescription` (ON_OFF),
   `Opened on` (DATE), `Storage requirement` (SELECT — Room temperature, Refrigerated, Away from
   light), `Notes` (LONG_TEXT).
-- `Form` and `Storage` are both taken by other option lists (bullion, Food). `Dose form` and
-  `Storage requirement` are the names that keep the options correct.
-- Setting `dueLeadDays: 30` on the shared `Expiry date` definition also gives the existing `Food`
-  and `First aid kit` presets a 30-day expiry alert. That is the documented "set, never clear"
-  behaviour and is the right outcome — but it is a change to existing categories, so make it
-  deliberately.
+- `Form` and `Storage` are both taken by other option lists (`Gold & silver bullion` and
+  `Wood stock` for `Form`, `Food` for `Storage`). `Dose form` and `Storage requirement` are the
+  names that keep the options correct.
+- Setting `dueLeadDays: 30` on the shared `Expiry date` definition also gives the two existing
+  presets that carry that exact field — `Food` and `Adhesive` — a 30-day expiry alert. That is the
+  documented "set, never clear" behaviour and is the right outcome, but it is a change to existing
+  categories, so make it deliberately. `First aid kit` is *not* affected: its dates are named
+  `Contents last checked` and `Earliest expiry`, which are different definitions.
 
 ### 5.5 `consumable-filter` — Filters & consumables (`household`, 🧽)
 
@@ -204,7 +218,7 @@ makes the maintenance schedule earn its keep.
   filter, Water filter, Vacuum bag, Bulb, Cartridge, Belt, Other), `Last changed` (DATE),
   `Change due` (DATE, `dueLeadDays: 14`), `Reorder link` (URL).
 
-### 5.6 `cleaning-chemical` — Cleaning & household chemicals (`household`, 🧴)
+### 5.6 `cleaning-chemical` — Cleaning & household chemicals (`household`, 🧼)
 
 - Fields: `Cleaner type` (SELECT — Detergent, Bleach, Degreaser, Descaler, Polish, Disinfectant,
   Solvent, Other), `Hazard class` (TEXT), `Safety data sheet` (URL), `Container volume` (TEXT),
@@ -242,11 +256,11 @@ drops off the network and has to be re-paired or re-flashed.
   Mains, Battery, PoE, USB), `Firmware version` (TEXT), `Paired to hub` (TEXT),
   `Works without cloud` (ON_OFF).
 
-### 5.10 `yarn` — Yarn (`crafts`, 🧶)
+### 5.10 `yarn` — Yarn (`crafts`, 🪢)
 
-Knitting and crochet are the fastest-growing craft category in the 2026 participation summaries
-found, and yarn is the textbook preset case: several facts a knitter always records, none of which
-a built-in facet holds. `Fabric` is the nearest existing preset and does not overlap.
+Knitting and crochet come up repeatedly in 2026 hobby-participation write-ups as a growing craft,
+and yarn is the textbook preset case regardless: several facts a knitter always records, none of
+which a built-in facet holds. `Fabric` is the nearest existing preset and does not overlap.
 
 - Fields: `Fibre` (TEXT), `Yarn weight` (SELECT — Lace, 4-ply/Fingering, Sport, DK, Worsted/Aran,
   Chunky, Super chunky), `Colour` (COLOUR, reuses), `Colourway name` (TEXT), `Dye lot` (TEXT),
@@ -274,28 +288,39 @@ a built-in facet holds. `Fabric` is the nearest existing preset and does not ove
   `Light` (SELECT — Bright direct, Bright indirect, Medium, Low), `Watering` (TEXT),
   `Last repotted` (DATE), `Hardiness` (TEXT), `Photo` (IMAGE).
 
-## 6. Tier 2 — the next fourteen
+## 6. Tier 2 — the next thirteen
 
 Worth adding, and each defensible on its own, but none is the gap a new user notices on day one.
-Fields are given compactly; every one was name-checked against §3, which is why several read more
-specifically than they otherwise would.
+Fields are given compactly; every one was name-checked against §3 and against tier 1, which is why
+several read more specifically than they otherwise would. Glyphs avoid the ones the library already
+uses, with one deliberate exception: `Jigsaw puzzle` takes 🧩, which `LEGO sets` also uses, because
+the jigsaw is the more literal owner and the library already tolerates a repeated glyph (🔥 and 🎬
+each appear twice).
 
 | Preset | Section | Glyph | Fields |
 | --- | --- | --- | --- |
-| Power tool consumables | `workshop` | 🪚 | Consumable kind (SELECT: Drill bit, Saw blade, Router bit, Sanding disc, Cutting disc, Tap/die, Insert), Cutting size, Cutter material (SELECT: HSS, Carbide, Cobalt, Diamond, Bi-metal), Shank / arbor, Teeth or grit, Fits tool |
-| Metal stock | `workshop` | 🪙 | Metal (SELECT: Mild steel, Stainless, Aluminium, Brass, Copper, Titanium), Stock form (SELECT: Sheet, Bar, Round, Tube, Angle, Plate), Thickness (mm) (NUMBER), Width (mm) (NUMBER), Length (mm) (NUMBER), Alloy / grade, Surface finish |
+| Power tool consumables | `workshop` | 🪚 | Tooling kind (SELECT: Drill bit, Saw blade, Router bit, Sanding disc, Cutting disc, Tap/die, Insert), Cutting size, Cutter material (SELECT: HSS, Carbide, Cobalt, Diamond, Bi-metal), Shank / arbor, Teeth or grit, Fits tool |
+| Metal stock | `workshop` | ⛓️ | Stock metal (SELECT: Mild steel, Stainless, Aluminium, Brass, Copper, Titanium), Stock form (SELECT: Sheet, Bar, Round, Tube, Angle, Plate), Thickness (mm) (NUMBER), Width (mm) (NUMBER), Length (mm) (NUMBER), Alloy / grade, Surface finish |
 | Lubricants & chemicals | `workshop` | 🛢️ | Lubricant type (SELECT: Oil, Grease, Penetrating, Cutting fluid, Solvent, Release agent), Safety data sheet (URL), Hazard class, Container volume, Opened on (DATE), Shelf life expiry (DATE, lead 30), Flash point |
 | Safety equipment (PPE) | `workshop` | 🦺 | Protection type (SELECT: Eye, Hearing, Respiratory, Hand, Head, Fall arrest, Foot), Standard / rating, PPE size, Manufactured on (DATE), Expiry date (DATE, lead 30), Inspection due (DATE, lead 14) |
-| Development board | `electronics` | 🔌 | Board family, Microcontroller, Flash (KB) (NUMBER), RAM (KB) (NUMBER), Radio (SELECT: None, Wi-Fi, BLE, Wi-Fi + BLE, LoRa, Zigbee), Logic level (SELECT: 3.3 V, 5 V, Both), Pinout (URL), Firmware version |
+| Development board | `electronics` | 📟 | Board family, Microcontroller, Flash (KB) (NUMBER), RAM (KB) (NUMBER), Radio (SELECT: None, Wi-Fi, BLE, Wi-Fi + BLE, LoRa, Zigbee), Logic level (SELECT: 3.3 V, 5 V, Both), Pinout (URL), Firmware version |
 | Storage media | `electronics` | 💾 | Media kind (SELECT: HDD, SSD, NVMe, SD card, USB stick, Optical, Tape), Capacity (GB) (NUMBER), Bus interface, Serial number, Power-on hours (NUMBER), Drive health (SELECT: Good, Degraded, Failing, Retired), Encrypted (ON_OFF) |
-| Music CD | `media` | 💿 | Artist, Album, Label, Catalogue number, Release year (NUMBER), Discs (NUMBER), Release edition, Rating (RATING), Cover art (IMAGE) |
-| Tabletop RPG book | `media` | 🎲 | Game system, Publisher, Book kind (SELECT: Core rulebook, Supplement, Adventure, Setting, Screen), Ruleset edition, Printing, ISBN, Rating (RATING) |
+| Music CD | `media` | 🎵 | Artist, Album, Label, Catalogue number, Release year (NUMBER), Discs (NUMBER), Release edition, Rating (RATING), Cover art (IMAGE) |
+| Tabletop RPG book | `media` | 🐉 | Game system, Publisher, Book kind (SELECT: Core rulebook, Supplement, Adventure, Setting, Screen), Ruleset edition, Printing, ISBN, Rating (RATING) |
 | Jigsaw puzzle | `media` | 🧩 | Pieces (NUMBER), Brand, Puzzle subject, Completed (ON_OFF), Pieces missing (NUMBER), Difficulty (SELECT: Easy, Moderate, Hard, Very hard), Finished size |
 | Sheet music | `media` | 🎼 | Composer, Arranger, Instrumentation, Musical key, Difficulty grade, Publisher, Score format (SELECT: Full score, Part, Songbook, Digital) |
-| Art supplies | `crafts` | 🎨 | Art medium (SELECT: Pencil, Marker, Ink, Watercolour, Acrylic, Oil, Pastel, Gouache), Brand, Colour (COLOUR), Colour name, Pigment index, Lightfastness, Nib / tip size |
 | Embroidery floss | `crafts` | 🪡 | Colour (COLOUR), Colour number, Brand, Thread fibre (SELECT: Cotton, Silk, Rayon, Wool, Metallic), Skeins (NUMBER), Variegated (ON_OFF) |
 | Resin & casting supplies | `crafts` | ⚗️ | Casting product (SELECT: Epoxy resin, UV resin, Polyurethane, Silicone, Pigment, Release agent), Mix ratio, Pot life, Full cure time, Opened on (DATE), Expiry date (DATE, lead 30), Safety data sheet (URL) |
-| Small parts organiser | `containers` | 🗄️ | Organiser kind (SELECT: Drawer cabinet, Compartment box, Bin rack, Tackle box, Tray), Compartments (NUMBER), Dividers adjustable (ON_OFF), Footprint, Stackable (ON_OFF), Contents summary (LONG_TEXT) |
+| Small parts organiser | `containers` | 📇 | Organiser kind (SELECT: Drawer cabinet, Compartment box, Bin rack, Tackle box, Tray), Compartments (NUMBER), Dividers adjustable (ON_OFF), Footprint, Stackable (ON_OFF), Contents summary (LONG_TEXT) |
+
+`Embroidery floss` takes `Colour` (COLOUR) and so inherits the same prerequisite `Yarn` does in
+§5.10: the library's `Colour` conflict has to be settled first.
+
+An **Art supplies** preset was drafted for this tier and demoted to §7. It sits in `crafts`
+alongside the existing `Paint`, and four of its seven fields (`Brand`, `Colour`, `Colour name`, and
+a medium/type `SELECT` whose options largely repeat) are that preset already. Bar 5 in §2 rules it
+out until the overlap is settled — either widen `Paint` to cover dry media, or find the fields that
+genuinely distinguish the two.
 
 ## 7. Tier 3 — plausible, unranked
 
@@ -314,7 +339,8 @@ settling first.
   tackle, Sports equipment, Beekeeping, Aquarium.
 - **`vehicle`:** Tyres (DOT date and tread depth are good fields; thin on its own), Fluids &
   lubricants (duplicates the workshop entry — pick one home for it).
-- **`crafts`:** Sewing patterns, Beads & findings, Leather, Pottery clay & glaze, Candle & soap
+- **`crafts`:** Art supplies (demoted from tier 2 — overlaps the existing `Paint`, see §6), Sewing
+  patterns, Beads & findings, Leather, Pottery clay & glaze, Candle & soap
   making, Craft vinyl & HTV, Scrapbooking paper, Homebrew ingredients.
 - **`collectibles`:** Keys & keyrings, Vintage tools, Vintage advertising & signage, Bottle caps &
   breweriana, Signed books. The section is saturated; adding to it is the lowest-value work in this
@@ -322,7 +348,7 @@ settling first.
 
 ## 8. Deliberately rejected
 
-- **Firearms and ammunition.** Present in every insurance checklist surveyed, and the fields are
+- **Firearms and ammunition.** Named on the insurance checklists consulted, and the fields are
   well defined. Rejected anyway: the subject is jurisdictionally fraught, and a preset in the
   shipped library reads as the project endorsing the use case. A user who wants it can build the
   category by hand in a minute, which is what presets exist to shortcut rather than to bless.
@@ -338,13 +364,17 @@ settling first.
 
 ## 9. Implementation notes
 
-- **Fix §3 first, or at least alongside.** Shipping `Yarn` with a `Colour` field is correct and
-  also walks into the existing `Colour` conflict. The parity test §3 describes is the durable fix;
-  the eight renames are the immediate one.
+- **Settle §3's `Colour` before shipping `Yarn` or `Embroidery floss`.** Both want the `COLOUR`
+  definition ten presets already share, and both therefore land in the existing `Colour` conflict.
+  That one name is the only part of §3 that gates tier 1; the other nine names and the parity test
+  are their own piece of work and should not be folded into this one.
 - **Preset names and descriptions are not translated today**, and none of the 72 existing entries
-  goes through `t()`. That is a pre-existing gap, not one these presets introduce — do not fix it
-  as a side effect of adding presets. A **new section label** is different: `SECTION_LABEL_KEY`
-  values are catalog keys, so `en.json` *and* `de.json` both need one, in the same change.
+  goes through `t()`. Converting the existing 72 is a separate change and should not ride along
+  with new presets — but CLAUDE.md's i18n rule still says a *new* user-facing string should be
+  added via `t()`, so whoever ships tier 1 should decide that deliberately rather than by
+  copying the surrounding entries. A **new section label** has no such latitude:
+  `SECTION_LABEL_KEY` values are catalog keys, so `en.json` *and* `de.json` both need one, in the
+  same change.
 - **`category-presets.test.ts` already enforces part of the bar**: unique ids and
   case-insensitive-unique names, `seed.category.name === preset.name`, contiguous 0-based
   positions, a `SELECT` carrying options and a non-`SELECT` carrying none, a non-empty glyph on
@@ -364,14 +394,21 @@ settling first.
 
 ## 10. Method, and what it does not cover
 
-The existing library was read in full, and every candidate was checked against it by preset name
-and by field name and type. The demand ranking is grounded in insurance-industry home-inventory
-checklists (which agree closely with each other on appliances, tools, sporting goods and
-jewellery), in published 2026 hobby-participation summaries (which put knitting, crochet and
-embroidery on a sharp rise), and in the feature sets of comparable self-hosted inventory tools.
+**What was verified.** The existing library was read in full and enumerated programmatically: the
+preset and section counts in §1, the unused facets in §2, the eight dual-type names and the
+divergent `SELECT` option lists in §3, and the collision check every proposed field name in §5 and
+§6 passed. Those claims are reproducible from `src/features/inventory/category-presets.ts` and
+`src/db/repositories/CategoryRepository.ts`, and a reader should hold them to that standard.
 
-Two honest limits. First, none of this is Gubbins' own usage data — the app has no telemetry that
-would say which presets get imported, so "most useful" is an argued judgement, not a measurement.
-Second, the field sets are drawn from what each domain conventionally records; they have not been
-reviewed by a practitioner in each one. Expect the first user of `Yarn` or `Vehicle part` to
-suggest a field this document missed, and treat that as the design working rather than failing.
+**What was not.** The demand ranking is not. It draws on consumer home-inventory and insurance
+checklists, on general 2026 hobby-participation write-ups, and on the feature sets of comparable
+self-hosted inventory tools — none of which is cited here by publisher or URL, and none of which is
+a controlled survey. Where the document says a checklist "names" something or a craft is "growing",
+read it as the author's reading of a general picture, not as a result. Anyone revisiting the
+ranking should redo that part rather than inherit it.
+
+Two further limits. None of this is Gubbins' own usage data — the app has no telemetry that would
+say which presets get imported, so "most useful" is an argued judgement throughout. And the field
+sets are drawn from what each domain conventionally records; they have not been reviewed by a
+practitioner in each one. Expect the first user of `Yarn` or `Vehicle part` to suggest a field this
+document missed, and treat that as the design working rather than failing.
