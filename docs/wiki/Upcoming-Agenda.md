@@ -36,6 +36,32 @@ Each entry links to the item or record behind it.
 > **Upcoming** is the *forward calendar*; **[[Alerts]]** is *what's wrong now*. Something overdue
 > appears in both — Alerts because it needs fixing, Upcoming because it was on the schedule.
 
+## How far back Overdue reaches
+
+Overdue entries are things that have already passed their date but are still worth acting on, so
+the agenda keeps them at the top of the list. Two kinds of entry need a limit, because they never
+get "done" and would otherwise pile up forever:
+
+- **Warranty expiries** and **expiry dates** are listed while they are still in the future, and for
+  **one year** after they pass. Anything that lapsed longer ago than that is history, and Upcoming
+  says so under the Overdue section rather than filling it with dates from years back.
+
+Everything else is bounded by its own lifecycle instead of by a date window. Servicing stays listed
+until you record it as done, a loan stays listed until it comes back, and a booking drops off after
+its last booked day.
+
+> **ℹ️ Note**
+> To see an older warranty or expiry date, open the item itself — the date is always on the item,
+> whether or not the agenda still lists it.
+
+## When there is more than fits
+
+Upcoming reads every entry it has, but a very large inventory can hold more of one kind than the
+screen can list. When that happens Upcoming names the kinds it had to cut short, just under the
+filter chips, so a short list is never mistaken for a complete one. Use the chips to narrow the
+agenda to the kind you care about, or the source screen — **[[Alerts]]**,
+**[[Maintenance & servicing|Maintenance-and-Servicing]]**, **[[Bookings]]** — for the full picture.
+
 ## On your calendar
 
 Upcoming deadlines can also be published to your own calendar app via an

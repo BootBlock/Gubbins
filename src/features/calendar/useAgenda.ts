@@ -20,8 +20,15 @@ import { effectiveExpiryDate } from '@/features/lifecycle/expiry';
 import { maintenanceStatus } from '@/features/lifecycle/maintenance';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePermissionCheck } from '@/features/users/usePermission';
-import { buildAgenda, maintenanceDueAtMs, type AgendaEvent, type AgendaSources } from './agenda';
+import {
+  buildAgenda,
+  maintenanceDueAtMs,
+  type AgendaEvent,
+  type AgendaKind,
+  type AgendaSources,
+} from './agenda';
 import { agendaKeys } from './keys';
+import { addCalendarDays } from '@/lib/calendar-days';
 import { nowMs } from '@/lib/clock';
 import { readAllPages } from '@/lib/read-all-pages';
 import { useFormatters } from '@/lib/useFormatters';
@@ -33,12 +40,23 @@ import { useFormatters } from '@/lib/useFormatters';
 const AGENDA_LOOKAHEAD_DAYS = 36_500;
 
 /**
- * Upper bound on rows pulled per feed — generous, since the agenda shows everything pending.
- * The feeds order soonest-first, so in the extreme case of >500 pending date-driven events
- * the cap drops only the most distant tail (deep inside "Later"); the nearer buckets that
- * drive action stay complete.
+ * Look-**back** window (days) for the warranty/expiry feeds — one year (issue #607).
+ *
+ * Those two feeds select every dated row at or before the cutoff and order it ascending. With a
+ * century-wide cutoff and no lower bound, "everything ever dated, oldest first" is the query,
+ * which is the wrong question for a screen whose subject is what happens next: an inventory of
+ * any age fills its Overdue bucket with dates from a decade ago, and before the feeds walked
+ * their pages that history was all a lane returned.
+ *
+ * The other lanes need no such bound. Maintenance stays due until performed, an open loan stays
+ * open, the booking feed is already cut at today, and a reorder shortfall carries no date at all
+ * — none of them accumulates a tail of settled history the way a lapsed warranty does.
+ *
+ * A year is deliberately generous: long enough that an annual review still finds what lapsed,
+ * short enough that the set stays agenda-sized. `CalendarScreen` names the bound on screen
+ * whenever an Overdue section is showing, so nothing is dropped in silence.
  */
-const AGENDA_FETCH_LIMIT = 500;
+const AGENDA_LOOKBACK_DAYS = 365;
 
 /**
  * Combine the seven agenda source feeds into a single sorted `AgendaEvent[]`.
@@ -51,17 +69,22 @@ const AGENDA_FETCH_LIMIT = 500;
  *                   marginally-later second clock read.
  *   - `isLoading` — true while any source query is still loading.
  *   - `isError`   — true when any source query errored.
- *   - `fieldDueTruncated` — true when the custom-field due-date read hit its ceiling, so that
- *     lane is a prefix rather than the whole set. Surfaced rather than swallowed (#606/#607).
+ *   - `truncatedKinds` — the lanes whose read hit the {@link readAllPages} ceiling, so the lane
+ *     is a prefix rather than the whole set. Surfaced rather than swallowed (#606/#607).
+ *   - `lookbackDays` — how far back the two dated item lanes reach, for the on-screen note.
  */
 export function useAgenda(): {
   readonly events: AgendaEvent[];
   readonly now: number;
   readonly isLoading: boolean;
   readonly isError: boolean;
-  readonly fieldDueTruncated: boolean;
+  readonly truncatedKinds: ReadonlySet<AgendaKind>;
+  readonly lookbackDays: number;
 } {
   const now = nowMs();
+  // Oldest date the two dated item feeds reach back to (issue #607). Derived from the same `now`
+  // the events are anchored at, so the window and the buckets agree.
+  const lookbackSince = addCalendarDays(now, -AGENDA_LOOKBACK_DAYS);
   // Format every date in the agenda copy through the shared formatter seam so a due/expiry/booking
   // date reads in the user's locale, exactly as the same field does elsewhere (issue #328).
   const { date: formatDate } = useFormatters();
@@ -88,29 +111,45 @@ export function useAgenda(): {
   // Reorder shortfalls are item stock, so they follow the items gate rather than a module one.
   const reorderOn = itemsReadable;
 
+  // Every paginated lane walks its pages (issue #607). A repository read clamps `limit` to
+  // MAX_PAGE_SIZE (100), so a lane that asked for one "generous" page of 500 got a hundred rows
+  // and said nothing about the rest — and because these feeds order by date ascending, the
+  // hundred it kept were the oldest, not the soonest. `readAllPages` reads the whole set
+  // instead, and reports it when its own ceiling stops the walk.
+
   const maintenanceQuery = useQuery({
     queryKey: agendaKeys.maintenance(),
-    queryFn: () => getMaintenanceRepository().listUpcoming(now, { limit: AGENDA_FETCH_LIMIT }),
+    queryFn: () => readAllPages((page) => getMaintenanceRepository().listUpcoming(now, page)),
     enabled: maintenanceOn,
   });
 
   const warrantyQuery = useQuery({
-    queryKey: agendaKeys.warranty(AGENDA_LOOKAHEAD_DAYS),
+    queryKey: agendaKeys.warranty(AGENDA_LOOKAHEAD_DAYS, AGENDA_LOOKBACK_DAYS),
     queryFn: () =>
-      getItemRepository().listWarrantyExpiring(AGENDA_LOOKAHEAD_DAYS, now, { limit: AGENDA_FETCH_LIMIT }),
+      readAllPages((page) =>
+        getItemRepository().listWarrantyExpiring(AGENDA_LOOKAHEAD_DAYS, now, {
+          ...page,
+          since: lookbackSince,
+        }),
+      ),
     enabled: warrantyOn,
   });
 
   const expiryQuery = useQuery({
-    queryKey: agendaKeys.expiry(AGENDA_LOOKAHEAD_DAYS),
+    queryKey: agendaKeys.expiry(AGENDA_LOOKAHEAD_DAYS, AGENDA_LOOKBACK_DAYS),
     queryFn: () =>
-      getItemRepository().listExpiringWithin(AGENDA_LOOKAHEAD_DAYS, now, { limit: AGENDA_FETCH_LIMIT }),
+      readAllPages((page) =>
+        getItemRepository().listExpiringWithin(AGENDA_LOOKAHEAD_DAYS, now, {
+          ...page,
+          since: lookbackSince,
+        }),
+      ),
     enabled: perishablesOn,
   });
 
   const checkoutsQuery = useQuery({
     queryKey: agendaKeys.checkouts(),
-    queryFn: () => getCheckoutRepository().listOpen({ limit: AGENDA_FETCH_LIMIT }),
+    queryFn: () => readAllPages((page) => getCheckoutRepository().listOpen(page)),
     enabled: contactsOn,
   });
 
@@ -122,7 +161,7 @@ export function useAgenda(): {
 
   const bookingsQuery = useQuery({
     queryKey: agendaKeys.bookings(),
-    queryFn: () => getAssetBookingRepository().listUpcoming(now, { limit: AGENDA_FETCH_LIMIT }),
+    queryFn: () => readAllPages((page) => getAssetBookingRepository().listUpcoming(now, page)),
     enabled: bookingsOn,
   });
 
@@ -131,9 +170,7 @@ export function useAgenda(): {
    * each definition's own lead time — the agenda is the forward calendar, so a date belongs on
    * it from the moment it is recorded; the lead time only decides when it becomes an *alert*.
    *
-   * Walks every page rather than reading one and calling it the feed. The other six lanes cap
-   * at a single page and say nothing about it; here the truncation is reported and shown
-   * (issues #606/#607).
+   * Walks every page, as every other paginated lane now does (issues #606/#607).
    */
   const fieldDueQuery = useQuery({
     queryKey: agendaKeys.fieldDue(AGENDA_LOOKAHEAD_DAYS),
@@ -249,8 +286,19 @@ export function useAgenda(): {
 
   const events = buildAgenda(sources, now, formatDate);
 
-  // Only meaningful while the lane is on and loaded; a disabled lane is not "truncated".
-  const fieldDueTruncated = customFieldsOn && (fieldDueQuery.data?.truncated ?? false);
+  // Only meaningful while the lane is on and loaded; a disabled lane is not "truncated" (a
+  // stale cache entry from when it was on must not speak for it). The reorder lane is absent
+  // because its read is unpaginated — it has no ceiling to hit.
+  const truncatedKinds = new Set<AgendaKind>();
+  const noteTruncated = (kind: AgendaKind, on: boolean, truncated: boolean | undefined) => {
+    if (on && truncated === true) truncatedKinds.add(kind);
+  };
+  noteTruncated('maintenance', maintenanceOn, maintenanceQuery.data?.truncated);
+  noteTruncated('warranty', warrantyOn, warrantyQuery.data?.truncated);
+  noteTruncated('expiry', perishablesOn, expiryQuery.data?.truncated);
+  noteTruncated('checkout-due', contactsOn, checkoutsQuery.data?.truncated);
+  noteTruncated('booking', bookingsOn, bookingsQuery.data?.truncated);
+  noteTruncated('field-due', customFieldsOn, fieldDueQuery.data?.truncated);
 
-  return { events, now, isLoading, isError, fieldDueTruncated };
+  return { events, now, isLoading, isError, truncatedKinds, lookbackDays: AGENDA_LOOKBACK_DAYS };
 }

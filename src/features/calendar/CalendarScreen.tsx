@@ -187,7 +187,7 @@ function KindFilter({
 
 export function CalendarScreen() {
   const t = useT();
-  const { events, now, isLoading, isError, fieldDueTruncated } = useAgenda();
+  const { events, now, isLoading, isError, truncatedKinds, lookbackDays } = useAgenda();
 
   // All kinds enabled by default; toggling a chip filters the agenda.
   const [enabledKinds, setEnabledKinds] = useState<Set<AgendaKind>>(() => new Set(AGENDA_KINDS));
@@ -204,6 +204,16 @@ export function CalendarScreen() {
   // (anchored at exactly `now`) into "Overdue" instead of "Today".
   const visible = useMemo(() => filterByKind(events, enabledKinds), [events, enabledKinds]);
   const sections = useMemo(() => bucketAgenda(visible, now), [visible, now]);
+
+  // Only the capped lanes the user is actually looking at, named in the chips' own order so the
+  // caveat reads in the same sequence as the filter row above it.
+  const truncatedLabels = AGENDA_KINDS.filter(
+    (kind) => truncatedKinds.has(kind) && enabledKinds.has(kind),
+  ).map((kind) => KIND_LABEL[kind]);
+
+  // The look-back bound belongs to the two dated item lanes, so it is worth stating exactly while
+  // one of them is on screen — including when it is *why* the Overdue section looks short.
+  const showsBoundedLanes = events.length > 0 && (enabledKinds.has('warranty') || enabledKinds.has('expiry'));
 
   // Announce the pending count once loading completes (WCAG 4.1.3), once only.
   const [announcement, setAnnouncement] = useState('');
@@ -264,15 +274,14 @@ export function CalendarScreen() {
           </Surface>
         )}
 
-        {/* Named to the one lane that is capped, rather than shown as a page-wide caveat that
-            would cast doubt on six feeds which are complete for this screen's purposes. The
-            agenda mixes kinds within each date bucket, so it cannot hang off a section — hence
-            the explicit filter check: with the Field dates chip off there is nothing on screen
-            for the caveat to be about, and it would otherwise sit above "No items match the
-            selected kinds." contradicting it. */}
-        {!isLoading && !isError && fieldDueTruncated && enabledKinds.has('field-due') && (
-          <p className="text-xs text-muted-foreground" data-testid="agenda-field-due-truncated">
-            {t('agenda.fieldDue.truncated')}
+        {/* Names the lanes that are actually capped, rather than showing a page-wide caveat
+            that would cast doubt on feeds which are complete. The agenda mixes kinds within each
+            date bucket, so the caveat cannot hang off a section — hence the filter check: a lane
+            whose chip is off has nothing on screen for the caveat to be about, and it would
+            otherwise sit above "No items match the selected kinds." contradicting it. */}
+        {!isLoading && !isError && truncatedLabels.length > 0 && (
+          <p className="text-xs text-muted-foreground" data-testid="agenda-truncated">
+            {t('agenda.truncated', { vars: { kinds: truncatedLabels.join(', ') } })}
           </p>
         )}
 
@@ -297,6 +306,17 @@ export function CalendarScreen() {
               </section>
             ))}
           </div>
+        )}
+
+        {/* The two dated item lanes reach back a bounded distance (issue #607), so their Overdue
+            entries are "what lapsed recently", not "everything that ever lapsed". A footnote
+            under the agenda rather than a caveat above it: it bounds what the list can hold, so
+            it reads once the reader has seen the list, and it is stated only while one of the two
+            lanes it describes is actually showing. */}
+        {!isLoading && !isError && showsBoundedLanes && (
+          <p className="text-xs text-muted-foreground" data-testid="agenda-lookback">
+            {t('agenda.lookback', { vars: { days: lookbackDays } })}
+          </p>
         )}
       </main>
 
