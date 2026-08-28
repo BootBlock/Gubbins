@@ -205,6 +205,11 @@ navigating anywhere else.
 > Leaving clears anything queued in a [[continuous scan|Continuous-Scan-and-Batch-Actions]] that
 > you haven't applied yet. Apply the batch first if you want to keep it.
 
+While the scanner is open it takes the whole screen and the whole keyboard. `Tab` moves between the
+scanner's own controls and stays there — it can't step onto the screen underneath, which is hidden
+behind the camera view. A screen reader announces the scanner when it opens. When you leave, the
+cursor goes back to the **Scan** button you started from.
+
 ## Related pages
 
 - **[[Continuous scan & batch actions|Continuous-Scan-and-Batch-Actions]]** — scan many items in

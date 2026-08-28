@@ -2,9 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Button, Input, LiveRegion, Surface } from '@/components/foundry';
-import { useDialogHistoryEntry } from '@/components/foundry/dialog-history';
-import { nextTrapIndex, trapFocusables } from '@/components/foundry/focus-trap';
-import { isTopModal, popModal, pushModal } from '@/components/foundry/modal-stack';
+import { useDialogBehaviour } from '@/components/foundry/use-dialog-behaviour';
 import { CloseIcon, ExternalLinkIcon, LinkIcon, ScanIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
@@ -87,69 +85,21 @@ function BarcodeScanDialogInner({
     dispatch({ type: 'CLOSE' });
     onClose();
   }, [onClose]);
-  // Latest `close` without re-running the mount-only stack effect (the parent passes an
-  // inline closure that changes every render — cf. Foundry Modal's `onCloseRef`).
-  const closeRef = useRef(close);
-  closeRef.current = close;
+  // This raw-portal takeover is a modal dialog, so it takes the whole Foundry dialog contract off
+  // the shelf rather than re-deriving it: modal-stack registration (it opens *over* the
+  // Add/Edit-item RailModal, and only the topmost surface may handle Escape/Tab), focus parked on
+  // the aria-labelled container so a screen reader announces the dialog rather than the Close
+  // button, a Tab trap that stands aside for the viewfinder's portaled camera picker (issue
+  // #135), Escape, the system Back gesture (issue #590) and focus restore to the "Scan" button
+  // that opened it.
+  useDialogBehaviour(true, close, containerRef);
 
-  // The system Back gesture dismisses this the way Escape and the ✕ do, rather than navigating
-  // the form that opened it out from under the camera (issue #590). `Modal` gets the same
-  // through `use-dialog-behaviour`; this dialog hand-rolls that contract, so it opts in here.
-  useDialogHistoryEntry(true, close);
-
-  // Open the camera once on mount; prime audio from this user gesture (§6.5). Park focus on the
-  // aria-labelled container so a screen reader announces the dialog (not the Close button), and
-  // restore focus to whatever opened it (the "Scan" button) on close — the same contract Foundry
-  // Modal gives, which this raw-portal takeover must reproduce itself.
+  // Open the camera once on mount; prime audio from this user gesture (§6.5).
   useEffect(() => {
     feedback.current.prime();
     dispatch({ type: 'OPEN' });
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    containerRef.current?.focus();
     const fb = feedback.current;
-    return () => {
-      fb.dispose();
-      previouslyFocused?.focus?.();
-    };
-  }, []);
-
-  // Register on the shared modal stack so this full-screen takeover behaves as the topmost
-  // dialog: it can open over the Add/Edit-item {@link RailModal}, and only the topmost may
-  // handle Escape/Tab — otherwise one Escape would also close the form underneath. Mirrors
-  // Foundry {@link Modal}'s own keyboard contract, reusing its `modal-stack` / `focus-trap`
-  // seams rather than re-implementing them. The parent Modal already owns the body scroll
-  // lock; we only take keyboard ownership here.
-  useEffect(() => {
-    const token = pushModal();
-    const onKey = (e: KeyboardEvent) => {
-      if (!isTopModal(token)) return;
-      if (e.key === 'Escape') {
-        closeRef.current();
-        return;
-      }
-      if (e.key !== 'Tab') return;
-      const container = containerRef.current;
-      if (!container) return;
-      const active = document.activeElement as HTMLElement | null;
-      // Focus can legitimately sit in a menu this dialog opened but that portals *outside* it —
-      // the viewfinder's camera picker (issue #135). A menu panel owns its own keyboard contract
-      // (arrow keys to roam, Escape to dismiss), so yanking focus back into the trap would fight
-      // it. Deliberately narrow: focus merely having *fallen out* of the dialog — onto
-      // `document.body`, after whatever held it unmounted — is the trap's recovery case, and the
-      // wrap-around below must still pull it back in.
-      if (active?.closest('[role="menu"]')) return;
-      const focusables = trapFocusables(container);
-      const currentIndex = active ? focusables.indexOf(active) : -1;
-      const next = nextTrapIndex(focusables.length, currentIndex, e.shiftKey);
-      e.preventDefault();
-      if (next === null) container.focus();
-      else focusables[next]?.focus();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      popModal(token);
-    };
+    return () => fb.dispose();
   }, []);
 
   const handleDecode = useCallback(

@@ -13,7 +13,8 @@
  *   (a type-first dialog is ready to type into), otherwise to the dialog container — the
  *   screen-reader-friendly default, where the dialog is announced via its `aria-label` and
  *   the first Tab steps into its controls rather than landing on Close.
- * - **Focus trap.** Tab cycles within the container while it is topmost.
+ * - **Focus trap.** Tab cycles within the container while it is topmost, standing aside while
+ *   focus is inside a portaled {@link Menu} the dialog opened (issue #135's camera picker).
  * - **Escape** closes.
  * - **The system Back gesture** closes (issue #590). An open dialog is a history entry, so on an
  *   installed PWA — where Back is the only back affordance there is — it dismisses the dialog
@@ -75,8 +76,16 @@ export function useDialogBehaviour(
       if (e.key !== 'Tab') return;
       const node = container.current;
       if (!node) return;
-      const focusables = trapFocusables(node);
       const active = document.activeElement as HTMLElement | null;
+      // Focus can legitimately sit in a `Menu` this dialog opened: the menu panel is portaled to
+      // `document.body`, so it is outside the container even though it belongs to the dialog. A
+      // menu owns its own keyboard contract (arrow keys to roam, Escape to dismiss), so pulling
+      // focus back into the trap would fight it and leave the menu unreachable. Deliberately
+      // narrow: focus merely having *fallen out* of the dialog — onto `document.body`, after
+      // whatever held it unmounted — is the trap's recovery case, and the wrap-around below must
+      // still pull it back in.
+      if (active?.closest('[role="menu"]')) return;
+      const focusables = trapFocusables(node);
       const currentIndex = active ? focusables.indexOf(active) : -1;
       const next = nextTrapIndex(focusables.length, currentIndex, e.shiftKey);
       e.preventDefault();

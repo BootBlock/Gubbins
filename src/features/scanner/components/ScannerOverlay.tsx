@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 
 import { plural } from '@/lib/plural';
 import { createPortal } from 'react-dom';
 import { Button, Input, LiveRegion, Modal, Select, Surface, Tooltip } from '@/components/foundry';
-import { useDialogHistoryEntry } from '@/components/foundry/dialog-history';
-import { openModalCount } from '@/components/foundry/modal-stack';
+import { useDialogBehaviour } from '@/components/foundry/use-dialog-behaviour';
 import {
   AddIcon,
   CheckoutIcon,
@@ -104,6 +103,10 @@ function ScannerOverlayInner({
   const t = useT();
   const [state, dispatch] = useReducer(scannerReducer, undefined, () => initialScannerState('DISCRETE'));
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // The dialog container: what `useDialogBehaviour` parks focus on, traps Tab inside, and what
+  // `aria-modal` hangs off.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const titleId = useId();
   // The framing reticle: the decoder crops each frame to this box so a barcode framed in it is
   // large relative to the analysed pixels on any viewport shape (issue #59).
   const reticleRef = useRef<HTMLDivElement | null>(null);
@@ -370,33 +373,24 @@ function ScannerOverlayInner({
     onClose();
   }, [onClose]);
 
-  // The two dismissals a full-screen surface is expected to have, and had neither of (issue
-  // #590): the system Back gesture — the *only* back affordance an installed PWA has, and the
-  // one that used to navigate the screen out from under a shelf's worth of queued scans — and
-  // Escape. Both run the same `close` the ✕ does.
-  useDialogHistoryEntry(true, close);
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  useEffect(() => {
-    // Deferring to the modal stack by *reading* it rather than joining it. Every dialog this
-    // overlay opens — the explainer, the checkout form — is a Modal above it, so "no Modal is
-    // open" is exactly "this overlay is the topmost surface", and nothing else can be open
-    // beneath it (the overlay is launched from a screen, never from a dialog).
-    //
-    // Registering a token instead would be wrong twice over: the shared body scroll-lock is
-    // released only when the last Modal closes, so a permanent token from a non-Modal would
-    // strand `overflow: hidden` on the document after the explainer and the scanner had both
-    // gone; and the count also gates the global hotkeys, which this change has no business
-    // turning off. No Tab trap either: the overlay covers the viewport, and its camera picker
-    // portals a menu outside it that owns its own keyboard contract — see `BarcodeScanDialog`
-    // for that fuller treatment.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || openModalCount() > 0) return;
-      closeRef.current();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  // The overlay is a modal dialog — it covers the viewport and the screen beneath it must not be
+  // reachable — so it takes the whole Foundry dialog contract off the shelf rather than
+  // re-deriving a piece of it (issue #540). That is: modal-stack registration, so only the
+  // topmost surface handles the keyboard and the explainer/checkout Modals it opens take
+  // precedence while they are up; focus parked on the aria-labelled container on open and
+  // restored to the "Scan" button on close; a Tab trap, which is what stops Tab walking out of
+  // the overlay into an inventory screen the user cannot see — and which stands aside while
+  // focus is in the viewfinder's portaled camera picker (issue #135), a menu that owns its own
+  // keyboard contract; Escape; and the system Back gesture, the *only* back affordance an
+  // installed PWA has, which used to navigate the screen out from under a shelf's worth of
+  // queued scans (issue #590). Every one of them runs the same `close` the ✕ does.
+  //
+  // Joining the stack also silences the global hotkeys for as long as the scanner is up, and
+  // takes a share of the body scroll lock. Both follow from the overlay being a real modal: a
+  // hotkey that navigated the screen underneath would be acting on a page the user cannot see,
+  // and the lock is released only once the last surface on the stack — the scanner included —
+  // has gone.
+  useDialogBehaviour(true, close, containerRef);
 
   const submitManual = () => {
     const value = manual.trim();
@@ -512,7 +506,16 @@ function ScannerOverlayInner({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/90 text-white" data-testid="scanner-overlay">
+    <div
+      ref={containerRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      // Named by its own visible heading, so the announced name and the one on screen cannot drift.
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex flex-col bg-black/90 text-white outline-none"
+      data-testid="scanner-overlay"
+    >
       {/* Announce a discrete scan result for screen readers: the visible result card is
           interactive (buttons), so the announcement lives in a separate hidden region. */}
       <LiveRegion visuallyHidden data-testid="scanner-scan-announce">
@@ -531,7 +534,9 @@ function ScannerOverlayInner({
           mode toggle drops onto a second line below `sm`. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4 pt-safe-gutter-top pr-safe-gutter-right pl-safe-gutter-left">
         <ScanIcon className="size-5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-semibold">Scanner</span>
+        <span id={titleId} className="min-w-0 flex-1 truncate font-semibold">
+          Scanner
+        </span>
         {/* The wrapper takes the whole second line so the toggle drops below the title; the
             pill inside stays sized to its two buttons rather than stretching across it. */}
         <div
