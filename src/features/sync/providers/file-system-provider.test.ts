@@ -70,7 +70,9 @@ describe('FileSystemCloudProvider.pushSnapshot', () => {
     expect(writable.close).not.toHaveBeenCalled();
   });
 
-  it('aborts the stream when the close fails, and reports the failure', async () => {
+  // The abort is inert here — a stream whose `close()` rejected is already errored, so there is
+  // nothing left to reclaim. The single release path is still what keeps the failure reported.
+  it('releases the stream when the close fails, and reports the failure', async () => {
     const { dir, writable } = fakeDir({ failOn: 'close' });
 
     await expect(new FileSystemCloudProvider(dir).pushSnapshot(snapshot)).rejects.toThrow('quota exceeded');

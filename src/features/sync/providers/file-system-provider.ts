@@ -101,11 +101,16 @@ export class FileSystemCloudProvider implements CloudProvider {
    *
    * Issue #650: a write that fails must release the stream rather than drop it. `createWritable`
    * stages into a swap file beside the target (Chromium: `gubbins-sync.json.crswap`) which only
-   * `close()` commits and only `abort()` discards, so a rejected write that does neither strands
-   * that file in the folder the user nominated for syncing — where their cloud client then
+   * `close()` commits and only `abort()` discards, so a rejected `write()` that does neither
+   * strands that file in the folder the user nominated for syncing — where their cloud client then
    * replicates it to every other device — and leaves the stream open for the rest of the session.
-   * Aborting also matches `writePlainDatabaseFile` in `src/db/db-storage.ts`: a partial snapshot
-   * must never commit over the good one.
+   * Aborting there also matches `writePlainDatabaseFile` in `src/db/db-storage.ts`: a partial
+   * snapshot must never commit over the good one.
+   *
+   * A failed `close()` is already terminal for the stream, so aborting it reclaims nothing (per
+   * the Streams spec an abort of an errored stream resolves without reaching the sink). The one
+   * `catch` still covers both, because the alternative is a branch whose only effect is to skip a
+   * call that is a no-op anyway.
    */
   async pushSnapshot(snapshot: SyncSnapshot): Promise<void> {
     const handle = await this.dir.getFileHandle(this.fileName, { create: true });
@@ -114,8 +119,8 @@ export class FileSystemCloudProvider implements CloudProvider {
       await writable.write(snapshotToBackupJson(snapshot));
       await writable.close();
     } catch (err) {
-      // Best-effort cleanup: the stream may already be errored (or closed, when `close()` itself
-      // threw), and that must not mask the failure the caller needs to see.
+      // Best-effort: a host may not implement `abort`, and a release that fails must not mask the
+      // failure the caller needs to see.
       try {
         await writable.abort?.();
       } catch {
