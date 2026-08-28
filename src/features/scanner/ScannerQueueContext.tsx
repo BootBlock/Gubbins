@@ -29,11 +29,22 @@ export function ScannerQueueProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(queueReducer, emptyQueue);
   const cooldown = useRef<CooldownMap>(new CooldownMap());
 
-  const offer = useCallback((itemId: string, name: string | null, now = Date.now()): boolean => {
-    if (!cooldown.current.accept(itemId, now)) return false;
-    dispatch({ type: 'ADD', entry: { itemId, name, scannedAt: now } });
-    return true;
-  }, []);
+  const offer = useCallback(
+    (itemId: string, name: string | null, now = Date.now()): boolean => {
+      if (!cooldown.current.accept(itemId, now)) return false;
+      // Bound the map to the ids seen in the last window, however long the overlay stays open.
+      cooldown.current.prune(now);
+      // The reducer refuses an id the queue already holds (§6.4 belt-and-braces), which the
+      // time-based guard cannot see once its window has elapsed — and two different codes (a
+      // label QR and the item's own barcode) name the same item inside one window. Report that
+      // refusal rather than a success, so the caller acknowledges the repeat instead of playing
+      // a confirmation for an entry that never landed (issue #512).
+      if (state.entries.some((e) => e.itemId === itemId)) return false;
+      dispatch({ type: 'ADD', entry: { itemId, name, scannedAt: now } });
+      return true;
+    },
+    [state.entries],
+  );
 
   const remove = useCallback((itemId: string) => dispatch({ type: 'REMOVE', itemId }), []);
   const clear = useCallback(() => {

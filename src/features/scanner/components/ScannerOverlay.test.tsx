@@ -27,6 +27,10 @@ let shortCodeMatches: Item[] = [];
 // the scanner resolves *any* symbology it captured, not only a valid GTIN (issue #506).
 let barcodeMatch: Item | null = null;
 const barcodeQueries: string[] = [];
+// Every id the overlay asked the repository for. The count is the point: the double-scan guard
+// has to sit in *front* of the read, or a label resting in the viewfinder costs one round-trip
+// per animation frame (issue #512).
+const idQueries: string[] = [];
 
 // The camera/decoder is neutered, but the props the overlay hands the hook are kept so a test can
 // play the part of the decode loop — specifically reporting the engine it resolved (issue #678).
@@ -36,10 +40,19 @@ vi.mock('../useScanner', () => ({
     scannerProps.current = props;
   },
 }));
+// The non-visual §6.5 feedback is a browser API surface, but *which* of its two tones fires is
+// the whole user-facing point of issue #512 — a rejected re-scan used to sound exactly like a
+// code that failed to read — so the stub records the calls rather than swallowing them.
+const feedbackCalls = vi.hoisted(() => ({ confirm: 0, repeat: 0 }));
 vi.mock('../feedback', () => ({
   ScanFeedback: class {
     prime() {}
-    confirm() {}
+    confirm() {
+      feedbackCalls.confirm += 1;
+    }
+    repeat() {
+      feedbackCalls.repeat += 1;
+    }
     dispose() {}
   },
 }));
@@ -71,7 +84,10 @@ vi.mock('@/lib/useFormatters', () => ({
 vi.mock('@/db/repositories', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/db/repositories')>()),
   getItemRepository: () => ({
-    getById: () => Promise.resolve(scanResult),
+    getById: (id: string) => {
+      idQueries.push(id);
+      return Promise.resolve(scanResult);
+    },
     getByBarcode: (value: string) => {
       barcodeQueries.push(value);
       return Promise.resolve(barcodeMatch);
@@ -168,6 +184,9 @@ beforeEach(() => {
   shortCodeMatches = [];
   barcodeMatch = null;
   barcodeQueries.length = 0;
+  idQueries.length = 0;
+  feedbackCalls.confirm = 0;
+  feedbackCalls.repeat = 0;
   adjustMutate.mockReset();
   moveMutateAsync.mockReset().mockResolvedValue(undefined);
   checkoutMutateAsync.mockReset().mockResolvedValue(undefined);
@@ -439,5 +458,90 @@ describe('ScannerOverlay — Discrete card View details', () => {
   it('hides View details when the parent does not wire the handoff', async () => {
     await scan(baseItem);
     expect(screen.queryByTestId('scanner-view-item')).toBeNull();
+  });
+});
+
+/**
+ * The double-scan guard (§6.4) as a user experiences it in Continuous mode (issue #512).
+ *
+ * Two things are being pinned, and they are the same defect from either end. A code the guard
+ * rejects must not have cost a database read to reject — the decode loop runs every animation
+ * frame, so a label left in the viewfinder used to issue one round-trip per frame. And the
+ * rejection must be *audible*: batch scanning runs on trusting the confirmation tone, and a
+ * repeat that produced no beep, no haptic and no message was indistinguishable from a code
+ * that failed to read.
+ */
+describe('ScannerOverlay — a re-scan in Continuous mode (issue #512)', () => {
+  /** Switch to Continuous mode and scan `value` through the always-available manual seam. */
+  const enterContinuous = () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    const toggle = screen.getByRole('button', { name: /Continuous/ });
+    fireEvent.click(toggle);
+    // The queue only exists in Continuous mode, so a toggle that silently did nothing would
+    // leave these tests quietly exercising the Discrete path instead.
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  };
+  const enter = (value: string) => {
+    fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value } });
+    fireEvent.click(screen.getByTestId('scanner-manual-submit'));
+  };
+
+  it('reads the database once and acknowledges the repeat, rather than re-reading in silence', async () => {
+    scanResult = baseItem;
+    enterContinuous();
+
+    enter(UUID);
+    // The confirmation tone is what a user sweeping a shelf is going on; Continuous mode shows
+    // no result card, so this is the scan landing.
+    await waitFor(() => expect(feedbackCalls.confirm).toBe(1));
+    expect(idQueries).toEqual([UUID]);
+    expect(screen.queryByTestId('scanner-discrete-result')).toBeNull();
+
+    // The same code again, inside the 2000 ms window — the frame after, as far as the guard is
+    // concerned.
+    enter(UUID);
+
+    await waitFor(() => expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/already scanned/i));
+    // Rejected in front of the read, not behind it.
+    expect(idQueries).toEqual([UUID]);
+    // …and heard, with the acknowledgement tone rather than a second confirmation.
+    expect(feedbackCalls).toEqual({ confirm: 1, repeat: 1 });
+  });
+
+  it('acknowledges a second code that names an item already queued', async () => {
+    // The label QR resolves the item; its stored barcode resolves the *same* item. Two distinct
+    // raw strings, so only the queue's id-keyed guard can catch this one.
+    scanResult = baseItem;
+    barcodeMatch = baseItem;
+    enterContinuous();
+
+    enter(UUID);
+    await waitFor(() => expect(feedbackCalls.confirm).toBe(1));
+
+    enter(EAN13);
+
+    await waitFor(() => expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/already scanned/i));
+    // The read happened — the raw gate cannot know two strings name one item — but the queue
+    // refused it, and that refusal is reported rather than confirmed.
+    expect(barcodeQueries).toEqual([EAN13]);
+    expect(feedbackCalls).toEqual({ confirm: 1, repeat: 1 });
+  });
+
+  it('stays silent for a repeat of a code that resolved to nothing', async () => {
+    // Nothing carries it, so the first read already told the user so. A tone on the repeat would
+    // claim a scan that never registered.
+    scanResult = null;
+    enterContinuous();
+
+    enter(UUID);
+    await waitFor(() => expect(idQueries).toEqual([UUID]));
+    expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/No matching item found/i);
+
+    enter(UUID);
+
+    // Suppressed in front of the read, and heard by nobody.
+    await waitFor(() => expect(idQueries).toEqual([UUID]));
+    expect(feedbackCalls).toEqual({ confirm: 0, repeat: 0 });
+    expect(screen.getByTestId('scanner-notice')).toHaveTextContent(/No matching item found/i);
   });
 });

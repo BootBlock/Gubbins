@@ -81,6 +81,18 @@ export class ScanFeedback {
     if (haptics) this.vibrate(200);
   }
 
+  /**
+   * Acknowledge a scan the app deliberately ignored — a label still resting in the viewfinder,
+   * or an item already in the working queue (issue #512). Deliberately *unlike*
+   * {@link ScanFeedback.confirm}: a lower, shorter tone and a brief single bump, so a repeat is
+   * never mistaken for a fresh hit and silence keeps its one meaning — nothing was read at all.
+   * Honours the same user-mutable §6.5 flags as the confirmation.
+   */
+  repeat({ beep = true, haptics = true }: { beep?: boolean; haptics?: boolean } = {}): void {
+    if (beep) this.beep(50, 440);
+    if (haptics) this.vibrate(60);
+  }
+
   /** Release the AudioContext when the scanner closes. */
   dispose(): void {
     try {
