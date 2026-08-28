@@ -49,6 +49,24 @@ interface CheckoutJoinRow extends CheckoutRow {
 }
 
 /**
+ * The projection + joins behind every read that returns a {@link CheckoutWithNames} — the paged
+ * {@link CheckoutRepository.listForItem} family and the batched
+ * {@link CheckoutRepository.listForItems}. One definition so the two cannot return different
+ * columns for the same DTO. Callers append their own `WHERE`, `ORDER BY` and paging.
+ *
+ * The borrower is a tagged union (B4): LEFT JOIN all three target tables and COALESCE the name —
+ * exactly one FK is set per the XOR CHECK, so exactly one join contributes a name.
+ */
+const CHECKOUT_JOIN_SELECT = `
+  SELECT k.*, i.name AS item_name,
+         COALESCE(c.name, p.name, l.name) AS borrower_name
+  FROM checkouts k
+  JOIN items i ON i.id = k.item_id
+  LEFT JOIN contacts c ON c.id = k.contact_id
+  LEFT JOIN projects p ON p.id = k.project_id
+  LEFT JOIN locations l ON l.id = k.location_id`;
+
+/**
  * A correlated `EXISTS` predicate that is true for an item with at least one **open**
  * checkout whose due date has passed — the SQL counterpart of the derived `isOverdue` flag
  * on {@link CheckoutWithNames} (`OPEN && dueDate !== null && dueDate < now`). Shared so the
@@ -417,6 +435,33 @@ export class CheckoutRepository extends BaseRepository {
     );
   }
 
+  /**
+   * Every checkout of a **set** of items, in one round-trip (issue #527) — the batch companion
+   * to {@link listForItem}, used by the JSON export to carry each exported item's loans without
+   * a query per item.
+   *
+   * Deliberately **unpaged**, where {@link listForItem} is bounded: this answers "the loans of
+   * these items", and the caller already bounds the read by choosing which items to pass. The
+   * export previously asked for one page of 100 per item, which silently dropped the rest of a
+   * frequently-lent item's history from the file.
+   *
+   * Ordered by item, then open loans first and newest first within each — so the rows for one
+   * item arrive in the same order {@link listForItem} returns them. An empty input queries nothing.
+   */
+  async listForItems(itemIds: readonly string[]): Promise<CheckoutWithNames[]> {
+    const unique = [...new Set(itemIds)];
+    if (unique.length === 0) return [];
+    const placeholders = unique.map(() => '?').join(', ');
+    const rows = await this.driver.query<CheckoutJoinRow>(
+      `${CHECKOUT_JOIN_SELECT}
+       WHERE k.item_id IN (${placeholders})
+       ORDER BY k.item_id, k.returned_at IS NULL DESC, k.checked_out_at DESC, k.id ASC;`,
+      unique as SqlValue[],
+    );
+    const now = nowMs();
+    return rows.map((r) => toCheckoutWithNames(r, now));
+  }
+
   /** A single contact's checkout history (open first, then newest), bounded. */
   async listForContact(contactId: string, params: PageParams = {}): Promise<Page<CheckoutWithNames>> {
     return this.listForBorrower('contact', contactId, params);
@@ -507,16 +552,8 @@ export class CheckoutRepository extends BaseRepository {
     orderBy: string,
   ): Promise<Page<CheckoutWithNames>> {
     const { limit, offset } = this.resolvePage(params);
-    // The borrower is a tagged union (B4): LEFT JOIN all three target tables and COALESCE the
-    // name — exactly one FK is set per the XOR CHECK, so exactly one join contributes a name.
     const rows = await this.driver.query<CheckoutJoinRow>(
-      `SELECT k.*, i.name AS item_name,
-              COALESCE(c.name, p.name, l.name) AS borrower_name
-       FROM checkouts k
-       JOIN items i ON i.id = k.item_id
-       LEFT JOIN contacts c ON c.id = k.contact_id
-       LEFT JOIN projects p ON p.id = k.project_id
-       LEFT JOIN locations l ON l.id = k.location_id
+      `${CHECKOUT_JOIN_SELECT}
        ${where}
        ORDER BY ${orderBy}
        LIMIT ? OFFSET ?;`,

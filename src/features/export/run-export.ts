@@ -8,7 +8,10 @@
  * full-resolution image bytes out of OPFS into the vault's `/assets` (the cross-device
  * full-res transport — JSON sync keeps blobs out per §4 strict isolation). The Markdown
  * vault is zipped off-thread in {@link export-vault.worker}. Item reads are paginated (≤100)
- * per §2.1 and looped to completion; the bounded location/category name lookups are read whole.
+ * per §2.1 and looped to completion — by keyset seek, not by deep OFFSET (issue #527) — and every
+ * per-item extra (custom fields, tags, loans, history, images, attachments) is read a bucket of
+ * items at a time rather than one item at a time; the bounded location/category name lookups are
+ * read whole.
  */
 import {
   getAttachmentRepository,
@@ -23,10 +26,12 @@ import {
   type Checkout,
   type Contact,
   type Item,
+  type ItemListFilters,
+  type ItemSeek,
   type LocationWithCount,
 } from '@/db/repositories';
 import { getReportRepository } from '@/db/repositories';
-import { bucketIds } from '@/features/inventory/id-buckets';
+import { bucketIds, ID_BUCKET_SIZE } from '@/features/inventory/id-buckets';
 import { toLocationExportRows } from '@/features/inventory/locations-export';
 import { readImageBlob } from '@/features/images/opfs-images';
 import { assertPermissions } from '@/features/users/assert-permission';
@@ -178,26 +183,57 @@ async function buildReportCsv(kind: ReportExportKind): Promise<string> {
   }
 }
 
-/** Page through a repository list to gather every row (full-export scope). */
-async function collectAllItems(includeInactive: boolean): Promise<Item[]> {
+/**
+ * Walk a filtered item list to completion, seeking rather than offsetting (issue #527).
+ *
+ * `LIMIT ? OFFSET ?` makes SQLite produce and discard every row before the page, so walking a
+ * 100k catalogue a page at a time cost ~50M discarded rows across the run — quadratic in the
+ * catalogue size, for a file the user expects to download. A keyset seek asks for "the page
+ * strictly after this row's sort key" instead, which the ordering index answers at constant cost
+ * however deep the walk has gone. The order and the cursor both come from `list-order.ts`, the
+ * same spec the infinite-scroll list seeks by (issue #172), so the walk visits every row exactly
+ * once.
+ *
+ * The loop stops on the first page that reports no more, and also on a page that carries no
+ * cursor to seek past — an empty page has none, and without that guard a driver that reported
+ * `hasMore` on one would spin.
+ */
+async function collectItemsByWalk(
+  filters: Omit<ItemListFilters, 'limit' | 'offset' | 'seek'>,
+): Promise<Item[]> {
   const repo = getItemRepository();
   const all: Item[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const page = await repo.list({ includeInactive, limit: PAGE, offset });
+  let seek: ItemSeek | undefined;
+  for (;;) {
+    const page = await repo.list({ ...filters, limit: PAGE, seek });
     all.push(...page.rows);
-    if (!page.hasMore) break;
+    if (!page.hasMore || page.endCursor === undefined || page.rows.length === 0) break;
+    seek = { cursor: page.endCursor, direction: 'forward', startIndex: all.length };
   }
   return all;
 }
 
+/** Every item in the catalogue (full-export scope). */
+function collectAllItems(includeInactive: boolean): Promise<Item[]> {
+  return collectItemsByWalk({ includeInactive });
+}
+
 /**
  * Resolve the catalogue's custom-field columns + per-item values for the export
- * (Phase 72). Iterates each item's resolved fields via `resolveItemFields` (the
- * existing lenient-defaulting read path) and accumulates: one column per field
- * definition encountered (header = field name, dedup by field id, in first-seen
- * order), plus a map of item id → { field id → stored value }. Only fields with a
- * *stored* value contribute a value (lenient defaults are left blank so a re-import
- * does not pin a default into a stored row).
+ * (Phase 72). Reads each item's resolved fields through the lenient-defaulting read path and
+ * accumulates: one column per field definition encountered (header = field name, dedup by field
+ * id, in first-seen order), plus a map of item id → { field id → stored value }. Only fields
+ * with a *stored* value contribute a value (lenient defaults are left blank so a re-import does
+ * not pin a default into a stored row).
+ *
+ * The read is batched (issue #527): one `resolveItemFieldsMany` per {@link bucketIds} slice,
+ * the way `collectItemTags` already read tags. Called per item, `resolveItemFields` re-read the
+ * whole `locations` table and every inheritable offer once for each exported item, which is what
+ * put the catalogue CSV at roughly four queries per item.
+ *
+ * Column order is still first-seen in **item** order, not row order, so the header row is the one
+ * the per-item loop produced before: the items are walked in order and each item's fields taken
+ * from the batch's map.
  */
 async function collectCustomFieldColumns(items: readonly Item[]): Promise<{
   columns: CatalogCustomFieldColumn[];
@@ -208,19 +244,23 @@ async function collectCustomFieldColumns(items: readonly Item[]): Promise<{
   const seen = new Set<string>();
   const valuesByItem = new Map<string, Record<string, string | null>>();
 
-  for (const item of items) {
-    if (!item.categoryId) continue; // no category → no custom fields
-    const resolved = await repo.resolveItemFields(item.id);
-    if (resolved.length === 0) continue;
-    const values: Record<string, string | null> = {};
-    for (const field of resolved) {
-      if (!seen.has(field.id)) {
-        seen.add(field.id);
-        columns.push({ fieldId: field.id, header: field.name, fieldType: field.fieldType });
+  // Only categorised items can carry custom fields, so uncategorised ones are never asked about.
+  const categorised = items.filter((item) => item.categoryId !== null);
+  for (const bucket of bucketIds(categorised.map((i) => i.id))) {
+    const resolvedByItem = await repo.resolveItemFieldsMany(bucket);
+    for (const itemId of bucket) {
+      const resolved = resolvedByItem.get(itemId);
+      if (resolved === undefined || resolved.length === 0) continue;
+      const values: Record<string, string | null> = {};
+      for (const field of resolved) {
+        if (!seen.has(field.id)) {
+          seen.add(field.id);
+          columns.push({ fieldId: field.id, header: field.name, fieldType: field.fieldType });
+        }
+        if (field.hasStoredValue) values[field.id] = field.value;
       }
-      if (field.hasStoredValue) values[field.id] = field.value;
+      if (Object.keys(values).length > 0) valuesByItem.set(itemId, values);
     }
-    if (Object.keys(values).length > 0) valuesByItem.set(item.id, values);
   }
 
   return { columns, valuesByItem };
@@ -246,16 +286,9 @@ async function collectItemTags(items: readonly Item[]): Promise<Map<string, stri
   return byItem;
 }
 
-/** Page through a repository list to gather every item whose primary location matches (§4.5). */
-async function collectLocationItems(locationId: string, includeInactive: boolean): Promise<Item[]> {
-  const repo = getItemRepository();
-  const all: Item[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const page = await repo.list({ locationId, includeInactive, limit: PAGE, offset });
-    all.push(...page.rows);
-    if (!page.hasMore) break;
-  }
-  return all;
+/** Every item whose primary location matches (§4.5). */
+function collectLocationItems(locationId: string, includeInactive: boolean): Promise<Item[]> {
+  return collectItemsByWalk({ locationId, includeInactive });
 }
 
 /** The item ids referenced by a project's BOM lines (matched items only). */
@@ -268,13 +301,17 @@ async function collectProjectItems(projectId: string): Promise<Item[]> {
     for (const line of page.rows) if (line.itemId) ids.push(line.itemId);
     if (!page.hasMore) break;
   }
-  const seen = new Set<string>();
+  // One batched read per bucket rather than a `getById` per BOM line (issue #527). The lines'
+  // order is preserved: the deduplicated id list drives the output, and the map only answers
+  // which of those ids still resolve to an item (an unmatched line simply has none).
+  const unique = [...new Set(ids)];
   const rows: Item[] = [];
-  for (const id of ids) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const item = await items.getById(id);
-    if (item) rows.push(item);
+  for (const bucket of bucketIds(unique)) {
+    const byId = await items.getManyById(bucket);
+    for (const id of bucket) {
+      const item = byId.get(id);
+      if (item) rows.push(item);
+    }
   }
   return rows;
 }
@@ -332,12 +369,18 @@ function scopedLocations(
   return rows.filter((row) => row.location.id === targetId || homes.has(row.location.id));
 }
 
+/**
+ * Every loan against the exported items, for the JSON payload.
+ *
+ * Batched one query per {@link bucketIds} slice (issue #527) rather than one per item. That also
+ * removes an accidental cap: the per-item read asked for a single page of 100, so an item lent
+ * out more often than that had the rest of its loan history silently left out of the file.
+ */
 async function collectCheckouts(items: readonly Item[]): Promise<Checkout[]> {
   const repo = getCheckoutRepository();
   const all: Checkout[] = [];
-  for (const item of items) {
-    const page = await repo.listForItem(item.id, { limit: PAGE });
-    all.push(...page.rows);
+  for (const bucket of bucketIds(items.map((i) => i.id))) {
+    all.push(...(await repo.listForItems(bucket)));
   }
   return all;
 }
@@ -460,33 +503,46 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   // were the one thing it threw away.
   const vaultLocations = scopedLocations(scope, options.targetId, locations, items);
 
+  // The per-item extras come in three batched reads per bucket of items (issue #527) rather than
+  // three queries per item. The image *bytes* still resolve one file at a time below — those are
+  // OPFS reads, not database round-trips, and each one is a distinct file.
   const vaultItems: VaultItem[] = [];
-  for (const item of items) {
-    const [history, images, attachments] = await Promise.all([
-      itemRepo.getHistory(item.id, { limit: PAGE }),
-      imageRepo.listForItem(item.id),
-      attachmentRepo.listForItem(item.id),
+  for (let start = 0; start < items.length; start += ID_BUCKET_SIZE) {
+    const bucket = items.slice(start, start + ID_BUCKET_SIZE);
+    const ids = bucket.map((i) => i.id);
+    const [historyByItem, imagesByItem, attachmentsByItem] = await Promise.all([
+      itemRepo.getHistoryForItems(ids, PAGE),
+      imageRepo.listForItems(ids),
+      attachmentRepo.listForItems(ids),
     ]);
-    vaultItems.push({
-      item,
-      history: history.rows,
-      locationName: locationNames.get(item.locationId) ?? 'Unfiled',
-      categoryName: item.categoryId ? (categoryNames.get(item.categoryId) ?? null) : null,
-      // The full-resolution bytes are resolved *here*, before the note is written, so the note
-      // and the zip are decided by one fact (issue #635). A row can point at a file this device
-      // does not hold — a photo synced from a peer, one Storage Triage downgraded, or one added
-      // while storage was critical — and the builder then embeds the thumbnail instead of a
-      // wiki-link to a file the zip never carried.
-      images: await Promise.all(
-        images.map(async (img) => ({
-          id: img.id,
-          opfsPath: img.fullResOpfsPath,
-          thumbnail: img.thumbnailBlob,
-          fullRes: await readFullResBytes(img.fullResOpfsPath),
+    for (const item of bucket) {
+      const id = item.id;
+      const images = imagesByItem.get(id) ?? [];
+      vaultItems.push({
+        item,
+        history: historyByItem.get(id) ?? [],
+        locationName: locationNames.get(item.locationId) ?? 'Unfiled',
+        categoryName: item.categoryId ? (categoryNames.get(item.categoryId) ?? null) : null,
+        // The full-resolution bytes are resolved *here*, before the note is written, so the note
+        // and the zip are decided by one fact (issue #635). A row can point at a file this device
+        // does not hold — a photo synced from a peer, one Storage Triage downgraded, or one added
+        // while storage was critical — and the builder then embeds the thumbnail instead of a
+        // wiki-link to a file the zip never carried.
+        images: await Promise.all(
+          images.map(async (img) => ({
+            id: img.id,
+            opfsPath: img.fullResOpfsPath,
+            thumbnail: img.thumbnailBlob,
+            fullRes: await readFullResBytes(img.fullResOpfsPath),
+          })),
+        ),
+        attachments: (attachmentsByItem.get(id) ?? []).map((a) => ({
+          kind: a.kind,
+          value: a.value,
+          label: a.label,
         })),
-      ),
-      attachments: attachments.map((a) => ({ kind: a.kind, value: a.value, label: a.label })),
-    });
+      });
+    }
   }
 
   // A Project scope packs everything into one project folder — master note + the

@@ -41,6 +41,30 @@ export class AttachmentRepository extends BaseRepository {
     return rows.map(rowToItemAttachment);
   }
 
+  /**
+   * Attachments for a **set** of items, keyed by item id (issue #527) — the batch companion to
+   * {@link listForItem}, so the Markdown-vault export reads one query per bucket of items
+   * instead of one per item. An item with no attachments is simply absent from the map; an
+   * empty input queries nothing. Within each item the order matches {@link listForItem}.
+   */
+  async listForItems(itemIds: readonly string[]): Promise<Map<string, ItemAttachment[]>> {
+    const byItem = new Map<string, ItemAttachment[]>();
+    const unique = [...new Set(itemIds)];
+    if (unique.length === 0) return byItem;
+    const rows = await this.driver.query<ItemAttachmentRow>(
+      `SELECT * FROM item_attachments WHERE item_id IN (${unique.map(() => '?').join(', ')})
+       ORDER BY item_id, position ASC, created_at ASC;`,
+      unique,
+    );
+    for (const row of rows) {
+      const attachment = rowToItemAttachment(row);
+      const list = byItem.get(attachment.itemId);
+      if (list) list.push(attachment);
+      else byItem.set(attachment.itemId, [attachment]);
+    }
+    return byItem;
+  }
+
   async add(input: CreateAttachmentInput): Promise<ItemAttachment> {
     this.assertPermission('items:write');
     this.assertWritable();

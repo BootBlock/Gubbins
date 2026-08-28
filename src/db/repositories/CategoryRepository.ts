@@ -166,6 +166,11 @@ interface ResolvedFieldRow extends CategoryFieldRow {
   readonly stored_origin_device_id: string | null;
 }
 
+/** A {@link ResolvedFieldRow} carrying the item it belongs to, for the batched read. */
+interface ResolvedFieldRowForItem extends ResolvedFieldRow {
+  readonly owner_item_id: string;
+}
+
 /**
  * The projection behind both category list reads, so the paged and whole-set reads can never
  * disagree about the columns or the ordering they return. Callers append their own `LIMIT`.
@@ -1067,28 +1072,54 @@ export class CategoryRepository extends BaseRepository {
    * resolve to. The precedence itself lives in the pure `location-inheritance` seam.
    */
   async resolveItemFields(itemId: string): Promise<ResolvedItemField[]> {
+    return (await this.resolveItemFieldsMany([itemId])).get(itemId) ?? [];
+  }
+
+  /**
+   * {@link resolveItemFields} for a **set** of items, keyed by item id (issue #527).
+   *
+   * Two queries for the whole set rather than four per item: one read of the joined
+   * definitions and stored values, plus one {@link loadInheritanceContext} — which is itself
+   * constant-cost however many items it is given. Called per item in a loop, the single-item
+   * form re-read the entire `locations` table and every inheritable offer *once per item*,
+   * which is what made the catalogue CSV export unusable on a large catalogue.
+   *
+   * An item with no category, or one that does not exist, is simply absent from the map (the
+   * single-item form's `[]`); an empty input queries nothing. Field order within an item is
+   * the same rendered order every other field read uses.
+   */
+  async resolveItemFieldsMany(itemIds: readonly string[]): Promise<Map<string, ResolvedItemField[]>> {
+    const out = new Map<string, ResolvedItemField[]>();
+    const unique = [...new Set(itemIds)];
+    if (unique.length === 0) return out;
+    const placeholders = unique.map(() => '?').join(', ');
+
     const [rows, context] = await Promise.all([
-      this.driver.query<ResolvedFieldRow>(
-        `SELECT ${CATEGORY_FIELD_COLUMNS},
+      this.driver.query<ResolvedFieldRowForItem>(
+        // The item is joined in rather than being a scalar subquery, so one statement covers
+        // the whole set; `cf.category_id = i.category_id` yields nothing for an uncategorised
+        // item, exactly as the single-item form's `= (SELECT category_id …)` did against NULL.
+        `SELECT i.id AS owner_item_id, ${CATEGORY_FIELD_COLUMNS},
                 ifv.value AS stored_value,
                 ifv.mode  AS stored_mode,
                 ifv.origin_device_id AS stored_origin_device_id,
                 (ifv.id IS NOT NULL) AS has_stored
-         FROM category_fields cf
+         FROM items i
+         JOIN category_fields cf ON cf.category_id = i.category_id
          JOIN field_defs fd ON fd.id = cf.def_id
          LEFT JOIN item_field_values ifv
-           ON ifv.def_id = cf.def_id AND ifv.item_id = ?
-         WHERE cf.category_id = (SELECT category_id FROM items WHERE id = ?)
-         ORDER BY ${FIELD_PROMINENCE_RANK}, cf.position ASC, fd.name COLLATE NOCASE ASC;`,
-        [itemId, itemId],
+           ON ifv.def_id = cf.def_id AND ifv.item_id = i.id
+         WHERE i.id IN (${placeholders})
+         ORDER BY i.id, ${FIELD_PROMINENCE_RANK}, cf.position ASC, fd.name COLLATE NOCASE ASC;`,
+        unique as SqlValue[],
       ),
-      this.loadInheritanceContext([itemId]),
+      this.loadInheritanceContext(unique),
     ]);
 
-    const chain = context.chainByItem.get(itemId) ?? [];
-    return rows.map((row) => {
+    for (const row of rows) {
       const field = rowToCategoryField(row);
       const hasStored = row.has_stored === 1;
+      const chain = context.chainByItem.get(row.owner_item_id) ?? [];
       const inheritable = findInheritedValue(chain, context.offers, field.defId);
       const resolved = resolveFieldValue(
         hasStored
@@ -1101,7 +1132,7 @@ export class CategoryRepository extends BaseRepository {
         inheritable,
         field.defaultValue,
       );
-      return {
+      const entry: ResolvedItemField = {
         ...field,
         hasStoredValue: hasStored,
         value: resolved.value,
@@ -1110,7 +1141,11 @@ export class CategoryRepository extends BaseRepository {
         inheritable: resolved.inheritable,
         originDeviceId: resolved.originDeviceId,
       };
-    });
+      const list = out.get(row.owner_item_id);
+      if (list) list.push(entry);
+      else out.set(row.owner_item_id, [entry]);
+    }
+    return out;
   }
 
   /**

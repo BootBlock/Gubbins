@@ -25,6 +25,30 @@ export class ImageRepository extends BaseRepository {
     return rows.map(rowToItemImage);
   }
 
+  /**
+   * Image metadata for a **set** of items, keyed by item id (issue #527) — the batch companion
+   * to {@link listForItem}, so the Markdown-vault export reads one query per bucket of items
+   * instead of one per item. An item with no images is simply absent from the map; an empty
+   * input queries nothing. Within each item the order matches {@link listForItem}.
+   */
+  async listForItems(itemIds: readonly string[]): Promise<Map<string, ItemImage[]>> {
+    const byItem = new Map<string, ItemImage[]>();
+    const unique = [...new Set(itemIds)];
+    if (unique.length === 0) return byItem;
+    const rows = await this.driver.query<ItemImageRow>(
+      `SELECT * FROM item_images WHERE item_id IN (${unique.map(() => '?').join(', ')})
+       ORDER BY item_id, position ASC, created_at ASC;`,
+      unique,
+    );
+    for (const row of rows) {
+      const image = rowToItemImage(row);
+      const list = byItem.get(image.itemId);
+      if (list) list.push(image);
+      else byItem.set(image.itemId, [image]);
+    }
+    return byItem;
+  }
+
   /** Insert one image record. Write-gated (it grows storage). */
   async add(input: CreateImageInput): Promise<ItemImage> {
     this.assertPermission('items:write');
