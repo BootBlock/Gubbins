@@ -12,6 +12,7 @@ import {
   Spinner,
   Surface,
   MAIN_CONTENT_ID,
+  useInViewport,
 } from '@/components/foundry';
 import {
   CatalogueIcon,
@@ -44,6 +45,7 @@ import {
   ANALYTICS_WINDOWS,
   DATA_HYGIENE_STALE_DAYS,
   normaliseAnalyticsWindow,
+  REPORT_MOVEMENT_BUCKETS,
   REPORT_WINDOW_DAYS,
   useAbcAnalysis,
   useConsumptionRate,
@@ -87,6 +89,28 @@ export function ReportsScreen() {
   const analyticsWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsAnalyticsWindow));
   const setAnalyticsWindow = usePreferencesStore((s) => s.setReportsAnalyticsWindow);
 
+  // Below-the-fold reports are gated on their panel actually being on screen (issue #528).
+  //
+  // The screen is long — a reader lands on the headline cards and sees maybe the first panel —
+  // yet every report used to run on mount, six of them a pass over the whole catalogue, and
+  // every item write re-ran the lot for as long as the screen stayed open. The gate fixes both
+  // halves with one signal: a panel nobody has scrolled to neither fetches on mount nor
+  // refetches when `invalidateItems` marks it stale, and it picks the new figures up the moment
+  // it is scrolled into view. Nothing about *correctness* moves — the reader still never reads
+  // a figure that a write has since changed; the work simply happens when they look.
+  //
+  // Without an IntersectionObserver every gate reports `true`, so the screen fetches exactly as
+  // it did before. That fallback is not what the unit suite exercises, though: happy-dom defines
+  // the constructor but never delivers an entry, so `ReportsScreen.test.tsx` stubs a working one.
+  //
+  // The headline cards deliberately have no gate: they are above the fold by definition, and
+  // three of them (value, consumption, dead stock) also feed a panel further down.
+  const movementView = useInViewport();
+  const analyticsView = useInViewport();
+  const hygieneView = useInViewport();
+  const spendView = useInViewport();
+  const salesView = useInViewport();
+
   const value = useInventoryValue();
   // Stock the valuation queries had to leave out because its price is quoted in another
   // currency — surfaced beneath the headline cards so the totals are never quietly short (#284).
@@ -114,7 +138,9 @@ export function ReportsScreen() {
   // sections rather than the fixed 30-day span it used to be pinned to.
   const movementWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsMovementWindow));
   const setMovementWindow = usePreferencesStore((s) => s.setReportsMovementWindow);
-  const movement = useMovement(movementWindow);
+  const movement = useMovement(movementWindow, REPORT_MOVEMENT_BUCKETS, {
+    enabled: movementView.inView,
+  });
   const lowStock = useLowStockCount();
   // The global idle threshold (issue #92) — the figure the panel is labelled with, and the
   // fallback for items whose location doesn't override it.
@@ -122,10 +148,13 @@ export function ReportsScreen() {
   const deadStock = useDeadStock();
 
   // Phase 74 advanced analytics.
-  const abc = useAbcAnalysis();
-  const turnover = useTurnover(analyticsWindow);
-  const aging = useStockAging();
-  const trend = useValuationTrend(analyticsWindow);
+  // All four share one gate: they are laid out as a single block, so any of them being on
+  // screen means the reader is looking at the section.
+  const analyticsInView = analyticsView.inView;
+  const abc = useAbcAnalysis({ enabled: analyticsInView });
+  const turnover = useTurnover(analyticsWindow, { enabled: analyticsInView });
+  const aging = useStockAging({ enabled: analyticsInView });
+  const trend = useValuationTrend(analyticsWindow, { enabled: analyticsInView });
 
   // Phase 77 data-hygiene / quality report.
   //
@@ -134,10 +163,10 @@ export function ReportsScreen() {
   // omitted at source rather than filtered out of the built report, so the "N of M items need
   // attention" headline keeps agreeing with the rows below it.
   const cycleCountsOn = useEnabledFeatures().has('cycle-counts');
-  const hygiene = useDataHygiene(
-    DATA_HYGIENE_STALE_DAYS,
-    cycleCountsOn ? undefined : { omitKinds: WITHOUT_NEVER_COUNTED },
-  );
+  const hygiene = useDataHygiene(DATA_HYGIENE_STALE_DAYS, {
+    enabled: hygieneView.inView,
+    omitKinds: cycleCountsOn ? undefined : WITHOUT_NEVER_COUNTED,
+  });
 
   // Phase 79 procurement / spend analytics — its own selectable trailing window.
   //
@@ -148,23 +177,22 @@ export function ReportsScreen() {
   const spendOn = useEnabledFeatures().has('purchase-orders');
   const spendWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsSpendWindow));
   const setSpendWindow = usePreferencesStore((s) => s.setReportsSpendWindow);
-  const spend = useSpendAnalytics(spendWindow, { enabled: spendOn });
+  const spend = useSpendAnalytics(spendWindow, { enabled: spendOn && spendView.inView });
 
   // Sales & disposals analytics — its own selectable window; dropped when the Sales module is off.
   const salesOn = useEnabledFeatures().has('sales');
   const salesWindow = normaliseAnalyticsWindow(usePreferencesStore((s) => s.reportsSalesWindow));
   const setSalesWindow = usePreferencesStore((s) => s.setReportsSalesWindow);
-  const sales = useSalesAnalytics(salesWindow, { enabled: salesOn });
+  const sales = useSalesAnalytics(salesWindow, { enabled: salesOn && salesView.inView });
 
-  // Derive aggregate loading / error state from all five queries.
-  const isAnyLoading =
-    value.isLoading ||
-    consumption.isLoading ||
-    movement.isLoading ||
-    lowStock.isLoading ||
-    deadStock.isLoading;
-  const isAnyError =
-    value.isError || consumption.isError || movement.isError || lowStock.isError || deadStock.isError;
+  // Derive aggregate loading / error state from the ungated headline queries.
+  //
+  // Stock movement used to be counted here; it now sits behind its own viewport gate, so a
+  // reader who never scrolls to it would otherwise hold the "Reports ready" announcement open
+  // forever waiting for a query that is deliberately idle. The movement panel carries its own
+  // spinner and its own failure message instead, like the gated sections below it.
+  const isAnyLoading = value.isLoading || consumption.isLoading || lowStock.isLoading || deadStock.isLoading;
+  const isAnyError = value.isError || consumption.isError || lowStock.isError || deadStock.isError;
 
   // Announce the ready / error transition ONCE via the always-mounted live region.
   // Tracked with a ref so re-renders (e.g. React Strict Mode double-invoke) don't
@@ -191,16 +219,19 @@ export function ReportsScreen() {
   const [analyticsAnnouncement, setAnalyticsAnnouncement] = useState('');
   const analyticsAnnouncedRef = useRef(false);
   useEffect(() => {
-    if (isAnalyticsLoading || analyticsAnnouncedRef.current) return;
+    // An idle query is not a loading one, so the gate has to be part of the guard: without it
+    // the section would announce "Analytics ready" before it had fetched anything at all.
+    if (!analyticsInView || isAnalyticsLoading || analyticsAnnouncedRef.current) return;
     analyticsAnnouncedRef.current = true;
     setAnalyticsAnnouncement(isAnalyticsError ? 'Analytics failed to load.' : 'Analytics ready.');
-  }, [isAnalyticsLoading, isAnalyticsError]);
+  }, [analyticsInView, isAnalyticsLoading, isAnalyticsError]);
 
   // The data-hygiene block's own once-only completion announcement (Phase 63 / WCAG 4.1.3).
   const [hygieneAnnouncement, setHygieneAnnouncement] = useState('');
   const hygieneAnnouncedRef = useRef(false);
   useEffect(() => {
-    if (hygiene.isLoading || hygieneAnnouncedRef.current) return;
+    // Gated like the analytics announcement above — an idle query must not announce "ready".
+    if (!hygieneView.inView || hygiene.isLoading || hygieneAnnouncedRef.current) return;
     hygieneAnnouncedRef.current = true;
     if (hygiene.isError) {
       setHygieneAnnouncement('Data hygiene report failed to load.');
@@ -212,34 +243,35 @@ export function ReportsScreen() {
           : `Data hygiene ready — ${flagged} ${plural(flagged, 'item')} need attention.`,
       );
     }
-  }, [hygiene.isLoading, hygiene.isError, hygiene.data]);
+  }, [hygieneView.inView, hygiene.isLoading, hygiene.isError, hygiene.data]);
 
   // The spend-analytics block's own once-only completion announcement (Phase 63 / WCAG 4.1.3).
   const [spendAnnouncement, setSpendAnnouncement] = useState('');
   const spendAnnouncedRef = useRef(false);
   useEffect(() => {
-    // Skip the announcement entirely when the spend card is gated off (query disabled).
-    if (!spendOn || spend.isLoading || spendAnnouncedRef.current) return;
+    // Skip the announcement entirely while the spend query is idle — because the module is
+    // off, or because the section has not been scrolled to yet.
+    if (!spendOn || !spendView.inView || spend.isLoading || spendAnnouncedRef.current) return;
     spendAnnouncedRef.current = true;
     setSpendAnnouncement(
       spend.isError
         ? 'Spend analytics failed to load.'
         : `Spend analytics ready — ${f.currency(spend.data?.total ?? 0)} in the window.`,
     );
-  }, [spendOn, spend.isLoading, spend.isError, spend.data, f]);
+  }, [spendOn, spendView.inView, spend.isLoading, spend.isError, spend.data, f]);
 
   // The sales-analytics block's own once-only completion announcement (WCAG 4.1.3).
   const [salesAnnouncement, setSalesAnnouncement] = useState('');
   const salesAnnouncedRef = useRef(false);
   useEffect(() => {
-    if (!salesOn || sales.isLoading || salesAnnouncedRef.current) return;
+    if (!salesOn || !salesView.inView || sales.isLoading || salesAnnouncedRef.current) return;
     salesAnnouncedRef.current = true;
     setSalesAnnouncement(
       sales.isError
         ? 'Sales analytics failed to load.'
         : `Sales analytics ready — ${f.currency(sales.data?.proceeds ?? 0)} in proceeds.`,
     );
-  }, [salesOn, sales.isLoading, sales.isError, sales.data, f]);
+  }, [salesOn, salesView.inView, sales.isLoading, sales.isError, sales.data, f]);
 
   return (
     <PageContainer>
@@ -408,25 +440,31 @@ export function ReportsScreen() {
         </Reveal>
 
         {/* Stock movement */}
-        <Reveal>
-          <Panel
-            title={`Stock movement (last ${movementWindow} days)`}
-            action={
-              <WindowToggle
-                value={movementWindow}
-                onChange={setMovementWindow}
-                formatters={f}
-                label="Stock movement window"
-              />
-            }
-          >
-            {movement.isLoading ? (
-              <CentredSpinner />
-            ) : movement.data ? (
-              <MovementChart report={movement.data} formatters={f} />
-            ) : null}
-          </Panel>
-        </Reveal>
+        <div ref={movementView.ref}>
+          <Reveal>
+            <Panel
+              title={`Stock movement (last ${movementWindow} days)`}
+              action={
+                <WindowToggle
+                  value={movementWindow}
+                  onChange={setMovementWindow}
+                  formatters={f}
+                  label="Stock movement window"
+                />
+              }
+            >
+              {!movementView.inView || movement.isLoading ? (
+                <CentredSpinner />
+              ) : movement.data ? (
+                <MovementChart report={movement.data} formatters={f} />
+              ) : (
+                <p className="py-6 text-center text-sm text-destructive">
+                  The stock movement report failed to load.
+                </p>
+              )}
+            </Panel>
+          </Reveal>
+        </div>
 
         {/* Dead stock */}
         <Reveal>
@@ -448,138 +486,148 @@ export function ReportsScreen() {
         </Reveal>
 
         {/* Advanced analytics (Phase 74) — ABC, turnover, stock aging & valuation over time. */}
-        <Reveal as="section" className="flex flex-col gap-6" aria-labelledby="analytics-heading">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="analytics-heading" className="text-base font-semibold tracking-tight">
-              Advanced analytics
-            </h2>
-            <WindowToggle value={analyticsWindow} onChange={setAnalyticsWindow} formatters={f} />
-          </div>
+        <div ref={analyticsView.ref}>
+          <Reveal as="section" className="flex flex-col gap-6" aria-labelledby="analytics-heading">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 id="analytics-heading" className="text-base font-semibold tracking-tight">
+                Advanced analytics
+              </h2>
+              <WindowToggle value={analyticsWindow} onChange={setAnalyticsWindow} formatters={f} />
+            </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Panel title={`ABC analysis (annual consumption, ${ABC_WINDOW_DAYS}d)`}>
-              {abc.isLoading ? (
-                <CentredSpinner />
-              ) : abc.data ? (
-                <AbcBreakdown report={abc.data} formatters={f} emptyLabel="No consumption recorded yet." />
-              ) : null}
-            </Panel>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Panel title={`ABC analysis (annual consumption, ${ABC_WINDOW_DAYS}d)`}>
+                {!analyticsInView || abc.isLoading ? (
+                  <CentredSpinner />
+                ) : abc.data ? (
+                  <AbcBreakdown report={abc.data} formatters={f} emptyLabel="No consumption recorded yet." />
+                ) : null}
+              </Panel>
 
-            <Panel title={`Inventory turnover (last ${analyticsWindow} days)`}>
-              {turnover.isLoading ? (
-                <CentredSpinner />
-              ) : turnover.data ? (
-                <TurnoverTable report={turnover.data} formatters={f} />
-              ) : null}
-            </Panel>
+              <Panel title={`Inventory turnover (last ${analyticsWindow} days)`}>
+                {!analyticsInView || turnover.isLoading ? (
+                  <CentredSpinner />
+                ) : turnover.data ? (
+                  <TurnoverTable report={turnover.data} formatters={f} />
+                ) : null}
+              </Panel>
 
-            <Panel title="Stock aging">
-              {aging.isLoading ? (
-                <CentredSpinner />
-              ) : aging.data ? (
-                <StockAgingChart report={aging.data} formatters={f} />
-              ) : null}
-            </Panel>
+              <Panel title="Stock aging">
+                {!analyticsInView || aging.isLoading ? (
+                  <CentredSpinner />
+                ) : aging.data ? (
+                  <StockAgingChart report={aging.data} formatters={f} />
+                ) : null}
+              </Panel>
 
-            <Panel title={`Valuation over time (last ${analyticsWindow} days)`}>
-              {trend.isLoading ? (
-                <CentredSpinner />
-              ) : trend.data ? (
-                <ValuationSparkline report={trend.data} formatters={f} />
-              ) : null}
-            </Panel>
-          </div>
-        </Reveal>
+              <Panel title={`Valuation over time (last ${analyticsWindow} days)`}>
+                {!analyticsInView || trend.isLoading ? (
+                  <CentredSpinner />
+                ) : trend.data ? (
+                  <ValuationSparkline report={trend.data} formatters={f} />
+                ) : null}
+              </Panel>
+            </div>
+          </Reveal>
+        </div>
 
         {/* Data hygiene (Phase 77) — a "tidy up" checklist of records needing attention. */}
-        <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="hygiene-heading">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 id="hygiene-heading" className="text-base font-semibold tracking-tight">
-              Data hygiene
-            </h2>
-            {hygiene.data ? (
-              <p className="text-sm text-muted-foreground" data-testid="hygiene-summary">
-                {hygiene.data.flaggedItems === 0
-                  ? `All ${f.quantity(hygiene.data.totalItems)} items look tidy.`
-                  : `${f.quantity(hygiene.data.flaggedItems)} of ${f.quantity(hygiene.data.totalItems)} items need attention.`}
-              </p>
-            ) : null}
-          </div>
-          <Panel title="Quality checks">
-            {hygiene.isLoading ? (
-              <CentredSpinner />
-            ) : hygiene.data ? (
-              <HygieneChecklist report={hygiene.data} formatters={f} />
-            ) : (
-              <p className="py-6 text-center text-sm text-destructive">
-                The data hygiene report failed to load.
-              </p>
-            )}
-          </Panel>
-        </Reveal>
+        <div ref={hygieneView.ref}>
+          <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="hygiene-heading">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 id="hygiene-heading" className="text-base font-semibold tracking-tight">
+                Data hygiene
+              </h2>
+              {hygiene.data ? (
+                <p className="text-sm text-muted-foreground" data-testid="hygiene-summary">
+                  {hygiene.data.flaggedItems === 0
+                    ? `All ${f.quantity(hygiene.data.totalItems)} items look tidy.`
+                    : `${f.quantity(hygiene.data.flaggedItems)} of ${f.quantity(hygiene.data.totalItems)} items need attention.`}
+                </p>
+              ) : null}
+            </div>
+            <Panel title="Quality checks">
+              {/* The gate is part of the test, not just of the query: an idle report has no
+                  data and is not loading, which would otherwise read as "failed to load". */}
+              {!hygieneView.inView || hygiene.isLoading ? (
+                <CentredSpinner />
+              ) : hygiene.data ? (
+                <HygieneChecklist report={hygiene.data} formatters={f} />
+              ) : (
+                <p className="py-6 text-center text-sm text-destructive">
+                  The data hygiene report failed to load.
+                </p>
+              )}
+            </Panel>
+          </Reveal>
+        </div>
 
         {/* Spend analytics (Phase 79) — money OUT over time, by source/supplier/category.
             Distinct from the valuation trend above (inventory value). Dropped when the
             Purchase-orders module is off (Modular UI Phase 7). */}
         {spendOn ? (
-          <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="spend-heading">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 id="spend-heading" className="text-base font-semibold tracking-tight">
-                Spend analytics
-              </h2>
-              <WindowToggle
-                value={spendWindow}
-                onChange={setSpendWindow}
-                formatters={f}
-                label="Spend window"
-              />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Cash out from received purchase orders, project expenses and asset acquisitions. An item bought
-              through a purchase order may also carry an acquisition price, so sources can overlap.
-            </p>
-            <Panel title={`Spend (last ${spendWindow} days)`}>
-              {spend.isLoading ? (
-                <CentredSpinner />
-              ) : spend.data ? (
-                <SpendBreakdown report={spend.data} formatters={f} baseCurrency={baseCurrency} />
-              ) : (
-                <p className="py-6 text-center text-sm text-destructive">
-                  The spend analytics report failed to load.
-                </p>
-              )}
-            </Panel>
-          </Reveal>
+          <div ref={spendView.ref}>
+            <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="spend-heading">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 id="spend-heading" className="text-base font-semibold tracking-tight">
+                  Spend analytics
+                </h2>
+                <WindowToggle
+                  value={spendWindow}
+                  onChange={setSpendWindow}
+                  formatters={f}
+                  label="Spend window"
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Cash out from received purchase orders, project expenses and asset acquisitions. An item
+                bought through a purchase order may also carry an acquisition price, so sources can overlap.
+              </p>
+              <Panel title={`Spend (last ${spendWindow} days)`}>
+                {!spendView.inView || spend.isLoading ? (
+                  <CentredSpinner />
+                ) : spend.data ? (
+                  <SpendBreakdown report={spend.data} formatters={f} baseCurrency={baseCurrency} />
+                ) : (
+                  <p className="py-6 text-center text-sm text-destructive">
+                    The spend analytics report failed to load.
+                  </p>
+                )}
+              </Panel>
+            </Reveal>
+          </div>
         ) : null}
 
         {/* Sales & disposals — proceeds vs a cost snapshot (→ margin), plus written-off value.
             Dropped when the Sales & disposals module is off. */}
         {salesOn ? (
-          <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="sales-heading">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 id="sales-heading" className="text-base font-semibold tracking-tight">
-                Sales &amp; disposals
-              </h2>
-              <WindowToggle
-                value={salesWindow}
-                onChange={setSalesWindow}
-                formatters={f}
-                label="Sales window"
-              />
-            </div>
-            <p className="text-sm text-muted-foreground">{t('reports.sales.description')}</p>
-            <Panel title={`Sales (last ${salesWindow} days)`}>
-              {sales.isLoading ? (
-                <CentredSpinner />
-              ) : sales.data ? (
-                <SalesBreakdown report={sales.data} formatters={f} />
-              ) : (
-                <p className="py-6 text-center text-sm text-destructive">
-                  The sales analytics report failed to load.
-                </p>
-              )}
-            </Panel>
-          </Reveal>
+          <div ref={salesView.ref}>
+            <Reveal as="section" className="flex flex-col gap-3" aria-labelledby="sales-heading">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 id="sales-heading" className="text-base font-semibold tracking-tight">
+                  Sales &amp; disposals
+                </h2>
+                <WindowToggle
+                  value={salesWindow}
+                  onChange={setSalesWindow}
+                  formatters={f}
+                  label="Sales window"
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">{t('reports.sales.description')}</p>
+              <Panel title={`Sales (last ${salesWindow} days)`}>
+                {!salesView.inView || sales.isLoading ? (
+                  <CentredSpinner />
+                ) : sales.data ? (
+                  <SalesBreakdown report={sales.data} formatters={f} />
+                ) : (
+                  <p className="py-6 text-center text-sm text-destructive">
+                    The sales analytics report failed to load.
+                  </p>
+                )}
+              </Panel>
+            </Reveal>
+          </div>
         ) : null}
       </main>
 

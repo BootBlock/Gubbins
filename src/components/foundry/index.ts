@@ -84,6 +84,12 @@ export {
   type ObserverLike,
   type IntersectionObserverFactory,
 } from './useRevealOnScroll';
+export {
+  useInViewport,
+  DEFAULT_VIEWPORT_MARGIN,
+  type InViewportOptions,
+  type InViewportState,
+} from './useInViewport';
 export { FormField, type FormFieldProps } from './field';
 export { fieldAria, type FieldAria, type FieldControlAria } from './field-aria';
 export { Modal, type ModalProps } from './modal';

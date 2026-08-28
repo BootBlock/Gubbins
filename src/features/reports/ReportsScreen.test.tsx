@@ -7,7 +7,7 @@
  * repository. Also mock leaf dependencies that pull in the router or chart canvas
  * so the test stays in happy-dom with no extra providers.
  */
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 
 // --------------------------------------------------------------------------
@@ -225,6 +225,17 @@ function makeAllLoading() {
 // can assert the query is disabled (not merely filtered out of the DOM) when the module is off.
 let spendEnabled: boolean | undefined;
 
+// The same, for the reports gated on their panel being on screen (issue #528). Each records
+// whether the screen actually left the query idle, which is the saving — a panel merely
+// rendered empty would still have fetched.
+let movementEnabled: boolean | undefined;
+let abcEnabled: boolean | undefined;
+let turnoverEnabled: boolean | undefined;
+let agingEnabled: boolean | undefined;
+let trendEnabled: boolean | undefined;
+let hygieneEnabled: boolean | undefined;
+let salesEnabled: boolean | undefined;
+
 // Captures the window (days) the movement query hook was last called with, so the issue #86
 // tests can assert the selected period actually reaches the query rather than only retitling
 // the panel.
@@ -245,22 +256,41 @@ vi.mock('./queries', () => ({
   SALES_BUCKETS: 15,
   useInventoryValue: () => ({ ...queryState.value }),
   useConsumptionRate: () => ({ ...queryState.consumption }),
-  useMovement: (windowDays?: number) => {
+  useMovement: (windowDays?: number, _buckets?: number, options?: { enabled?: boolean }) => {
     movementWindowArg = windowDays;
+    movementEnabled = options?.enabled;
     return { ...queryState.movement };
   },
   useLowStockCount: () => ({ ...queryState.lowStock }),
   useDeadStock: () => ({ ...queryState.deadStock }),
-  useAbcAnalysis: () => ({ ...queryState.abc }),
-  useTurnover: () => ({ ...queryState.turnover }),
-  useStockAging: () => ({ ...queryState.aging }),
-  useValuationTrend: () => ({ ...queryState.trend }),
-  useDataHygiene: () => ({ ...queryState.hygiene }),
+  useAbcAnalysis: (options?: { enabled?: boolean }) => {
+    abcEnabled = options?.enabled;
+    return { ...queryState.abc };
+  },
+  useTurnover: (_windowDays?: number, options?: { enabled?: boolean }) => {
+    turnoverEnabled = options?.enabled;
+    return { ...queryState.turnover };
+  },
+  useStockAging: (options?: { enabled?: boolean }) => {
+    agingEnabled = options?.enabled;
+    return { ...queryState.aging };
+  },
+  useValuationTrend: (_windowDays?: number, options?: { enabled?: boolean }) => {
+    trendEnabled = options?.enabled;
+    return { ...queryState.trend };
+  },
+  useDataHygiene: (_staleDays?: number, options?: { enabled?: boolean }) => {
+    hygieneEnabled = options?.enabled;
+    return { ...queryState.hygiene };
+  },
   useSpendAnalytics: (_windowDays?: number, options?: { enabled?: boolean }) => {
     spendEnabled = options?.enabled;
     return { ...queryState.spend };
   },
-  useSalesAnalytics: (_windowDays?: number, _options?: { enabled?: boolean }) => ({ ...queryState.sales }),
+  useSalesAnalytics: (_windowDays?: number, options?: { enabled?: boolean }) => {
+    salesEnabled = options?.enabled;
+    return { ...queryState.sales };
+  },
   useForeignCurrencyCostCount: () => ({ ...queryState.foreignCurrency }),
   useUnpricedGaugeCount: () => ({ ...queryState.unpricedGauges }),
 }));
@@ -277,7 +307,34 @@ import { DEFAULT_ANALYTICS_WINDOW } from './analytics-windows';
 // Tests
 // --------------------------------------------------------------------------
 
+/**
+ * The screen leaves its below-the-fold reports idle until their panel is on screen (issue
+ * #528), which it decides with an IntersectionObserver. happy-dom supplies a constructor that
+ * never delivers an entry, so every gated panel would sit idle here and these tests would
+ * assert against a screen that had fetched nothing. Stand in an observer that reports the
+ * element as visible — the state every test below is written against.
+ */
+class AlwaysVisibleObserver implements IntersectionObserver {
+  readonly root = null;
+  readonly rootMargin = '';
+  readonly thresholds: readonly number[] = [];
+  constructor(private readonly cb: IntersectionObserverCallback) {}
+  observe(target: Element) {
+    this.cb([{ isIntersecting: true, target } as IntersectionObserverEntry], this);
+  }
+  unobserve() {}
+  disconnect() {}
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+}
+
+beforeEach(() => {
+  vi.stubGlobal('IntersectionObserver', AlwaysVisibleObserver);
+});
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   cleanup();
   makeAllLoading();
   useModulesStore.setState({ intent: {} });
@@ -285,6 +342,13 @@ afterEach(() => {
   // that changes it can't leak its pick into the next one.
   usePreferencesStore.setState({ reportsMovementWindow: DEFAULT_ANALYTICS_WINDOW });
   spendEnabled = undefined;
+  movementEnabled = undefined;
+  abcEnabled = undefined;
+  turnoverEnabled = undefined;
+  agingEnabled = undefined;
+  trendEnabled = undefined;
+  hygieneEnabled = undefined;
+  salesEnabled = undefined;
   movementWindowArg = undefined;
 });
 
@@ -429,6 +493,135 @@ describe('ReportsScreen — spend card gating (Modular UI Phase 7)', () => {
     expect(spendEnabled).toBe(false);
     // Sibling report cards are untouched.
     expect(screen.queryByTestId('abc-breakdown')).not.toBeNull();
+  });
+});
+
+describe('ReportsScreen — below-the-fold reports are gated on visibility (issue #528)', () => {
+  /** An observer that is wired up but never reports the element as on screen. */
+  class NeverVisibleObserver implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = '';
+    readonly thresholds: readonly number[] = [];
+    constructor(_cb: IntersectionObserverCallback) {}
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+  }
+
+  /**
+   * Put every gated report into the shape a *disabled* TanStack query returns — not loading, not
+   * errored, no data. That is what a panel reads while it is off screen, and it is the state the
+   * render guards exist for: `!isLoading && !data` is otherwise the screen's "this failed" test.
+   * `makeAllLoaded` alone cannot exercise it, because a report with data never reaches the guard.
+   */
+  function makeGatedIdle() {
+    const idle = { isLoading: false, isError: false };
+    queryState.movement = { ...idle };
+    queryState.abc = { ...idle };
+    queryState.turnover = { ...idle };
+    queryState.aging = { ...idle };
+    queryState.trend = { ...idle };
+    queryState.hygiene = { ...idle };
+    queryState.spend = { ...idle };
+    queryState.sales = { ...idle };
+  }
+
+  /** Every report the screen leaves idle until its panel is scrolled to. */
+  const gated = () => ({
+    movement: movementEnabled,
+    abc: abcEnabled,
+    turnover: turnoverEnabled,
+    aging: agingEnabled,
+    trend: trendEnabled,
+    hygiene: hygieneEnabled,
+    spend: spendEnabled,
+    sales: salesEnabled,
+  });
+
+  it('leaves every below-the-fold report idle while its panel is off screen', () => {
+    // The screen used to fire fourteen queries on mount, six of them a pass over the whole
+    // catalogue, before the reader had scrolled anywhere. Eight of them now wait.
+    vi.stubGlobal('IntersectionObserver', NeverVisibleObserver);
+    makeAllLoaded();
+    render(<ReportsScreen />);
+
+    expect(gated()).toEqual({
+      movement: false,
+      abc: false,
+      turnover: false,
+      aging: false,
+      trend: false,
+      hygiene: false,
+      spend: false,
+      sales: false,
+    });
+  });
+
+  it('runs every report once the panels are on screen', () => {
+    // The default stub reports everything visible, so this is the scrolled-through state.
+    makeAllLoaded();
+    render(<ReportsScreen />);
+
+    expect(gated()).toEqual({
+      movement: true,
+      abc: true,
+      turnover: true,
+      aging: true,
+      trend: true,
+      hygiene: true,
+      spend: true,
+      sales: true,
+    });
+  });
+
+  it('keeps the headline cards ungated, and holds the section announcements back', () => {
+    vi.stubGlobal('IntersectionObserver', NeverVisibleObserver);
+    makeAllLoaded();
+    makeGatedIdle();
+    render(<ReportsScreen />);
+
+    // The headline row is above the fold by definition and still resolves. Asserted through
+    // the announcement rather than the tile, whose figure counts up from zero on mount.
+    expect(screen.getByTestId('reports-live-region').textContent).toContain('Reports ready');
+    expect(screen.getByTestId('reports-live-region').textContent).toContain('£99.50');
+
+    // An idle query is not a loading one, so without the gate in the guard these regions would
+    // announce a readiness that never happened.
+    expect(screen.getByTestId('analytics-live-region').textContent?.trim()).toBe('');
+    expect(screen.getByTestId('hygiene-live-region').textContent?.trim()).toBe('');
+    expect(screen.getByTestId('spend-live-region').textContent?.trim()).toBe('');
+    expect(screen.getByTestId('sales-live-region').textContent?.trim()).toBe('');
+  });
+
+  it('shows a spinner rather than a failure in a panel whose report has not run', () => {
+    // `!isLoading && !data` is the screen's "this failed" test, and an idle query matches it —
+    // so each gated panel folds the gate into that test. Drop `!inView` from any one of the four
+    // guards and its message appears here.
+    vi.stubGlobal('IntersectionObserver', NeverVisibleObserver);
+    makeAllLoaded();
+    makeGatedIdle();
+    render(<ReportsScreen />);
+
+    expect(screen.queryByText('The stock movement report failed to load.')).toBeNull();
+    expect(screen.queryByText('The data hygiene report failed to load.')).toBeNull();
+    expect(screen.queryByText('The spend analytics report failed to load.')).toBeNull();
+    expect(screen.queryByText('The sales analytics report failed to load.')).toBeNull();
+
+    // …and each of the eight is waiting instead. The ungated panels are all loaded, so every
+    // spinner on screen belongs to a gated one.
+    expect(screen.getAllByLabelText('Loading')).toHaveLength(8);
+  });
+
+  it('reports a gated failure in the panel once its report has actually run', () => {
+    // The counterpart: the gate must not swallow a real error. Stock movement is the one that
+    // needs its own message — it left the headline `isAnyError` aggregate when it was gated.
+    makeAllErrored();
+    render(<ReportsScreen />);
+
+    expect(screen.queryByText('The stock movement report failed to load.')).not.toBeNull();
   });
 });
 
