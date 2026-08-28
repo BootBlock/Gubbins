@@ -196,8 +196,9 @@ describe('the history entry an open dialog holds', () => {
     pushDialogHistoryEntry(second);
     await settle();
 
-    // Counted, not merely survivable: a stranded entry is silently stepped over by the pop
-    // handler, so the only thing that shows it was left behind is the depth of the stack.
+    // Counted, not merely inferred from behaviour: a stranded entry sits below a live one and
+    // carries the same URL, so the surface still opens and closes exactly as it should. What it
+    // costs shows up only later, and only in the depth of the stack.
     expect(window.history.length).toBe(depth + 1);
 
     await pressBack();

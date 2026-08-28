@@ -87,8 +87,8 @@ let listening = false;
  * Detaching whenever the last dialog closed looked tidy and was a bug: closing one by its ✕ asks
  * the browser for a pop, and the handler that clears {@link ignoreNextPop} has to still be there
  * when that pop lands. Unhooked first, the flag stayed set and the *next* dialog's first Back
- * press was swallowed. The listener also does the skipping over abandoned entries, which is work
- * that outlives any single dialog.
+ * press was swallowed — which is what "still answers Back after a dialog closed by its own ✕"
+ * in `dialog-history.test.tsx` is there to catch.
  */
 function listen(): void {
   if (listening) return;
@@ -119,8 +119,8 @@ function onPopState(): void {
   // would no longer be on the dead entry, and going back would land on it *again*, dismiss the
   // replacement, push another, and never stop. The cost of leaving it is one Back press that
   // changes nothing visible, in the rare case where an entry was stranded (see
-  // {@link releaseDialogHistoryEntry}) and nothing is open above it. A press that arrives while
-  // something *is* still open is not wasted at all — it dismisses it, above.
+  // {@link releaseDialogHistoryEntry}). Usually that press is not wasted at all — it dismisses
+  // whatever was open above the dead entry, which is the loop above.
 }
 
 function flushReleases(): void {
@@ -160,10 +160,10 @@ export function pushDialogHistoryEntry(onDismiss: () => void): DialogHistoryEntr
   // Take over an entry released moments ago rather than stacking a second one on top of it. Two
   // surfaces changing hands inside one tick is ordinary — a dialog closing as the next opens —
   // and in development React's StrictMode does it to *every* dialog by design, mounting each
-  // effect twice. Left to push, the first entry would be stranded below the live one — a dead
-  // entry the pop handler then has to step over, which costs the user a Back press that arrives
-  // nowhere. Only the entry the browser is actually sitting on can be reused, so this cannot
-  // swallow one that is still someone else's.
+  // effect twice. Left to push, the first entry would be stranded below the live one, and nothing
+  // can take an entry out of the middle of a session history afterwards — so it would stay there,
+  // costing a Back press that arrives nowhere. Only the entry the browser is actually sitting on
+  // can be reused, so this cannot swallow one that is still someone else's.
   const reusable = queuedReleases.findIndex((released) => released.id === currentEntryId());
   if (reusable >= 0) {
     queuedReleases.splice(reusable, 1);
