@@ -49,8 +49,14 @@ vi.mock('./components/CreateProjectDialog', () => ({
 vi.mock('./components/ImportBomDialog', () => ({
   ImportBomDialog: ({ open }: { open: boolean }) => (open ? <div data-testid="import-bom-dialog" /> : null),
 }));
+// Exposes the delete callback, which is the only route to "a project was selected and now
+// nothing is" — the state the detail pane's empty branches are chosen between.
 vi.mock('./components/ProjectDetail', () => ({
-  ProjectDetail: () => <div data-testid="project-detail" />,
+  ProjectDetail: ({ projectId, onDeleted }: { projectId: string; onDeleted: () => void }) => (
+    <div data-testid="project-detail">
+      <button type="button" data-testid={`delete-${projectId}`} onClick={onDeleted} />
+    </div>
+  ),
 }));
 
 // ─── controlled query stub ────────────────────────────────────────────────────
@@ -517,9 +523,27 @@ describe('ProjectsScreen — first-run explainer (issue #421)', () => {
   it('does not claim an empty inventory when a filter emptied the list', () => {
     projectsState = { isLoading: false, data: { rows: [makeProject('p1', 'Bench PSU')] } };
     render(<ProjectsScreen />);
+
+    // Filter the only project out of the list, then drop the selection the way deleting the
+    // selected project does — the one way to reach "nothing selected" while a filter is on.
     fireEvent.change(screen.getByTestId('projects-search'), { target: { value: 'zzz' } });
+    fireEvent.click(screen.getByTestId('delete-p1'));
+
+    // The user may well have projects; the filter is simply hiding them. Teaching them what a
+    // project is would be the wrong answer to "your search matched nothing".
     expect(screen.queryByTestId('projects-intro')).toBeNull();
+    expect(screen.getByText('Select a project, or create a new one.')).toBeTruthy();
     expect(screen.getByTestId('projects-no-matches')).toBeTruthy();
+  });
+
+  it('waits for the count, not the page, before claiming there are no projects', () => {
+    // An empty *page* of a non-empty set — what the final page becomes when the last project on
+    // it is deleted, until the page clamp moves the list back. "What is a project?" here would
+    // greet someone who has plenty.
+    projectsState = { isLoading: false, data: { rows: [] } };
+    projectCountState = 12;
+    render(<ProjectsScreen />);
+    expect(screen.queryByTestId('projects-intro')).toBeNull();
   });
 
   it('does not show the explainer while the list is still loading, or after it failed', () => {

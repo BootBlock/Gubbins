@@ -120,8 +120,12 @@ export function ProjectsScreen() {
   const showControls = filtering || rows.length > 0;
   // A genuinely empty projects list — no filter hiding anything, nothing still loading, and no
   // failed read to misreport as emptiness. Only then is "you have never made a project" true,
-  // which is what the detail pane's first-run explainer claims (issue #421).
-  const introducing = !projects.isLoading && !projects.isError && !filtering && rows.length === 0;
+  // which is what the detail pane's first-run explainer claims (issue #421). The *count* is what
+  // that claim rests on, not the rows in hand: deleting the last project on the final page leaves
+  // the page out of range until the clamp effect below moves it, and an empty page says only that
+  // this page is empty — the same over-claim from too little evidence as issue #306's.
+  const introducing =
+    !projects.isLoading && !projects.isError && !filtering && rows.length === 0 && totalProjects === 0;
 
   // Narrowing the filter (or shrinking the page size) can strand the user past the last page.
   // Declared before the clamp below so the clamp sees this reset queued and can only narrow it.
