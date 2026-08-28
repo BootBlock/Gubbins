@@ -6,6 +6,7 @@
  */
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { includesAllTerms, splitSearchTerms } from '@/lib/text-terms';
+import { fullLocationPath, LOCATION_PATH_SEPARATOR } from './labels/location-path';
 
 /** The minimal shape these helpers need from a location row. */
 export interface FlatNode {
@@ -214,6 +215,10 @@ export function locationsMatchingQuery(
   if (terms.length === 0) return matches;
 
   const byId = new Map(flat.map((n) => [n.id, n] as const));
+  // A memoised walk rather than {@link fullLocationPath} per node: this runs over the whole tree
+  // on every keystroke, and that helper rebuilds its own index each call. It must nevertheless
+  // spell a path exactly as the helper does, or a query matching what the sidebar shows would
+  // miss — `location-tree.test.ts` drives both and compares (issue #596).
   const paths = new Map<string, string>();
   const pathOf = (id: string): string => {
     const cached = paths.get(id);
@@ -224,7 +229,7 @@ export function locationsMatchingQuery(
     // resolves to that partial value instead of recursing forever.
     paths.set(id, node.name);
     const parent = node.parentId ? pathOf(node.parentId) : '';
-    const full = parent ? `${parent} / ${node.name}` : node.name;
+    const full = parent ? `${parent}${LOCATION_PATH_SEPARATOR}${node.name}` : node.name;
     paths.set(id, full);
     return full;
   };
@@ -296,18 +301,14 @@ export function markedDefaultLocationId(
  * A human-readable ancestry breadcrumb for a location, root-first and joined by
  * `" / "` (e.g. `Workshop / Cabinet A / Drawer 3`). Defensive against a broken
  * parent chain: a missing or cyclic ancestor simply stops the walk.
+ *
+ * The walk itself is {@link fullLocationPath}'s, so the breadcrumb a user reads on screen and
+ * the path the catalogue CSV writes and resolves are the same string by construction. An id the
+ * set does not contain has no path at all, which is what an empty breadcrumb means here.
  */
 export function locationPath(id: string, nodes: readonly FlatNode[], separator = ' / '): string {
-  const byId = new Map(nodes.map((n) => [n.id, n] as const));
-  const names: string[] = [];
-  const seen = new Set<string>();
-  let current = byId.get(id);
-  while (current && !seen.has(current.id)) {
-    seen.add(current.id);
-    names.unshift(current.name);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-  return names.join(separator);
+  const node = nodes.find((n) => n.id === id);
+  return node ? fullLocationPath(node, nodes, separator) : '';
 }
 
 /**

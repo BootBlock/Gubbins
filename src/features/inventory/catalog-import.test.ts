@@ -747,6 +747,155 @@ describe('buildCatalogImportPlan — ambiguous catalogue keys (issue #593)', () 
 });
 
 // ---------------------------------------------------------------------------
+// Readable location / category cells (issue #596)
+// ---------------------------------------------------------------------------
+
+/** Two `Drawer 1`s in different rooms — the case a bare name cannot name. */
+const AMBIGUOUS_TREE = [
+  { id: 'work', name: 'Workshop', parentId: null },
+  { id: 'shed', name: 'Shed', parentId: null },
+  { id: 'd1a', name: 'Drawer 1', parentId: 'work' },
+  { id: 'd1b', name: 'Drawer 1', parentId: 'shed' },
+] as const;
+
+describe('buildCatalogImportPlan — location paths & category names (issue #596)', () => {
+  it('resolves a full location path to the right one of two same-named locations', () => {
+    const csv = 'name,location\r\nWidget,Shed / Drawer 1\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { locations: [...AMBIGUOUS_TREE] });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('d1b');
+  });
+
+  it('resolves a path a person typed without the spaces around the separator', () => {
+    const csv = 'name,location\r\nWidget,workshop/drawer 1\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { locations: [...AMBIGUOUS_TREE] });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('d1a');
+  });
+
+  it('offers the path as the fix when a bare name is ambiguous', () => {
+    const csv = 'name,location\r\nWidget,Drawer 1\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { locations: [...AMBIGUOUS_TREE] });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/2 locations share this name/);
+    expect(plan.errors[0]!.message).toContain('Use its full path');
+  });
+
+  it('refuses a path two identically-named siblings share, without offering the path again', () => {
+    // Nothing stops two `Drawer 1`s under one parent, so a path is not automatically unique
+    // either — and telling the user to write the path they just wrote is not a fix.
+    const csv = 'name,location\r\nWidget,Shed / Drawer 1\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      locations: [
+        { id: 'shed', name: 'Shed', parentId: null },
+        { id: 'a', name: 'Drawer 1', parentId: 'shed' },
+        { id: 'b', name: 'Drawer 1', parentId: 'shed' },
+      ],
+    });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/2 locations share this path/);
+    expect(plan.errors[0]!.message).not.toContain('full path');
+  });
+
+  it('does not let a root location win a bare name a nested location also bears', () => {
+    // A root's full path is its own name, so answering a single-segment cell from the path
+    // map would hand back the root and never mention the other candidate — the silent
+    // wrong-room outcome issue #593 removed.
+    const csv = 'name,location\r\nWidget,Drawer 1\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      locations: [
+        { id: 'root-d1', name: 'Drawer 1', parentId: null },
+        { id: 'work', name: 'Workshop', parentId: null },
+        { id: 'nested-d1', name: 'Drawer 1', parentId: 'work' },
+      ],
+    });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/2 locations share this name/);
+  });
+
+  it('resolves a root location by its own name when only it bears that name', () => {
+    const csv = 'name,location\r\nWidget,Workshop\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { locations: [...AMBIGUOUS_TREE] });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('work');
+  });
+
+  it('still resolves a bare name only one location bears', () => {
+    const csv = 'name,location\r\nWidget,Shed\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { locations: [...AMBIGUOUS_TREE] });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('shed');
+  });
+
+  it('still resolves a raw location id, as older exports of this format hold', () => {
+    const csv = 'name,location\r\nWidget,d1a\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { locations: [...AMBIGUOUS_TREE] });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('d1a');
+  });
+
+  it('resolves a category name to its id', () => {
+    const csv = 'name,category\r\nWidget,Passives\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      categories: [{ id: 'cat-1', name: 'Passives' }],
+    });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.categoryId).toBe('cat-1');
+  });
+
+  it('flags an unknown category as a row error instead of letting it reach the database', () => {
+    // Issue #407: the cell used to pass straight through, so the plan promised the row and the
+    // apply then failed it on a foreign key with the raw SQLite text.
+    const csv = 'name,category\r\nWidget,No Such Category\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      categories: [{ id: 'cat-1', name: 'Passives' }],
+    });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/Unknown category/);
+  });
+
+  it('flags a category name two categories share, naming both', () => {
+    const csv = 'name,category\r\nWidget,Spares\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      categories: [
+        { id: 'cat-1', name: 'Spares' },
+        { id: 'cat-2', name: 'spares' },
+      ],
+    });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/2 categories share this name/);
+    expect(plan.errors[0]!.message).toContain('"cat-1", "cat-2"');
+  });
+
+  it('leaves a blank category cell clearing the category rather than erroring', () => {
+    const csv = 'name,category\r\nWidget,\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      categories: [{ id: 'cat-1', name: 'Passives' }],
+    });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.categoryId).toBeNull();
+  });
+
+  it('resolves against an empty supplied category set rather than passing the name through', () => {
+    // A database with no categories is exactly where every name is unresolvable, so
+    // 'supplied but empty' must reject rather than fall back to the legacy pass-through.
+    const csv = 'name,category\r\nWidget,Passives\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { categories: [] });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/Unknown category/);
+  });
+
+  it('passes a category cell through untouched when no categories are supplied at all', () => {
+    // The pure builder is called without a repository (unit tests, `text-import`), and that
+    // call must keep behaving as it did rather than rejecting every categorised row.
+    const csv = 'name,category\r\nWidget,cat-1\r\n';
+    const plan = buildCatalogImportPlan(csv, null, []);
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.categoryId).toBe('cat-1');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Issue #593 — the match key folds, like every other natural key in the app
 // ---------------------------------------------------------------------------
 

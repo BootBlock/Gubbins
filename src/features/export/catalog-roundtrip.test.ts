@@ -11,7 +11,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Item } from '@/db/repositories';
-import { CATALOG_CSV_COLUMNS, buildCatalogCsv } from './export-data';
+import { parseCsv } from '@/features/import/tabular';
+import { buildCatalogCsv, buildCatalogNameLookup } from './export-data';
 import {
   buildCatalogImportPlan,
   inferColumnMapping,
@@ -32,8 +33,10 @@ const EXPECTED_IMPORT_FIELD: Readonly<Record<string, CatalogField>> = {
   barcode: 'barcode',
   serialNumber: 'serialNumber',
   quantity: 'quantity',
-  locationId: 'locationId',
-  categoryId: 'categoryId',
+  // Written under readable headers holding a location path and a category name (issue #596),
+  // not the `…Id` the field is called.
+  location: 'locationId',
+  category: 'categoryId',
   trackingMode: 'trackingMode',
   unitOfMeasure: 'unitOfMeasure',
   grossCapacity: 'grossCapacity',
@@ -94,7 +97,9 @@ function makeItem(overrides: Partial<Item> = {}): Item {
 
 describe('catalogue CSV round-trip — header ↔ synonym coverage (issue #249)', () => {
   it('infers every export header back to the field the exporter wrote', () => {
-    const headers = [...CATALOG_CSV_COLUMNS];
+    // Read off the emitted file rather than the column list, so a header the exporter *renames*
+    // (issue #596) is checked as the reader will really meet it.
+    const headers = buildCatalogCsv([makeItem()]).split('\r\n')[0]!.split(',');
     const mapping = inferColumnMapping(headers);
     const inferred = Object.fromEntries(headers.map((header, i) => [header, mapping[i]]));
     // `toEqual` rather than a per-column loop so a *new* export column with no synonym (which
@@ -194,5 +199,158 @@ describe('catalogue CSV round-trip — values survive the trip (issue #249)', ()
     expect(plan.create).toEqual([]);
     expect(plan.update).toHaveLength(1);
     expect(plan.update[0]!.itemId).toBe('i1');
+  });
+});
+
+describe('catalogue CSV round-trip — readable location & category (issue #596)', () => {
+  const NAMES = {
+    locationPathById: new Map([['l1', 'Workshop / Cabinet A / Drawer 3']]),
+    categoryNameById: new Map([['c1', 'Passives']]),
+  };
+
+  function cellsOf(csv: string): Record<string, string> {
+    // Parsed rather than split on commas: the location path is a quoted cell.
+    const [header, row] = csv.split('\r\n');
+    return Object.fromEntries(parseCsv(header!)[0]!.map((h, i) => [h, parseCsv(row!)[0]![i] ?? '']));
+  }
+
+  it('writes the location path and the category name, not their ids', () => {
+    const cells = cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), NAMES));
+    expect(cells.location).toBe('Workshop / Cabinet A / Drawer 3');
+    expect(cells.category).toBe('Passives');
+  });
+
+  it('falls back to the stored id when a name cannot be resolved', () => {
+    // A row is never worth losing its place over: an id the caller could not name still
+    // resolves inside the database that produced it.
+    const cells = cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), {}));
+    expect(cells.location).toBe('l1');
+    expect(cells.category).toBe('c1');
+  });
+
+  it('leaves the category blank for an uncategorised item', () => {
+    const csv = buildCatalogCsv([makeItem({ categoryId: null })], [], new Map(), new Map(), NAMES);
+    expect(cellsOf(csv).category).toBe('');
+  });
+
+  it('lands the named cells back on the same ids when imported into the same database', () => {
+    const csv = buildCatalogCsv([makeItem()], [], new Map(), new Map(), NAMES);
+
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      locations: [
+        { id: 'l0', name: 'Workshop', parentId: null },
+        { id: 'lc', name: 'Cabinet A', parentId: 'l0' },
+        { id: 'l1', name: 'Drawer 3', parentId: 'lc' },
+      ],
+      categories: [{ id: 'c1', name: 'Passives' }],
+    });
+
+    expect(plan.errors).toEqual([]);
+    expect(plan.create[0]!.input.locationId).toBe('l1');
+    expect(plan.create[0]!.input.categoryId).toBe('c1');
+  });
+
+  it('keeps the stored id for a category two categories share the name of', () => {
+    // Nothing makes a category name unique, and the id used to round-trip exactly. Writing the
+    // shared name would take a row that always imported and make it unimportable, so the row
+    // keeps its id and only loses the readability it could not honestly have had.
+    const names = buildCatalogNameLookup(
+      [{ id: 'l1', name: 'Drawer 3', path: 'Workshop / Cabinet A / Drawer 3' }],
+      [
+        { id: 'c1', name: 'Spares' },
+        { id: 'c2', name: 'spares' },
+      ],
+    );
+    const cells = cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names));
+    expect(cells.category).toBe('c1');
+    expect(cells.location).toBe('Workshop / Cabinet A / Drawer 3');
+  });
+
+  it('keeps the stored id for a location path two locations share', () => {
+    const names = buildCatalogNameLookup(
+      [
+        { id: 'l1', name: 'Drawer 1', path: 'Shed / Drawer 1' },
+        { id: 'l2', name: 'Drawer 1', path: 'Shed / Drawer 1' },
+      ],
+      [{ id: 'c1', name: 'Passives' }],
+    );
+    const cells = cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names));
+    expect(cells.location).toBe('l1');
+    expect(cells.category).toBe('Passives');
+  });
+
+  it('judges a category name unique by the fold the importer will match it with', () => {
+    // `Grosse` and `GROSSE` differ under a plain lower-casing and are one key under
+    // `foldName`, which is what the importer asks. Writing the name because the exporter
+    // thought it distinct would export a row the importer then rejects as ambiguous — the
+    // exact round-trip the id fallback exists to keep.
+    const names = buildCatalogNameLookup(
+      [{ id: 'l1', name: 'Drawer 3', path: 'Workshop / Cabinet A / Drawer 3' }],
+      [
+        { id: 'c1', name: 'Gr\u00f6\u00dfe' },
+        { id: 'c2', name: 'GR\u00d6SSE' },
+      ],
+    );
+    expect(cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names)).category).toBe('c1');
+  });
+
+  it('judges a location path unique by the fold the importer will match it with', () => {
+    // A location literally named `A/B` under `Shed`, and a `B` under `Shed / A`, are
+    // different strings and one folded path.
+    const names = buildCatalogNameLookup(
+      [
+        { id: 'l1', name: 'A/B', path: 'Shed / A/B' },
+        { id: 'l2', name: 'B', path: 'Shed / A / B' },
+      ],
+      [{ id: 'c1', name: 'Passives' }],
+    );
+    expect(cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names)).location).toBe('l1');
+  });
+
+  it('keeps the id for a root whose name a nested location repeats, though its path is unique', () => {
+    // The importer answers a single-segment cell from the *name* index, so `Drawer 1` at top
+    // level is not writable while a `Shed / Drawer 1` exists — its path is unique, and the
+    // question the importer asks of that cell is not about paths.
+    const names = buildCatalogNameLookup(
+      [
+        { id: 'l1', name: 'Drawer 1', path: 'Drawer 1' },
+        { id: 'nested', name: 'Drawer 1', path: 'Shed / Drawer 1' },
+      ],
+      [{ id: 'c1', name: 'Passives' }],
+    );
+    expect(cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names)).location).toBe('l1');
+  });
+
+  it('names the second install the place it has never heard of', () => {
+    // The issue's "carry it to another Gubbins install" case: the path is reported as unknown
+    // with the value the file gave, so the reviewer can see what to create.
+    const csv = buildCatalogCsv([makeItem()], [], new Map(), new Map(), NAMES);
+
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      locations: [{ id: 'other', name: 'Garage', parentId: null }],
+      categories: [{ id: 'other-c', name: 'Semiconductors' }],
+    });
+
+    expect(plan.create).toEqual([]);
+    expect(plan.errors[0]!.message).toMatch(/Unknown location "Workshop \/ Cabinet A \/ Drawer 3"/);
+  });
+
+  it('names the unknown category too, rather than failing the row on a foreign key', () => {
+    // Location resolution runs first and skips the row on failure, so the second install needs
+    // the *place* to resolve before the category is reached at all — which is what makes this a
+    // separate case rather than an extra assertion on the one above (issue #407).
+    const csv = buildCatalogCsv([makeItem()], [], new Map(), new Map(), NAMES);
+
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      locations: [
+        { id: 'l0', name: 'Workshop', parentId: null },
+        { id: 'lc', name: 'Cabinet A', parentId: 'l0' },
+        { id: 'l1', name: 'Drawer 3', parentId: 'lc' },
+      ],
+      categories: [{ id: 'other-c', name: 'Semiconductors' }],
+    });
+
+    expect(plan.create).toEqual([]);
+    expect(plan.errors[0]!.message).toMatch(/Unknown category "Passives"/);
   });
 });

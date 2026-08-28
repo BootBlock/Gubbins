@@ -17,6 +17,7 @@ import {
 } from './location-tree';
 import { buildParentOptions, type ParentLocationRow } from './parent-options';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
+import { fullLocationPath } from './labels/location-path';
 
 // workshop → cabinet → drawer; workshop → bench; plus a detached garage.
 const nodes: FlatNode[] = [
@@ -387,6 +388,35 @@ describe('flattenVisibleTree', () => {
       ['a', 1],
       ['a1', 2],
     ]);
+  });
+});
+
+describe('locationsMatchingQuery — path parity with the shared walk (issue #596)', () => {
+  it('searches the same path string the canonical walk builds, for every node', () => {
+    // The haystack memoises its own walk, because it runs over the whole tree on every
+    // keystroke. Drives both and compares: a query matching what the sidebar shows must not
+    // miss because the two spell an ancestry differently.
+    const tree = [
+      { id: 'work', name: 'Workshop', parentId: null },
+      { id: 'cab', name: 'Cabinet A', parentId: 'work' },
+      { id: 'd3', name: 'Drawer 3', parentId: 'cab' },
+      { id: 'loose', name: 'Loose ends', parentId: null },
+    ];
+    for (const node of tree) {
+      const path = fullLocationPath(node, tree);
+      // The whole path matches only if the haystack holds that exact string.
+      expect(locationsMatchingQuery(tree, path)).toContain(node.id);
+    }
+  });
+
+  it('fails to match when the two walks would spell a path differently', () => {
+    // A separator the haystack did not use would leave the query with a term the haystack
+    // has no run of — this is the assertion the parity above rests on.
+    const tree = [
+      { id: 'work', name: 'Workshop', parentId: null },
+      { id: 'd3', name: 'Drawer 3', parentId: 'work' },
+    ];
+    expect(locationsMatchingQuery(tree, 'Workshop>Drawer')).toEqual(new Set());
   });
 });
 

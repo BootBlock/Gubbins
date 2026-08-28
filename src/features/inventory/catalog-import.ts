@@ -24,6 +24,12 @@ import { assertPermissions } from '@/features/users/assert-permission';
 import { currentAuthority } from '@/features/users/current-authority';
 import { fromDateInputValue, toDateInputValue } from '@/lib/date-input';
 import { foldName } from '@/lib/name-fold';
+import {
+  foldLocationPath,
+  fullLocationPath,
+  isLocationPathCell,
+  type LocationPathNode,
+} from './labels/location-path';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';
@@ -132,8 +138,11 @@ export const CATALOG_FIELD_LABELS: Record<CatalogField, string> = {
   barcode: 'Barcode',
   serialNumber: 'Serial number',
   quantity: 'Quantity',
-  locationId: 'Location ID',
-  categoryId: 'Category ID',
+  // Named for what the column may hold rather than for the field it lands in (issue #596): a
+  // path, a name or an id all resolve, and "Location ID" told the user only the least useful of
+  // the three.
+  locationId: 'Location',
+  categoryId: 'Category',
   trackingMode: 'Tracking mode',
   unitOfMeasure: 'Unit of measure',
   grossCapacity: 'Gross capacity',
@@ -1132,7 +1141,23 @@ export interface BuildPlanOptions {
    * as does a name held by more than one location, which the tree is expected to allow
    * (issue #593); the user disambiguates by putting the location's id in the cell.
    */
-  readonly locations?: readonly { readonly id: string; readonly name: string }[];
+  readonly locations?: readonly {
+    readonly id: string;
+    readonly name: string;
+    /**
+     * The parent, so a cell holding a **full path** (`Workshop / Drawer 1`) resolves — which is
+     * what the catalogue CSV exports, and the form that separates two locations of the same
+     * name (issue #596). Omitted, a location is indexed by its bare name alone.
+     */
+    readonly parentId?: string | null;
+  }[];
+  /**
+   * Known categories, so a `categoryId` cell holding a category **name** resolves to its id
+   * (issue #596). A cell that already holds a known id passes through. When omitted, category
+   * cells are passed through verbatim (legacy behaviour); see {@link resolveCategoryId} for what
+   * an unresolvable one costs.
+   */
+  readonly categories?: readonly { readonly id: string; readonly name: string }[];
   /**
    * Batch default location id, applied to every row that does not specify its own
    * location. Chosen from the import dialog's "Location" dropdown.
@@ -1227,29 +1252,71 @@ function groupByKey<T>(
   return grouped;
 }
 
-/** How a raw location cell resolved against the known locations. */
-type LocationResolution =
+/**
+ * How a raw location **or category** cell resolved against the known rows.
+ *
+ * Named for the reference rather than for locations alone since a category cell resolves the
+ * same three ways (issue #596): categories have no uniqueness either, so a name that names two
+ * of them has to be reported rather than picked from.
+ */
+type ReferenceResolution =
   | { readonly kind: 'resolved'; readonly id: string }
   | { readonly kind: 'unknown' }
   | { readonly kind: 'ambiguous'; readonly ids: readonly string[] };
 
+/** Read one grouped lookup, collapsing the bucket to a {@link ReferenceResolution}. */
+function fromCandidates(candidates: readonly string[] | undefined): ReferenceResolution {
+  if (candidates === undefined || candidates.length === 0) return { kind: 'unknown' };
+  if (candidates.length > 1) return { kind: 'ambiguous', ids: candidates };
+  return { kind: 'resolved', id: candidates[0]! };
+}
+
 /**
- * Resolve a raw location cell (an id or a name) against the known locations. An exact
- * id match wins; otherwise a folded name match. A name held by more than one location
- * resolves to `ambiguous` rather than to one of them, and an unmatched name to `unknown`
- * — the caller turns either into a row error.
+ * Resolve a raw location cell against the known locations. An exact id match wins, then a full
+ * **path** (`Workshop / Drawer 1`, what the catalogue CSV writes — issue #596), then a folded
+ * bare name. A path or a name held by more than one location resolves to `ambiguous` rather
+ * than to one of them, and an unmatched cell to `unknown` — the caller turns either into a row
+ * error.
+ *
+ * The path is matched before the bare name because it is the more specific of the two: a name
+ * two rooms repeat is exactly what a path exists to separate, and trying the name first would
+ * report an ambiguity the cell had already resolved.
  */
 function resolveLocationId(
   raw: string,
   byId: ReadonlyMap<string, string>,
-  byName: ReadonlyMap<string, readonly string[]>,
-): LocationResolution {
+  idsByPath: ReadonlyMap<string, readonly string[]>,
+  idsByName: ReadonlyMap<string, readonly string[]>,
+): ReferenceResolution {
   const trimmed = raw.trim();
   if (byId.has(trimmed)) return { kind: 'resolved', id: trimmed };
-  const candidates = byName.get(foldName(trimmed));
-  if (candidates === undefined || candidates.length === 0) return { kind: 'unknown' };
-  if (candidates.length > 1) return { kind: 'ambiguous', ids: candidates };
-  return { kind: 'resolved', id: candidates[0]! };
+  // Only a cell that actually spells a path is answered by the path map. A single-segment cell
+  // is the *same question* as a bare name — a root location's full path is its own name — and
+  // answering it from the path map would hand back that root while a nested location of the
+  // same name went unmentioned, which is the silent wrong-room outcome issue #593 removed.
+  if (isLocationPathCell(trimmed)) {
+    const byPath = fromCandidates(idsByPath.get(foldLocationPath(trimmed)));
+    if (byPath.kind !== 'unknown') return byPath;
+  }
+  return fromCandidates(idsByName.get(foldName(trimmed)));
+}
+
+/**
+ * Resolve a raw category cell (an id or a name) against the known categories (issue #596).
+ *
+ * Categories are flat, so there is no path to fall back to. Before this the cell was handed to
+ * the database verbatim, so a *name* — which is what the catalogue CSV now exports, and what a
+ * person editing a sheet writes — planned as importable and then failed the row on a foreign
+ * key with the raw SQLite text (issue #407).
+ */
+function resolveCategoryId(
+  raw: string,
+  byId: ReadonlyMap<string, string>,
+  idsByName: ReadonlyMap<string, readonly string[]>,
+): ReferenceResolution {
+  const trimmed = raw.trim();
+  if (byId.has(trimmed)) return { kind: 'resolved', id: trimmed };
+  return fromCandidates(idsByName.get(foldName(trimmed)));
 }
 
 /** Cap on how many candidates an ambiguity message spells out before it summarises the rest. */
@@ -1264,6 +1331,37 @@ function listCandidates(values: readonly string[]): string {
   const shown = values.slice(0, MAX_LISTED_CANDIDATES).map((v) => `"${v}"`);
   const rest = values.length - shown.length;
   return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
+}
+
+/** {@link groupByKey}, reduced to the ids each key claims — the shape both resolvers read. */
+function idsGroupedBy<T extends { readonly id: string }>(
+  rows: readonly T[],
+  keyOf: (row: T) => string | null,
+  normalise: (raw: string) => string,
+): Map<string, string[]> {
+  return new Map([...groupByKey(rows, keyOf, normalise)].map(([key, rs]) => [key, rs.map((r) => r.id)]));
+}
+
+/**
+ * The row error for an ambiguous location cell.
+ *
+ * The path is offered as the fix only when writing one would actually separate the candidates —
+ * that is, when some candidate's path differs from what the user wrote. Two locations of the
+ * same name at *top level* share their path as well as their name, so telling the user to write
+ * the full path there is advice they have already taken; the id is all that is left.
+ */
+function ambiguousLocationMessage(
+  raw: string,
+  ids: readonly string[],
+  pathById: ReadonlyMap<string, string>,
+): string {
+  const shared = isLocationPathCell(raw) ? 'this path' : 'this name';
+  const pathHelps = ids.some((id) => {
+    const path = pathById.get(id);
+    return path !== undefined && foldLocationPath(path) !== foldLocationPath(raw);
+  });
+  const fix = pathHelps ? "Use its full path, or the location's id" : "Use the location's id";
+  return `Ambiguous location "${raw}" — ${ids.length} locations share ${shared}. ${fix} instead (${listCandidates(ids)}).`;
 }
 
 /**
@@ -1343,9 +1441,29 @@ export function buildImportPlanFromRows(
   const locations = options.locations ?? [];
   const resolveLocations = locations.length > 0;
   const locationById = new Map(locations.map((l) => [l.id, l.id]));
-  const locationIdsByName = new Map(
-    [...groupByKey(locations, (l) => l.name, foldName)].map(([key, ls]) => [key, ls.map((l) => l.id)]),
+  const locationIdsByName = idsGroupedBy(locations, (l) => l.name, foldName);
+  // The full path a `location` cell now holds (issue #596), grouped the same way: two
+  // identically-named siblings give one path two owners, and nothing stops that —
+  // `LocationRepository.create` checks the name is non-empty and no more — so a path is
+  // reported ambiguous rather than assumed unique.
+  const locationNodes: LocationPathNode[] = locations.map((l) => ({
+    id: l.id,
+    name: l.name,
+    parentId: l.parentId ?? null,
+  }));
+  const locationPathById = new Map(locationNodes.map((n) => [n.id, fullLocationPath(n, locationNodes)]));
+  const locationIdsByPath = idsGroupedBy(
+    locationNodes,
+    (n) => locationPathById.get(n.id) ?? null,
+    foldLocationPath,
   );
+  // Presence of the option, not the length of it: a database with no categories at all would
+  // otherwise fall back to the pass-through and hand a name to the foreign key (issue #407) in
+  // exactly the case where *every* name is unresolvable. `undefined` still means "no repository
+  // to ask", which is the legacy call from `text-import` and from unit tests.
+  const resolveCategories = options.categories !== undefined;
+  const categoryById = new Map((options.categories ?? []).map((c) => [c.id, c.id]));
+  const categoryIdsByName = idsGroupedBy(options.categories ?? [], (c) => c.name, foldName);
 
   // Lookup maps from existing items, holding every item that claims a key so an ambiguous one is
   // reported rather than resolved to whichever item was read last (issue #593). Both index through
@@ -1395,7 +1513,7 @@ export function buildImportPlanFromRows(
     // catalogue on an import that never mentioned locations.
     const locationStatedByRow = rawLocation !== null;
     if (rawLocation !== null && resolveLocations) {
-      const resolved = resolveLocationId(rawLocation, locationById, locationIdsByName);
+      const resolved = resolveLocationId(rawLocation, locationById, locationIdsByPath, locationIdsByName);
       if (resolved.kind === 'unknown') {
         errors.push({ sourceRow, message: `Unknown location "${rawLocation}".` });
         continue;
@@ -1403,13 +1521,32 @@ export function buildImportPlanFromRows(
       if (resolved.kind === 'ambiguous') {
         errors.push({
           sourceRow,
-          message: `Ambiguous location "${rawLocation}" — ${resolved.ids.length} locations share this name. Use the location's id instead (${listCandidates(resolved.ids)}).`,
+          message: ambiguousLocationMessage(rawLocation, resolved.ids, locationPathById),
         });
         continue;
       }
       raw.core.locationId = resolved.id;
     } else if (rawLocation === null && options.defaultLocationId !== undefined) {
       raw.core.locationId = options.defaultLocationId;
+    }
+
+    // Resolve the category the same way (issue #596), through {@link resolveCategoryId}. A
+    // blank cell still clears the category, so only a non-empty one is resolved.
+    const rawCategory = raw.core.categoryId ?? null;
+    if (rawCategory !== null && resolveCategories) {
+      const resolved = resolveCategoryId(rawCategory, categoryById, categoryIdsByName);
+      if (resolved.kind === 'unknown') {
+        errors.push({ sourceRow, message: `Unknown category "${rawCategory}".` });
+        continue;
+      }
+      if (resolved.kind === 'ambiguous') {
+        errors.push({
+          sourceRow,
+          message: `Ambiguous category "${rawCategory}" — ${resolved.ids.length} categories share this name. Use the category's id instead (${listCandidates(resolved.ids)}).`,
+        });
+        continue;
+      }
+      raw.core.categoryId = resolved.id;
     }
 
     const { data: coerced, unreadable } = coerceRow(raw.core);

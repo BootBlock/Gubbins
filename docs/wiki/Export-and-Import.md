@@ -244,6 +244,26 @@ going through the item importer first.
 >   one clears its tags; leave the column out of the file altogether to leave existing tags alone.
 
 > **ℹ️ Note**
+> **Where an item lives** and **what it is** read as words, not codes. The **Catalogue CSV**
+> writes a `location` column holding the location's full path — `Workshop / Cabinet A / Drawer 3`
+> — and a `category` column holding the category's name, so the two columns that say where
+> everything is are readable in a spreadsheet and mean something in another Gubbins install.
+>
+> - Coming back in, a `location` cell is matched on its **full path** first, then on a plain
+>   name — so `Drawer 3` on its own is fine when only one place is called that. Where two
+>   places share the name the row is flagged, as it always was, and the message now offers the
+>   path as well as the id.
+> - A `category` cell is matched on the category's **name**. A name you don't have is flagged
+>   in the review with the row and the value, so you can create the category (or fix the
+>   spelling) before importing, instead of the row failing once the import is already running.
+>   A name two categories share is flagged the way a location's is.
+> - Where a name wouldn't say which one, the **export** writes the internal id for that row
+>   instead — less readable, but it still comes back to exactly the right place.
+> - Headings `Location` / `Location ID` and `Category` / `Category ID` are all recognised, and
+>   a cell still holding an internal id — as older exports of this format do — is read as
+>   before.
+
+> **ℹ️ Note**
 > Numbers copied straight out of a spreadsheet are read as they appear, so a quantity written
 > `1,500` imports as one thousand five hundred. A **quantity** (or reorder point / reorder
 > quantity) may carry a trailing unit the way a hand-written parts list does — `3 pcs` and
