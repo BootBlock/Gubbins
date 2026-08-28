@@ -10,6 +10,21 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
+// High-value async-safety rules — the payoff for a worker/RPC/React-Query codebase (and for
+// the bridge, a Node server that runs for days) that `tsc` alone won't catch. Kept as a focused
+// set, not the full type-checked preset, so real findings aren't buried in stylistic noise.
+//
+// Shared by the two type-aware blocks below — the app's and the bridge's — so the two can never
+// drift apart. Both need type information, so each points the parser at its own tsconfig via the
+// project service.
+const asyncSafetyRules = {
+  '@typescript-eslint/no-floating-promises': 'error',
+  // JSX event handlers are legitimately `async` (React ignores the returned promise), so exempt
+  // attributes; still flags a promise passed where a plain callback is run.
+  '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
+  '@typescript-eslint/await-thenable': 'error',
+};
+
 export default tseslint.config(
   // Never lint build output, deps, coverage, or generated code.
   {
@@ -138,14 +153,7 @@ export default tseslint.config(
         { controlComponents: ['Input', 'Select', 'Textarea', 'Checkbox', 'Radio'] },
       ],
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
-      // High-value async-safety rules — the payoff for a worker/RPC/React-Query codebase
-      // that `tsc` alone won't catch. Kept as a focused set, not the full type-checked
-      // preset, so real findings aren't buried in stylistic noise on first adoption.
-      '@typescript-eslint/no-floating-promises': 'error',
-      // JSX event handlers are legitimately `async` (React ignores the returned promise),
-      // so exempt attributes; still flags a promise passed where a plain callback is run.
-      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
-      '@typescript-eslint/await-thenable': 'error',
+      ...asyncSafetyRules,
       // NOTE: `no-unnecessary-type-assertion` is intentionally omitted. Under TS 6.x (newer
       // than this typescript-eslint supports) its type view drops `noUncheckedIndexedAccess`,
       // so it wrongly reports index-access assertions as unnecessary and its autofix removes
@@ -153,8 +161,37 @@ export default tseslint.config(
     },
   },
 
-  // Tests: vitest globals (globals: true), browser env via happy-dom. Parsed
-  // syntactically only — no project service, so no type-aware rules run here.
+  // The bridge (INCLUDING its tests): the same type-aware async-safety rules. This is the one
+  // long-running process in the project — an unhandled rejection takes the whole server down
+  // rather than logging a warning in a console nobody has open — so it is the part that needs
+  // these rules most (#601).
+  //
+  // Its tests are in scope too, unlike the app's: `bridge/tsconfig.json` includes them in its
+  // program, so the project service can type them, and an unawaited promise in a test is how a
+  // test quietly stops asserting anything. (The app's tests stay out — `tsconfig.app.json`
+  // excludes them, so there is no program to type them against.)
+  //
+  // `bridge/src/**` rather than `bridge/**` deliberately mirrors that tsconfig's `include`:
+  // `bridge/vitest.config.ts` is outside the program, and the project service errors on a file
+  // it cannot find a program for.
+  {
+    files: ['bridge/src/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+        warnOnUnsupportedTypeScriptVersion: false,
+      },
+    },
+    rules: { ...asyncSafetyRules },
+  },
+
+  // Tests: vitest globals (globals: true), browser env via happy-dom. This block adds globals
+  // and relaxes `no-explicit-any`; it does not set a parser, so whatever an earlier block
+  // established still stands. In practice that means the APP's tests are parsed syntactically
+  // only (no block points the project service at them, and `tsconfig.app.json` excludes them
+  // from the program anyway), while the BRIDGE's tests keep the project service — and therefore
+  // the type-aware rules — from the block above.
   {
     files: ['**/*.test.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
     languageOptions: {

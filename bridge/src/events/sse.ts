@@ -37,6 +37,13 @@ export interface SseHubOptions {
 }
 
 export interface SseHub extends EventSink {
+  /**
+   * Narrows {@link EventSink.deliver}'s `void | Promise<void>` to `void`: writing a frame to an
+   * already-open response is synchronous, so this sink never returns a promise. Stated in the
+   * type so a caller holding a concrete `SseHub` has nothing to await or to handle a rejection
+   * on — only a caller holding the general `EventSink` does.
+   */
+  deliver(events: readonly BridgeEvent[]): void;
   /** Handle a `GET /api/v1/events` connection: stream events until the client disconnects. */
   handleConnection(req: IncomingMessage, res: ServerResponse, url: URL): void;
   /** Number of currently-connected clients (tests / diagnostics). */

@@ -155,6 +155,13 @@ export interface WebhookDelivererOptions {
 }
 
 export interface WebhookDeliverer extends EventSink {
+  /**
+   * Narrows {@link EventSink.deliver}'s `void | Promise<void>` to `Promise<void>` — the mirror of
+   * the `void` narrowing on the two synchronous sinks. This one is genuinely async: it returns the
+   * intake promise (see the implementation), so a caller holding the concrete type is told, by the
+   * type, that there is something to await or to hand a rejection handler.
+   */
+  deliver(events: readonly BridgeEvent[], driver?: IDatabaseDriver): Promise<void>;
   /** Resolve once every target's queue has drained (for tests / graceful shutdown). */
   whenIdle(): Promise<void>;
 }

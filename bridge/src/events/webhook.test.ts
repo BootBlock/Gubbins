@@ -2,6 +2,12 @@
  * Outbound webhook tests (EI-1). Delivery is driven with an injected fake transport + no-op
  * sleep for determinism, plus one real in-process receiver that verifies the HMAC signature
  * end-to-end. Everything synthetic (example.test hosts, made-up secrets).
+ *
+ * `void deliverer.deliver(...)` throughout is deliberate, not an oversight: `deliver` returns the
+ * intake promise, and the sync point these tests actually want is the `await deliverer.whenIdle()`
+ * on the next line — it waits for every in-flight intake *and* for the queued network half. The
+ * `void` says so out loud, and keeps `no-floating-promises` (which covers the bridge, tests
+ * included) able to flag a delivery that genuinely is left dangling.
  */
 import { createServer, type Server } from 'node:http';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -122,7 +128,7 @@ describe('createWebhookDeliverer', () => {
       sleep: noSleep,
       newDeliveryId: () => 'delivery-123',
     });
-    deliverer.deliver([event({ id: 'e1', type: 'item.low_stock' })]);
+    void deliverer.deliver([event({ id: 'e1', type: 'item.low_stock' })]);
     await deliverer.whenIdle();
 
     expect(calls).toHaveLength(1);
@@ -147,7 +153,7 @@ describe('createWebhookDeliverer', () => {
       sleep,
       maxAttempts: 5,
     });
-    deliverer.deliver([event({ id: 'e1', type: 'stock.adjusted' })]);
+    void deliverer.deliver([event({ id: 'e1', type: 'stock.adjusted' })]);
     await deliverer.whenIdle();
     expect(attempts).toBe(3);
     expect(sleep).toHaveBeenCalledTimes(2); // one wait before each retry
@@ -169,7 +175,9 @@ describe('createWebhookDeliverer', () => {
       circuitThreshold: 2,
       circuitCooldownMs: 1_000,
     });
-    deliverer.deliver(Array.from({ length: 5 }, (_, i) => event({ id: `e${i}`, type: 'stock.adjusted' })));
+    void deliverer.deliver(
+      Array.from({ length: 5 }, (_, i) => event({ id: `e${i}`, type: 'stock.adjusted' })),
+    );
     await deliverer.whenIdle();
     // Two failures trip the circuit; the remaining three are skipped without a fetch.
     expect(calls).toBe(2);
@@ -194,7 +202,9 @@ describe('createWebhookDeliverer', () => {
       sleep: noSleep,
       maxAttempts: 1,
     });
-    deliverer.deliver(Array.from({ length: 3 }, (_, i) => event({ id: `e${i}`, type: 'stock.adjusted' })));
+    void deliverer.deliver(
+      Array.from({ length: 3 }, (_, i) => event({ id: `e${i}`, type: 'stock.adjusted' })),
+    );
     await deliverer.whenIdle();
     expect(good).toBe(3);
   });
@@ -211,7 +221,7 @@ describe('createWebhookDeliverer', () => {
       fetchImpl,
       sleep: noSleep,
     });
-    deliverer.deliver([
+    void deliverer.deliver([
       event({ id: 'e1', type: 'stock.adjusted' }),
       event({ id: 'e2', type: 'item.low_stock' }),
     ]);
@@ -387,7 +397,7 @@ describe('createWebhookDeliverer with DB-sourced targets (W5)', () => {
       },
       sleep: noSleep,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
     expect(urls.sort()).toEqual(['https://app.example.test/hook', 'https://config.example.test/hook']);
   });
@@ -403,7 +413,7 @@ describe('createWebhookDeliverer with DB-sourced targets (W5)', () => {
       },
       sleep: noSleep,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
     expect(calls).toBe(0);
   });
@@ -421,7 +431,7 @@ describe('createWebhookDeliverer with DB-sourced targets (W5)', () => {
       },
       sleep: noSleep,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
     expect(calls).toBe(0);
   });
@@ -439,12 +449,12 @@ describe('createWebhookDeliverer with DB-sourced targets (W5)', () => {
       },
       sleep: noSleep,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
     expect(urls).toEqual([]);
 
     generation = 1;
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
     expect(urls).toEqual(['https://added.example.test/hook']);
   });
@@ -464,7 +474,7 @@ describe('createWebhookDeliverer with DB-sourced targets (W5)', () => {
       sleep: noSleep,
       log: () => undefined,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
     expect(urls).toEqual(['https://config.example.test/hook']);
   });
@@ -486,7 +496,7 @@ describe('the SSRF guard in the delivery path (W5, §6.2)', () => {
       deliveryLog: log,
       log: () => undefined,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
 
     expect(calls).toBe(0);
@@ -507,7 +517,7 @@ describe('the SSRF guard in the delivery path (W5, §6.2)', () => {
       },
       sleep: noSleep,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
     expect(calls).toBe(1);
   });
@@ -523,7 +533,7 @@ describe('the SSRF guard in the delivery path (W5, §6.2)', () => {
       sleep: noSleep,
       log: () => undefined,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
     expect(calls).toBe(0);
   });
@@ -540,7 +550,9 @@ describe('the SSRF guard in the delivery path (W5, §6.2)', () => {
       deliveryLog: log,
       log: () => undefined,
     });
-    deliverer.deliver(Array.from({ length: 4 }, (_, i) => event({ id: `e${i}`, type: 'item.low_stock' })));
+    void deliverer.deliver(
+      Array.from({ length: 4 }, (_, i) => event({ id: `e${i}`, type: 'item.low_stock' })),
+    );
     await deliverer.whenIdle();
     // All four are individually refused; none is "skipped" by an opened circuit.
     expect(log.list().map((r) => r.outcome)).toEqual(['blocked', 'blocked', 'blocked', 'blocked']);
@@ -569,15 +581,15 @@ describe('the SSRF guard in the delivery path (W5, §6.2)', () => {
     });
 
     resolvesPrivate = false;
-    deliverer.deliver([event({ id: 'e1', type: 'item.low_stock' })]);
+    void deliverer.deliver([event({ id: 'e1', type: 'item.low_stock' })]);
     await deliverer.whenIdle();
 
     resolvesPrivate = true;
-    deliverer.deliver([event({ id: 'e2', type: 'item.low_stock' })]);
+    void deliverer.deliver([event({ id: 'e2', type: 'item.low_stock' })]);
     await deliverer.whenIdle();
 
     resolvesPrivate = false;
-    deliverer.deliver([event({ id: 'e3', type: 'item.low_stock' })]);
+    void deliverer.deliver([event({ id: 'e3', type: 'item.low_stock' })]);
     await deliverer.whenIdle();
 
     // fail, blocked, fail — the blocked job must not have reset the count, so the second real
@@ -585,7 +597,7 @@ describe('the SSRF guard in the delivery path (W5, §6.2)', () => {
     expect(log.list().map((r) => r.outcome)).toEqual(['failed', 'blocked', 'failed']);
 
     resolvesPrivate = false;
-    deliverer.deliver([event({ id: 'e4', type: 'item.low_stock' })]);
+    void deliverer.deliver([event({ id: 'e4', type: 'item.low_stock' })]);
     await deliverer.whenIdle();
     expect(log.list()[0]!.outcome).toBe('skipped');
   });
@@ -603,7 +615,7 @@ describe('the delivery log in the delivery path (W5, §3.1)', () => {
       sleep: noSleep,
       deliveryLog: log,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
 
     expect(log.list()[0]).toMatchObject({
@@ -628,7 +640,7 @@ describe('the delivery log in the delivery path (W5, §3.1)', () => {
       deliveryLog: log,
       log: () => undefined,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
 
     expect(log.list()[0]).toMatchObject({
@@ -653,7 +665,7 @@ describe('the delivery log in the delivery path (W5, §3.1)', () => {
       deliveryLog: log,
       log: () => undefined,
     });
-    deliverer.deliver([
+    void deliverer.deliver([
       event({ id: 'e1', type: 'item.low_stock' }),
       event({ id: 'e2', type: 'item.low_stock' }),
     ]);
@@ -686,7 +698,7 @@ describe('the delivery log in the delivery path (W5, §3.1)', () => {
       sleep: noSleep,
       deliveryLog: log,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
 
     expect(log.list()[0]!.url).toBe('https://a.example.test/hook');
@@ -702,7 +714,7 @@ describe('the delivery log in the delivery path (W5, §3.1)', () => {
       sleep: noSleep,
       deliveryLog: log,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
 
     const serialised = JSON.stringify(log.list());
@@ -748,7 +760,7 @@ describe('end-to-end signature verification against a real receiver', () => {
       targets: [{ url: `http://127.0.0.1:${port}/hook`, secret }],
       sleep: noSleep,
     });
-    deliverer.deliver([event({ id: 'e1', type: 'item.low_stock' })]);
+    void deliverer.deliver([event({ id: 'e1', type: 'item.low_stock' })]);
 
     const result = await received;
     await deliverer.whenIdle();
@@ -782,7 +794,7 @@ describe('redirects (#494)', () => {
       deliveryLog: log,
       log: () => undefined,
     });
-    deliverer.deliver([evt]);
+    void deliverer.deliver([evt]);
     await deliverer.whenIdle();
 
     // One attempt, not five: a receiver that redirects will redirect again.
@@ -821,7 +833,7 @@ describe('redirects (#494)', () => {
         deliveryLog: log,
         log: () => undefined,
       });
-      deliverer.deliver([evt]);
+      void deliverer.deliver([evt]);
       await deliverer.whenIdle();
 
       expect(redirected).toBe(1);
