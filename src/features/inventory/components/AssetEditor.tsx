@@ -114,6 +114,7 @@ export function AssetEditor({ item }: { item: Item }) {
             WARRANTY_STATUS_COLOR_CLASS[status],
           )}
           aria-live="polite"
+          data-testid="warranty-status"
         >
           <SecureIcon />
           {WARRANTY_LABEL[status]}

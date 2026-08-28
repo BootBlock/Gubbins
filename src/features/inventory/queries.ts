@@ -748,7 +748,12 @@ export function useApplicableStatuses(locationId?: string | null, active = true)
 export function useItem(id: string | undefined) {
   return useQuery({
     queryKey: inventoryKeys.item(id ?? ''),
-    queryFn: () => getItemRepository().getById(id!),
+    // `getById` answers `undefined` for a record that isn't there, which TanStack Query
+    // refuses as query data — it logs "Query data cannot be undefined" and marks the query
+    // errored. Deleting the item you are looking at refetches this key before the screen
+    // drops the selection, so that is a reachable state. `null` says the same thing in a
+    // value the cache accepts.
+    queryFn: async () => (await getItemRepository().getById(id!)) ?? null,
     enabled: Boolean(id),
   });
 }

@@ -73,6 +73,21 @@
  *
  *   node scripts/browser-smoke.mjs            # headless
  *   node scripts/browser-smoke.mjs --headed   # watch it run
+ *
+ * It must be pointed at the **dev** server. Several steps import app modules by their source
+ * path (`/src/db/repositories/index.ts`) and one reaches for a storage test seam only a DEV
+ * build exposes, so a run against `vite preview` fails a dozen checks for that reason alone.
+ * Cross-origin isolation is not the constraint — both servers send COOP/COEP. Run
+ * `npm run build` first if you want the PWA update-handshake block too: it serves `dist/` from
+ * its own in-process server and skips itself when there is no build.
+ *
+ * Environment:
+ *   SMOKE_BASE              origin + base path to drive (default http://localhost:5173/Gubbins/)
+ *   SMOKE_BROWSER_CHANNEL   `msedge` (default) or `chromium` for Playwright's bundled build
+ *   SMOKE_TIMEOUT_SCALE     multiplies every wait budget — CI uses this, a slow machine can too
+ *   SMOKE_PWA_ONLY          run only the self-contained PWA update-handshake block
+ *
+ * CI runs this nightly and on demand — see `.github/workflows/e2e.yml`.
  */
 import zlib from 'node:zlib';
 import { createServer } from 'node:http';
@@ -126,6 +141,28 @@ function makePng(size = 8) {
 // dev server picks a different port (e.g. 5173 already in use → 5174).
 const BASE = process.env.SMOKE_BASE ?? 'http://localhost:5173/Gubbins/';
 const headed = process.argv.includes('--headed');
+// A hosted CI runner is markedly slower than a developer machine — the sqlite-wasm worker boot,
+// the OPFS writes and the virtualised re-renders all take longer — so every wait *budget* in the
+// run scales by `SMOKE_TIMEOUT_SCALE` there, rather than each one being relaxed individually
+// (which would blunt the suite locally, where a slow control really is a regression). Fixed
+// `waitForTimeout` settles are not budgets and are left alone. Unset means 1.
+const timeoutScale = Number(process.env.SMOKE_TIMEOUT_SCALE ?? '1');
+if (!Number.isFinite(timeoutScale) || timeoutScale <= 0) {
+  throw new Error(`SMOKE_TIMEOUT_SCALE must be a positive number (got "${process.env.SMOKE_TIMEOUT_SCALE}")`);
+}
+/** Scale a wait budget by {@link timeoutScale}. Every explicit `timeout:` in the run goes through it. */
+const ms = (budget) => Math.round(budget * timeoutScale);
+/**
+ * Scale a hand-rolled poll loop's attempt count by {@link timeoutScale}.
+ *
+ * The suite polls by hand wherever Playwright has no matcher for the condition — a Foundry
+ * combobox's displayed label, a button that enables once a worker query answers. Those budgets
+ * are `attempts × interval` rather than a `timeout:` option, so `ms()` cannot reach them; without
+ * this they would be the tightest waits in the run on exactly the machine the scale exists for,
+ * and each throws its own diagnosis rather than a timeout, so the failure would misdescribe
+ * itself too. The interval is left alone, so a fast answer is still noticed promptly.
+ */
+const attempts = (count) => Math.ceil(count * timeoutScale);
 // When set, run ONLY the self-contained §2 PWA update-handshake block (which spins up
 // its own production-build static server) and skip every dev-server-dependent step —
 // so the handshake can be verified against a `npm run build` with no dev server running.
@@ -194,8 +231,16 @@ async function step(name, fn) {
   }
 }
 
+// Which Chromium build to drive. Locally the preinstalled Edge is the point — it is the
+// browser the maintainer actually uses, and needs no `playwright install`. CI has no Edge, so
+// it sets `SMOKE_BROWSER_CHANNEL=chromium` to use Playwright's own bundled build; the two are
+// the same engine, so the flows under test do not differ. Any other value is passed through as
+// a Playwright channel name.
+const channel = process.env.SMOKE_BROWSER_CHANNEL ?? 'msedge';
+
 const browser = await chromium.launch({
-  channel: 'msedge',
+  // `chromium` is not a channel — it is the absence of one (the bundled build).
+  ...(channel === 'chromium' ? {} : { channel }),
   headless: !headed,
   // Auto-grant a fake camera so the Phase 6 scanner's getUserMedia path runs
   // headlessly without a permission prompt (§6.1); manual code entry is the decode.
@@ -208,8 +253,8 @@ const page = await browser.newPage();
 // virtualised re-render + sqlite-wasm worker round-trip an action can wait behind under
 // headless load, while a truly-missing control still fails fast. Navigation keeps its
 // own headroom for the first cold-start app + sqlite-wasm boot.
-page.setDefaultTimeout(10000);
-page.setDefaultNavigationTimeout(15000);
+page.setDefaultTimeout(ms(10000));
+page.setDefaultNavigationTimeout(ms(15000));
 
 page.on('console', (msg) => {
   if (msg.type() === 'error') recordConsoleError(msg.text());
@@ -240,7 +285,7 @@ async function chooseOption(combo, name, { exact = true } = {}) {
  * label (never the option's count meta), so an exact match is safe here.
  */
 async function expectComboLabel(combo, label) {
-  for (let i = 0; i < 25; i += 1) {
+  for (let i = 0; i < attempts(25); i += 1) {
     if (((await combo.textContent()) ?? '').trim() === label) return;
     await page.waitForTimeout(150);
   }
@@ -259,8 +304,10 @@ async function expectComboLabel(combo, label) {
  */
 async function openSettingsTab(tabName) {
   await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 6000 });
-  if (tabName) await page.getByRole('tab', { name: tabName }).click();
+  await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: ms(6000) });
+  // Exact: the rail's short names are prefixes of longer ones ("App" also matches
+  // "Appearance"), which a substring role-name match resolves to two tabs.
+  if (tabName) await page.getByRole('tab', { name: tabName, exact: true }).click();
 }
 
 /**
@@ -271,7 +318,7 @@ async function openSettingsTab(tabName) {
  */
 async function expectText(locator, substring) {
   let last = '';
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < attempts(40); i += 1) {
     last = ((await locator.textContent().catch(() => '')) ?? '').trim();
     if (last.includes(substring)) return;
     await page.waitForTimeout(100);
@@ -299,6 +346,109 @@ async function navMenu(destination) {
  */
 async function openMoreMenu() {
   await page.getByRole('button', { name: 'More inventory actions' }).click();
+}
+
+/**
+ * Dismiss the first-run "Set up your modules" chooser, if it is showing.
+ *
+ * It is root-mounted, modal, and traps every click until it is answered — and it opens on any
+ * profile that has not completed first-run, which means **every fresh browser context**, not
+ * only the run's first page. Skipping changes nothing (every module stays on) and persists
+ * `firstRunComplete`, so it never re-shows for that context. A no-op where it is already done.
+ */
+async function dismissFirstRun(target) {
+  const skip = target.getByTestId('first-run-skip');
+  await skip.waitFor({ state: 'visible', timeout: ms(8000) }).catch(() => {});
+  if (await skip.isVisible().catch(() => false)) {
+    await skip.click();
+    await skip.waitFor({ state: 'hidden', timeout: ms(5000) });
+  }
+}
+
+/**
+ * Arm a download expectation that cannot take the whole run down with it.
+ *
+ * `waitForEvent` starts its own timer the moment it is called, so a promise left unawaited —
+ * which is exactly what happens when the click that should have triggered the download throws
+ * first — rejects with nobody listening. An unhandled rejection kills the process, turning one
+ * failed step into a run that reports no summary at all. Attaching a no-op handler up front
+ * keeps the rejection quiet; the caller still awaits the same promise and sees the real error.
+ */
+function expectDownload(target, timeout) {
+  const download = target.waitForEvent('download', { timeout });
+  download.catch(() => {});
+  return download;
+}
+
+/**
+ * Select a rail tab of the Add-item or item-detail dialog.
+ *
+ * Both dialogs group their fields into rail tabs (Details / Supplier & ops / Lifecycle) and mount
+ * **only the active tab's panel**, so a control on a hidden tab is absent from the DOM rather than
+ * merely off-screen. Selecting its tab is the precondition for touching it — and, for the supplier
+ * scrape panel, for it to be mounted when a SCRAPE_RESULT arrives and applies to the form.
+ */
+async function showDialogTab(dialog, tabName) {
+  const tab = dialog.getByRole('tab', { name: tabName });
+  if ((await tab.getAttribute('aria-selected')) === 'true') return;
+  await tab.click();
+}
+
+/**
+ * Hover a Foundry `Tooltip` trigger hard enough to open its bubble.
+ *
+ * A plain `locator.hover()` is one `mouse.move` to the element's centre, which fires
+ * `pointerenter` and nothing else. The tooltip deliberately treats that as insufficient: it
+ * *arms* hover-open at the enter coordinates and only promotes it to a delayed open once the
+ * cursor moves to a **different** point over the trigger, so a trigger that merely appears
+ * under a parked cursor never pops a bubble (issue #474). Two moves reproduce a real mouse.
+ */
+async function hoverForTooltip(locator) {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('tooltip trigger is not laid out');
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.move(x + 2, y);
+}
+
+/**
+ * Open the Inventory Visual-Builder ("Visual search") panel and wait until it can be driven.
+ *
+ * Two traps, both of which read as a broken app rather than a broken locator:
+ *
+ * 1. The toggle is a `menuitemcheckbox` inside the Inventory "More" menu — the header row keeps
+ *    only Search/Add item/Scan/More — so there is no top-level "Visual search" button. Worse, the
+ *    panel's own close button is labelled "Close visual search" and Playwright's role-name match
+ *    is a case-insensitive *substring*, so `getByRole('button', { name: 'Visual search' })`
+ *    silently resolves to that instead. The toggle's own `aria-checked` is the state to read.
+ * 2. The panel is always mounted and reveals by animating a collapsing grid row (0fr → 1fr) with
+ *    `overflow-hidden`. Clipping hides paint, not layout, so while it is shut its controls still
+ *    report a real bounding box and Playwright calls them visible — at coordinates that are over
+ *    the location sidebar, where a click lands on the sidebar instead. So wait for the panel to
+ *    be genuinely laid out and hit-testable, not merely present.
+ */
+async function openVisualBuilder() {
+  await openMoreMenu();
+  const toggle = page.getByRole('menuitemcheckbox', { name: 'Visual search' });
+  if ((await toggle.getAttribute('aria-checked')) === 'true') {
+    // Already open — dismiss the menu rather than toggling the panel shut.
+    await page.keyboard.press('Escape');
+  } else {
+    await toggle.click();
+  }
+  await page.waitForFunction(
+    () => {
+      const panel = document.querySelector('[data-testid="visual-builder"]');
+      if (!panel) return false;
+      const box = panel.getBoundingClientRect();
+      if (box.height < 40) return false;
+      const at = document.elementFromPoint(box.x + box.width / 2, box.y + 8);
+      return !!at && panel.contains(at);
+    },
+    undefined,
+    { timeout: ms(8000) },
+  );
 }
 
 /** Open the Add-item split-button dropdown (which hosts the "Import…" entry). */
@@ -375,7 +525,7 @@ try {
   if (!PWA_ONLY) {
     await step('loads and reaches the inventory workspace', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
     });
 
     await step('dismisses the first-run module chooser on a fresh profile (§4 modular UI)', async () => {
@@ -385,11 +535,7 @@ try {
       // stays on) and persists `firstRunComplete`, so it never re-shows for the rest of the run —
       // including across the reloads later steps perform. Resilient by design: if the profile has
       // already completed first-run, the modal is absent and this is a no-op.
-      const skip = page.getByTestId('first-run-skip');
-      if (await skip.isVisible().catch(() => false)) {
-        await skip.click();
-        await skip.waitFor({ state: 'hidden', timeout: 5000 });
-      }
+      await dismissFirstRun(page);
     });
 
     await step(
@@ -403,12 +549,14 @@ try {
         // region, which is only rendered once the worker has answered a real list() query
         // against the freshly-migrated schema.
         await page.reload({ waitUntil: 'domcontentloaded' });
-        await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+        await page
+          .getByRole('button', { name: 'Add item' })
+          .waitFor({ state: 'visible', timeout: ms(10000) });
         const dbReady = await page
           .waitForFunction(
             () => !!document.querySelector('#main-content [role="status"][aria-live="polite"]'),
             undefined,
-            { timeout: 10000 },
+            { timeout: ms(10000) },
           )
           .then(() => true)
           .catch(() => false);
@@ -458,7 +606,7 @@ try {
       await opener.focus();
       await opener.click();
       const dialog = page.getByRole('dialog', { name: 'Add item' });
-      await dialog.waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Focus moved into the dialog on open.
       const focusInDialogOnOpen = await page.evaluate(() => {
@@ -485,7 +633,7 @@ try {
 
       // Escape closes it and returns focus to the opener.
       await page.keyboard.press('Escape');
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
       const restored = await page.evaluate(
         () => document.activeElement?.textContent?.includes('Add item') ?? false,
       );
@@ -497,14 +645,14 @@ try {
       async () => {
         await page.getByRole('button', { name: 'Add item' }).click();
         const dialog = page.getByRole('dialog', { name: 'Add item' });
-        await dialog.waitFor({ state: 'visible', timeout: 5000 });
+        await dialog.waitFor({ state: 'visible', timeout: ms(5000) });
         // Submit with an empty Name → Zod rejects and the Foundry FormField surfaces the error.
         await dialog.getByRole('button', { name: 'Create item' }).click();
         await dialog
           .getByRole('alert')
           .filter({ hasText: 'enter a name' })
           .first()
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
         // The Name control is marked aria-invalid and described by that announced alert.
         const wired = await page.evaluate(() => {
           const d = document.querySelector('[role="dialog"]');
@@ -518,7 +666,7 @@ try {
         });
         if (!wired) throw new Error('the invalid Name field is not wired to its announced error');
         await page.keyboard.press('Escape');
-        await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+        await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
       },
     );
 
@@ -539,13 +687,13 @@ try {
       // Opt into kiosk mode via the Settings control (default is off).
       await openSettingsTab('Dashboard');
       const kiosk = page.getByTestId('setting-kiosk-mode');
-      await kiosk.waitFor({ state: 'visible', timeout: 5000 });
+      await kiosk.waitFor({ state: 'visible', timeout: ms(5000) });
       await chooseOption(kiosk, 'On');
 
       // The dashboard now applies the §3 touch/selection containment to its landmark…
       await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
       const main = page.locator('main#main-content[data-kiosk="on"]');
-      await main.waitFor({ state: 'visible', timeout: 5000 });
+      await main.waitFor({ state: 'visible', timeout: ms(5000) });
       const contained = await main.evaluate((el) => {
         const cs = getComputedStyle(el);
         return cs.touchAction.includes('pan-y') && cs.userSelect === 'none';
@@ -561,7 +709,7 @@ try {
       await openSettingsTab('Dashboard');
       await chooseOption(page.getByTestId('setting-kiosk-mode'), 'Off');
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
     });
 
     await step('creates a Bulk item', async () => {
@@ -571,7 +719,7 @@ try {
       await chooseOption(dialog.getByLabel('Tracking'), 'Bulk');
       await dialog.getByLabel('Initial quantity').fill('100');
       await dialog.getByRole('button', { name: 'Create item' }).click();
-      await page.getByText(screwName).waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByText(screwName).waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('creates an Unlimited-supply item shown as ∞ with no ± stepper (Phase 82)', async () => {
@@ -581,10 +729,13 @@ try {
       // Tracking defaults to DISCRETE — the sole mode the "Unlimited supply" toggle appears for.
       await dialog.getByTestId('item-unlimited').check();
       await dialog.getByRole('button', { name: 'Create item' }).click();
-      await page.getByText(unlimitedName).waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByText(unlimitedName).waitFor({ state: 'visible', timeout: ms(5000) });
 
       // The on-hand quantity renders as ∞ with an accessible label (never a number, no stepper).
-      await page.getByLabel('Unlimited supply').first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByLabel('Unlimited supply')
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       const card = page
         .locator('div')
         .filter({ hasText: unlimitedName })
@@ -608,16 +759,22 @@ try {
       await dialog.getByLabel('Full capacity').fill('1000');
       await dialog.getByLabel('Tare (empty)').fill('250');
       await dialog.getByRole('button', { name: 'Create item' }).click();
-      await page.getByText(filamentName).waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByText(filamentName).waitFor({ state: 'visible', timeout: ms(5000) });
       // A gauge progressbar must be present somewhere in the list.
-      await page.getByRole('progressbar').first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByRole('progressbar')
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('increments quantity via the stepper (optimistic)', async () => {
       const card = page.locator('div', { hasText: screwName }).last();
       // Find the increment button within the screws card and click it.
       await page.getByRole('button', { name: 'Increase quantity' }).first().click();
-      await page.getByText('101', { exact: true }).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText('101', { exact: true })
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       void card;
     });
 
@@ -650,7 +807,13 @@ try {
       await dialog.getByLabel('Description (optional)').fill('Main bench area');
       await dialog.getByRole('radio', { name: 'Teal' }).click();
       await dialog.getByRole('button', { name: 'Create' }).click();
-      await page.getByText(`Workshop ${stamp}`).waitFor({ state: 'visible', timeout: 5000 });
+      // Scope the assertion to the location tree. Creating a location also selects it, which
+      // mounts the location info card — that repeats the name, so an unscoped `getByText`
+      // matches twice and trips Playwright's strict mode.
+      const tree = page.getByRole('tree', { name: 'Locations' });
+      await tree
+        .getByRole('treeitem', { name: `Workshop ${stamp}` })
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       await page.getByRole('button', { name: 'Add location' }).click();
       dialog = page.getByRole('dialog', { name: 'Add location' });
@@ -660,7 +823,13 @@ try {
       await dialog.getByRole('combobox', { name: 'Parent (optional)' }).click();
       await page.getByRole('option', { name: `Workshop ${stamp}` }).click();
       await dialog.getByRole('button', { name: 'Create' }).click();
-      await page.getByText(`Shelf ${stamp}`).waitFor({ state: 'visible', timeout: 5000 });
+      await tree
+        .getByRole('treeitem', { name: `Shelf ${stamp}` })
+        .waitFor({ state: 'visible', timeout: ms(5000) });
+
+      // Creating a location selects it, so the item list is left filtered to `Shelf`. Restore
+      // the "All items" view — every later step reads the whole inventory.
+      await tree.getByRole('treeitem', { name: 'All items' }).click();
     });
 
     await step(
@@ -669,19 +838,22 @@ try {
         const workshop = page.getByRole('treeitem', { name: `Workshop ${stamp}` });
         // The name is tinted with the chosen swatch's text token…
         const tinted = workshop.locator('.text-loc-teal');
-        await tinted.waitFor({ state: 'visible', timeout: 5000 });
+        await tinted.waitFor({ state: 'visible', timeout: ms(5000) });
         // …and the description surfaces as a Foundry tooltip on hover.
-        await tinted.hover();
-        await page.getByRole('tooltip').filter({ hasText: 'Main bench area' }).waitFor({
-          state: 'visible',
-          timeout: 5000,
-        });
+        await hoverForTooltip(tinted);
+        await page
+          .getByRole('tooltip')
+          .filter({ hasText: 'Main bench area' })
+          .waitFor({
+            state: 'visible',
+            timeout: ms(5000),
+          });
       },
     );
 
     await step('the location tree is keyboard navigable (§3 APG tree)', async () => {
       const tree = page.getByRole('tree', { name: 'Locations' });
-      await tree.waitFor({ state: 'visible', timeout: 5000 });
+      await tree.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // The whole tree is a single tab stop (roving tabindex).
       const tabStops = await page.evaluate(
@@ -706,14 +878,14 @@ try {
       // Workshop (a top-level node) is expanded by default, so its Shelf child shows.
       const workshop = tree.getByRole('treeitem', { name: `Workshop ${stamp}` });
       const shelf = tree.getByRole('treeitem', { name: `Shelf ${stamp}` });
-      await shelf.waitFor({ state: 'visible', timeout: 5000 });
+      await shelf.waitFor({ state: 'visible', timeout: ms(5000) });
       // ArrowLeft collapses it (hiding Shelf); ArrowRight expands it again.
       await workshop.focus();
       await page.keyboard.press('ArrowLeft');
-      await shelf.waitFor({ state: 'hidden', timeout: 5000 });
+      await shelf.waitFor({ state: 'hidden', timeout: ms(5000) });
       await workshop.focus();
       await page.keyboard.press('ArrowRight');
-      await shelf.waitFor({ state: 'visible', timeout: 5000 });
+      await shelf.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Enter selects the focused location (aria-selected reflects the active filter).
       await workshop.focus();
@@ -741,7 +913,7 @@ try {
       await dialog.getByLabel('Name').fill(dragLocName);
       await dialog.getByRole('button', { name: 'Create' }).click();
       const target = page.getByRole('treeitem', { name: dragLocName });
-      await target.waitFor({ state: 'visible', timeout: 5000 });
+      await target.waitFor({ state: 'visible', timeout: ms(5000) });
 
       await page.getByRole('button', { name: 'Add item' }).click();
       dialog = page.getByRole('dialog', { name: 'Add item' });
@@ -749,7 +921,7 @@ try {
       await chooseOption(dialog.getByLabel('Tracking'), 'Bulk');
       await dialog.getByLabel('Initial quantity').fill('1');
       await dialog.getByRole('button', { name: 'Create item' }).click();
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
 
       // Card view renders the item as a card whose <h3> title is a safe, non-interactive
       // drag handle — a press begun on a control (± stepper, action button) is deliberately
@@ -759,7 +931,7 @@ try {
       await page.getByRole('menuitem', { name: /^View:/ }).click();
       await page.getByRole('menuitemradio', { name: 'Card' }).click();
       const handle = page.getByRole('heading', { name: dragItemName });
-      await handle.waitFor({ state: 'visible', timeout: 5000 });
+      await handle.waitFor({ state: 'visible', timeout: ms(5000) });
 
       const from = await handle.boundingBox();
       const to = await target.boundingBox();
@@ -781,7 +953,7 @@ try {
         .filter({ hasText: dragItemName })
         .filter({ has: page.getByRole('button', { name: 'More actions' }) })
         .last();
-      await movedCard.getByText(dragLocName).waitFor({ state: 'visible', timeout: 8000 });
+      await movedCard.getByText(dragLocName).waitFor({ state: 'visible', timeout: ms(8000) });
     });
 
     await step('deletes a location from the Edit dialog footer (§4 considered delete)', async () => {
@@ -793,14 +965,14 @@ try {
       await dialog.getByLabel('Name').fill(delLocName);
       await dialog.getByRole('button', { name: 'Create' }).click();
       const row = page.getByRole('treeitem', { name: delLocName });
-      await row.waitFor({ state: 'visible', timeout: 5000 });
+      await row.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Deletion moved out of the cramped hover row into the Edit dialog's footer (a considered,
       // spacious context). The per-row Edit affordance only reveals on hover; open it from there.
       await row.hover();
       await page.getByRole('button', { name: `Edit ${delLocName}` }).click();
       const editDialog = page.getByRole('dialog', { name: 'Edit location' });
-      await editDialog.waitFor({ state: 'visible', timeout: 5000 });
+      await editDialog.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // The Edit dialog is tall (every location field plus its read-only metadata), so its
       // footer Delete button can fall below the default fold — but the Modal now caps its height
@@ -810,7 +982,15 @@ try {
       const deleteButton = editDialog.getByTestId('edit-location-delete');
       await deleteButton.scrollIntoViewIfNeeded();
       await deleteButton.click();
-      await row.waitFor({ state: 'detached', timeout: 5000 });
+      await row.waitFor({ state: 'detached', timeout: ms(5000) });
+
+      // Creating a location selects it, so this step (and the drag step before it) leave the
+      // item list scoped to a location that has just been deleted. Put the tree back on the
+      // whole inventory — every step from here reads and creates across the full list.
+      await page
+        .getByRole('tree', { name: 'Locations' })
+        .getByRole('treeitem', { name: 'All items' })
+        .click();
     });
 
     // --- Phase 3 flows ------------------------------------------------------------
@@ -825,7 +1005,7 @@ try {
       await dialog.getByLabel('Field name').fill(fieldName);
       await chooseOption(dialog.getByLabel('Field type'), 'Number');
       await dialog.getByRole('button', { name: 'Add field' }).click();
-      await dialog.getByText(fieldName).waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.getByText(fieldName).waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -845,13 +1025,16 @@ try {
       await dialog.getByLabel(/How many/).fill('3');
       await dialog.getByRole('button', { name: 'Create item' }).click();
       // Three distinct instance records share the name (#1..#3 shown beside it).
-      await page.getByText(printerName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(printerName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction(
         (name) =>
           document.querySelectorAll('h3').length > 0 &&
           [...document.querySelectorAll('h3')].filter((h) => h.textContent?.includes(name)).length >= 3,
         printerName,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
     });
 
@@ -861,7 +1044,7 @@ try {
       await dialog.getByRole('tab', { name: 'Classification' }).click();
       await dialog.getByLabel('Add a tag').fill(tagName);
       await page.keyboard.press('Enter');
-      await dialog.getByText(tagName).waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.getByText(tagName).waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -875,7 +1058,10 @@ try {
         buffer: pngBuffer,
       });
       // A thumbnail must render from the stored DB blob (round-trips the worker).
-      await dialog.locator('img').first().waitFor({ state: 'visible', timeout: 8000 });
+      await dialog
+        .locator('img')
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(8000) });
       await page.keyboard.press('Escape');
     });
 
@@ -885,11 +1071,14 @@ try {
       await dialog.getByRole('tab', { name: 'Activity' }).click();
       const log = dialog.getByTestId('activity-log');
       await log.scrollIntoViewIfNeeded();
-      await log.waitFor({ state: 'visible', timeout: 5000 });
+      await log.waitFor({ state: 'visible', timeout: ms(5000) });
       // Every item carries at least its CREATED entry; the formatter titles it "Created".
       const entries = dialog.getByTestId('activity-log-entry');
       if ((await entries.count()) === 0) throw new Error('Activity Log rendered no entries');
-      await dialog.getByText('Created', { exact: true }).first().waitFor({ state: 'visible', timeout: 5000 });
+      await dialog
+        .getByText('Created', { exact: true })
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -903,7 +1092,7 @@ try {
       const saveBtn = dialog.getByTestId('op-meta-save');
       await saveBtn.click();
       // After a successful save the button collapses to its disabled "Saved" state.
-      await saveBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
+      await saveBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
 
       // Reopen — the value must come back from the DB (the item query was invalidated),
@@ -911,7 +1100,7 @@ try {
       await itemCardAction(printerCard(), 'Edit details');
       dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
-      await dialog.getByLabel('Parameter 1 name').waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.getByLabel('Parameter 1 name').waitFor({ state: 'visible', timeout: ms(5000) });
       const key = await dialog.getByLabel('Parameter 1 name').inputValue();
       const value = await dialog.getByLabel('Parameter 1 value').inputValue();
       if (key !== 'bed_temp_celsius' || value !== '60') {
@@ -931,7 +1120,7 @@ try {
       await chooseOption(dialog.getByLabel('Tracking'), 'Bulk');
       await chooseOption(dialog.getByLabel('Category (optional)'), categoryName, { exact: false });
       await dialog.getByRole('button', { name: 'Create item' }).click();
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
 
       const customCard = () =>
         page
@@ -942,10 +1131,12 @@ try {
 
       // Open the item → Classification tab → the custom-field editor.
       await itemCardAction(customCard(), 'Edit details');
-      dialog = page.getByRole('dialog');
+      // Name the dialog: an unscoped `getByRole('dialog')` also matches the "Discard unsaved
+      // changes?" confirmation the detail dialog raises, which trips strict mode.
+      dialog = page.getByRole('dialog', { name: customItemName });
       await dialog.getByRole('tab', { name: 'Classification' }).click();
       const field = dialog.getByLabel(fieldName, { exact: false }).first();
-      await field.waitFor({ state: 'visible', timeout: 5000 });
+      await field.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Note on the invalid-value-blocks-save path: the editor renders a native
       // `<input type="number">`, which itself drops non-numeric text before it ever
@@ -959,18 +1150,21 @@ try {
       // A canonicalisable NUMBER ('12.50') saves; the worker persists it as '12.5'.
       const saveBtn = dialog.getByRole('button', { name: /^Save \d+ change/ });
       await field.fill('12.50');
-      await saveBtn.waitFor({ state: 'visible', timeout: 5000 });
+      await saveBtn.waitFor({ state: 'visible', timeout: ms(5000) });
       await saveBtn.click();
+      // The Save button counts the unsaved changes, so it goes away once the write lands.
+      // Escaping before then leaves the dialog dirty, and it asks to discard instead of closing.
+      await saveBtn.waitFor({ state: 'hidden', timeout: ms(5000) });
       await page.keyboard.press('Escape');
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
 
       // Reopen — the value must come back from the DB (proves it persisted through the
       // worker, not just local state) in its canonical coerced form.
       await itemCardAction(customCard(), 'Edit details');
-      dialog = page.getByRole('dialog');
+      dialog = page.getByRole('dialog', { name: customItemName });
       await dialog.getByRole('tab', { name: 'Classification' }).click();
       const reopened = dialog.getByLabel(fieldName, { exact: false }).first();
-      await reopened.waitFor({ state: 'visible', timeout: 5000 });
+      await reopened.waitFor({ state: 'visible', timeout: ms(5000) });
       const persisted = await reopened.inputValue();
       if (persisted !== '12.5') {
         throw new Error(`custom NUMBER field did not round-trip canonically (got "${persisted}")`);
@@ -987,13 +1181,13 @@ try {
     await step('filters the inventory by a custom-field value (§5.1, Phase 71)', async () => {
       const customItemName = `Smoke Custom ${stamp}`;
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
 
       // The result-count aria-live region must be present before and after filtering.
       const resultCount = page.locator('p[role="status"][aria-live="polite"]').first();
-      await resultCount.waitFor({ state: 'attached', timeout: 5000 });
+      await resultCount.waitFor({ state: 'attached', timeout: ms(5000) });
 
-      await page.getByRole('button', { name: 'Visual search' }).click();
+      await openVisualBuilder();
       await page.getByRole('button', { name: 'Add condition' }).click();
       // Switch the condition to a custom-field EQUALS filter on the NUMBER field.
       await chooseOption(page.getByRole('combobox', { name: 'Field' }), 'Custom field');
@@ -1002,13 +1196,16 @@ try {
       await page.getByLabel('Value').fill('12.5');
 
       // The list narrows to the item carrying that value; the screws drop out.
-      await page.getByText(customItemName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(customItemName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction((name) => !document.body.textContent?.includes(name), screwName, {
-        timeout: 5000,
+        timeout: ms(5000),
       });
 
       // The aria-live result-count region is still mounted after the filter applied.
-      await resultCount.waitFor({ state: 'attached', timeout: 5000 });
+      await resultCount.waitFor({ state: 'attached', timeout: ms(5000) });
     });
 
     await step('sets a per-item reorder point and the Low Stock widget reacts (§4, Phase 59)', async () => {
@@ -1033,7 +1230,7 @@ try {
       await dialog.getByTestId('reorder-qty-input').fill('300');
       const saveBtn = dialog.getByTestId('reorder-point-save');
       await saveBtn.click();
-      await saveBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
+      await saveBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
 
       // Reopen — the override must come back from the DB (the item query was invalidated),
@@ -1041,7 +1238,7 @@ try {
       await itemCardAction(screwCard(), 'Edit details');
       dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
-      await dialog.getByTestId('reorder-point-input').waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.getByTestId('reorder-point-input').waitFor({ state: 'visible', timeout: ms(5000) });
       const point = await dialog.getByTestId('reorder-point-input').inputValue();
       if (point !== '200') {
         throw new Error(`reorder point did not round-trip (got "${point}")`);
@@ -1052,9 +1249,9 @@ try {
       // with the suggested top-up surfaced from the per-item reorder quantity.
       await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
       const widget = page.getByTestId('widget-low-stock');
-      await widget.waitFor({ state: 'visible', timeout: 8000 });
-      await widget.getByText(screwName).waitFor({ state: 'visible', timeout: 5000 });
-      await widget.getByText(/reorder 300/).waitFor({ state: 'visible', timeout: 5000 });
+      await widget.waitFor({ state: 'visible', timeout: ms(8000) });
+      await widget.getByText(screwName).waitFor({ state: 'visible', timeout: ms(5000) });
+      await widget.getByText(/reorder 300/).waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Clear the override so the screws return to "healthy" for any later assertions —
       // the "Default" policy clears the per-item reorder point and top-up.
@@ -1065,7 +1262,7 @@ try {
       await dialog.getByTestId('low-stock-policy-default').click();
       const clearBtn = dialog.getByTestId('reorder-point-save');
       await clearBtn.click();
-      await clearBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: 5000 });
+      await clearBtn.filter({ hasText: 'Saved' }).waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -1077,7 +1274,7 @@ try {
       // Open the add-supplier dialog and fill it in.
       await dialog.getByTestId('supplier-part-add').click();
       const form = page.getByTestId('supplier-part-form');
-      await form.waitFor({ state: 'visible', timeout: 5000 });
+      await form.waitFor({ state: 'visible', timeout: ms(5000) });
       await form.getByTestId('supplier-part-name').fill('SmokeSupplier');
       await form.getByTestId('supplier-part-order-code').fill('SMK-001');
       await form.getByTestId('supplier-part-unit-cost').fill('1.25');
@@ -1086,10 +1283,10 @@ try {
 
       // The new row appears in the suppliers list.
       const row = dialog.getByTestId('supplier-part-row').filter({ hasText: 'SmokeSupplier' });
-      await row.waitFor({ state: 'visible', timeout: 5000 });
+      await row.waitFor({ state: 'visible', timeout: ms(5000) });
       // Star it preferred; the "Preferred" badge then renders.
       await row.getByTestId('supplier-part-prefer').click();
-      await row.getByText('Preferred', { exact: true }).waitFor({ state: 'visible', timeout: 5000 });
+      await row.getByText('Preferred', { exact: true }).waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
 
       // Reopen — the supplier part must come back from the DB (the item query was invalidated),
@@ -1098,14 +1295,14 @@ try {
       dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Supplier & ops' }).click();
       const reopened = dialog.getByTestId('supplier-part-row').filter({ hasText: 'SmokeSupplier' });
-      await reopened.waitFor({ state: 'visible', timeout: 5000 });
-      await reopened.getByText('Preferred', { exact: true }).waitFor({ state: 'visible', timeout: 5000 });
+      await reopened.waitFor({ state: 'visible', timeout: ms(5000) });
+      await reopened.getByText('Preferred', { exact: true }).waitFor({ state: 'visible', timeout: ms(5000) });
       // Remove it again so later supplier-focused steps start clean.
       await reopened.getByTestId('supplier-part-remove').click();
       await dialog
         .getByTestId('supplier-part-row')
         .filter({ hasText: 'SmokeSupplier' })
-        .waitFor({ state: 'detached', timeout: 5000 });
+        .waitFor({ state: 'detached', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -1120,12 +1317,12 @@ try {
       await addDialog.getByLabel('Initial quantity').fill('8');
       await addDialog.getByLabel('Unit cost (optional)').fill('12.50');
       await addDialog.getByRole('button', { name: 'Create item' }).click();
-      await page.getByText(`Smoke Priced ${stamp}`).waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByText(`Smoke Priced ${stamp}`).waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Open the Reports screen and assert the headline value card shows a real total.
       await page.goto(`${BASE}reports`, { waitUntil: 'domcontentloaded' });
       const total = page.getByTestId('stat-total-value');
-      await total.waitFor({ state: 'visible', timeout: 8000 });
+      await total.waitFor({ state: 'visible', timeout: ms(8000) });
       const totalText = (await total.textContent())?.trim() ?? '';
       // Must be a currency figure, not the "—" placeholder or a zero total.
       if (!/[1-9]/.test(totalText)) {
@@ -1133,28 +1330,34 @@ try {
       }
 
       // The valuation breakdown and the movement chart legend are present.
-      await page.getByTestId('value-breakdown').first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByTestId('value-breakdown')
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // The Phase-74 advanced-analytics panels render. Turnover (any active item) and stock aging
       // (any item with stock) are guaranteed by the non-zero-total assertion above; the valuation
       // sparkline always renders; the selectable analytics-window control is present. (ABC needs
       // recorded consumption, which this seeded flow may lack, so it is not asserted here.)
-      await page.getByTestId('turnover-table').waitFor({ state: 'visible', timeout: 5000 });
-      await page.getByTestId('stock-aging-chart').waitFor({ state: 'visible', timeout: 5000 });
-      await page.getByTestId('valuation-sparkline').waitFor({ state: 'visible', timeout: 5000 });
-      await page
-        .getByRole('group', { name: 'Analytics window' })
-        .waitFor({ state: 'visible', timeout: 5000 });
+      // All four analytics panels share one lazy gate: they only fetch once their section
+      // scrolls into view (an IntersectionObserver), so scroll to it before asserting. The
+      // window toggle inside that section renders unconditionally, which makes it the anchor.
+      const analyticsWindow = page.getByRole('group', { name: 'Analytics window' });
+      await analyticsWindow.scrollIntoViewIfNeeded();
+      await analyticsWindow.waitFor({ state: 'visible', timeout: ms(5000) });
+      await page.getByTestId('turnover-table').waitFor({ state: 'visible', timeout: ms(8000) });
+      await page.getByTestId('stock-aging-chart').waitFor({ state: 'visible', timeout: ms(5000) });
+      await page.getByTestId('valuation-sparkline').waitFor({ state: 'visible', timeout: ms(5000) });
 
       // The CSV export flows through the shared Export Wizard's "Report CSV" format.
       await page.getByTestId('open-report-export').click();
       const exportDialog = page.getByRole('dialog', { name: 'Export' });
       await exportDialog.getByRole('button', { name: 'Report CSV' }).click();
-      await exportDialog.getByTestId('export-report-kind').waitFor({ state: 'visible', timeout: 5000 });
+      await exportDialog.getByTestId('export-report-kind').waitFor({ state: 'visible', timeout: ms(5000) });
       // Restore the remembered format to the default so later export steps (which assume an
       // items-scoped export) open the wizard on JSON, not the Report-CSV format (§3 last-used).
       await exportDialog.getByRole('button', { name: 'JSON data export' }).click();
-      await exportDialog.getByTestId('export-scope').waitFor({ state: 'visible', timeout: 5000 });
+      await exportDialog.getByTestId('export-scope').waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -1171,29 +1374,29 @@ try {
         await chooseOption(addDialog.getByLabel('Tracking'), 'Bulk');
         await addDialog.getByLabel('Initial quantity').fill('2');
         await addDialog.getByRole('button', { name: 'Create item' }).click();
-        await page.getByText(poItemName).waitFor({ state: 'visible', timeout: 5000 });
+        await page.getByText(poItemName).waitFor({ state: 'visible', timeout: ms(5000) });
 
         // Create a purchase order.
         await page.goto(`${BASE}purchase-orders`, { waitUntil: 'domcontentloaded' });
         await page.getByTestId('po-new').click();
         const createForm = page.getByTestId('po-create-form');
-        await createForm.waitFor({ state: 'visible', timeout: 5000 });
+        await createForm.waitFor({ state: 'visible', timeout: ms(5000) });
         await createForm.getByTestId('po-supplier-name').fill('SmokePO Supplier');
         await createForm.getByTestId('po-reference').fill(`PO-${stamp}`);
         await createForm.getByTestId('po-create-save').click();
-        await page.getByTestId('po-detail-status').waitFor({ state: 'visible', timeout: 5000 });
+        await page.getByTestId('po-detail-status').waitFor({ state: 'visible', timeout: ms(5000) });
 
         // Add a line for the new item, ordering 7 units.
         await page.getByTestId('po-add-line').click();
         const lineForm = page.getByTestId('po-line-form');
-        await lineForm.waitFor({ state: 'visible', timeout: 5000 });
+        await lineForm.waitFor({ state: 'visible', timeout: ms(5000) });
         await chooseOption(lineForm.getByTestId('po-line-item'), poItemName, { exact: false });
         await lineForm.getByTestId('po-line-qty').fill('7');
         await lineForm.getByTestId('po-line-save').click();
         await page
           .getByTestId('po-line-row')
           .filter({ hasText: poItemName })
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
 
         // Move the order out of DRAFT so the line can be received.
         await page.getByTestId('po-mark-ordered').click();
@@ -1201,14 +1404,14 @@ try {
         // Receive the whole outstanding quantity (defaults to 7).
         await page.getByTestId('po-receive-line').click();
         const receiveForm = page.getByTestId('po-receive-form');
-        await receiveForm.waitFor({ state: 'visible', timeout: 5000 });
+        await receiveForm.waitFor({ state: 'visible', timeout: ms(5000) });
         await receiveForm.getByTestId('po-receive-save').click();
 
         // The order derives to RECEIVED once every line is fully received.
         await page
           .getByTestId('po-detail-status')
           .filter({ hasText: 'Received' })
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
 
         // On-hand stock rose from 2 to 9 (2 + 7). Assert on the item's inventory card.
         await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
@@ -1217,8 +1420,11 @@ try {
           .filter({ hasText: poItemName })
           .filter({ has: page.getByRole('button', { name: 'More actions' }) })
           .last();
-        await poCard.waitFor({ state: 'visible', timeout: 8000 });
-        await poCard.getByText('9', { exact: true }).first().waitFor({ state: 'visible', timeout: 8000 });
+        await poCard.waitFor({ state: 'visible', timeout: ms(8000) });
+        await poCard
+          .getByText('9', { exact: true })
+          .first()
+          .waitFor({ state: 'visible', timeout: ms(8000) });
       },
     );
 
@@ -1228,7 +1434,7 @@ try {
 
       // The always-mounted polite status region must exist in the DOM immediately.
       const liveRegion = page.getByTestId('reports-live-region');
-      await liveRegion.waitFor({ state: 'attached', timeout: 5000 });
+      await liveRegion.waitFor({ state: 'attached', timeout: ms(5000) });
       if ((await liveRegion.getAttribute('role')) !== 'status') {
         throw new Error('reports live region does not have role="status"');
       }
@@ -1238,13 +1444,13 @@ try {
 
       // Wait for the stat cards to finish loading (the headline value renders), then assert
       // the region's text content becomes non-empty — the aggregate "ready" announcement.
-      await page.getByTestId('stat-total-value').waitFor({ state: 'visible', timeout: 8000 });
+      await page.getByTestId('stat-total-value').waitFor({ state: 'visible', timeout: ms(8000) });
       await page.waitForFunction(
         () => {
           const el = document.querySelector('[data-testid="reports-live-region"]');
           return el != null && (el.textContent ?? '').trim().length > 0;
         },
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
       const text = await liveRegion.textContent();
       if (!text || text.trim().length === 0) {
@@ -1259,7 +1465,7 @@ try {
         // and announce a non-empty count or empty state after data loads.
         await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
         const projectsLive = page.getByTestId('projects-count-live');
-        await projectsLive.waitFor({ state: 'attached', timeout: 5000 });
+        await projectsLive.waitFor({ state: 'attached', timeout: ms(5000) });
         if ((await projectsLive.getAttribute('role')) !== 'status') {
           throw new Error('projects-count-live does not have role="status"');
         }
@@ -1272,15 +1478,15 @@ try {
             const el = document.querySelector('[data-testid="projects-count-live"]');
             return el != null && (el.textContent ?? '').trim().length > 0;
           },
-          { timeout: 5000 },
+          { timeout: ms(5000) },
         );
 
         // Contacts screen — both on-loan and contacts count regions must be present.
         await page.goto(`${BASE}contacts`, { waitUntil: 'domcontentloaded' });
         const onLoanLive = page.getByTestId('contacts-on-loan-live');
         const contactsLive = page.getByTestId('contacts-count-live');
-        await onLoanLive.waitFor({ state: 'attached', timeout: 5000 });
-        await contactsLive.waitFor({ state: 'attached', timeout: 5000 });
+        await onLoanLive.waitFor({ state: 'attached', timeout: ms(5000) });
+        await contactsLive.waitFor({ state: 'attached', timeout: ms(5000) });
         if ((await onLoanLive.getAttribute('role')) !== 'status') {
           throw new Error('contacts-on-loan-live does not have role="status"');
         }
@@ -1305,13 +1511,13 @@ try {
               (b.textContent ?? '').trim().length > 0
             );
           },
-          { timeout: 5000 },
+          { timeout: ms(5000) },
         );
 
         // Purchase orders screen — master-list count region must be present and announce.
         await page.goto(`${BASE}purchase-orders`, { waitUntil: 'domcontentloaded' });
         const poListLive = page.getByTestId('po-list-count-live');
-        await poListLive.waitFor({ state: 'attached', timeout: 5000 });
+        await poListLive.waitFor({ state: 'attached', timeout: ms(5000) });
         if ((await poListLive.getAttribute('role')) !== 'status') {
           throw new Error('po-list-count-live does not have role="status"');
         }
@@ -1323,7 +1529,7 @@ try {
             const el = document.querySelector('[data-testid="po-list-count-live"]');
             return el != null && (el.textContent ?? '').trim().length > 0;
           },
-          { timeout: 5000 },
+          { timeout: ms(5000) },
         );
       },
     );
@@ -1340,15 +1546,21 @@ try {
       // Create a DISCRETE item with a reorder point of 10 and an initial quantity of 2
       // so it is immediately below its reorder point.
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       await page.getByRole('button', { name: 'Add item' }).click();
       const addDlg = page.getByRole('dialog', { name: 'Add item' });
       await addDlg.getByLabel('Name').fill(reorderItemName);
       await chooseOption(addDlg.getByLabel('Tracking'), 'Bulk');
       await addDlg.getByLabel('Initial quantity').fill('2');
+      // The item's own low-stock level is only offered under the "Custom" alert policy — the
+      // dialog defaults to "Default" (follow the global blanket), which hides the field.
+      await addDlg.getByTestId('low-stock-policy-custom').click();
       await addDlg.getByTestId('item-reorder-point').fill('10');
       await addDlg.getByRole('button', { name: 'Create item' }).click();
-      await page.getByText(reorderItemName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(reorderItemName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Add a preferred supplier to the item so it lands in a named group.
       const reorderCard = () =>
@@ -1363,27 +1575,29 @@ try {
       // Add a supplier part via the same testid-driven flow as the Phase-60 step.
       await itemDlg.getByTestId('supplier-part-add').click();
       const supplierForm = page.getByTestId('supplier-part-form');
-      await supplierForm.waitFor({ state: 'visible', timeout: 5000 });
+      await supplierForm.waitFor({ state: 'visible', timeout: ms(5000) });
       await supplierForm.getByTestId('supplier-part-name').fill(reorderSupplier);
       await supplierForm.getByTestId('supplier-part-save').click();
       // Star the new supplier row preferred so the item lands in a *named* reorder group.
       const supplierRow = itemDlg.getByTestId('supplier-part-row').filter({ hasText: reorderSupplier });
-      await supplierRow.waitFor({ state: 'visible', timeout: 5000 });
+      await supplierRow.waitFor({ state: 'visible', timeout: ms(5000) });
       await supplierRow.getByTestId('supplier-part-prefer').click();
-      await supplierRow.getByText('Preferred', { exact: true }).waitFor({ state: 'visible', timeout: 5000 });
+      await supplierRow
+        .getByText('Preferred', { exact: true })
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       // Close the item dialog.
       await page.keyboard.press('Escape');
-      await itemDlg.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+      await itemDlg.waitFor({ state: 'hidden', timeout: ms(5000) }).catch(() => {});
 
       // Navigate to the Purchase Orders screen and open the Reorder tab.
       await page.goto(`${BASE}purchase-orders`, { waitUntil: 'domcontentloaded' });
       const reorderTab = page.getByTestId('po-tab-reorder');
-      await reorderTab.waitFor({ state: 'visible', timeout: 5000 });
+      await reorderTab.waitFor({ state: 'visible', timeout: ms(5000) });
       await reorderTab.click();
 
       // The Reorder tab panel must be active and show the reorder list region.
       const reorderLive = page.getByTestId('reorder-list-count-live');
-      await reorderLive.waitFor({ state: 'attached', timeout: 5000 });
+      await reorderLive.waitFor({ state: 'attached', timeout: ms(5000) });
       if ((await reorderLive.getAttribute('role')) !== 'status') {
         throw new Error('reorder-list-count-live does not have role="status"');
       }
@@ -1394,7 +1608,7 @@ try {
       // Wait for at least one reorder group to appear (the supplier group for our item).
       await page.waitForFunction(
         () => document.querySelectorAll('[data-testid="reorder-group"]').length > 0,
-        { timeout: 8000 },
+        { timeout: ms(8000) },
       );
 
       // The named supplier group must show a "Create draft PO" button.
@@ -1402,20 +1616,20 @@ try {
         .locator('[data-testid="reorder-group"]')
         .filter({ has: page.getByTestId('reorder-create-draft') })
         .first();
-      await supplierGroup.waitFor({ state: 'visible', timeout: 5000 });
+      await supplierGroup.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Click "Create draft PO" for the first named supplier group.
       await supplierGroup.getByTestId('reorder-create-draft').click();
 
       // Confirmation: the live region announces success.
       const draftLive = page.getByTestId('reorder-draft-live');
-      await draftLive.waitFor({ state: 'attached', timeout: 5000 });
+      await draftLive.waitFor({ state: 'attached', timeout: ms(5000) });
       await page.waitForFunction(
         () => {
           const el = document.querySelector('[data-testid="reorder-draft-live"]');
           return el != null && (el.textContent ?? '').toLowerCase().includes('draft');
         },
-        { timeout: 8000 },
+        { timeout: ms(8000) },
       );
 
       // Switch back to the Orders tab and confirm a new DRAFT PO is listed.
@@ -1423,7 +1637,7 @@ try {
       await ordersTab.click();
       // The list should now have at least one order row.
       const poRow = page.getByTestId('po-list-row').first();
-      await poRow.waitFor({ state: 'visible', timeout: 8000 });
+      await poRow.waitFor({ state: 'visible', timeout: ms(8000) });
     });
 
     // --- Phase 66: Asset lifecycle — warranty date → status badge ----------------
@@ -1434,7 +1648,7 @@ try {
         await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
         await printerCard()
           .getByRole('button', { name: 'More actions' })
-          .waitFor({ state: 'visible', timeout: 8000 });
+          .waitFor({ state: 'visible', timeout: ms(8000) });
         await itemCardAction(printerCard(), 'Edit details');
         const detail = page.getByRole('dialog');
 
@@ -1445,7 +1659,7 @@ try {
         // (one year from now, so the badge should show "Under warranty").
         const futureWarranty = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
         const warrantyInput = detail.getByTestId('asset-warranty-expires-at');
-        await warrantyInput.waitFor({ state: 'visible', timeout: 5000 });
+        await warrantyInput.waitFor({ state: 'visible', timeout: ms(5000) });
         await warrantyInput.fill(futureWarranty);
 
         // Save the asset details.
@@ -1459,9 +1673,9 @@ try {
 
         // The warranty status badge should be visible (active/expiring-soon/expired).
         // A date a year out is 'active'; we just need the badge to appear.
-        const warrantyBadge = detail.locator('[aria-live="polite"]');
-        await warrantyBadge.first().waitFor({ state: 'visible', timeout: 5000 });
-        const badgeText = (await warrantyBadge.first().textContent()) ?? '';
+        const warrantyBadge = detail.getByTestId('warranty-status');
+        await warrantyBadge.waitFor({ state: 'visible', timeout: ms(5000) });
+        const badgeText = (await warrantyBadge.textContent()) ?? '';
         if (!/(warranty|Warranty)/.test(badgeText)) {
           throw new Error(`Expected a warranty status badge, got: "${badgeText}"`);
         }
@@ -1484,7 +1698,7 @@ try {
         await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
         await printerCard()
           .getByRole('button', { name: 'More actions' })
-          .waitFor({ state: 'visible', timeout: 8000 });
+          .waitFor({ state: 'visible', timeout: ms(8000) });
 
         // Link a local file pointer — it is stamped with *this* device's id.
         await itemCardAction(printerCard(), 'Edit details');
@@ -1496,7 +1710,7 @@ try {
         await dialog
           .getByText(datasheetPath, { exact: false })
           .first()
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
         await page.keyboard.press('Escape');
 
         // Simulate opening the synced database on a *different* device, then reload.
@@ -1504,7 +1718,7 @@ try {
         await page.reload({ waitUntil: 'domcontentloaded' });
         await printerCard()
           .getByRole('button', { name: 'More actions' })
-          .waitFor({ state: 'visible', timeout: 8000 });
+          .waitFor({ state: 'visible', timeout: ms(8000) });
 
         // The same pointer now degrades to the "Unlinked Local File" placeholder (§4).
         await itemCardAction(printerCard(), 'Edit details');
@@ -1512,19 +1726,21 @@ try {
         await dialog.getByRole('tab', { name: 'Media & docs' }).click();
         const unlinked = dialog.getByTestId('attachment-unlinked');
         await unlinked.scrollIntoViewIfNeeded();
-        await unlinked.waitFor({ state: 'visible', timeout: 5000 });
+        await unlinked.waitFor({ state: 'visible', timeout: ms(5000) });
         await dialog
           .getByText('Unlinked Local File', { exact: true })
           .first()
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
 
         // Replace it with an external URL via the degradation flow.
         await dialog.getByTestId('attachment-use-url').click();
         await dialog.getByTestId('attachment-relink-input').fill(datasheetUrl);
         await dialog.getByTestId('attachment-relink-confirm').click();
         // The placeholder is gone and the datasheet is now a working link.
-        await unlinked.waitFor({ state: 'detached', timeout: 5000 });
-        await dialog.getByRole('link', { name: datasheetUrl }).waitFor({ state: 'visible', timeout: 5000 });
+        await unlinked.waitFor({ state: 'detached', timeout: ms(5000) });
+        await dialog
+          .getByRole('link', { name: datasheetUrl })
+          .waitFor({ state: 'visible', timeout: ms(5000) });
         await page.keyboard.press('Escape');
       },
     );
@@ -1533,7 +1749,9 @@ try {
 
     await step('navigates to projects and creates a project', async () => {
       await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'New project' }).waitFor({ state: 'visible', timeout: 8000 });
+      await page
+        .getByRole('button', { name: 'New project' })
+        .waitFor({ state: 'visible', timeout: ms(8000) });
       await page.getByRole('button', { name: 'New project' }).click();
       const dialog = page.getByRole('dialog', { name: 'New project' });
       await dialog.getByLabel('Name').fill(projectName);
@@ -1541,7 +1759,7 @@ try {
       // The new project becomes selected and its BOM workspace appears.
       await page
         .getByRole('heading', { name: 'Bill of materials' })
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('creates and then deletes a throwaway project', async () => {
@@ -1555,22 +1773,25 @@ try {
       // Newest-first ordering means the throwaway is auto-selected; its header h2 confirms it.
       await page
         .getByRole('heading', { level: 2, name: throwaway })
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Delete it: the header button opens a confirm Modal, the confirm button does the deed.
       await page.getByTestId('delete-project').click();
       await page
         .getByRole('dialog', { name: 'Delete project?' })
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.getByTestId('delete-project-confirm').click();
 
       // The success toast fires and the throwaway vanishes from the master list…
-      await page.getByText('Project deleted').waitFor({ state: 'visible', timeout: 5000 });
-      await page.locator('aside').getByText(throwaway).waitFor({ state: 'detached', timeout: 5000 });
+      await page.getByText('Project deleted').waitFor({ state: 'visible', timeout: ms(5000) });
+      await page
+        .locator('aside')
+        .getByText(throwaway)
+        .waitFor({ state: 'detached', timeout: ms(5000) });
       // …and the selection falls back to the surviving project (its BOM workspace returns).
       await page
         .getByRole('heading', { name: 'Bill of materials' })
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('adds a manual BOM line', async () => {
@@ -1584,16 +1805,21 @@ try {
       await dialog.getByLabel('Description').fill(partName);
       await dialog.getByLabel('Quantity').fill('5');
       await dialog.getByRole('button', { name: 'Add line' }).click();
-      await page.getByText(partName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(partName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('shows the part on the automated shopping list', async () => {
       // The un-reserved, un-ordered line must appear under the Shopping list heading.
-      await page.getByRole('heading', { name: /Shopping list/ }).waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByRole('heading', { name: /Shopping list/ })
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction(
         (name) => [...document.querySelectorAll('table')].some((t) => t.textContent?.includes(name)),
         partName,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
     });
 
@@ -1610,16 +1836,23 @@ try {
         await dialog.getByLabel('Quantity').fill('1000');
         await dialog.getByRole('button', { name: 'Add line' }).click();
 
-        // The line joins the Bill of materials (its row carries the item name)…
-        const unlimitedRow = () => page.getByRole('row').filter({ hasText: unlimitedName });
-        await unlimitedRow().first().waitFor({ state: 'visible', timeout: 5000 });
+        // The line joins the Bill of materials (its row carries the item name)…  Scope the row
+        // to that table: the Picking section below renders its own row per BOM line (a
+        // `Mark "<name>" as picked` control), so a page-wide row match resolves to two.
+        const bom = page
+          .locator('section')
+          .filter({ has: page.getByRole('heading', { name: 'Bill of materials' }) });
+        const unlimitedRow = () => bom.getByRole('row').filter({ hasText: unlimitedName });
+        await unlimitedRow()
+          .first()
+          .waitFor({ state: 'visible', timeout: ms(5000) });
 
         // …but an infinite source is always satisfiable, so it never surfaces on the shopping list
         // (which lists only short parts). Scope the check to the Shopping-list section.
         const shopping = page
           .locator('section')
           .filter({ has: page.getByRole('heading', { name: /Shopping list/ }) });
-        await shopping.waitFor({ state: 'visible', timeout: 5000 });
+        await shopping.waitFor({ state: 'visible', timeout: ms(5000) });
         if ((await shopping.getByText(unlimitedName).count()) > 0) {
           throw new Error('An unlimited-supply component must not appear on the shopping list.');
         }
@@ -1627,7 +1860,7 @@ try {
         // Remove the unlimited line again so the later single-line BOM steps (reserve /
         // procurement / receive) still address exactly one line.
         await unlimitedRow().getByRole('button', { name: 'Remove line' }).click();
-        await unlimitedRow().waitFor({ state: 'detached', timeout: 5000 });
+        await unlimitedRow().waitFor({ state: 'detached', timeout: ms(5000) });
       },
     );
 
@@ -1643,7 +1876,7 @@ try {
       let dialog = page.getByRole('dialog', { name: 'Project budget' });
       await dialog.getByTestId('budget-amount-input').fill('10');
       await dialog.getByTestId('budget-save').click();
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
 
       // Record a manual expense that exceeds the budget.
       await page.getByTestId('add-expense').click();
@@ -1651,14 +1884,17 @@ try {
       await dialog.getByLabel('Description').fill('Smoke shipping');
       await dialog.getByTestId('expense-amount-input').fill('25');
       await dialog.getByTestId('expense-save').click();
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
 
       // The expense lands in the ledger and the card reports an over-budget status.
-      await page.getByText('Smoke shipping').first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText('Smoke shipping')
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page
         .getByTestId('budget-status')
         .filter({ hasText: 'Over budget' })
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('reserves stock on the BOM line', async () => {
@@ -1685,9 +1921,9 @@ try {
 
     await step('refills a consumable gauge back to full, capped at capacity (§4.1.2)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       const card = itemCard(filamentName);
-      await card.waitFor({ state: 'visible', timeout: 5000 });
+      await card.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // The gauge was created full (no currentNetValue → defaults to capacity), so first
       // consume 600 g via the relative "Consumption" mode → 400/1000 = 40%.
@@ -1695,8 +1931,8 @@ try {
       let dialog = page.getByRole('dialog');
       await dialog.getByLabel(/Amount used/).fill('600');
       await dialog.getByTestId('gauge-apply').click();
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
-      await card.getByText('40%', { exact: true }).waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
+      await card.getByText('40%', { exact: true }).waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Now refill: switch to the new Refill mode, tap "Fill to full" (tops off to the
       // 1000 g capacity, never above), apply → back to 100%.
@@ -1705,25 +1941,31 @@ try {
       await dialog.getByTestId('gauge-mode-refill').click();
       await dialog.getByTestId('gauge-fill-full').click();
       await dialog.getByTestId('gauge-apply').click();
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
-      await card.getByText('100%', { exact: true }).waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
+      await card.getByText('100%', { exact: true }).waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('returns to inventory and runs an FTS5 full-text search', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       const box = page.getByLabel('Search items');
       await box.fill('Screws');
       // The Bulk screw item matches; the filament (no "screws" token) must not.
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction((name) => !document.body.textContent?.includes(name), filamentName, {
-        timeout: 5000,
+        timeout: ms(5000),
       });
       await box.fill('');
       // Clearing the box restores the full, unfiltered list — wait for it to settle
       // (the filament re-appears) so the next step opens a dialog against a list that
       // is no longer re-rendering and recycling its virtualised rows.
-      await page.getByText(filamentName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(filamentName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('surfaces distinct In-Transit incoming stock on the item (§4, Phase 20)', async () => {
@@ -1731,7 +1973,7 @@ try {
       const dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Lifecycle' }).click();
       const inTransit = dialog.getByTestId('detail-in-transit');
-      await inTransit.waitFor({ state: 'visible', timeout: 5000 });
+      await inTransit.waitFor({ state: 'visible', timeout: ms(5000) });
       // The matched BOM line (qty 5) sits IN_TRANSIT → the item shows 5 arriving, kept
       // distinct from on-hand stock (the indicator also carries an "on hand" figure).
       const qty = (await dialog.getByTestId('in-transit-qty').textContent())?.trim();
@@ -1747,24 +1989,24 @@ try {
       await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
       await page
         .getByRole('heading', { name: 'Bill of materials' })
-        .waitFor({ state: 'visible', timeout: 8000 });
+        .waitFor({ state: 'visible', timeout: ms(8000) });
 
       // First instalment: receive 2 of the 5 in-transit units — the line stays In-Transit.
       const receiveQty = page.getByLabel('Quantity to receive');
-      await receiveQty.waitFor({ state: 'visible', timeout: 5000 });
+      await receiveQty.waitFor({ state: 'visible', timeout: ms(5000) });
       await receiveQty.fill('2');
       await page.getByRole('button', { name: 'Receive into stock' }).click();
-      await page.getByText('2/5 received').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByText('2/5 received').waitFor({ state: 'visible', timeout: ms(5000) });
       await expectComboLabel(page.getByLabel('Procurement status'), 'In transit');
 
       // The field re-seeds to the outstanding 3; receiving it completes the line → RECEIVED.
       await page.getByRole('button', { name: 'Receive into stock' }).click();
       await expectComboLabel(page.getByLabel('Procurement status'), 'Received');
-      await page.getByLabel('Quantity to receive').waitFor({ state: 'detached', timeout: 5000 });
+      await page.getByLabel('Quantity to receive').waitFor({ state: 'detached', timeout: ms(5000) });
 
       // Restore the inventory view for the subsequent Phase-5 steps.
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
     });
 
     await step('adds a weighted capability to an item', async () => {
@@ -1778,20 +2020,23 @@ try {
       // The new capability chip renders, exposing its remove button.
       await dialog
         .getByRole('button', { name: 'Remove capability voltage' })
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
     await step('builds a Visual-Builder query filtering by capability', async () => {
-      await page.getByRole('button', { name: 'Visual search' }).click();
+      await openVisualBuilder();
       await page.getByRole('button', { name: 'Add condition' }).click();
       // Switch the condition to a capability HAS_CAPABILITY filter on "voltage".
       await chooseOption(page.getByRole('combobox', { name: 'Field' }), 'Capability');
       await page.getByLabel('Capability key').fill('voltage');
       // Results now show only items carrying the capability: the screw, not the filament.
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction((name) => !document.body.textContent?.includes(name), filamentName, {
-        timeout: 5000,
+        timeout: ms(5000),
       });
     });
 
@@ -1802,11 +2047,11 @@ try {
     // error and keeps the previous results.
     await step('parses a text query into the Visual Builder (§3 hybrid syntax, Phase 47)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
-      await page.getByRole('button', { name: 'Visual search' }).click();
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
+      await openVisualBuilder();
 
       const textInput = page.locator('[data-testid="text-search-input"]');
-      await textInput.waitFor({ state: 'visible', timeout: 5000 });
+      await textInput.waitFor({ state: 'visible', timeout: ms(5000) });
       await textInput.fill('cap:voltage>3.3');
       await textInput.press('Enter');
 
@@ -1818,16 +2063,24 @@ try {
       }
 
       // Results are filtered exactly as the graphical capability query was.
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction((name) => !document.body.textContent?.includes(name), filamentName, {
-        timeout: 5000,
+        timeout: ms(5000),
       });
 
       // An invalid query reports inline and does not blank the existing search.
       await textInput.fill('quantity>lots');
       await textInput.press('Enter');
-      await page.locator('[data-testid="text-search-error"]').waitFor({ state: 'visible', timeout: 5000 });
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .locator('[data-testid="text-search-error"]')
+        .waitFor({ state: 'visible', timeout: ms(5000) });
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     // Phase 48 (§3): text-search grammar depth (OR / parentheses) + saved searches.
@@ -1835,19 +2088,22 @@ try {
     // parseASTtoSQL → FTS path; the query can then be named, recalled and deleted.
     await step('parses an OR / parenthesised query and saves it (§3 grammar depth, Phase 48)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
-      await page.getByRole('button', { name: 'Visual search' }).click();
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
+      await openVisualBuilder();
 
       const textInput = page.locator('[data-testid="text-search-input"]');
-      await textInput.waitFor({ state: 'visible', timeout: 5000 });
+      await textInput.waitFor({ state: 'visible', timeout: ms(5000) });
       // Only the screw carries voltage; the other OR branch is a never-matching capability,
       // so the parenthesised OR narrows to exactly the screw (proving the nested AST ran).
       await textInput.fill('(cap:voltage>3.3 OR cap:nonexistent)');
       await textInput.press('Enter');
 
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction((name) => !document.body.textContent?.includes(name), filamentName, {
-        timeout: 5000,
+        timeout: ms(5000),
       });
 
       // Save the query under a name → a recall chip appears. The same saved-search controls are
@@ -1860,16 +2116,22 @@ try {
       const chip = builderSaved.locator('[data-testid="saved-search-recall"]', {
         hasText: 'Voltage parts',
       });
-      await chip.waitFor({ state: 'visible', timeout: 5000 });
+      await chip.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Clear the builder (the filament returns), then recall the saved search → the same
       // filtered result comes back, proving the stored query re-parses and runs.
       await page.getByRole('button', { name: 'Clear' }).click();
-      await page.getByText(filamentName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(filamentName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await chip.click();
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction((name) => !document.body.textContent?.includes(name), filamentName, {
-        timeout: 5000,
+        timeout: ms(5000),
       });
 
       // Tidy up so the saved chip doesn't linger into later steps.
@@ -1881,7 +2143,7 @@ try {
     // power syntax loads the Visual Builder instead.
     await step('saves and recalls a search from the quick-search box (issue #136)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
 
       const quickSearch = page.locator('input[aria-label="Search items"]');
       await quickSearch.fill(screwName);
@@ -1893,7 +2155,7 @@ try {
       await strip.locator('[data-testid="saved-search-confirm"]').click();
 
       const chip = strip.locator('[data-testid="saved-search-recall"]', { hasText: 'The screws' });
-      await chip.waitFor({ state: 'visible', timeout: 5000 });
+      await chip.waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Clearing the box then recalling refills it — a bare-word query belongs in this box, not
       // in the builder, so the box is what comes back carrying it and the results follow.
@@ -1902,9 +2164,12 @@ try {
       await page.waitForFunction(
         (name) => document.querySelector('input[aria-label="Search items"]')?.value === name,
         screwName,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Tidy up so the saved chip doesn't linger into later steps.
       await strip.locator('[data-testid="saved-search-remove"]').first().click();
@@ -1916,7 +2181,7 @@ try {
     // heavier-weighted one first (beating the alphabetical fallback).
     await step('ranks capability matches by weight — best match ordering (§4, §5.1)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       // Heavy weight on the screw, light on the filament — so weight, not name, decides.
       for (const [name, w] of [
         [screwName, '9'],
@@ -1931,16 +2196,16 @@ try {
         await dialog.getByRole('button', { name: 'Add capability' }).click();
         await dialog
           .getByRole('button', { name: 'Remove capability rankcap' })
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
         await page.keyboard.press('Escape');
       }
       // Query the shared capability — both items match; ranking decides their order.
-      await page.getByRole('button', { name: 'Visual search' }).click();
+      await openVisualBuilder();
       await page.getByRole('button', { name: 'Add condition' }).click();
       await chooseOption(page.getByRole('combobox', { name: 'Field' }), 'Capability');
       await page.getByLabel('Capability key').fill('rankcap');
-      await itemCard(screwName).waitFor({ state: 'visible', timeout: 5000 });
-      await itemCard(filamentName).waitFor({ state: 'visible', timeout: 5000 });
+      await itemCard(screwName).waitFor({ state: 'visible', timeout: ms(5000) });
+      await itemCard(filamentName).waitFor({ state: 'visible', timeout: ms(5000) });
       // Compare render (DOM document) order — robust to grid vs list density, where two
       // cards can share a row. The heavier-weighted screw must precede the filament.
       const screwEl = await itemCard(screwName).elementHandle();
@@ -1959,10 +2224,10 @@ try {
     let scannedUrl = '';
     await step('generates a printable QR code for an item', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       await itemCardAction(itemCard(screwName), 'Print label');
       const dialog = page.getByRole('dialog', { name: 'Item label' });
-      await dialog.locator('[data-testid="item-qr"] svg').waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.locator('[data-testid="item-qr"] svg').waitFor({ state: 'visible', timeout: ms(5000) });
       scannedUrl = (await dialog.locator('[data-testid="item-qr-url"]').innerText()).trim();
       if (!scannedUrl.includes('item=')) throw new Error(`QR url missing item param: ${scannedUrl}`);
 
@@ -2000,12 +2265,12 @@ try {
 
     await step('prints a batch QR label sheet for a multi-selection (§6, Phase 49)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
 
       // Enter select mode — checkboxes appear and the selection action bar shows.
       await openMoreMenu();
       await page.getByTestId('toggle-select').click();
-      await page.getByTestId('selection-bar').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByTestId('selection-bar').waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Select two items; the count tracks them even though selection is keyed by id.
       await itemCard(screwName).getByTestId('item-select').check();
@@ -2013,16 +2278,16 @@ try {
       await page
         .getByTestId('selection-count')
         .filter({ hasText: '2 selected' })
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Open the print preview — it must render one QR label per selected item.
       await page.getByTestId('print-labels').click();
       const printDialog = page.getByRole('dialog', { name: 'Print labels' });
-      await printDialog.waitFor({ state: 'visible', timeout: 5000 });
+      await printDialog.waitFor({ state: 'visible', timeout: ms(5000) });
       await printDialog
         .locator('[data-testid="label-cell"] svg')
         .first()
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       const cellCount = await printDialog.locator('[data-testid="label-cell"]').count();
       if (cellCount !== 2) {
         throw new Error(`expected 2 label cells in the print preview, got ${cellCount}`);
@@ -2037,52 +2302,55 @@ try {
       await printDialog
         .locator('[data-testid="label-cell"] svg')
         .first()
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Close the preview and leave select mode — clean state for the next step.
       await page.keyboard.press('Escape');
-      await printDialog.waitFor({ state: 'detached', timeout: 5000 });
+      await printDialog.waitFor({ state: 'detached', timeout: ms(5000) });
       await openMoreMenu();
       await page.getByTestId('toggle-select').click();
-      await page.getByTestId('selection-bar').waitFor({ state: 'detached', timeout: 5000 });
+      await page.getByTestId('selection-bar').waitFor({ state: 'detached', timeout: ms(5000) });
     });
 
     await step('prints a customisable label for a location (Phase 73)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       // Reveal a location row's hover actions, then open its label dialog. Hover the row so
       // the action becomes interactive, wait for it, then hover+click it (a blind force-click
       // can land before the row's hover state has wired the button, which never opens it).
       const row = page.getByRole('tree').getByRole('treeitem', { name: 'Unassigned' });
       await row.hover();
       const printBtn = row.getByRole('button', { name: 'Print label for Unassigned' });
-      await printBtn.waitFor({ state: 'visible', timeout: 10000 });
+      await printBtn.waitFor({ state: 'visible', timeout: ms(10000) });
       await printBtn.hover();
       await printBtn.click();
       const locDialog = page.getByRole('dialog', { name: 'Print location label' });
-      await locDialog.waitFor({ state: 'visible', timeout: 10000 });
+      await locDialog.waitFor({ state: 'visible', timeout: ms(10000) });
       await locDialog
         .locator('[data-testid="label-cell"] svg')
         .first()
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
-      await locDialog.waitFor({ state: 'detached', timeout: 5000 });
+      await locDialog.waitFor({ state: 'detached', timeout: ms(5000) });
     });
 
     await step('scans a code and checks the item out to an auto-created contact', async () => {
       await page.getByRole('button', { name: 'Scan' }).click();
       const overlay = page.locator('[data-testid="scanner-overlay"]');
-      await overlay.waitFor({ state: 'visible', timeout: 5000 });
+      await overlay.waitFor({ state: 'visible', timeout: ms(5000) });
       // Simulate a decode by feeding the deep-link into the manual-entry fallback.
       await page.locator('[data-testid="scanner-manual-input"]').fill(scannedUrl);
       await page.locator('[data-testid="scanner-manual-submit"]').click();
       // Discrete result card shows the scanned item with a Check out action.
-      await overlay.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await overlay
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await overlay.getByRole('button', { name: 'Check out' }).click();
       const dialog = page.getByRole('dialog', { name: 'Check out' });
       await dialog.getByPlaceholder('Type a name — new names are added automatically').fill(borrowerName);
       await dialog.getByRole('button', { name: 'Check out' }).click();
-      await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+      await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
       // Close the scanner overlay.
       await page.getByRole('button', { name: 'Close scanner' }).click();
     });
@@ -2095,7 +2363,7 @@ try {
       // card is interactive, so it can't be the live region itself).
       await page.getByRole('button', { name: 'Scan' }).click();
       const overlay = page.locator('[data-testid="scanner-overlay"]');
-      await overlay.waitFor({ state: 'visible', timeout: 10000 });
+      await overlay.waitFor({ state: 'visible', timeout: ms(10000) });
 
       const notice = page.locator('[data-testid="scanner-notice"]');
       if (
@@ -2108,25 +2376,25 @@ try {
       // click on the (correctly-resolved) button rather than waiting on pointer-event hit-testing.
       const manualInput = page.locator('[data-testid="scanner-manual-input"]');
       const manualSubmit = page.locator('[data-testid="scanner-manual-submit"]');
-      await manualInput.waitFor({ state: 'visible', timeout: 10000 });
+      await manualInput.waitFor({ state: 'visible', timeout: ms(10000) });
       await manualInput.fill('not-a-gubbins-code');
       await manualSubmit.click({ force: true });
       await notice
         .getByText('Nothing in your inventory has that code.', { exact: false })
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // A real scan: the hidden announcement region carries "Scanned <name>".
       await manualInput.fill(scannedUrl);
       await manualSubmit.click({ force: true });
       const announce = page.locator('[data-testid="scanner-scan-announce"]');
-      await announce.waitFor({ state: 'attached', timeout: 5000 });
+      await announce.waitFor({ state: 'attached', timeout: ms(5000) });
       if ((await announce.getAttribute('role')) !== 'status') {
         throw new Error('scan announcement is not a status region');
       }
       await page.waitForFunction(
         (sel) => document.querySelector(sel)?.textContent?.startsWith('Scanned '),
         '[data-testid="scanner-scan-announce"]',
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
       await page.getByRole('button', { name: 'Close scanner' }).click();
     });
@@ -2138,18 +2406,20 @@ try {
         // to a new location". Capture the filament's deep-link too so the working queue holds
         // two distinct items (the queue de-dupes by id).
         await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-        await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+        await page
+          .getByRole('button', { name: 'Add item' })
+          .waitFor({ state: 'visible', timeout: ms(10000) });
         await itemCardAction(itemCard(filamentName), 'Print label');
         const qr = page.getByRole('dialog', { name: 'Item label' });
-        await qr.locator('[data-testid="item-qr"] svg').waitFor({ state: 'visible', timeout: 5000 });
+        await qr.locator('[data-testid="item-qr"] svg').waitFor({ state: 'visible', timeout: ms(5000) });
         const filamentUrl = (await qr.locator('[data-testid="item-qr-url"]').innerText()).trim();
         await page.keyboard.press('Escape');
-        await qr.waitFor({ state: 'detached', timeout: 5000 });
+        await qr.waitFor({ state: 'detached', timeout: ms(5000) });
 
         // Open the scanner and switch to Continuous (batch) mode.
         await page.getByRole('button', { name: 'Scan' }).click();
         const overlay = page.locator('[data-testid="scanner-overlay"]');
-        await overlay.waitFor({ state: 'visible', timeout: 5000 });
+        await overlay.waitFor({ state: 'visible', timeout: ms(5000) });
         await overlay.getByRole('button', { name: 'Continuous' }).click();
 
         // Queue two distinct items via the manual-entry fallback (each decode offers to the queue).
@@ -2169,24 +2439,35 @@ try {
         await page
           .getByTestId('scanner-notice')
           .getByText(`Moved 2 items to Workshop ${stamp}`)
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
 
         await page.getByRole('button', { name: 'Close scanner' }).click();
-        await overlay.waitFor({ state: 'detached', timeout: 5000 });
+        await overlay.waitFor({ state: 'detached', timeout: ms(5000) });
       },
     );
 
     await step('shows the loan and contact on the contacts screen', async () => {
       await page.goto(`${BASE}contacts`, { waitUntil: 'domcontentloaded' });
       // "On loan" is both the section heading and the (sr-only) live-region text; target the heading.
-      await page.getByRole('heading', { name: 'On loan' }).waitFor({ state: 'visible', timeout: 6000 });
+      await page.getByRole('heading', { name: 'On loan' }).waitFor({ state: 'visible', timeout: ms(6000) });
       // The borrowed item and the auto-created contact both appear.
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
-      await page.getByText(borrowerName).first().waitFor({ state: 'visible', timeout: 5000 });
-      // Return it.
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
+      await page
+        .getByText(borrowerName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
+      // Return it. The row's "Return" opens a considered "Return item" dialog (condition + notes)
+      // rather than checking the loan straight in, so the loan only clears on its confirm.
       await page.getByRole('button', { name: 'Return' }).first().click();
+      const checkIn = page.getByRole('dialog', { name: 'Return item' });
+      await checkIn.waitFor({ state: 'visible', timeout: ms(5000) });
+      await checkIn.getByRole('button', { name: 'Return' }).click();
+      await checkIn.waitFor({ state: 'hidden', timeout: ms(5000) });
       await page.waitForFunction((name) => !document.body.textContent?.includes(name), screwName, {
-        timeout: 5000,
+        timeout: ms(8000),
       });
     });
 
@@ -2194,11 +2475,11 @@ try {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
       await page
         .getByRole('button', { name: 'More inventory actions' })
-        .waitFor({ state: 'visible', timeout: 10000 });
+        .waitFor({ state: 'visible', timeout: ms(10000) });
       await openExportWizard();
       const dialog = page.getByRole('dialog', { name: 'Export' });
-      await dialog.waitFor({ state: 'visible', timeout: 5000 });
-      const download = page.waitForEvent('download', { timeout: 8000 });
+      await dialog.waitFor({ state: 'visible', timeout: ms(5000) });
+      const download = expectDownload(page, ms(8000));
       await dialog.getByTestId('run-export').click();
       const file = await download;
       if (!file.suggestedFilename().endsWith('.json')) {
@@ -2211,7 +2492,7 @@ try {
       await openExportWizard();
       const dialog = page.getByRole('dialog', { name: 'Export' });
       await dialog.getByRole('button', { name: /Markdown vault/ }).click();
-      const download = page.waitForEvent('download', { timeout: 10000 });
+      const download = expectDownload(page, ms(10000));
       await dialog.getByTestId('run-export').click();
       const file = await download;
       if (!file.suggestedFilename().endsWith('.zip')) {
@@ -2238,7 +2519,7 @@ try {
       await dialog.getByRole('button', { name: /Markdown vault/ }).click();
       await chooseOption(dialog.getByTestId('export-scope'), 'A project / BOM');
       await chooseOption(dialog.getByTestId('export-target-project'), projectName, { exact: false });
-      const download = page.waitForEvent('download', { timeout: 10000 });
+      const download = expectDownload(page, ms(10000));
       await dialog.getByTestId('run-export').click();
       const file = await download;
       // Phase 19: a Project-scope vault is one self-contained folder — the master note
@@ -2271,7 +2552,7 @@ try {
       await dialog.getByRole('button', { name: /JSON data/ }).click();
       await chooseOption(dialog.getByTestId('export-scope'), 'A single item');
       await chooseOption(dialog.getByTestId('export-target-item'), screwName, { exact: false });
-      const download = page.waitForEvent('download', { timeout: 8000 });
+      const download = expectDownload(page, ms(8000));
       await dialog.getByTestId('run-export').click();
       const file = await download;
       const fs = await import('node:fs/promises');
@@ -2353,12 +2634,14 @@ try {
     let backupZip = new Uint8Array();
     await step('connects the in-memory sync provider and publishes', async () => {
       await navMenu('Sync');
-      await page.getByRole('heading', { name: /Cloud Sync/ }).waitFor({ state: 'visible', timeout: 6000 });
+      await page
+        .getByRole('heading', { name: /Cloud Sync/ })
+        .waitFor({ state: 'visible', timeout: ms(6000) });
       await page.getByTestId('connect-memory').click();
-      await page.getByTestId('sync-provider-label').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByTestId('sync-provider-label').waitFor({ state: 'visible', timeout: ms(5000) });
       await page.getByTestId('sync-now').click();
       // First sync publishes the local state; the result line reports the status.
-      await page.getByTestId('sync-result').waitFor({ state: 'visible', timeout: 6000 });
+      await page.getByTestId('sync-result').waitFor({ state: 'visible', timeout: ms(6000) });
       // Phase 42: the outcome appears in place, so it must be an announced live region.
       const syncLive = page.getByTestId('sync-result');
       if (
@@ -2372,12 +2655,12 @@ try {
     await step('downloads a complete .zip backup of the real OPFS database', async () => {
       await page.getByTestId('open-backup').click();
       const dialog = page.getByRole('dialog', { name: 'Backup & restore' });
-      await dialog.waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.waitFor({ state: 'visible', timeout: ms(5000) });
       // Leave out the exact .sqlite copy and settings so the later *merge* restore needs no
       // reload — the in-memory provider's "remote" lives in module memory and a reload resets it.
       await dialog.getByTestId('backup-toggle-rawSqlite').uncheck();
       await dialog.getByTestId('backup-toggle-settings').uncheck();
-      const download = page.waitForEvent('download', { timeout: 10000 });
+      const download = expectDownload(page, ms(10000));
       await dialog.getByTestId('create-backup').click();
       const file = await download;
       if (!/^gubbins-backup-.*\.zip$/.test(file.suggestedFilename())) {
@@ -2427,26 +2710,61 @@ try {
       // Merge is the default mode; confirm the two-step restore.
       await dialog.getByTestId('restore-backup').click();
       await dialog.getByTestId('confirm-restore-backup').click();
-      await page.getByTestId('sync-notice').waitFor({ state: 'visible', timeout: 8000 });
+      await page.getByTestId('sync-notice').waitFor({ state: 'visible', timeout: ms(8000) });
       await page.getByTestId('sync-now').click();
-      await page.getByTestId('sync-result').waitFor({ state: 'visible', timeout: 6000 });
+      await page.getByTestId('sync-result').waitFor({ state: 'visible', timeout: ms(6000) });
 
       // The database is intact after import + sync: the item is still searchable.
       await navMenu('Inventory');
       await page.getByLabel('Search items').fill(screwName);
-      await page.getByText(screwName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(screwName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('Phase 11: the tag + image survive the backup round-trip and restore', async () => {
       // The printer item's freeform tag (item_tags membership) and its thumbnail
       // (item_images base64) must persist through download → import → re-sync.
+      // Read the restored data from a *fresh* load. The restore + re-sync above leaves the item
+      // queries invalidating in waves, and the list is virtualised — a card row recycles
+      // underneath its own open menu, so the menu item resolves and then vanishes mid-click.
+      // Reloading also makes the assertion stronger: the tag and image come from the database,
+      // not from whatever the previous step left in the cache.
+      await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       await page.getByLabel('Search items').fill(printerName);
+      await page
+        .getByText(printerName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(8000) });
+      // Wait for the search to *settle*, not merely to show a first result. The detail dialog is
+      // hosted by the inventory card, and the list is virtualised, so a row that recycles while
+      // the results are still arriving takes the open dialog down with it (the same known UI
+      // residual the sub-variant step below notes). Settling on a steady match count first is
+      // what makes the dialog stay put long enough to drive.
+      await page.waitForFunction(
+        (name) => {
+          const count = [...document.querySelectorAll('h3')].filter((h) =>
+            h.textContent?.includes(name),
+          ).length;
+          const w = /** @type {{ __smokePrinterCount?: number }} */ (window);
+          const steady = count > 0 && w.__smokePrinterCount === count;
+          w.__smokePrinterCount = count;
+          return steady;
+        },
+        printerName,
+        { timeout: ms(10000), polling: 400 },
+      );
       await itemCardAction(printerCard(), 'Edit details');
       const dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Classification' }).click();
-      await dialog.getByText(tagName).waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.getByText(tagName).waitFor({ state: 'visible', timeout: ms(5000) });
       await dialog.getByRole('tab', { name: 'Media & docs' }).click();
-      await dialog.locator('img').first().waitFor({ state: 'visible', timeout: 5000 });
+      await dialog
+        .locator('img')
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -2459,7 +2777,7 @@ try {
     const postExtMessage = (message) =>
       page.evaluate((msg) => window.postMessage(msg, window.location.origin), message);
     const pollInputValue = async (locator, expected, label) => {
-      for (let i = 0; i < 30; i += 1) {
+      for (let i = 0; i < attempts(30); i += 1) {
         if ((await locator.inputValue()) === expected) return;
         await page.waitForTimeout(100);
       }
@@ -2483,7 +2801,7 @@ try {
       }, EXT_SOURCE);
     const scrapeRequestCount = () => page.evaluate(() => (window.__scrapeRequests || []).length);
     const waitForScrapeRequest = async (sinceCount) => {
-      for (let i = 0; i < 40; i += 1) {
+      for (let i = 0; i < attempts(40); i += 1) {
         const reqs = await page.evaluate(() => window.__scrapeRequests || []);
         if (reqs.length > sinceCount) return reqs[reqs.length - 1];
         await page.waitForTimeout(75);
@@ -2494,15 +2812,18 @@ try {
     await step('extension EXTENSION_READY unlocks the Scrape Supplier control (§9.3)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
       await installScrapeCapture();
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       await page.getByRole('button', { name: 'Add item' }).click();
       const dialog = page.getByRole('dialog', { name: 'Add item' });
+      // The scrape panel lives on the dialog's "Supplier & ops" rail tab, and only the active
+      // tab is mounted — so the absence check below is only meaningful with that tab showing.
+      await showDialogTab(dialog, 'Supplier & ops');
       // Before readiness the panel must NOT exist (graceful degradation to manual).
       if (await dialog.getByTestId('scrape-supplier-panel').count()) {
         throw new Error('Scrape panel rendered before EXTENSION_READY');
       }
       await postExtMessage({ source: EXT_SOURCE, type: 'EXTENSION_READY', payload: { version: '1.1.0' } });
-      await dialog.getByTestId('scrape-supplier-panel').waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.getByTestId('scrape-supplier-panel').waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('a foreign-origin/invalid message is silently dropped (§9.1)', async () => {
@@ -2523,20 +2844,21 @@ try {
       // A malformed (schema-invalid) message from the right source must also be dropped.
       await postExtMessage({ source: EXT_SOURCE, type: 'SCRAPE_RESULT', payload: { mpn: 42 } });
       await page.waitForTimeout(300);
+      // The item's own fields live on the Details tab; the scrape panel above is on Supplier & ops.
+      await showDialogTab(dialog, 'Details');
       if ((await mpn.inputValue()) !== '') throw new Error('an invalid message populated the form');
     });
 
-    // Shared across the next two steps: the requestId the PWA stamped on this scrape.
-    let scrapeReqId = null;
-
     await step('a SCRAPE_RESULT with a mismatched requestId is ignored (§9 correlation)', async () => {
       const dialog = page.getByRole('dialog', { name: 'Add item' });
+      await showDialogTab(dialog, 'Details');
       await dialog.getByLabel('Name').fill(scrapeItemName);
       const manufacturer = dialog.getByLabel('Manufacturer (optional)');
       // The user has already typed a manufacturer — it must be preserved throughout.
       await manufacturer.fill(userManufacturer);
 
       const before = await scrapeRequestCount();
+      await showDialogTab(dialog, 'Supplier & ops');
       await dialog
         .getByTestId('scrape-supplier-panel')
         .locator('input[type="url"]')
@@ -2545,7 +2867,6 @@ try {
 
       const req = await waitForScrapeRequest(before);
       if (!req.id || typeof req.id !== 'string') throw new Error('SCRAPE_REQUEST carried no requestId');
-      scrapeReqId = req.id;
 
       // A well-formed, trusted result for the WRONG requestId must be dropped (no fill).
       await postExtMessage({
@@ -2561,6 +2882,7 @@ try {
         },
       });
       await page.waitForTimeout(300);
+      await showDialogTab(dialog, 'Details');
       if ((await dialog.getByLabel('MPN (optional)').inputValue()) !== '') {
         throw new Error('a result with a non-matching requestId populated the form');
       }
@@ -2574,11 +2896,25 @@ try {
         const manufacturer = dialog.getByLabel('Manufacturer (optional)');
         const unitCost = dialog.getByLabel('Unit cost (optional)');
 
+        // The panel is what applies an arriving result to the form, so it has to be mounted when
+        // the message lands — hence the scrape tab now, and back to Details to read the fields.
+        // It also holds the outstanding requestId in its own state, which the previous step's
+        // hop to Details to read the MPN discarded — so this step issues its own scrape rather
+        // than answering the request that step raised.
+        await showDialogTab(dialog, 'Supplier & ops');
+        const beforeCorrelated = await scrapeRequestCount();
+        await dialog
+          .getByTestId('scrape-supplier-panel')
+          .locator('input[type="url"]')
+          .fill('https://www.digikey.co.uk/p/ne555p');
+        await dialog.getByRole('button', { name: 'Scrape' }).click();
+        const correlated = await waitForScrapeRequest(beforeCorrelated);
+
         // The (trusted) extension answers with the MATCHING requestId.
         await postExtMessage({
           source: EXT_SOURCE,
           type: 'SCRAPE_RESULT',
-          requestId: scrapeReqId,
+          requestId: correlated.id,
           payload: {
             mpn: scrapedMpn,
             manufacturer: 'Texas Instruments',
@@ -2588,16 +2924,23 @@ try {
           },
         });
 
+        await showDialogTab(dialog, 'Details');
         await pollInputValue(mpn, scrapedMpn, 'MPN'); // empty → filled
         await pollInputValue(unitCost, '0.42', 'Unit cost'); // empty → filled
         if ((await manufacturer.inputValue()) !== userManufacturer) {
           throw new Error('scrape overwrote the user-edited manufacturer');
         }
         // A passive toast confirms the apply (§4 default notification).
-        await page.getByTestId('toast').first().waitFor({ state: 'visible', timeout: 5000 });
+        await page
+          .getByTestId('toast')
+          .first()
+          .waitFor({ state: 'visible', timeout: ms(5000) });
 
         await dialog.getByRole('button', { name: 'Create item' }).click();
-        await page.getByText(scrapeItemName).first().waitFor({ state: 'visible', timeout: 5000 });
+        await page
+          .getByText(scrapeItemName)
+          .first()
+          .waitFor({ state: 'visible', timeout: ms(5000) });
       },
     );
 
@@ -2614,7 +2957,10 @@ try {
       // The dialog opens on the Details tab; supplier data lives on Supplier & ops.
       await detail.getByRole('tab', { name: 'Supplier & ops' }).click();
       // Supplier data section shows the scraped MPN value and the alias chip (both the MPN text).
-      await detail.getByText(scrapedMpn).first().waitFor({ state: 'visible', timeout: 5000 });
+      await detail
+        .getByText(scrapedMpn)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step(
@@ -2645,7 +2991,7 @@ try {
           .getByTestId('toast')
           .filter({ hasText: 'blocked the request' })
           .first()
-          .waitFor({ state: 'visible', timeout: 6000 });
+          .waitFor({ state: 'visible', timeout: ms(6000) });
       },
     );
 
@@ -2677,7 +3023,7 @@ try {
           .getByTestId('toast')
           .filter({ hasText: 'anti-bot challenge' })
           .first()
-          .waitFor({ state: 'visible', timeout: 6000 });
+          .waitFor({ state: 'visible', timeout: ms(6000) });
       },
     );
 
@@ -2689,7 +3035,7 @@ try {
       await page
         .getByTestId('toast')
         .first()
-        .waitFor({ state: 'detached', timeout: 8000 })
+        .waitFor({ state: 'detached', timeout: ms(8000) })
         .catch(() => {});
       const before = await scrapeRequestCount();
       await panel.locator('input[type="url"]').fill('https://example.com/product/widget-1');
@@ -2697,7 +3043,7 @@ try {
       // The app's own copy of the extension's allow-list refuses this, so nothing is sent —
       // and the message names the distributors that work rather than blaming the supplier.
       const alert = panel.getByRole('alert').first();
-      await alert.waitFor({ state: 'visible', timeout: 5000 });
+      await alert.waitFor({ state: 'visible', timeout: ms(5000) });
       const text = await alert.innerText();
       // Match the host as a whole word: a message naming "notexample.com" must not pass.
       const namesHost = text
@@ -2718,7 +3064,7 @@ try {
       await page
         .getByTestId('toast')
         .first()
-        .waitFor({ state: 'detached', timeout: 8000 })
+        .waitFor({ state: 'detached', timeout: ms(8000) })
         .catch(() => {});
       const before = await scrapeRequestCount();
       await detail
@@ -2740,23 +3086,23 @@ try {
         },
       });
       const review = page.getByRole('dialog', { name: 'Review scraped data' });
-      await review.waitFor({ state: 'visible', timeout: 5000 });
+      await review.waitFor({ state: 'visible', timeout: ms(5000) });
       // The manufacturer conflict is presented as an OFF-by-default opt-in.
       const overwrite = review.getByTestId('overwrite-manufacturer');
-      await overwrite.waitFor({ state: 'visible', timeout: 4000 });
+      await overwrite.waitFor({ state: 'visible', timeout: ms(4000) });
       if (await overwrite.isChecked()) throw new Error('overwrite checkbox defaulted to ON');
       // Apply WITHOUT ticking — the user's manufacturer must survive.
       await review.getByRole('button', { name: 'Apply' }).click();
-      await review.waitFor({ state: 'hidden', timeout: 5000 });
+      await review.waitFor({ state: 'hidden', timeout: ms(5000) });
       // The manufacturer is now edited on the Details tab (no longer mirrored read-only in
       // Supplier & ops), so assert the no-overwrite result against that editable field.
       await detail.getByRole('tab', { name: 'Details' }).click();
       const detailsMfr = detail.getByLabel('Manufacturer (optional)');
-      await detailsMfr.waitFor({ state: 'visible', timeout: 5000 });
+      await detailsMfr.waitFor({ state: 'visible', timeout: ms(5000) });
       await page.waitForFunction(
         (mfr) => [...document.querySelectorAll('input')].some((i) => i.value === mfr),
         userManufacturer,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
       await page.keyboard.press('Escape');
     });
@@ -2772,27 +3118,33 @@ try {
 
     await step('creates a perishable item with an expiry date and condition (§4)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       await page.getByRole('button', { name: 'Add item' }).click();
       const dialog = page.getByRole('dialog');
       await dialog.getByLabel('Name').fill(perishableName);
+      // Expiry and condition are on the create form's Lifecycle rail tab, which mounts only
+      // while it is the active tab.
+      await showDialogTab(dialog, 'Lifecycle');
       await dialog.getByTestId('item-expiry').fill(soonExpiry);
       await chooseOption(dialog.getByTestId('item-condition'), 'Good');
       await dialog.getByRole('button', { name: 'Create item' }).click();
-      await page.getByText(perishableName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(perishableName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('expands a parent item into a child variant (§4 Variant/SKU)', async () => {
       await itemCardAction(lifecycleCard(perishableName), 'Edit details');
       const detail = page.getByRole('dialog');
       await detail.getByRole('tab', { name: 'Lifecycle' }).click();
-      await detail.getByTestId('variant-name').waitFor({ state: 'visible', timeout: 5000 });
+      await detail.getByTestId('variant-name').waitFor({ state: 'visible', timeout: ms(5000) });
       await detail.getByTestId('variant-name').fill(variantName);
       await detail.getByTestId('add-variant').click();
       await detail
         .getByTestId('variant-list')
         .getByText(variantName)
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -2804,14 +3156,17 @@ try {
       const detail = page.getByRole('dialog');
       await detail.getByRole('tab', { name: 'Lifecycle' }).click();
       // This item is recognised as a child variant yet can still gain sub-variants.
-      await detail.getByTestId('variant-is-child').waitFor({ state: 'visible', timeout: 5000 });
+      await detail.getByTestId('variant-is-child').waitFor({ state: 'visible', timeout: ms(5000) });
       await detail.getByTestId('variant-name').fill(subVariantName);
       await detail.getByTestId('add-variant').click();
       // Creating the sub-variant invalidates the item list. The detail dialog is hosted by
       // the (virtualised) inventory card, so that row can recycle and the dialog close — a
       // known UI residual (the write itself commits). Assert the sub-variant persisted by its
       // own inventory card appearing, which is robust to whether the dialog stayed open.
-      await page.getByText(subVariantName).first().waitFor({ state: 'visible', timeout: 10000 });
+      await page
+        .getByText(subVariantName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(10000) });
       await page.keyboard.press('Escape');
     });
 
@@ -2824,7 +3179,7 @@ try {
       await detail
         .getByTestId('maintenance-list')
         .getByText(maintScheduleName)
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -2836,7 +3191,7 @@ try {
       await itemCardAction(lifecycleCard(perishableName), 'Edit details');
       const detail = page.getByRole('dialog');
       await detail.getByRole('tab', { name: 'Lifecycle' }).click();
-      await detail.getByTestId('maintenance-name').waitFor({ state: 'visible', timeout: 5000 });
+      await detail.getByTestId('maintenance-name').waitFor({ state: 'visible', timeout: ms(5000) });
       await detail.getByTestId('maintenance-name').fill(loanScheduleName);
       await chooseOption(detail.getByTestId('maintenance-basis'), 'Usage-based');
       await detail.getByTestId('accrue-checkout-hours').check();
@@ -2844,10 +3199,10 @@ try {
       const row = detail.getByTestId('maintenance-row').filter({ hasText: loanScheduleName });
       // The derived "h from loans" figure renders and the manual log input is replaced by
       // the auto-accrual note (manual logging is disabled in accrue mode).
-      await row.getByText(/from loans/).waitFor({ state: 'visible', timeout: 5000 });
+      await row.getByText(/from loans/).waitFor({ state: 'visible', timeout: ms(5000) });
       await row
         .getByText('Usage accrues automatically from checkout hours.')
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -2860,7 +3215,7 @@ try {
       await page
         .getByRole('treeitem', { name: drawerName })
         .first()
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.getByRole('treeitem', { name: drawerName }).first().click();
 
       await page.getByRole('button', { name: 'Add item' }).click();
@@ -2872,11 +3227,14 @@ try {
       await page
         .getByRole('option', { name: `Workshop ${stamp}` })
         .locator('.text-loc-teal')
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await page.getByRole('option', { name: drawerName }).click();
       await itemDialog.getByLabel('Initial quantity').fill('10');
       await itemDialog.getByRole('button', { name: 'Create item' }).click();
-      await page.getByText(cycleItemName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(cycleItemName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Blind-count it as 8 (expected 10 → variance −2) and authorise.
       await openMoreMenu();
@@ -2885,7 +3243,7 @@ try {
       const row = ccDialog.getByTestId('cycle-count-lines').locator('li').filter({ hasText: cycleItemName });
       await row.getByRole('spinbutton').fill('8');
       await ccDialog.getByTestId('authorise-reconciliation').click();
-      await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: 5000 });
+      await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: ms(5000) });
       await ccDialog.getByRole('button', { name: 'Done' }).click();
       // The on-hand quantity reconciled to the counted figure.
       await page.waitForFunction(
@@ -2896,7 +3254,7 @@ try {
           return Boolean(li);
         },
         cycleItemName,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
     });
 
@@ -2909,7 +3267,7 @@ try {
         const detail = page.getByRole('dialog');
         await detail.getByRole('tab', { name: 'Lifecycle' }).click();
         const placements = detail.getByTestId('stock-placements');
-        await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 5000 });
+        await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: ms(5000) });
 
         const qtyAt = async (name) => {
           const li = placements.locator('li').filter({ hasText: name }).first();
@@ -2929,7 +3287,7 @@ try {
         await placements
           .locator('li')
           .filter({ hasText: 'Unassigned' })
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
         const drawerQty = await qtyAt(drawerName);
         const unassignedQty = await qtyAt('Unassigned');
         if (drawerQty !== '5' || unassignedQty !== '3') {
@@ -2948,7 +3306,7 @@ try {
       const detail = page.getByRole('dialog');
       await detail.getByRole('tab', { name: 'Lifecycle' }).click();
       const placements = detail.getByTestId('stock-placements');
-      await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 5000 });
+      await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: ms(5000) });
       const out = {};
       for (const name of locationNames) {
         const li = placements.locator('li').filter({ hasText: name }).first();
@@ -2968,12 +3326,12 @@ try {
       await page.getByTestId('open-cycle-count').click();
       const ccDialog = page.getByRole('dialog');
       const row = ccDialog.getByTestId('cycle-count-lines').locator('li').filter({ hasText: cycleItemName });
-      await row.waitFor({ state: 'visible', timeout: 5000 });
+      await row.waitFor({ state: 'visible', timeout: ms(5000) });
       // Count 4 → a −1 variance against *this drawer's* placement of 5 (not the total of 8).
       // The final per-location split (drawer 4 / Unassigned 3) proves the expected was 5.
       await row.getByRole('spinbutton').fill('4');
       await ccDialog.getByTestId('authorise-reconciliation').click();
-      await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: 5000 });
+      await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: ms(5000) });
       await ccDialog.getByRole('button', { name: 'Done' }).click();
 
       const qtys = await placementQuantities(cycleItemName, [drawerName, 'Unassigned']);
@@ -2989,14 +3347,15 @@ try {
       async () => {
         // cycleItemName is 4 @ drawer + 3 @ Unassigned. Lend 2 *from Unassigned* → 4 / 1.
         await page.getByRole('treeitem', { name: drawerName }).first().click();
-        await lifecycleCard(cycleItemName).getByRole('button', { name: 'Check out' }).click();
+        // The secondary stock actions live behind the card's "More actions" overflow menu.
+        await itemCardAction(lifecycleCard(cycleItemName), 'Loan out…');
         const coDialog = page.getByRole('dialog', { name: 'Check out' });
-        await coDialog.getByTestId('checkout-from-location').waitFor({ state: 'visible', timeout: 5000 });
+        await coDialog.getByTestId('checkout-from-location').waitFor({ state: 'visible', timeout: ms(5000) });
         await chooseOption(coDialog.getByTestId('checkout-from-location'), 'Unassigned', { exact: false });
         await coDialog.getByPlaceholder(/Type a name/).fill(checkoutBorrower);
         await coDialog.locator('input[type="number"]').fill('2');
         await coDialog.getByRole('button', { name: 'Check out' }).click();
-        await coDialog.waitFor({ state: 'hidden', timeout: 5000 });
+        await coDialog.waitFor({ state: 'hidden', timeout: ms(5000) });
 
         const qtys = await placementQuantities(cycleItemName, [drawerName, 'Unassigned']);
         if (qtys[drawerName] !== '4' || qtys['Unassigned'] !== '1') {
@@ -3018,12 +3377,12 @@ try {
         await itemCardAction(lifecycleCard(cycleItemName), 'Edit details');
         const detail = page.getByRole('dialog');
         await detail.getByRole('tab', { name: 'Lifecycle' }).click();
-        await detail.getByTestId('maintenance-name').waitFor({ state: 'visible', timeout: 5000 });
+        await detail.getByTestId('maintenance-name').waitFor({ state: 'visible', timeout: ms(5000) });
         await detail.getByTestId('maintenance-name').fill(scopedScheduleName);
         await chooseOption(detail.getByTestId('maintenance-location'), drawerName, { exact: false });
         await detail.getByTestId('add-maintenance').click();
         const row = detail.getByTestId('maintenance-row').filter({ hasText: scopedScheduleName });
-        await row.getByText(`@ ${drawerName}`).waitFor({ state: 'visible', timeout: 5000 });
+        await row.getByText(`@ ${drawerName}`).waitFor({ state: 'visible', timeout: ms(5000) });
         await page.keyboard.press('Escape');
       },
     );
@@ -3038,13 +3397,16 @@ try {
       await page.getByRole('option', { name: drawerName }).click();
       await itemDialog.getByLabel('Initial quantity').fill('0');
       await itemDialog.getByRole('button', { name: 'Create item' }).click();
-      await page.getByText(batchItemName).first().waitFor({ state: 'visible', timeout: 5000 });
+      await page
+        .getByText(batchItemName)
+        .first()
+        .waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Order it on a project BOM and move it In-Transit so the receive control appears.
       await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
       await page
         .getByRole('heading', { name: 'Bill of materials' })
-        .waitFor({ state: 'visible', timeout: 8000 });
+        .waitFor({ state: 'visible', timeout: ms(8000) });
       await page.getByRole('button', { name: 'Add line' }).click();
       const lineDialog = page.getByRole('dialog', { name: 'Add BOM line' });
       await chooseOption(
@@ -3068,19 +3430,19 @@ try {
       await page.getByRole('button', { name: 'Receive into stock' }).first().click();
       await lineRow
         .getByText('Received', { exact: false })
-        .waitFor({ state: 'visible', timeout: 5000 })
+        .waitFor({ state: 'visible', timeout: ms(5000) })
         .catch(() => {});
 
       // The item detail's stock breakdown shows the tracked lot as a FEFO sub-row.
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       await page.getByRole('treeitem', { name: drawerName }).first().click();
       await itemCardAction(lifecycleCard(batchItemName), 'Edit details');
       const detail = page.getByRole('dialog');
       await detail.getByRole('tab', { name: 'Lifecycle' }).click();
-      await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 5000 });
+      await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: ms(5000) });
       const batchRow = detail.locator('[data-testid^="stock-batch-"]').filter({ hasText: batchNo }).first();
-      await batchRow.waitFor({ state: 'visible', timeout: 5000 });
+      await batchRow.waitFor({ state: 'visible', timeout: ms(5000) });
       if (!/6/.test((await batchRow.textContent()) ?? '')) {
         throw new Error('Tracked batch sub-row did not show the received quantity of 6');
       }
@@ -3091,10 +3453,10 @@ try {
       await page.getByTestId('open-cycle-count').click();
       const ccDialog = page.getByRole('dialog');
       const lot = ccDialog.getByTestId('cycle-count-lines').locator('li').filter({ hasText: batchNo });
-      await lot.waitFor({ state: 'visible', timeout: 5000 });
+      await lot.waitFor({ state: 'visible', timeout: ms(5000) });
       await lot.getByRole('spinbutton').fill('4');
       await ccDialog.getByTestId('authorise-reconciliation').click();
-      await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: 5000 });
+      await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: ms(5000) });
       await ccDialog.getByRole('button', { name: 'Done' }).click();
 
       // The lot reconciled to 4 at its placement.
@@ -3102,7 +3464,7 @@ try {
       const after = page.getByRole('dialog');
       await after.getByRole('tab', { name: 'Lifecycle' }).click();
       const lotAfter = after.locator('[data-testid^="stock-batch-"]').filter({ hasText: batchNo }).first();
-      await lotAfter.waitFor({ state: 'visible', timeout: 5000 });
+      await lotAfter.waitFor({ state: 'visible', timeout: ms(5000) });
       if (!/4/.test((await lotAfter.textContent()) ?? '')) {
         throw new Error('Batch-aware cycle count did not reconcile the lot to 4');
       }
@@ -3117,10 +3479,10 @@ try {
       await itemCardAction(lifecycleCard(batchItemName), 'Edit details');
       const detail = page.getByRole('dialog');
       await detail.getByRole('tab', { name: 'Lifecycle' }).click();
-      await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: 5000 });
+      await detail.getByTestId('stock-breakdown').waitFor({ state: 'visible', timeout: ms(5000) });
 
       // The lot picker only appears because the source placement holds a tracked lot.
-      await detail.getByTestId('stock-lot').waitFor({ state: 'visible', timeout: 5000 });
+      await detail.getByTestId('stock-lot').waitFor({ state: 'visible', timeout: ms(5000) });
       // Pick the tracked lot (option 0 is "Any (soonest expiry)") from the portalled listbox.
       await detail.getByTestId('stock-lot').click();
       await page.getByRole('option').nth(1).click();
@@ -3134,9 +3496,9 @@ try {
         .locator('li')
         .filter({ hasText: 'Unassigned' })
         .first();
-      await dest.waitFor({ state: 'visible', timeout: 5000 });
+      await dest.waitFor({ state: 'visible', timeout: ms(5000) });
       const destLot = dest.locator('[data-testid^="stock-batch-"]').filter({ hasText: batchNo }).first();
-      await destLot.waitFor({ state: 'visible', timeout: 5000 });
+      await destLot.waitFor({ state: 'visible', timeout: ms(5000) });
       if (!/2/.test((await destLot.textContent()) ?? '')) {
         throw new Error('Chosen lot did not arrive at the destination with its identity and quantity 2');
       }
@@ -3158,7 +3520,7 @@ try {
         (name) =>
           [...document.querySelectorAll('h3')].filter((h) => h.textContent?.includes(name)).length >= 2,
         serialAuditName,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
 
       // Open the cycle count and flag instance #2 as missing (blind presence audit).
@@ -3169,13 +3531,13 @@ try {
         .getByTestId('serialised-audit-lines')
         .locator('li')
         .filter({ hasText: `${serialAuditName} #2` });
-      await missingRow.waitFor({ state: 'visible', timeout: 5000 });
+      await missingRow.waitFor({ state: 'visible', timeout: ms(5000) });
       // Default state is "Present"; one click flags it "Missing".
       const toggle = missingRow.getByRole('button');
       await toggle.click();
-      await toggle.getByText('Missing').waitFor({ state: 'visible', timeout: 4000 });
+      await toggle.getByText('Missing').waitFor({ state: 'visible', timeout: ms(4000) });
       await ccDialog.getByTestId('authorise-reconciliation').click();
-      await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: 5000 });
+      await ccDialog.getByTestId('cycle-count-result').waitFor({ state: 'visible', timeout: ms(5000) });
       await ccDialog.getByRole('button', { name: 'Done' }).click();
 
       // The missing instance is soft-deleted (gone from active inventory); #1 remains.
@@ -3189,7 +3551,7 @@ try {
           );
         },
         serialAuditName,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
     });
 
@@ -3197,7 +3559,7 @@ try {
       // Two dedicated top-level locations, each holding one bulk item at quantity 10, so the
       // walk's arithmetic is deterministic regardless of what earlier steps created.
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       for (const [locName, itemName] of [
         [auditBinOneName, auditItemOneName],
         [auditBinTwoName, auditItemTwoName],
@@ -3212,7 +3574,7 @@ try {
         await page
           .getByRole('treeitem', { name: locName })
           .first()
-          .waitFor({ state: 'visible', timeout: 5000 });
+          .waitFor({ state: 'visible', timeout: ms(5000) });
 
         await page.getByRole('treeitem', { name: locName }).first().click();
         await page.getByRole('button', { name: 'Add item' }).click();
@@ -3222,19 +3584,22 @@ try {
         await page.getByRole('option', { name: locName }).click();
         await itemDialog.getByLabel('Initial quantity').fill('10');
         await itemDialog.getByRole('button', { name: 'Create item' }).click();
-        await page.getByText(itemName).first().waitFor({ state: 'visible', timeout: 5000 });
+        await page
+          .getByText(itemName)
+          .first()
+          .waitFor({ state: 'visible', timeout: ms(5000) });
       }
 
       // --- Open the guided stock-take and explore the scope picker ---------------
       await openMoreMenu();
       await page.getByTestId('open-audit-day').click();
       const dlg = page.getByRole('dialog');
-      await dlg.getByTestId('audit-scope-mode').waitFor({ state: 'visible', timeout: 5000 });
+      await dlg.getByTestId('audit-scope-mode').waitFor({ state: 'visible', timeout: ms(5000) });
 
       // A sub-tree scope anchored on a childless bin previews exactly one location to walk —
       // exercising the anchor picker without depending on the wider tree's shape.
       await chooseOption(dlg.getByTestId('audit-scope-mode'), 'A location and everything inside it');
-      await dlg.getByTestId('audit-anchor').waitFor({ state: 'visible', timeout: 5000 });
+      await dlg.getByTestId('audit-anchor').waitFor({ state: 'visible', timeout: ms(5000) });
       await chooseOption(dlg.getByTestId('audit-anchor'), auditBinOneName, { exact: false });
       await expectText(dlg.getByTestId('audit-scope-count'), '1 location to walk');
 
@@ -3253,11 +3618,11 @@ try {
       await dlg.getByTestId('audit-start').click();
 
       // --- Location 1: blind-count a variance and authorise the reconcile --------
-      await dlg.getByTestId('audit-step-heading').waitFor({ state: 'visible', timeout: 5000 });
+      await dlg.getByTestId('audit-step-heading').waitFor({ state: 'visible', timeout: ms(5000) });
       await expectText(dlg.getByTestId('audit-step-heading'), auditBinOneName);
       await expectText(dlg.getByTestId('audit-step-heading'), 'Location 1 of 2');
       const line1 = dlg.getByTestId('cycle-count-lines').locator('li').filter({ hasText: auditItemOneName });
-      await line1.waitFor({ state: 'visible', timeout: 5000 });
+      await line1.waitFor({ state: 'visible', timeout: ms(5000) });
       // Count 8 vs expected 10 → a −2 variance → authorise it and advance.
       await line1.getByRole('spinbutton').fill('8');
       await dlg.getByTestId('audit-authorise-continue').click();
@@ -3270,11 +3635,11 @@ try {
         .getByTestId('cycle-count-lines')
         .locator('li')
         .first()
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await dlg.getByTestId('audit-skip').click();
 
       // --- Summary: 1 audited (reconciled), 1 variance, 1 adjustment, 1 skipped --
-      await dlg.getByTestId('audit-summary').waitFor({ state: 'visible', timeout: 5000 });
+      await dlg.getByTestId('audit-summary').waitFor({ state: 'visible', timeout: ms(5000) });
       const stat = async (label) => (await dlg.getByTestId(`audit-stat-${label}`).textContent())?.trim();
       const audited = await stat('audited');
       const variances = await stat('variances');
@@ -3289,7 +3654,7 @@ try {
       await expectText(dlg.getByTestId('audit-summary-variances'), auditBinOneName);
       await expectText(dlg.getByTestId('audit-summary-skipped'), auditBinTwoName);
       await dlg.getByTestId('audit-done').click();
-      await dlg.waitFor({ state: 'hidden', timeout: 5000 });
+      await dlg.waitFor({ state: 'hidden', timeout: ms(5000) });
 
       // The Bin One item reconciled to the counted figure of 8 (the write really landed).
       await page.getByRole('treeitem', { name: auditBinOneName }).first().click();
@@ -3299,14 +3664,14 @@ try {
             (el) => el.textContent?.includes(name) && el.textContent?.includes('8'),
           ),
         auditItemOneName,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
     });
 
     await step('resumes a paused audit day on the first still-pending location (§4.4)', async () => {
       // Start a fresh walk over the same two bins (the prior session was finished & cleared).
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       await openMoreMenu();
       await page.getByTestId('open-audit-day').click();
       let dlg = page.getByRole('dialog');
@@ -3321,88 +3686,89 @@ try {
         .getByTestId('cycle-count-lines')
         .locator('li')
         .first()
-        .waitFor({ state: 'visible', timeout: 5000 });
+        .waitFor({ state: 'visible', timeout: ms(5000) });
       await dlg.getByTestId('audit-skip').click();
       await expectText(dlg.getByTestId('audit-step-heading'), auditBinTwoName);
       await dlg.getByTestId('audit-pause').click();
-      await dlg.waitFor({ state: 'hidden', timeout: 5000 });
+      await dlg.waitFor({ state: 'hidden', timeout: ms(5000) });
 
       // Reopen: the persisted Tier-3 session resumes straight onto the first pending
       // location (Bin Two, 2 of 2) — not back at the already-skipped Bin One.
       await openMoreMenu();
       await page.getByTestId('open-audit-day').click();
       dlg = page.getByRole('dialog');
-      await dlg.getByTestId('audit-step-heading').waitFor({ state: 'visible', timeout: 5000 });
+      await dlg.getByTestId('audit-step-heading').waitFor({ state: 'visible', timeout: ms(5000) });
       await expectText(dlg.getByTestId('audit-step-heading'), auditBinTwoName);
       await expectText(dlg.getByTestId('audit-step-heading'), 'Location 2 of 2');
 
       // Abandon the whole stock-take to leave the persisted store clean for later steps.
       await dlg.getByTestId('audit-abandon').click();
-      await dlg.waitFor({ state: 'hidden', timeout: 5000 });
+      await dlg.waitFor({ state: 'hidden', timeout: ms(5000) });
     });
 
     await step('surfaces the perishable on the dashboard "Soon to expire" widget (§3)', async () => {
       await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
       const widget = page.getByTestId('widget-expiring');
-      await widget.waitFor({ state: 'visible', timeout: 8000 });
-      await widget.getByText(perishableName).waitFor({ state: 'visible', timeout: 5000 });
+      await widget.waitFor({ state: 'visible', timeout: ms(8000) });
+      await widget.getByText(perishableName).waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('customises the dashboard widget board — hide, re-pin & persist (§3, Phase 45)', async () => {
       await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
       // The new §3 widgets are pinned by default.
-      await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: 8000 });
-      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: ms(8000) });
+      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Enter customise (edit) mode and hide the Project-statuses widget; it leaves the
-      // board and joins the "hidden widgets" list.
-      await page.getByTestId('customise-dashboard').click();
+      // board and joins the "hidden widgets" list. The Customise toggle is the single shared
+      // one in the dashboard nav — the widget board no longer carries its own.
+      await page.getByTestId('customise-nav').click();
       await page.getByTestId('widget-hide-projects').click();
-      await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: 5000 });
-      await page.getByTestId('widget-add-projects').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: ms(5000) });
+      await page.getByTestId('widget-add-projects').waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Re-pin it — it returns to the board.
       await page.getByTestId('widget-add-projects').click();
-      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: ms(5000) });
 
       // Hide it once more, finish, and prove the choice survives a reload (the layout is
       // persisted to localStorage — device-local, no DB migration).
       await page.getByTestId('widget-hide-projects').click();
-      await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: 5000 });
-      await page.getByTestId('customise-dashboard').click(); // Done
+      await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: ms(5000) });
+      await page.getByTestId('customise-nav').click(); // Done
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: 8000 });
+      await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: ms(8000) });
       if ((await page.getByTestId('widget-projects').count()) !== 0) {
         throw new Error('hidden dashboard widget reappeared after reload (layout not persisted)');
       }
 
       // Restore it so the board is left in its default state for later steps.
-      await page.getByTestId('customise-dashboard').click();
+      await page.getByTestId('customise-nav').click();
       await page.getByTestId('widget-add-projects').click();
-      await page.getByTestId('customise-dashboard').click();
-      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByTestId('customise-nav').click();
+      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('resets the dashboard board to its defaults from customise mode', async () => {
       await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
-      await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: 8000 });
+      await page.getByTestId('widget-low-stock').waitFor({ state: 'visible', timeout: ms(8000) });
 
       // Customise: hide a widget so the board is demonstrably non-default…
-      await page.getByTestId('customise-dashboard').click();
+      await page.getByTestId('customise-nav').click();
       await page.getByTestId('widget-hide-projects').click();
-      await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: 5000 });
-      await page.getByTestId('hidden-widgets').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByTestId('widget-projects').waitFor({ state: 'detached', timeout: ms(5000) });
+      await page.getByTestId('hidden-widgets').waitFor({ state: 'visible', timeout: ms(5000) });
 
       // …then Reset returns every widget to its default position & visibility, so the
       // hidden widget is pinned again and the "hidden widgets" list empties out.
       await page.getByTestId('reset-dashboard').click();
-      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 5000 });
-      await page.getByTestId('hidden-widgets').waitFor({ state: 'detached', timeout: 5000 });
+      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: ms(5000) });
+      await page.getByTestId('hidden-widgets').waitFor({ state: 'detached', timeout: ms(5000) });
 
       // The reset persists across a reload (it writes the cleared layout to localStorage).
-      await page.getByTestId('customise-dashboard').click(); // Done
+      await page.getByTestId('customise-nav').click(); // Done
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: 8000 });
+      await page.getByTestId('widget-projects').waitFor({ state: 'visible', timeout: ms(8000) });
     });
 
     await step('shows an offline indicator and announces reconnection (§2 offline-first)', async () => {
@@ -3411,7 +3777,7 @@ try {
       const context = page.context();
       await context.setOffline(true);
       const pill = page.getByTestId('offline-indicator');
-      await pill.waitFor({ state: 'visible', timeout: 5000 });
+      await pill.waitFor({ state: 'visible', timeout: ms(5000) });
       const announcedOffline = await page.evaluate(() =>
         [...document.querySelectorAll('[role="status"]')].some((n) => /offline/i.test(n.textContent ?? '')),
       );
@@ -3419,7 +3785,7 @@ try {
 
       // Back online: the pill disappears and the live region announces the recovery.
       await context.setOffline(false);
-      await pill.waitFor({ state: 'hidden', timeout: 5000 });
+      await pill.waitFor({ state: 'hidden', timeout: ms(5000) });
       const announcedOnline = await page.evaluate(() =>
         [...document.querySelectorAll('[role="status"]')].some((n) =>
           /back online/i.test(n.textContent ?? ''),
@@ -3436,7 +3802,7 @@ try {
 
     await step('directs the user to Storage Triage from the critical banner (§7.6.2)', async () => {
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       // Advance time ~400 days and force the critical storage tier.
       await page.evaluate(() => {
         const realNow = Date.now.bind(Date);
@@ -3455,11 +3821,11 @@ try {
       });
       await page.getByTestId('open-storage-triage').click();
       const dialog = page.getByRole('dialog', { name: 'Storage triage' });
-      await dialog.waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.waitFor({ state: 'visible', timeout: ms(5000) });
       // The §7.6.2 per-table breakdown renders all three rows.
-      await dialog.getByTestId('triage-row-history').waitFor({ state: 'visible', timeout: 5000 });
-      await dialog.getByTestId('triage-row-images').waitFor({ state: 'visible', timeout: 5000 });
-      await dialog.getByTestId('triage-row-items').waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.getByTestId('triage-row-history').waitFor({ state: 'visible', timeout: ms(5000) });
+      await dialog.getByTestId('triage-row-images').waitFor({ state: 'visible', timeout: ms(5000) });
+      await dialog.getByTestId('triage-row-items').waitFor({ state: 'visible', timeout: ms(5000) });
       // Phase 15 (§7.6.2): the image figure is now the *measured* on-disk OPFS size — an
       // image was uploaded earlier (still full-res, downgrade happens in a later step).
       const source = await dialog.getByTestId('triage-images-source').innerText();
@@ -3488,20 +3854,22 @@ try {
         // Wait for the candidate count to load so the button enables (avoids arming the
         // download listener against a still-disabled control).
         const pruneBtn = dialog.getByTestId('prune-history');
-        for (let i = 0; i < 40 && (await pruneBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+        for (let i = 0; i < attempts(40) && (await pruneBtn.isDisabled()); i += 1) {
+          await page.waitForTimeout(150);
+        }
         if (await pruneBtn.isDisabled()) throw new Error('no prunable history was detected');
         const before = await dialog.getByText(/entries? affected/).innerText();
 
         await pruneBtn.click();
         const confirmBtn = dialog.getByTestId('prune-confirm');
-        await confirmBtn.waitFor({ state: 'visible', timeout: 4000 });
-        const download = page.waitForEvent('download', { timeout: 8000 });
+        await confirmBtn.waitFor({ state: 'visible', timeout: ms(4000) });
+        const download = expectDownload(page, ms(8000));
         await confirmBtn.click();
         await download;
 
         // Saying the file never arrived must leave the history exactly as it was.
         await page.getByTestId('confirm-saved-cancel').click();
-        await page.getByText('Nothing was deleted').waitFor({ state: 'visible', timeout: 5000 });
+        await page.getByText('Nothing was deleted').waitFor({ state: 'visible', timeout: ms(5000) });
         const after = await dialog.getByText(/entries? affected/).innerText();
         if (after !== before) {
           throw new Error(`history was pruned despite an unconfirmed archive: "${before}" → "${after}"`);
@@ -3512,13 +3880,15 @@ try {
     await step('prunes old history once the cold-storage archive is confirmed (§7.6.3 A)', async () => {
       const dialog = page.getByRole('dialog', { name: 'Storage triage' });
       const pruneBtn = dialog.getByTestId('prune-history');
-      for (let i = 0; i < 40 && (await pruneBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+      for (let i = 0; i < attempts(40) && (await pruneBtn.isDisabled()); i += 1) {
+        await page.waitForTimeout(150);
+      }
       if (await pruneBtn.isDisabled()) throw new Error('no prunable history was detected');
       await pruneBtn.click();
       const confirmBtn = dialog.getByTestId('prune-confirm');
-      await confirmBtn.waitFor({ state: 'visible', timeout: 4000 });
+      await confirmBtn.waitFor({ state: 'visible', timeout: ms(4000) });
       // The download must fire BEFORE the delete; assert the archive filename.
-      const download = page.waitForEvent('download', { timeout: 8000 });
+      const download = expectDownload(page, ms(8000));
       await confirmBtn.click();
       const file = await download;
       if (!file.suggestedFilename().startsWith('inventory_history_archive')) {
@@ -3528,20 +3898,22 @@ try {
         throw new Error(`archive is not JSON: ${file.suggestedFilename()}`);
       }
       await page.getByTestId('confirm-saved-continue').click();
-      await page.getByText('History archived & pruned').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByText('History archived & pruned').waitFor({ state: 'visible', timeout: ms(5000) });
     });
 
     await step('downgrades old images keeping the thumbnail (§7.6.3 B)', async () => {
       const dialog = page.getByRole('dialog', { name: 'Storage triage' });
       const downgradeBtn = dialog.getByTestId('downgrade-images');
-      for (let i = 0; i < 40 && (await downgradeBtn.isDisabled()); i += 1) await page.waitForTimeout(150);
+      for (let i = 0; i < attempts(40) && (await downgradeBtn.isDisabled()); i += 1) {
+        await page.waitForTimeout(150);
+      }
       if (await downgradeBtn.isDisabled()) throw new Error('no downgradable images were detected');
       // Phase 12: confirm-before-delete guards the downgrade too.
       await downgradeBtn.click();
       const confirmBtn = dialog.getByTestId('downgrade-confirm');
-      await confirmBtn.waitFor({ state: 'visible', timeout: 4000 });
+      await confirmBtn.waitFor({ state: 'visible', timeout: ms(4000) });
       await confirmBtn.click();
-      await page.getByText('Images downgraded').waitFor({ state: 'visible', timeout: 5000 });
+      await page.getByText('Images downgraded').waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -3557,14 +3929,14 @@ try {
       const isDark = () => page.evaluate(() => document.documentElement.classList.contains('dark'));
       // The default theme is dark and is now actually projected onto <html>.
       if (!(await isDark())) throw new Error('expected the dark theme to be applied by default');
-      await page.getByTestId('theme-light').click();
+      await page.getByTestId('mode-light').click();
       await page.waitForFunction(() => !document.documentElement.classList.contains('dark'), null, {
-        timeout: 4000,
+        timeout: ms(4000),
       });
       // Switch back so the persisted choice (and later screenshots) stay dark.
-      await page.getByTestId('theme-dark').click();
+      await page.getByTestId('mode-dark').click();
       await page.waitForFunction(() => document.documentElement.classList.contains('dark'), null, {
-        timeout: 4000,
+        timeout: ms(4000),
       });
     });
 
@@ -3624,10 +3996,10 @@ try {
       await page.getByRole('tab', { name: 'Data & storage' }).click();
       await page.getByTestId('open-storage-triage-settings').click();
       const dialog = page.getByRole('dialog', { name: 'Storage triage' });
-      await dialog.waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.waitFor({ state: 'visible', timeout: ms(5000) });
       // The chosen default window flows through to the triage control.
       await expectComboLabel(dialog.getByTestId('prune-months'), '12 months');
-      await dialog.getByTestId('triage-row-items').waitFor({ state: 'visible', timeout: 5000 });
+      await dialog.getByTestId('triage-row-items').waitFor({ state: 'visible', timeout: ms(5000) });
       await page.keyboard.press('Escape');
     });
 
@@ -3652,11 +4024,11 @@ try {
       }
       // The project BOM total is rendered by the live formatter — it must now be USD.
       await page.goto(`${BASE}projects`, { waitUntil: 'domcontentloaded' });
-      await page.getByTestId('project-total-cost').waitFor({ state: 'visible', timeout: 8000 });
+      await page.getByTestId('project-total-cost').waitFor({ state: 'visible', timeout: ms(8000) });
       await page.waitForFunction(
         () => document.querySelector('[data-testid="project-total-cost"]')?.textContent?.includes('$'),
         null,
-        { timeout: 5000 },
+        { timeout: ms(5000) },
       );
       // Restore the locked GBP / en-GB defaults so later steps + the screenshot stay clean.
       await openSettingsTab('Appearance');
@@ -3665,21 +4037,21 @@ try {
     });
 
     await step('the System theme follows prefers-color-scheme live (§2.1)', async () => {
-      await page.getByTestId('theme-system').click();
+      await page.getByTestId('mode-system').click();
       await page.emulateMedia({ colorScheme: 'dark' });
       await page.waitForFunction(() => document.documentElement.classList.contains('dark'), null, {
-        timeout: 4000,
+        timeout: ms(4000),
       });
       // Flipping the emulated OS scheme must re-apply live (the §2.1 media listener).
       await page.emulateMedia({ colorScheme: 'light' });
       await page.waitForFunction(() => !document.documentElement.classList.contains('dark'), null, {
-        timeout: 4000,
+        timeout: ms(4000),
       });
       // Restore an explicit dark theme + default media for later steps/screenshot.
-      await page.getByTestId('theme-dark').click();
+      await page.getByTestId('mode-dark').click();
       await page.emulateMedia({ colorScheme: null });
       await page.waitForFunction(() => document.documentElement.classList.contains('dark'), null, {
-        timeout: 4000,
+        timeout: ms(4000),
       });
     });
 
@@ -3687,7 +4059,9 @@ try {
       'honours prefers-reduced-motion: drops decorative entrance motion (§3 a11y, Phase 43)',
       async () => {
         await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-        await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+        await page
+          .getByRole('button', { name: 'Add item' })
+          .waitFor({ state: 'visible', timeout: ms(10000) });
 
         // 1) Emulate the OS reduced-motion preference and confirm the app's seam sees it.
         await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -3697,7 +4071,7 @@ try {
         // The Foundry Modal must NOT apply its `animate-zoom-in` entrance class at source.
         await page.getByRole('button', { name: 'Add item' }).click();
         let dialog = page.getByRole('dialog', { name: 'Add item' });
-        await dialog.waitFor({ state: 'visible', timeout: 5000 });
+        await dialog.waitFor({ state: 'visible', timeout: ms(5000) });
         const animatedUnderReduce = await page.evaluate(
           () => !!document.querySelector('[role="dialog"] .animate-zoom-in'),
         );
@@ -3705,14 +4079,14 @@ try {
           throw new Error('modal kept its entrance animation under reduced motion');
         }
         await page.keyboard.press('Escape');
-        await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+        await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
 
         // 2) With motion permitted again, the entrance animation returns (proves the gate
         //    is preference-driven, not unconditionally disabled).
         await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.getByRole('button', { name: 'Add item' }).click();
         dialog = page.getByRole('dialog', { name: 'Add item' });
-        await dialog.waitFor({ state: 'visible', timeout: 5000 });
+        await dialog.waitFor({ state: 'visible', timeout: ms(5000) });
         const animatedWithMotion = await page.evaluate(
           () => !!document.querySelector('[role="dialog"] .animate-zoom-in'),
         );
@@ -3720,7 +4094,7 @@ try {
           throw new Error('modal lost its entrance animation even with motion permitted');
         }
         await page.keyboard.press('Escape');
-        await dialog.waitFor({ state: 'hidden', timeout: 5000 });
+        await dialog.waitFor({ state: 'hidden', timeout: ms(5000) });
         // Restore the system default for later steps / the screenshot.
         await page.emulateMedia({ reducedMotion: null });
       },
@@ -3731,7 +4105,7 @@ try {
       async () => {
         await openSettingsTab('App');
         // Before any install event, the affordance falls back to manual guidance.
-        await page.getByTestId('install-state').waitFor({ state: 'visible', timeout: 10000 });
+        await page.getByTestId('install-state').waitFor({ state: 'visible', timeout: ms(10000) });
 
         // Simulate the platform firing the (non-standard) beforeinstallprompt event —
         // Playwright/automation never fires it for real, so dispatch a faithful stub.
@@ -3745,7 +4119,7 @@ try {
 
         // The one-tap install control now appears (the event was captured + held)...
         const installButton = page.getByTestId('install-app-settings');
-        await installButton.waitFor({ state: 'visible', timeout: 5000 });
+        await installButton.waitFor({ state: 'visible', timeout: ms(5000) });
 
         // ...and clicking it triggers the native install dialog (our stubbed prompt()).
         await installButton.click();
@@ -3753,7 +4127,7 @@ try {
         if (!prompted) throw new Error('install button did not trigger the native install prompt');
 
         // The captured event is single-use, so the control retracts to the manual fallback.
-        await page.getByTestId('install-state').waitFor({ state: 'visible', timeout: 5000 });
+        await page.getByTestId('install-state').waitFor({ state: 'visible', timeout: ms(5000) });
       },
     );
 
@@ -3801,7 +4175,9 @@ try {
       'bounds the virtualised list memory: a deep scroll trims then refills pages (§2.1, Phase 37)',
       async () => {
         await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-        await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+        await page
+          .getByRole('button', { name: 'Add item' })
+          .waitFor({ state: 'visible', timeout: ms(10000) });
 
         // Seed past MAX_LIST_PAGES × DEFAULT_PAGE_SIZE (6 × 50 = 300) so a deep scroll
         // forces the infinite query to trim a leading page — the memory bound under test.
@@ -3834,7 +4210,7 @@ try {
         const search = page.getByRole('textbox', { name: 'Search items' });
         await search.fill(seedPrefix);
         const firstItem = page.getByText(`${seedPrefix} 000`, { exact: true });
-        await firstItem.first().waitFor({ state: 'visible', timeout: 6000 });
+        await firstItem.first().waitFor({ state: 'visible', timeout: ms(6000) });
 
         const container = page.getByTestId('item-list-scroll');
         const lastName = `${seedPrefix} ${String(SEED - 1).padStart(3, '0')}`;
@@ -3843,18 +4219,18 @@ try {
         // Scroll to the tail: loads all 7 pages, trimming the leading page once the 7th
         // arrives. If absolute indexing were broken the rows would misalign and the tail
         // would never resolve into view.
-        for (let i = 0; i < 50; i += 1) {
+        for (let i = 0; i < attempts(50); i += 1) {
           if (await lastItem.count()) break;
           await container.evaluate((el) => {
             el.scrollTop = el.scrollHeight;
           });
           await page.waitForTimeout(120);
         }
-        await lastItem.first().waitFor({ state: 'visible', timeout: 5000 });
+        await lastItem.first().waitFor({ state: 'visible', timeout: ms(5000) });
 
         // Scroll back to the head: the trimmed-off prefix must refill (fetchPreviousPage),
         // proving the bounded window slides both ways without losing the start of the list.
-        for (let i = 0; i < 50; i += 1) {
+        for (let i = 0; i < attempts(50); i += 1) {
           if (await firstItem.count()) {
             if (await firstItem.first().isVisible()) break;
           }
@@ -3863,7 +4239,7 @@ try {
           });
           await page.waitForTimeout(120);
         }
-        await firstItem.first().waitFor({ state: 'visible', timeout: 5000 });
+        await firstItem.first().waitFor({ state: 'visible', timeout: ms(5000) });
 
         // Clear the filter so the screenshot / any later desktop assertion is unaffected.
         await search.fill('');
@@ -3874,7 +4250,9 @@ try {
       'imports a synthetic catalogue CSV and verifies new items appear in inventory (Phase 67)',
       async () => {
         await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-        await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+        await page
+          .getByRole('button', { name: 'Add item' })
+          .waitFor({ state: 'visible', timeout: ms(10000) });
 
         // Synthesise a tiny in-memory CSV (2 items; names are test-unique via `stamp`).
         const csvContent = [
@@ -3887,7 +4265,7 @@ try {
         await openAddMenu();
         await page.getByTestId('open-catalog-import').click();
         await page.getByTestId('import-tab-file').click();
-        await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });
+        await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: ms(5000) });
 
         // Inject the synthetic CSV directly via the file input (no real file needed).
         const csvBytes = Buffer.from(csvContent, 'utf-8');
@@ -3899,8 +4277,8 @@ try {
 
         // The shared workbench previews the extraction live — the mapping and the apply
         // button appear together once the file is read (no separate preview step).
-        await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: 6000 });
-        await page.getByTestId('catalog-import-apply').waitFor({ state: 'visible', timeout: 5000 });
+        await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: ms(6000) });
+        await page.getByTestId('catalog-import-apply').waitFor({ state: 'visible', timeout: ms(5000) });
 
         // The preview should show 2 creates and 0 errors.
         const applyButton = page.getByTestId('catalog-import-apply');
@@ -3911,7 +4289,7 @@ try {
 
         // Apply the import.
         await applyButton.click();
-        await page.getByTestId('catalog-import-done').waitFor({ state: 'visible', timeout: 8000 });
+        await page.getByTestId('catalog-import-done').waitFor({ state: 'visible', timeout: ms(8000) });
 
         // Close the wizard.
         await page.getByTestId('catalog-import-done').click();
@@ -3919,7 +4297,7 @@ try {
         // Verify both items appear in the inventory list via search.
         const searchBox = page.getByRole('textbox', { name: 'Search items' });
         await searchBox.fill(`Smoke Gizmo ${stamp}`);
-        await page.getByText(`Smoke Gizmo ${stamp}`).waitFor({ state: 'visible', timeout: 6000 });
+        await page.getByText(`Smoke Gizmo ${stamp}`).waitFor({ state: 'visible', timeout: ms(6000) });
         await searchBox.fill('');
       },
     );
@@ -3932,7 +4310,7 @@ try {
       // seam, and persists through CategoryRepository.setItemFieldValues (no second path).
       const customItemName = `Smoke Custom ${stamp}`;
       await page.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await page.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
 
       // CSV header includes the custom field's name; '47.0' must canonicalise to '47'.
       const csvContent = [`name,${fieldName}`, `${customItemName},47.0`].join('\r\n');
@@ -3940,7 +4318,7 @@ try {
       await openAddMenu();
       await page.getByTestId('open-catalog-import').click();
       await page.getByTestId('import-tab-file').click();
-      await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: 5000 });
+      await page.getByTestId('catalog-import-file').waitFor({ state: 'attached', timeout: ms(5000) });
       await page.getByTestId('catalog-import-file').setInputFiles({
         name: 'smoke-custom-field.csv',
         mimeType: 'text/csv',
@@ -3948,11 +4326,11 @@ try {
       });
 
       // The live workbench shows the mapping and apply button together.
-      await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: 6000 });
+      await page.getByTestId('catalog-import-match-key').waitFor({ state: 'visible', timeout: ms(6000) });
       const applyButton = page.getByTestId('catalog-import-apply');
-      await applyButton.waitFor({ state: 'visible', timeout: 5000 });
+      await applyButton.waitFor({ state: 'visible', timeout: ms(5000) });
       await applyButton.click();
-      await page.getByTestId('catalog-import-done').waitFor({ state: 'visible', timeout: 8000 });
+      await page.getByTestId('catalog-import-done').waitFor({ state: 'visible', timeout: ms(8000) });
       await page.getByTestId('catalog-import-done').click();
 
       // Reopen the item → Classification tab and assert the imported value persisted in
@@ -3967,7 +4345,7 @@ try {
       const dialog = page.getByRole('dialog');
       await dialog.getByRole('tab', { name: 'Classification' }).click();
       const reopened = dialog.getByLabel(fieldName, { exact: false }).first();
-      await reopened.waitFor({ state: 'visible', timeout: 5000 });
+      await reopened.waitFor({ state: 'visible', timeout: ms(5000) });
       const persisted = await reopened.inputValue();
       if (persisted !== '47') {
         throw new Error(`imported custom field did not land canonically (got "${persisted}")`);
@@ -3985,7 +4363,7 @@ try {
         // Navigate to the alert centre via the dashboard nav entry.
         await page.goto(`${BASE}`, { waitUntil: 'domcontentloaded' });
         const alertsNavLink = page.getByTestId('nav-alerts');
-        await alertsNavLink.waitFor({ state: 'visible', timeout: 8000 });
+        await alertsNavLink.waitFor({ state: 'visible', timeout: ms(8000) });
 
         // There should be a non-zero badge if the low-stock alert is active.
         // (The badge may not always be present depending on DB state, so we just
@@ -3995,13 +4373,13 @@ try {
         // The alerts screen main heading should be visible.
         await page
           .getByRole('heading', { name: /alert centre/i })
-          .waitFor({ state: 'visible', timeout: 8000 });
+          .waitFor({ state: 'visible', timeout: ms(8000) });
 
         // The always-mounted live region is present in the DOM.
-        await page.getByTestId('alerts-live-region').waitFor({ state: 'attached', timeout: 5000 });
+        await page.getByTestId('alerts-live-region').waitFor({ state: 'attached', timeout: ms(5000) });
 
         // Wait for the screen to finish loading (spinner gone).
-        await page.getByTestId('alerts-main').waitFor({ state: 'visible', timeout: 8000 });
+        await page.getByTestId('alerts-main').waitFor({ state: 'visible', timeout: ms(8000) });
 
         // Check whether a low-stock alert card exists (depends on Phase-65 DB state).
         const lowStockAlerts = await page.locator('[data-testid^="alert-card-low-stock:"]').all();
@@ -4013,19 +4391,19 @@ try {
 
           // Find and click the dismiss button for this alert.
           const dismissBtn = page.getByTestId(`dismiss-alert-${alertId}`);
-          await dismissBtn.waitFor({ state: 'visible', timeout: 4000 });
+          await dismissBtn.waitFor({ state: 'visible', timeout: ms(4000) });
           await dismissBtn.click();
 
           // After dismissal, the card should no longer be visible.
-          await page.getByTestId(`alert-card-${alertId}`).waitFor({ state: 'detached', timeout: 4000 });
+          await page.getByTestId(`alert-card-${alertId}`).waitFor({ state: 'detached', timeout: ms(4000) });
 
           // "Show all" button should appear (there is now at least one hidden alert).
           const showAll = page.getByTestId('alerts-show-all');
-          await showAll.waitFor({ state: 'visible', timeout: 4000 });
+          await showAll.waitFor({ state: 'visible', timeout: ms(4000) });
 
           // Click "Show all" — the dismissed alert should reappear.
           await showAll.click();
-          await page.getByTestId(`alert-card-${alertId}`).waitFor({ state: 'visible', timeout: 4000 });
+          await page.getByTestId(`alert-card-${alertId}`).waitFor({ state: 'visible', timeout: ms(4000) });
         } else {
           // No low-stock alert present in this run — log a note but do not fail.
           console.log(
@@ -4067,8 +4445,8 @@ try {
       }
     });
     const mpage = await mobile.newPage();
-    mpage.setDefaultTimeout(5000);
-    mpage.setDefaultNavigationTimeout(10000);
+    mpage.setDefaultTimeout(ms(5000));
+    mpage.setDefaultNavigationTimeout(ms(10000));
     mpage.on('console', (msg) => {
       if (msg.type() === 'error') recordConsoleError(`[mobile] ${msg.text()}`);
     });
@@ -4077,10 +4455,11 @@ try {
 
     await step('mobile: the §2.7 weekly Full-Archive banner appears and downloads (§2.7)', async () => {
       await mpage.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await mpage.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await dismissFirstRun(mpage);
+      await mpage.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       const archiveBtn = mpage.getByTestId('run-archive');
-      await archiveBtn.waitFor({ state: 'visible', timeout: 6000 });
-      const download = mpage.waitForEvent('download', { timeout: 10000 });
+      await archiveBtn.waitFor({ state: 'visible', timeout: ms(6000) });
+      const download = expectDownload(mpage, ms(10000));
       await archiveBtn.click();
       const file = await download;
       if (!file.suggestedFilename().endsWith('.zip')) {
@@ -4089,16 +4468,25 @@ try {
     });
 
     await step('mobile: the scanner resolves the §6.6 off-thread WASM worker engine', async () => {
+      // The archive download above raises a toast, and on this narrow viewport the toast
+      // overlay sits across the scanner's manual-entry row. Let it auto-dismiss first.
+      await mpage
+        .getByTestId('toast')
+        .first()
+        .waitFor({ state: 'detached', timeout: ms(8000) })
+        .catch(() => {});
       await mpage.getByRole('button', { name: 'Scan' }).click();
       const overlay = mpage.locator('[data-testid="scanner-overlay"]');
-      await overlay.waitFor({ state: 'visible', timeout: 5000 });
+      await overlay.waitFor({ state: 'visible', timeout: ms(5000) });
       // With BarcodeDetector absent, useScanner spawns the Phase-31 decode Worker (zxing
       // core on an OffscreenCanvas). 'wasm' is now produced *only* by that worker decoder,
       // so the engine badge appearing proves the off-thread path resolved — and the global
       // console/page-error guards prove createImageBitmap + transfer + worker decode run
       // cleanly per frame in a real browser. Holding the overlay open with no code in view
       // also drives the Phase-32 adaptive frame-skip cadence through its idle backoff.
-      await mpage.locator('[data-testid="scanner-engine-wasm"]').waitFor({ state: 'visible', timeout: 8000 });
+      await mpage
+        .locator('[data-testid="scanner-engine-wasm"]')
+        .waitFor({ state: 'visible', timeout: ms(8000) });
       // Manual entry still works on the fallback path (feed a non-item code: just a notice).
       await mpage.locator('[data-testid="scanner-manual-input"]').fill('not-a-gubbins-code');
       await mpage.locator('[data-testid="scanner-manual-submit"]').click();
@@ -4135,8 +4523,8 @@ try {
       }
     });
     const spage = await safari.newPage();
-    spage.setDefaultTimeout(5000);
-    spage.setDefaultNavigationTimeout(10000);
+    spage.setDefaultTimeout(ms(5000));
+    spage.setDefaultNavigationTimeout(ms(10000));
     spage.on('console', (msg) => {
       if (msg.type() === 'error') recordConsoleError(`[safari] ${msg.text()}`);
     });
@@ -4145,16 +4533,17 @@ try {
 
     await step('safari<16.4: the scanner resolves the §6.6 main-thread-capture worker engine', async () => {
       await spage.goto(`${BASE}inventory`, { waitUntil: 'domcontentloaded' });
-      await spage.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: 10000 });
+      await dismissFirstRun(spage);
+      await spage.getByRole('button', { name: 'Add item' }).waitFor({ state: 'visible', timeout: ms(10000) });
       await spage.getByRole('button', { name: 'Scan' }).click();
       const overlay = spage.locator('[data-testid="scanner-overlay"]');
-      await overlay.waitFor({ state: 'visible', timeout: 5000 });
+      await overlay.waitFor({ state: 'visible', timeout: ms(5000) });
       // With BarcodeDetector AND OffscreenCanvas absent, useScanner falls through to the
       // 'wasm-canvas' tier; its engine badge appearing proves the main-thread 2-D-canvas
       // capture → worker pixel-decode path resolved (and ran without console/page errors).
       await spage
         .locator('[data-testid="scanner-engine-wasm-canvas"]')
-        .waitFor({ state: 'visible', timeout: 8000 });
+        .waitFor({ state: 'visible', timeout: ms(8000) });
       // Manual entry still works on the fallback path (feed a non-item code: just a notice).
       await spage.locator('[data-testid="scanner-manual-input"]').fill('not-a-gubbins-code');
       await spage.locator('[data-testid="scanner-manual-submit"]').click();
@@ -4304,8 +4693,8 @@ try {
         // here is attributed to the PWA block and doesn't bleed into the dev-server run.
         pwaContext = await browser.newContext();
         const ppage = await pwaContext.newPage();
-        ppage.setDefaultTimeout(5000);
-        ppage.setDefaultNavigationTimeout(10000);
+        ppage.setDefaultTimeout(ms(5000));
+        ppage.setDefaultNavigationTimeout(ms(10000));
         ppage.on('console', (msg) => {
           if (msg.type() === 'error') recordConsoleError(`[pwa] ${msg.text()}`);
         });
@@ -4314,12 +4703,12 @@ try {
 
         /** Poll (in-page) for the real worker to install, activate, and control the page. */
         const waitForController = async (label) => {
-          const diag = await ppage.evaluate(async () => {
+          const diag = await ppage.evaluate(async (maxAttempts) => {
             const out = { active: null, controller: null, err: null };
             try {
               // Precaching the full app shell (incl. the SQLite WASM blob) can take a while
               // headlessly, so allow generous headroom for install→activate→claim.
-              for (let i = 0; i < 250; i += 1) {
+              for (let i = 0; i < maxAttempts; i += 1) {
                 const reg = await navigator.serviceWorker.getRegistration();
                 if (reg) {
                   out.active =
@@ -4333,7 +4722,7 @@ try {
               out.err = String(e);
             }
             return out;
-          });
+          }, attempts(250));
           if (!diag.controller || diag.active !== 'activated') {
             throw new Error(`${label}: service worker did not take control (state=${JSON.stringify(diag)})`);
           }
@@ -4345,9 +4734,10 @@ try {
           'PWA: the production build boots, cross-origin isolated, and the SW takes control',
           async () => {
             await ppage.goto(`${pwaBase}inventory`, { waitUntil: 'domcontentloaded' });
+            await dismissFirstRun(ppage);
             await ppage
               .getByRole('button', { name: 'Add item' })
-              .waitFor({ state: 'visible', timeout: 10000 });
+              .waitFor({ state: 'visible', timeout: ms(10000) });
             const isolated = await ppage.evaluate(() => self.crossOriginIsolated === true);
             if (!isolated) throw new Error('production context is not cross-origin isolated');
             controllerBefore = await waitForController('initial boot');
@@ -4400,7 +4790,7 @@ try {
             // — never auto-committed. The shared title becomes the name; the Amazon URL's ASIN the MPN.
             await ppage.goto(landingUrl, { waitUntil: 'domcontentloaded' });
             const dialog = ppage.getByRole('dialog', { name: 'Add item' });
-            await dialog.waitFor({ state: 'visible', timeout: 10000 });
+            await dialog.waitFor({ state: 'visible', timeout: ms(10000) });
             const nameValue = await ppage.getByLabel('Name').inputValue();
             if (nameValue !== 'Smoke Shared Widget') {
               throw new Error(`shared draft name not pre-filled (got "${nameValue}")`);
@@ -4413,7 +4803,7 @@ try {
             await ppage.goto(`${pwaBase}inventory`, { waitUntil: 'domcontentloaded' });
             await ppage
               .getByRole('button', { name: 'Add item' })
-              .waitFor({ state: 'visible', timeout: 10000 });
+              .waitFor({ state: 'visible', timeout: ms(10000) });
           },
         );
 
@@ -4436,9 +4826,9 @@ try {
 
             // The REAL PwaUpdatePrompt banner appears (workbox waiting → onNeedRefresh →
             // usePwaUpdate.needRefresh → React render). Give the install a little headroom.
-            await ppage.getByTestId('pwa-update-prompt').waitFor({ state: 'visible', timeout: 12000 });
-            await ppage.getByText('A new version is ready').waitFor({ state: 'visible', timeout: 5000 });
-            await ppage.getByTestId('pwa-reload-now').waitFor({ state: 'visible', timeout: 5000 });
+            await ppage.getByTestId('pwa-update-prompt').waitFor({ state: 'visible', timeout: ms(12000) });
+            await ppage.getByText('A new version is ready').waitFor({ state: 'visible', timeout: ms(5000) });
+            await ppage.getByTestId('pwa-reload-now').waitFor({ state: 'visible', timeout: ms(5000) });
           },
         );
 
@@ -4491,7 +4881,7 @@ try {
             // Wait for the page to RELOAD onto the new version: the in-memory sentinel is gone
             // after the controllerchange→reload navigation.
             await ppage.waitForFunction(() => window.__smokeNoReload !== true, undefined, {
-              timeout: 12000,
+              timeout: ms(12000),
             });
 
             // Prove the under-the-hood handshake completed (independent of the reload):
@@ -4499,7 +4889,7 @@ try {
             // controls the freshly-reloaded page. sessionStorage survives the reload.
             await ppage
               .getByRole('button', { name: 'Add item' })
-              .waitFor({ state: 'visible', timeout: 10000 });
+              .waitFor({ state: 'visible', timeout: ms(10000) });
             const result = await ppage.evaluate(async () => {
               const reg = await navigator.serviceWorker.getRegistration();
               return {
