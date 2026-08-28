@@ -498,6 +498,24 @@ export interface ExtractImportOptions {
   readonly decimalSeparator?: string;
 }
 
+/**
+ * A one-cell header test for {@link detectImportFormat}: does this line name the item's
+ * **name** column? It is what separates a single-column CSV — `name` over three part names —
+ * from a free-form list of four items, which are otherwise the same shape. Without it the
+ * header row imports as an item (issue #408).
+ *
+ * Deliberately only the name column, though `inferColumnMapping` would resolve `sku`, `notes`,
+ * `stock` or a custom field's name just as readily. A lone column of anything *but* the name
+ * builds rows with no name, and every one of them is an error the importer cannot create — so
+ * promoting such a file would trade one junk item for an import that lands nothing at all. A
+ * file headed `sku` stays a line list, exactly as before. No custom field is consulted for the
+ * same reason: a custom field can only outrank a core column for a gauge field, and the name
+ * is not one, so no catalogue can change this answer.
+ */
+function isNameHeader(cell: string): boolean {
+  return inferColumnMapping([cell])[0] === 'name';
+}
+
 /** Assemble a tabular extraction, inferring the initial mapping from the headers. */
 function tabularExtraction(
   format: ImportFormat,
@@ -530,7 +548,7 @@ function emptyExtraction(format: ImportFormat, note: string): ImportExtraction {
  */
 export function extractImport(text: string, options: ExtractImportOptions = {}): ImportExtraction {
   const customFields = options.customFields ?? [];
-  const format = options.format ?? detectImportFormat(text);
+  const format = options.format ?? detectImportFormat(text, { isHeaderCell: isNameHeader });
 
   if (format === 'lines') {
     // A line list defaults each item to quantity 1 (a new item is unlikely to be
