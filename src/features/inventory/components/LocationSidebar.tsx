@@ -151,6 +151,11 @@ export function LocationSidebar({
   // back to "All items" whenever that happens. The tag chips and the search box narrow the tree
   // the same way and deliberately do *not* reset it: those are transient, the box that hid the row
   // is on screen, and clearing it puts the row back. Archived-hiding is the one that persists.
+  //
+  // It asks the predicate rather than the obvious `!findTreeNode(visibleTree, selectedId)`, which
+  // reads as the same question and is not: a location the user has just created is selected before
+  // the refetched tree carries it (issue #612), and "no row yet" would reset that selection the
+  // moment it was made. `withinArchivedBranch` answers false for an id it has never seen.
   useEffect(() => {
     if (selectedId && !showArchived && withinArchivedBranch(selectedId, flat)) onSelect(null);
   }, [flat, onSelect, selectedId, showArchived]);
