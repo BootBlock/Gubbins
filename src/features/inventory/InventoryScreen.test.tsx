@@ -21,8 +21,12 @@ import { InventoryScreen } from './InventoryScreen';
 
 // ─── chrome + navigation ──────────────────────────────────────────────────────
 
+// The screen's filters live in the `/inventory` URL (issue #574), so the router stands in for
+// one: `useSearch` reports the default (unfiltered) view and `useNavigate` swallows the writes.
+// This suite is about which controls each authority is offered, not about what the URL holds.
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
+  useSearch: () => ({}),
   Link: ({
     children,
     ...props

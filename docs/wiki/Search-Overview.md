@@ -87,6 +87,33 @@ Search combines with the other ways to narrow the list:
 > exception: it still scopes the query, and the result line names it. See
 > [[Visual query builder|Visual-Query-Builder]].
 
+## Your view lives in the address bar
+
+Everything you narrow the Inventory screen by — the location you picked in the tree, what's in the
+quick-search box, the status chips, the category and tag facets, **Show removed**, and the page
+you're on — is written into the page's web address as you go.
+
+That has three everyday consequences, and one thing worth knowing:
+
+- **Back undoes your last narrowing.** Each deliberate step — selecting a location, ticking a chip,
+  turning a page — can be stepped back through with your browser's Back button, or the system Back
+  gesture on an installed app. Typing in the search box counts as one step, not one per letter. So
+  after a detour to another screen, Back walks you all the way to the list you were reading.
+- **A reload doesn't lose your work.** Refreshing the page, or Gubbins updating itself, brings the
+  same filtered list back rather than starting again from everything.
+- **A filtered list can be bookmarked or shared.** "Everything expiring in the Chemicals cupboard"
+  is just an address: bookmark it, pin it in a tab, or send it to whoever needs to act on it.
+- **Opening Inventory afresh still starts clean.** Choosing **Inventory** from the menu means the
+  whole inventory, as it always has. Use Back, or a bookmark, to return to a filtered view.
+
+> **ℹ️ Note**
+> A shared link describes the *view*, not the items — whoever opens it sees it applied to their own
+> inventory. Gubbins never sends your data anywhere just because you copied the address.
+
+> **💡 Tip**
+> The **Visual search** panel's query is not part of the address. To keep one of those, use a
+> **[[saved search|Saved-Searches-and-Favourites]]** instead.
+
 ## How many matched
 
 Directly above the list, Gubbins tells you how many items your current search and filters match

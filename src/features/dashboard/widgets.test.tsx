@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { DASHBOARD_WIDGETS, widgetById } from './widgets';
 import { ALL_FEATURE_IDS, featureForRoute, type FeatureId } from '@/features/modules/feature-registry';
-import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
 import { IN_TRANSIT_LOCATION_ID } from '@/db/repositories/constants';
 
 /**
@@ -54,13 +53,7 @@ describe('DASHBOARD_WIDGETS — Modular UI feature annotations', () => {
 });
 
 describe('In-transit widget quick-link', () => {
-  beforeEach(() => {
-    useInventoryEntry.setState({ pendingSearch: null, pendingIntent: null, pendingLocationId: null });
-  });
-
-  it('hands the Inventory screen a one-shot intent to land scoped to the In-Transit location', () => {
-    const widget = widgetById('in-transit');
-    widget?.onLinkClick?.();
-    expect(useInventoryEntry.getState().pendingLocationId).toBe(IN_TRANSIT_LOCATION_ID);
+  it('links to the Inventory screen scoped to the In-Transit location', () => {
+    expect(widgetById('in-transit')?.search).toEqual({ loc: IN_TRANSIT_LOCATION_ID });
   });
 });
