@@ -70,6 +70,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { cn } from '@/lib/utils';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { locationColorStrokeClass } from '@/features/inventory/location-color';
 import type { RegionShape } from '@/db/repositories/constants';
 import {
@@ -449,7 +450,15 @@ export function RegionCanvas({
           // Only the selected region moves, and only when editing.
           if (readOnly || entry.region.id !== selectedId) return;
           onCommit?.(applyRegionKey(entry.geometry, action, naturalWidth, naturalHeight));
+          return;
         }
+        default:
+          // `resolveRegionKey` is annotated `RegionKeyAction | null`, so a new action kind
+          // forces itself on the pure seam — but this consumer returns `void`, so without the
+          // guard the same kind would arrive here, meet `preventDefault()` and then nothing.
+          // The key would be swallowed rather than reaching the browser: a dead shortcut.
+          assertExhaustive(action);
+          return;
       }
     },
     [onSelect, onCommit, readOnly, selectedId, naturalWidth, naturalHeight],
@@ -652,5 +661,10 @@ function ShapePath({
           points={geometry.points.map((p) => `${p.x * naturalWidth},${p.y * naturalHeight}`).join(' ')}
         />
       );
+    default:
+      // `handlesFor` over the same union is protected by its array return type; this component
+      // has no annotation at all, so a fourth shape would simply draw nothing (issue #355).
+      assertExhaustive(geometry);
+      return null;
   }
 }

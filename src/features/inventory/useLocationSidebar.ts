@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
+import { assertExhaustive } from '@/lib/exhaustive';
 import { useReportWriteFailure } from '@/features/errors';
 import { useDeleteLocation, useUpdateLocation } from './mutations';
 import { resolveTreeKey, type TreeRow } from './tree-keyboard';
@@ -224,6 +225,13 @@ export function useLocationSidebar({
         if (target) requestDelete(target.id, target.name, target.itemCount);
         break;
       }
+      default:
+        // `resolveTreeKey` is annotated `TreeKeyAction | null`, so a new action kind forces
+        // itself on the pure seam — but this handler returns `void`, so without the guard the
+        // kind would arrive here after `preventDefault()` and do nothing at all. The key would
+        // be swallowed instead of reaching the browser: a tree shortcut that looks dead.
+        assertExhaustive(action);
+        break;
     }
   };
 

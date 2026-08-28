@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { LocationWithCount } from '@/db/repositories';
+import { UNASSIGNED_LOCATION_ID, type LocationWithCount } from '@/db/repositories';
 import type { AssemblyPart } from '../assembly';
 import { FinaliseAssemblyDialog } from './FinaliseAssemblyDialog';
 
@@ -27,7 +27,13 @@ function part(overrides: Partial<AssemblyPart> = {}): AssemblyPart {
   };
 }
 
-const LOCATIONS = [{ id: 'loc1', name: 'Garage' }] as unknown as readonly LocationWithCount[];
+// The unassigned location is in the list because it is what the destination field starts on:
+// the picker resolves its trigger label from the options, so without it the field would
+// have no default to show.
+const LOCATIONS = [
+  { id: UNASSIGNED_LOCATION_ID, name: 'Unassigned' },
+  { id: 'loc1', name: 'Garage' },
+] as unknown as readonly LocationWithCount[];
 
 function renderDialog(
   data: AssemblyPart[] | undefined,
@@ -125,5 +131,105 @@ describe('FinaliseAssemblyDialog (issue #647)', () => {
     // warning is not shown for a plan nobody has computed.
     expect(screen.getByRole('button', { name: 'Finalise' })).toBeDisabled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The wiring between the outcome a user picks and the write that runs (issue #492). Finalising is
+ * terminal — `PERMANENT_CONSUMPTION` in particular consumes stock — so a default landing on the
+ * wrong outcome, or a radio whose value doesn't reach the mutation, would be silent: it
+ * type-checks, and the repository tests below it would still pass. These pin the mapping itself,
+ * including which extra fields each outcome is allowed to carry.
+ */
+describe('FinaliseAssemblyDialog — outcome wiring (issue #492)', () => {
+  /** Open the destination picker and choose a location by name. */
+  const chooseLocation = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    await user.click(screen.getByRole('combobox', { name: 'Place the new item in' }));
+    await user.click(screen.getByRole('option', { name }));
+  };
+
+  it('starts on Container, the outcome that takes the least away', () => {
+    renderDialog([part()]);
+
+    expect(screen.getByRole('radio', { name: /Container/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: /Singular object/ })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: /Permanent consumption/ })).not.toBeChecked();
+    // A container becomes a place, so it asks for a location name — not an item name.
+    expect(screen.getByLabelText('New location name')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Place the new item in' })).not.toBeInTheDocument();
+  });
+
+  it('finalises as a container with the name given, and no destination', async () => {
+    const { user } = renderDialog([part()]);
+    await user.type(screen.getByLabelText('New location name'), '  Lamp box  ');
+    await user.click(screen.getByRole('button', { name: 'Finalise' }));
+
+    expect(mutate).toHaveBeenCalledTimes(1);
+    // A container *is* the new place, so it never carries one of its own.
+    expect(mutate.mock.calls[0]![0]).toEqual({ outcome: 'CONTAINER', resultName: 'Lamp box' });
+  });
+
+  it('finalises as a singular object with the name and the destination chosen', async () => {
+    const { user } = renderDialog([part()]);
+    await user.click(screen.getByRole('radio', { name: /Singular object/ }));
+    // The new thing is an item, so the field asks for an item name and a shelf to put it on.
+    await user.type(screen.getByLabelText('New item name'), 'Lamp');
+    await chooseLocation(user, 'Garage');
+    await user.click(screen.getByRole('button', { name: 'Finalise' }));
+
+    expect(mutate.mock.calls[0]![0]).toEqual({
+      outcome: 'SINGULAR_OBJECT',
+      resultName: 'Lamp',
+      resultLocationId: 'loc1',
+    });
+  });
+
+  it('places a singular object in Unassigned when no destination is picked', async () => {
+    const { user } = renderDialog([part()]);
+    await user.click(screen.getByRole('radio', { name: /Singular object/ }));
+    await user.click(screen.getByRole('button', { name: 'Finalise' }));
+
+    // An untouched picker still sends its own default rather than nothing at all, so the new item
+    // lands somewhere findable. An unnamed result is left to the repository to name.
+    expect(mutate.mock.calls[0]![0]).toEqual({
+      outcome: 'SINGULAR_OBJECT',
+      resultLocationId: UNASSIGNED_LOCATION_ID,
+    });
+  });
+
+  it('finalises as permanent consumption with nothing but the outcome', async () => {
+    const { user } = renderDialog([part()]);
+    await user.click(screen.getByRole('radio', { name: /Permanent consumption/ }));
+
+    // Nothing survives the build, so there is nothing to name and nowhere to put it.
+    expect(screen.queryByLabelText('New location name')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('New item name')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Place the new item in' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Finalise' }));
+    expect(mutate.mock.calls[0]![0]).toEqual({ outcome: 'PERMANENT_CONSUMPTION' });
+  });
+
+  it('carries a name over between the two outcomes that take one', async () => {
+    const { user } = renderDialog([part()]);
+    await user.type(screen.getByLabelText('New location name'), 'Lamp');
+    await user.click(screen.getByRole('radio', { name: /Singular object/ }));
+
+    // The same box, relabelled — a name typed before the outcome changed is not silently dropped.
+    expect(screen.getByLabelText('New item name')).toHaveValue('Lamp');
+  });
+
+  it('forgets the choice when the dialog is cancelled', async () => {
+    const { user, onClose } = renderDialog([part()]);
+    await user.type(screen.getByLabelText('New location name'), 'Lamp box');
+    await user.click(screen.getByRole('radio', { name: /Permanent consumption/ }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(mutate).not.toHaveBeenCalled();
+    // The next opening starts fresh: a stale consuming outcome must not be one click from running.
+    expect(screen.getByRole('radio', { name: /Container/ })).toBeChecked();
+    // The name typed before cancelling is cleared too, so it cannot reappear on the next build.
+    expect(screen.getByLabelText('New location name')).toHaveValue('');
   });
 });
