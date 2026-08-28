@@ -74,8 +74,9 @@ with the ▲▼◀▶ cluster or the arrow keys, and pin the ones you use most t
 
 > **ℹ️ Note**
 > A tile belonging to a [[module you've switched off|Modular-UI]] keeps its place too. It isn't
-> shown while the module is away, and rearranging the tiles around it doesn't move it — switching
-> the module back on brings the tile back where you left it.
+> shown while the module is away, but it stays behind the same tile it sat behind, so switching
+> the module back on brings it home rather than leaving it at the bottom of its group. Move that
+> neighbouring tile and the hidden one follows it, exactly as a visible tile below it would.
 
 > **ℹ️ Note**
 > The dashboard layout is a per-device preference — your phone and your workshop tablet can each

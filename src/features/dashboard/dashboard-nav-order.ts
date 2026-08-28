@@ -116,26 +116,9 @@ export function tilesInGroup(order: NavOrder, group: NavGroup): NavOrder {
 }
 
 /**
- * Split an order into the tiles that render (`enabled`) and those whose feature is off
- * (`gated`), by an id predicate. The gated placements are kept verbatim so the caller can
- * edit the enabled half alone and merge the two back together with {@link mergeGated} on
- * persist. Note that this store's *order is the array order*, so the gated half cannot be
- * concatenated back: it has to be spliced in against the pre-edit order (issue #628). The
- * widget board has the same shape of problem with absolute coordinates (issue #627).
- */
-export function partitionByEnabled(
-  order: NavOrder,
-  isEnabled: (id: string) => boolean,
-): { readonly enabled: NavOrder; readonly gated: NavOrder } {
-  const enabled: NavTilePlacement[] = [];
-  const gated: NavTilePlacement[] = [];
-  for (const p of order) (isEnabled(p.id) ? enabled : gated).push(p);
-  return { enabled, gated };
-}
-
-/**
- * Merge an edited enabled-only order back into the full arrangement, putting each hidden
- * tile back where it sat rather than at the end of its group (issue #628).
+ * Merge an edited enabled-only order back into the full arrangement, so that a tile the
+ * caller hid — its module switched off, or its read permission absent — keeps the place it
+ * had (issue #628).
  *
  * A placement record has no index field, so the position of a hidden tile only exists as
  * its neighbours in `previous`: each gated tile is anchored to the nearest **enabled tile
@@ -147,10 +130,10 @@ export function partitionByEnabled(
  * invariants — so a hidden pinned tile stays in the pinned run even if its anchor is
  * unpinned.
  *
- * `previous` is the full pre-edit order (enabled + gated); `next` is the edited order of
- * the enabled tiles alone. Tiles of `previous` that are absent from `next` are treated as
- * gated, so the two arguments do not have to come from the same {@link partitionByEnabled}
- * call.
+ * `previous` is the full pre-edit order; `next` is the edited order of the visible tiles
+ * alone. Any tile of `previous` that `next` omits is treated as hidden, so the caller only
+ * has to filter — it does not have to hand the hidden half back. The widget board has the
+ * same shape of problem with absolute coordinates, and needs its own fix (issue #627).
  */
 export function mergeGated(previous: NavOrder, next: NavOrder, groupOrder: readonly NavGroup[]): NavOrder {
   const groupAfter = new Map(next.map((p) => [p.id, p.group] as const));

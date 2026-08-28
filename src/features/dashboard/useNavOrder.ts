@@ -31,7 +31,6 @@ import {
   mergeGated,
   moveTile,
   nudgeTile,
-  partitionByEnabled,
   reconcileOrder,
   setTilePinned,
   tilesInGroup,
@@ -101,15 +100,15 @@ export function useNavOrder(): UseNavOrder {
   // destinations changing across releases (unknown ids dropped, new tiles appended).
   const full = useMemo(() => reconcileOrder(stored, NAV_TILE_DEFAULTS, NAV_GROUP_ORDER), [stored]);
 
-  // Split off the tiles whose module is switched off, or whose read permission this session
-  // lacks (issue #522): `enabled` is what the hub draws and every edit operates on. The hidden
-  // half is merged back from `full` on persist (see `apply`), so a hidden tile keeps its place
-  // and reappears where it was when the module comes back or the role changes.
-  const { enabled } = useMemo(
+  // Drop the tiles whose module is switched off, or whose read permission this session lacks
+  // (issue #522): `enabled` is what the hub draws and every edit operates on. The hidden tiles
+  // are merged back from `full` on persist (see `apply`), so one keeps its place and reappears
+  // where it was when the module comes back or the role changes.
+  const enabled = useMemo(
     () =>
-      partitionByEnabled(full, (id) => {
-        const feature = FEATURE_BY_ROUTE.get(id);
-        return (!feature || enabledFeatures.has(feature)) && allows(PERMISSION_BY_ROUTE.get(id));
+      full.filter((p) => {
+        const feature = FEATURE_BY_ROUTE.get(p.id);
+        return (!feature || enabledFeatures.has(feature)) && allows(PERMISSION_BY_ROUTE.get(p.id));
       }),
     [full, enabledFeatures, allows],
   );
@@ -127,8 +126,8 @@ export function useNavOrder(): UseNavOrder {
   );
 
   // Persist an op's result only when it actually changed the enabled order (the pure ops
-  // return the same reference on a no-op), splicing each hidden tile back beside the neighbour
-  // it sat behind rather than at the end of its group (issue #628).
+  // return the same reference on a no-op). `mergeGated` splices each hidden tile back beside
+  // the visible neighbour it sat behind, so it keeps its place (issue #628).
   // Returns the tile's resulting placement so the caller can announce the move, or null on
   // a no-op. `next` is the enabled-only order, so the reported position/count count only the
   // visible tiles — exactly what a sighted user sees.

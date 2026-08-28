@@ -6,7 +6,6 @@ import {
   moveTile,
   normaliseOrder,
   nudgeTile,
-  partitionByEnabled,
   reconcileOrder,
   setTilePinned,
   tilesInGroup,
@@ -181,26 +180,11 @@ describe('dashboard-nav-order — setTilePinned', () => {
   });
 });
 
-describe('dashboard-nav-order — partitionByEnabled', () => {
-  it('splits into enabled and gated by id predicate, preserving order', () => {
-    const base = defaultOrder(DEFAULTS, GROUPS);
-    const { enabled, gated } = partitionByEnabled(base, (id) => id !== 'b' && id !== 'e');
-    expect(ids(enabled)).toEqual(['a', 'c', 'd', 'f']);
-    expect(ids(gated)).toEqual(['b', 'e']);
-  });
-});
-
 describe('dashboard-nav-order — mergeGated', () => {
-  /** The pipeline a nav edit really goes through: split off the hidden tiles, edit the visible
-   *  half, merge back. Fails if any of the three steps loses a hidden tile's position. */
-  const edit = (
-    order: NavOrder,
-    hidden: readonly string[],
-    op: (enabled: NavOrder) => NavOrder,
-  ): NavOrder => {
-    const { enabled } = partitionByEnabled(order, (id) => !hidden.includes(id));
-    return mergeGated(order, op(enabled), GROUPS);
-  };
+  /** The pipeline a nav edit really goes through: hide some tiles, edit the visible ones, merge
+   *  back. Fails if any of the three steps loses a hidden tile's position. */
+  const edit = (order: NavOrder, hidden: readonly string[], op: (enabled: NavOrder) => NavOrder): NavOrder =>
+    mergeGated(order, op(order.filter((p) => !hidden.includes(p.id))), GROUPS);
 
   /** Five tiles in one group — enough room for a move that is nowhere near the hidden tile. */
   const WIDE: readonly NavTileDefault[] = ['p1', 'p2', 'p3', 'p4', 'p5'].map((id) => ({
@@ -236,7 +220,7 @@ describe('dashboard-nav-order — mergeGated', () => {
     expect(groupIds(order, 'primary')).toEqual(['a', 'b', 'c']);
   });
 
-  it('follows a hidden tile out of a group when its anchor is the tile that moved', () => {
+  it('keeps a hidden tile in its group when the tile it sat behind leaves the group', () => {
     // 'b' sits behind 'a'; moving 'a' to manage leaves 'b' at the head of primary, not at
     // the end of it.
     const base = defaultOrder(DEFAULTS, GROUPS);
