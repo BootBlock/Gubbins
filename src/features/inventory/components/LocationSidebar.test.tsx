@@ -7,6 +7,8 @@ import { LocationSidebar } from './LocationSidebar';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { useLocationExpansionStore } from '../useLocationExpansionStore';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { LOCATION_SEARCH_AUTO_THRESHOLD } from '@/features/settings/settings';
 
 // Keep the test free of the Web Worker / QueryClient: the sidebar (and the
 // CreateLocationDialog it mounts on demand) only need these mutation hooks to exist.
@@ -84,6 +86,9 @@ vi.mock('@/features/export/download', () => ({ download: exportSpies.download })
 afterEach(() => {
   cleanup();
   useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+  // The search-box visibility preference is a persisted module singleton; hand it back to the
+  // shipped default so one test's pinning can't decide whether another's box is on screen.
+  usePreferencesStore.setState({ locationSearchVisibility: 'auto' });
 });
 beforeEach(() => {
   spies.update.mockClear();
@@ -443,6 +448,10 @@ describe('LocationSidebar — accessible APG tree', () => {
 });
 
 describe('LocationSidebar — name search (issue #129)', () => {
+  // The four-location fixture sits under the `auto` threshold, so pin the box on: these tests
+  // are about what the search *does*, not about when it is offered (issue #446 covers that).
+  beforeEach(() => usePreferencesStore.setState({ locationSearchVisibility: 'on' }));
+
   function search(text: string) {
     const box = screen.getByRole('textbox', { name: 'Search locations' });
     fireEvent.change(box, { target: { value: text } });
@@ -521,6 +530,99 @@ describe('LocationSidebar — name search (issue #129)', () => {
     // keyboard walks exactly the rows the filtered tree shows.
     fireEvent.keyDown(cabinet, { key: 'ArrowDown' });
     expect(document.activeElement).toBe(screen.getByRole('treeitem', { name: 'Drawer' }));
+  });
+});
+
+describe('LocationSidebar — hiding the search box (issue #446)', () => {
+  /** A flat list of `count` top-level locations, and the matching tree. */
+  function manyLocations(count: number): { tree: LocationTreeNode[]; flat: LocationWithCount[] } {
+    const nodes = Array.from({ length: count }, (_, i) => node(`loc-${i}`, `Location ${i}`));
+    return { tree: nodes, flat: nodes.map(({ children: _children, ...loc }) => loc) };
+  }
+
+  function renderRows(rows: { tree: LocationTreeNode[]; flat: LocationWithCount[] }) {
+    render(
+      <ToastProvider>
+        <LocationSidebar
+          tree={rows.tree}
+          flat={rows.flat}
+          selectedId={null}
+          onSelect={vi.fn()}
+          totalCount={7}
+        />
+      </ToastProvider>,
+    );
+  }
+
+  const box = () => screen.queryByRole('textbox', { name: 'Search locations' });
+
+  it('keeps the box out of a small tree on the shipped default', () => {
+    // `auto` is the default, and the fixture is four locations — quicker to read than to search.
+    expect(usePreferencesStore.getState().locationSearchVisibility).toBe('auto');
+    renderSidebar();
+    expect(box()).toBeNull();
+  });
+
+  it('brings the box back once the tree passes the auto threshold', () => {
+    renderRows(manyLocations(LOCATION_SEARCH_AUTO_THRESHOLD));
+    expect(box()).toBeNull();
+    cleanup();
+    renderRows(manyLocations(LOCATION_SEARCH_AUTO_THRESHOLD + 1));
+    expect(box()).toBeTruthy();
+  });
+
+  it('counts archived locations too, so "Show archived" never moves the box', () => {
+    const rows = manyLocations(LOCATION_SEARCH_AUTO_THRESHOLD + 1);
+    // Archive one on both sides of the fixture, exactly as the refetched query would carry it: the
+    // tree prunes on its own nodes, the count reads the flat list. That leaves the *visible* tree
+    // back at the threshold while the list itself is past it — and the box stays, because it
+    // tracks the locations you have, not the ones currently on screen.
+    rows.tree = rows.tree.map((n, i) => (i === 0 ? { ...n, archivedAt: 1 } : n));
+    rows.flat = rows.flat.map((loc, i) => (i === 0 ? { ...loc, archivedAt: 1 } : loc));
+    renderRows(rows);
+    expect(screen.queryByRole('treeitem', { name: 'Location 0' })).toBeNull();
+    expect(box()).toBeTruthy();
+  });
+
+  it('ignores the seeded system locations, which every install already has', () => {
+    // Ten of the user's own plus two system rows is twelve locations in the list — but only ten
+    // the user made, which is not "more than ten", so the box stays away.
+    const rows = manyLocations(LOCATION_SEARCH_AUTO_THRESHOLD);
+    const system = (id: string, name: string) => node(id, name, [], { isSystem: true });
+    rows.tree = [...rows.tree, system('unassigned', 'Unassigned'), system('transit', 'In transit')];
+    rows.flat = rows.tree.map(({ children: _children, ...loc }) => loc);
+    renderRows(rows);
+    expect(screen.getByRole('treeitem', { name: 'Unassigned' })).toBeTruthy();
+    expect(box()).toBeNull();
+  });
+
+  it('shows the box in a small tree when the user pins it On', () => {
+    usePreferencesStore.setState({ locationSearchVisibility: 'on' });
+    renderSidebar();
+    expect(box()).toBeTruthy();
+  });
+
+  it('hides the box in a large tree when the user pins it Off', () => {
+    usePreferencesStore.setState({ locationSearchVisibility: 'off' });
+    renderRows(manyLocations(LOCATION_SEARCH_AUTO_THRESHOLD + 1));
+    expect(box()).toBeNull();
+  });
+
+  it('hands the whole tree back when a box holding a query is turned off', () => {
+    usePreferencesStore.setState({ locationSearchVisibility: 'on' });
+    renderSidebar();
+    fireEvent.change(box()!, { target: { value: 'drawer' } });
+    expect(screen.queryByRole('treeitem', { name: 'Unassigned' })).toBeNull();
+
+    // Turning the box off must not strand the tree behind a filter with no control to clear it.
+    act(() => usePreferencesStore.setState({ locationSearchVisibility: 'off' }));
+    expect(box()).toBeNull();
+    expect(screen.getByRole('treeitem', { name: 'Unassigned' })).toBeTruthy();
+
+    // And the query itself is dropped, so the box comes back empty rather than pre-filtered.
+    act(() => usePreferencesStore.setState({ locationSearchVisibility: 'on' }));
+    expect((box() as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('treeitem', { name: 'Unassigned' })).toBeTruthy();
   });
 });
 

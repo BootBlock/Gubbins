@@ -132,6 +132,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
       'cardFields',
       'paginateLists',
       'defaultPageSize',
+      'locationSearchVisibility',
     ],
   },
   {

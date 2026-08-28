@@ -25,6 +25,11 @@ import {
   EXPIRY_WINDOW_BOUNDS,
   guessBaseCurrency,
   LOW_STOCK_GAUGE_BOUNDS,
+  LOCATION_SEARCH_AUTO_THRESHOLD,
+  LOCATION_SEARCH_VISIBILITY_OPTIONS,
+  DEFAULT_LOCATION_SEARCH_VISIBILITY,
+  normaliseLocationSearchVisibility,
+  showLocationSearch,
   LOW_STOCK_QTY_BOUNDS,
   normaliseCardClickAction,
   normaliseVisualCardMetric,
@@ -240,6 +245,34 @@ describe('normaliseVisualCardMetricFallback', () => {
   it('coerces an unknown/stale persisted value to the default', () => {
     expect(normaliseVisualCardMetricFallback('turnover')).toBe(DEFAULT_VISUAL_CARD_METRIC_FALLBACK);
     expect(normaliseVisualCardMetricFallback('')).toBe(DEFAULT_VISUAL_CARD_METRIC_FALLBACK);
+  });
+});
+
+describe('the Locations search box (issue #446)', () => {
+  it('passes every offered choice through unchanged', () => {
+    for (const value of LOCATION_SEARCH_VISIBILITY_OPTIONS) {
+      expect(normaliseLocationSearchVisibility(value)).toBe(value);
+    }
+  });
+
+  it('coerces an unknown/stale persisted value to the default', () => {
+    expect(DEFAULT_LOCATION_SEARCH_VISIBILITY).toBe('auto');
+    expect(normaliseLocationSearchVisibility('sometimes')).toBe('auto');
+    expect(normaliseLocationSearchVisibility(undefined)).toBe('auto');
+  });
+
+  it('pins the box on or off regardless of how many locations there are', () => {
+    expect(showLocationSearch('on', 0)).toBe(true);
+    expect(showLocationSearch('on', 500)).toBe(true);
+    expect(showLocationSearch('off', 0)).toBe(false);
+    expect(showLocationSearch('off', 500)).toBe(false);
+  });
+
+  it('shows the box under `auto` only past the threshold', () => {
+    expect(showLocationSearch('auto', LOCATION_SEARCH_AUTO_THRESHOLD - 1)).toBe(false);
+    // "More than 10", so exactly ten locations still reads faster than it searches.
+    expect(showLocationSearch('auto', LOCATION_SEARCH_AUTO_THRESHOLD)).toBe(false);
+    expect(showLocationSearch('auto', LOCATION_SEARCH_AUTO_THRESHOLD + 1)).toBe(true);
   });
 });
 

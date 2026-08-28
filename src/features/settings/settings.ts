@@ -335,6 +335,63 @@ export function clampPageSize(value: unknown): number {
 }
 
 /**
+ * Whether the Locations sidebar shows its "Search locations…" box (issue #446). A small tree is
+ * quicker to read than to search, and the box then only costs the sidebar a row of vertical
+ * space — so the shipped default sizes the box to the tree rather than pinning it on or off.
+ *
+ * - `auto` (the default) — show the box only once the tree is big enough to be worth searching,
+ *   i.e. more than {@link LOCATION_SEARCH_AUTO_THRESHOLD} locations.
+ * - `off` — never show it, whatever the count.
+ * - `on` — always show it, even for two locations.
+ */
+export type LocationSearchVisibility = 'auto' | 'off' | 'on';
+
+/** The default — size the search box to the location count. */
+export const DEFAULT_LOCATION_SEARCH_VISIBILITY: LocationSearchVisibility = 'auto';
+
+/**
+ * Choices for the Settings "Locations search box" control, in the order they are offered
+ * (default first). Values only — each option's label is read from the message catalog
+ * (`settings.locations.search.option.*`), so there is one copy of the English to drift from.
+ */
+export const LOCATION_SEARCH_VISIBILITY_OPTIONS = [
+  'auto',
+  'on',
+  'off',
+] as const satisfies readonly LocationSearchVisibility[];
+
+/**
+ * How many locations `auto` wants before it shows the search box. Below this a glance down the
+ * tree finds the location faster than typing does; above it, hand-expanding branches starts to
+ * cost more than the row of space the box takes.
+ *
+ * Counted over the locations the *user* made. The two seeded system rows (Unassigned, In Transit)
+ * are on every install, so counting them would show the box to someone with nine locations of
+ * their own and make the number the Settings copy quotes wrong.
+ */
+export const LOCATION_SEARCH_AUTO_THRESHOLD = 10;
+
+/**
+ * Coerce an arbitrary persisted value to a valid {@link LocationSearchVisibility} (default
+ * `auto`). Kept total so a stale localStorage value from an older/newer build can never leave
+ * the sidebar in a state that is neither shown nor hidden.
+ */
+export function normaliseLocationSearchVisibility(value: unknown): LocationSearchVisibility {
+  return normaliseOneOf(value, LOCATION_SEARCH_VISIBILITY_OPTIONS, DEFAULT_LOCATION_SEARCH_VISIBILITY);
+}
+
+/**
+ * Resolve {@link LocationSearchVisibility} against the live location count: the one place that
+ * decides whether the sidebar's search box is on screen. Pure, so the `auto` threshold is
+ * testable without mounting the tree.
+ */
+export function showLocationSearch(visibility: LocationSearchVisibility, locationCount: number): boolean {
+  if (visibility === 'on') return true;
+  if (visibility === 'off') return false;
+  return locationCount > LOCATION_SEARCH_AUTO_THRESHOLD;
+}
+
+/**
  * Calendar-month windows offered by the prune/downgrade controls (§7.6.3). Shared
  * by the Settings screen and the Storage Triage dialog so both stay in lock-step.
  */

@@ -24,6 +24,7 @@ import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useFeature } from '@/features/modules/useFeature';
 import { usePermission } from '@/features/users/usePermission';
 import { useT } from '@/features/i18n';
+import { showLocationSearch } from '@/features/settings/settings';
 import { useReportWriteFailure } from '@/features/errors';
 import { TabularExportMenu } from '@/features/export/TabularExportMenu';
 import { exportEveryPage } from '@/features/export/export-every-page';
@@ -132,6 +133,11 @@ export function LocationSidebar({
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const archivedCount = useMemo(() => flat.filter((l) => l.archivedAt).length, [flat]);
+  // How many locations the user has actually made — the seeded system rows (Unassigned, In
+  // Transit) are on every install and would otherwise put a nine-location inventory over the
+  // search box's threshold. Archived ones still count: they are locations the user made, and
+  // leaving them out would move the box whenever "Show archived" is ticked.
+  const ownedCount = useMemo(() => flat.filter((l) => !l.isSystem).length, [flat]);
   // Hide archived branches (and their subtrees) unless the user opts in; navigation,
   // counts and rendering all operate on the same filtered view for consistency.
   const visibleTree = useMemo(
@@ -187,9 +193,23 @@ export function LocationSidebar({
   // and "Show archived" above; matching itself lives in the pure `locationsMatchingQuery`.
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
-  const searching = search.trim().length > 0;
+  // Whether the box is on screen at all (issue #446). A small tree is quicker to read than to
+  // search, so `auto` — the shipped default — only earns the box its row of vertical space once
+  // the tree is big enough; `on`/`off` pin it.
+  const searchVisible = showLocationSearch(
+    usePreferencesStore((s) => s.locationSearchVisibility),
+    ownedCount,
+  );
+  const searching = searchVisible && search.trim().length > 0;
   // Escape clears the box before it means anything else, via the shared searchable-surface seam.
   useSearchEscapeToClear(searching, searchRef, () => setSearch(''));
+  // The box can leave while a query is in it — the setting is changed, or locations are deleted
+  // back under the `auto` threshold. `searching` already ignores the stale query so the tree is
+  // never narrowed by a filter with no visible control; this drops the text too, so bringing the
+  // box back gives an empty one rather than a query the user typed some time ago.
+  useEffect(() => {
+    if (!searchVisible && search !== '') setSearch('');
+  }, [search, searchVisible]);
   // The search also matches what a location records *about itself* (issue #617, `N2`): its
   // description comes free on the flat list, while its custom-field values need their own read —
   // deferred until the user actually types, so browsing the tree never pays for it.
@@ -522,30 +542,32 @@ export function LocationSidebar({
       </div>
 
       {/* Name search. `pr-9` reserves the clear button's lane so the two never overlap. */}
-      <div className="relative shrink-0 px-1">
-        <SearchIcon
-          aria-hidden
-          className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          ref={searchRef}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('inventory.locations.search.placeholder')}
-          aria-label={t('inventory.locations.search.label')}
-          className={cn('pl-9', searching && 'pr-9')}
-        />
-        {searching ? (
-          <InputClearButton
-            label={t('inventory.locations.search.clear')}
-            onClick={() => {
-              setSearch('');
-              searchRef.current?.focus();
-            }}
-            className="absolute right-2 top-1/2 -translate-y-1/2"
+      {searchVisible ? (
+        <div className="relative shrink-0 px-1">
+          <SearchIcon
+            aria-hidden
+            className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           />
-        ) : null}
-      </div>
+          <Input
+            ref={searchRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('inventory.locations.search.placeholder')}
+            aria-label={t('inventory.locations.search.label')}
+            className={cn('pl-9', searching && 'pr-9')}
+          />
+          {searching ? (
+            <InputClearButton
+              label={t('inventory.locations.search.clear')}
+              onClick={() => {
+                setSearch('');
+                searchRef.current?.focus();
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2"
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       {filterTags.length > 0 ? (
         <div className="flex shrink-0 flex-wrap gap-1 px-1" role="group" aria-label="Filter locations by tag">
