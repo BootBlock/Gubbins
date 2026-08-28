@@ -385,7 +385,21 @@ npm run dev        # Vite dev server (cross-origin isolated for OPFS)
 npm run build      # Type-check + production build
 npm run preview    # Serve the production build (real service worker + offline)
 npm run test       # Vitest
+npm run test:e2e   # Playwright browser smoke against an already-running server (~25 min)
 ```
+
+> **End-to-end smoke:** `npm run test:e2e` drives the real app in a browser — OPFS,
+> `SharedArrayBuffer`, the sqlite-wasm worker, the service worker and a genuine export/import
+> round-trip, all of which the unit suites mock away. It needs `npm run dev` **already running**
+> and takes around 25 minutes, so it is deliberately not part of `npm run test`. It must be the
+> **dev** server: some steps import app modules by their source path and one uses a test seam
+> only a DEV build exposes, so a run against `npm run preview` fails a dozen checks for that
+> reason alone. Run `npm run build` first if you want the service-worker steps too — that block
+> serves `dist/` from its own server and skips itself when there is no build. `SMOKE_BASE` points
+> at your server (default `http://localhost:5173/Gubbins/`), `SMOKE_BROWSER_CHANNEL` picks the
+> browser (`msedge` by default, `chromium` for Playwright's bundled build) and
+> `SMOKE_TIMEOUT_SCALE` widens every wait on a slow machine. CI runs it nightly and on demand as
+> the **End-to-end browser smoke** workflow.
 
 > **Git hooks:** `npm install` auto-wires a native pre-commit hook (`.githooks/`, via
 > `core.hooksPath`) that scans staged changes for secrets and runs Prettier + ESLint on

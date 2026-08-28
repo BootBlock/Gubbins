@@ -88,7 +88,12 @@ export function useProjectCount(filter: ProjectFilter = {}) {
 export function useProject(id: string | undefined) {
   return useQuery({
     queryKey: projectKeys.detail(id ?? ''),
-    queryFn: () => getProjectRepository().getById(id!),
+    // `getById` answers `undefined` for a project that isn't there, which TanStack Query
+    // refuses as query data — it logs "Query data cannot be undefined" and marks the query
+    // errored. Deleting the project you are looking at refetches this key before the screen
+    // drops the selection, so that is a reachable state, not a hypothetical. `null` says the
+    // same thing ("no such project") in a value the cache accepts.
+    queryFn: async () => (await getProjectRepository().getById(id!)) ?? null,
     enabled: Boolean(id),
   });
 }
