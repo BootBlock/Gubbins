@@ -42,7 +42,12 @@ export {
   type ItemStatusFilter,
 } from './item/status-filter';
 export type { SearchByAstParams } from './item/search';
-export type { LocationStockLine, ItemBatchPlacement, LocationBatchLine } from './item/stock';
+export type {
+  LocationStockLine,
+  ItemBatchPlacement,
+  LocationBatchLine,
+  LocationSerialisedLine,
+} from './item/stock';
 export type { KitComponent, AssembleOptions } from './item/kits';
 export type { ItemStatusCount } from './item/feeds';
 export { NO_SECTION_PRESENCE, type ItemSectionPresence } from './item/section-presence';

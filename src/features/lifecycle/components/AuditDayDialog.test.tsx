@@ -46,7 +46,7 @@ const COUNT_TESTID = `count-${WIDGET_BATCH.itemId}|${WIDGET_BATCH.batchKey}`;
 vi.mock('@/db/repositories', () => ({
   getItemRepository: () => ({
     listStockBatchesAtLocation: () => Promise.resolve([WIDGET_BATCH]),
-    list: () => Promise.resolve({ rows: [], hasMore: false, offset: 0, limit: 200 }),
+    listSerialisedAtLocation: () => Promise.resolve([]),
   }),
   getLocationRepository: () => ({
     getTree: () => Promise.resolve(TREE),

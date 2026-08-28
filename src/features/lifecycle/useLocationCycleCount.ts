@@ -14,7 +14,6 @@ import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   getItemRepository,
-  type Item,
   type ReconciliationAdjustment,
   type SerialisedReconciliation,
 } from '@/db/repositories';
@@ -34,34 +33,6 @@ import { useAuthoriseCount } from './hooks';
 function batchLineLabel(name: string, batchNumber: string | null, lotNumber: string | null): string {
   const tag = batchNumber ?? lotNumber;
   return tag ? `${name} · ${batchNumber ? 'Batch' : 'Lot'} ${tag}` : name;
-}
-
-/**
- * Page through **every** item at a location and keep the SERIALISED instances. The
- * previous single `list({ limit: 100 })` silently capped an audit at the first 100 items,
- * so a location holding more than 100 serialised units would be under-counted — a
- * correctness hole in an audit. Paging removes the cap: the loop stops only when the
- * repository reports no further pages, so the presence audit always covers the whole
- * location. (The DISCRETE `stock_batches` read is already unbounded.)
- */
-async function listSerialisedAtLocation(
-  repo: ReturnType<typeof getItemRepository>,
-  locationId: string,
-): Promise<Item[]> {
-  const PAGE = 200;
-  const serialised: Item[] = [];
-  let offset = 0;
-  for (;;) {
-    const page = await repo.list({ locationId, limit: PAGE, offset });
-    for (const item of page.rows) {
-      if (item.trackingMode === 'SERIALISED') serialised.push(item);
-    }
-    if (!page.hasMore) break;
-    // Advance by the page's own reported size so a repository that returns a different
-    // limit than requested still pages correctly.
-    offset += page.limit ?? PAGE;
-  }
-  return serialised;
 }
 
 /** The totals reported back when a location's count is authorised. */
@@ -115,14 +86,15 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
   // Load the items physically in this location (Phase 26 — per-location; Phase 28 — per-batch).
   // DISCRETE stock is read from the `stock_batches` ledger, so a drawer's lots are each
   // counted separately; SERIALISED instances (single-placement, qty 1) feed the presence
-  // audit and are paged through in full so an audit is never capped (see the helper above).
+  // audit and come back from one filtered query, uncapped, so an audit can never under-count
+  // (issue #561 — this used to walk the location's whole item set and filter in JS).
   const { data, isLoading } = useQuery({
     queryKey: inventoryKeys.locationCycleCount(location.id),
     queryFn: async () => {
       const repo = getItemRepository();
       const [discrete, serialisedItems] = await Promise.all([
         repo.listStockBatchesAtLocation(location.id),
-        listSerialisedAtLocation(repo, location.id),
+        repo.listSerialisedAtLocation(location.id),
       ]);
       return { discrete, serialised: serialisedItems };
     },
@@ -139,7 +111,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
         expected: b.quantity,
         batch: { batchNumber: b.batchNumber, lotNumber: b.lotNumber, expiryDate: b.expiryDate },
       })),
-      data.serialised.map((i) => ({ itemId: i.id, name: i.name, serialNo: i.serialNo })),
+      data.serialised,
     );
   }, [data, begin, location]);
 
