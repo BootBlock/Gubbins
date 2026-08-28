@@ -3,6 +3,7 @@ import { render, screen, cleanup, within } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { widgetById } from './widgets';
+import { WidgetSizeProvider, listRowCount } from './widget-size';
 
 /**
  * The Low Stock widget surfaces incoming ("on order") stock so a covered shortage reads as
@@ -167,5 +168,64 @@ describe('LowStockWidget — on-order affordance', () => {
     renderWidget();
     expect(screen.getByText('Stock levels healthy.')).toBeInTheDocument();
     expect(screen.queryByTestId('low-stock-on-order')).toBeNull();
+  });
+});
+
+/**
+ * A card resized on the board has to *show* more, not just take more room (issue #441) — the
+ * whole point of the feature. Low Stock stands in for every list widget here: they all read
+ * the same `useWidgetSize` seam through the same `useListLayout` helper, so the row budget is
+ * covered once and the pure maths is unit-tested in `widget-size.test.ts`.
+ */
+describe('LowStockWidget — content scales with the tile size', () => {
+  /** Twelve low items, enough to overflow every size the board offers. */
+  function twelveLowItems() {
+    spies.lowStock.mockReturnValue({
+      data: {
+        rows: Array.from({ length: 12 }, (_, i) => low({ id: `i-${i}`, name: `Item ${i}` })),
+      },
+      isPending: false,
+      isError: false,
+    });
+  }
+
+  function renderAt(w: number, h: number) {
+    return render(
+      <WidgetSizeProvider w={w} h={h}>
+        <LowStockWidget />
+      </WidgetSizeProvider>,
+    );
+  }
+
+  /** How many item rows the widget drew. */
+  function rowCount(): number {
+    return screen.getAllByText(/^Item \d+$/).length;
+  }
+
+  it('draws the same three rows it always did at the default 1x1 size', () => {
+    twelveLowItems();
+    renderAt(1, 1);
+    expect(rowCount()).toBe(3);
+  });
+
+  it('draws more rows in a taller card', () => {
+    twelveLowItems();
+    renderAt(1, 2);
+    expect(rowCount()).toBe(listRowCount({ w: 1, h: 2 }, 3));
+    expect(rowCount()).toBeGreaterThan(3);
+  });
+
+  it('lays a wider card out in two columns of rows', () => {
+    twelveLowItems();
+    renderAt(2, 1);
+    expect(rowCount()).toBe(6);
+    // The rows sit in a two-column grid rather than a single stack.
+    expect(screen.getByText('Item 0').closest('.grid-cols-2')).not.toBeNull();
+  });
+
+  it('keeps a one-line empty state in a single column however wide the card is', () => {
+    spies.lowStock.mockReturnValue({ data: { rows: [] }, isPending: false, isError: false });
+    renderAt(2, 2);
+    expect(screen.getByText(/Stock levels healthy/).closest('.grid-cols-2')).toBeNull();
   });
 });

@@ -203,9 +203,9 @@ describe('DashboardGrid — widget feature gating (Phase 4)', () => {
 
 describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
   const seeded = [
-    { id: 'alpha', x: 0, y: 0, visible: true },
-    { id: 'beta', x: 1, y: 0, visible: true },
-    { id: 'gamma', x: 2, y: 0, visible: true },
+    { id: 'alpha', x: 0, y: 0, w: 1, h: 1, visible: true },
+    { id: 'beta', x: 1, y: 0, w: 1, h: 1, visible: true },
+    { id: 'gamma', x: 2, y: 0, w: 1, h: 1, visible: true },
   ];
 
   it('never rewrites a gated widget’s stored coordinates when the board is edited', () => {
@@ -219,7 +219,14 @@ describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
     fireEvent.click(screen.getByTestId('widget-hide-gamma'));
 
     const persisted = useLayoutStore.getState().dashboardLayout;
-    expect(persisted.find((p) => p.id === 'beta')).toEqual({ id: 'beta', x: 1, y: 0, visible: true });
+    expect(persisted.find((p) => p.id === 'beta')).toEqual({
+      id: 'beta',
+      x: 1,
+      y: 0,
+      w: 1,
+      h: 1,
+      visible: true,
+    });
     expect(persisted.find((p) => p.id === 'gamma')).toMatchObject({ id: 'gamma', visible: false });
   });
 
@@ -239,6 +246,8 @@ describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
       id: 'beta',
       x: 1,
       y: 0,
+      w: 1,
+      h: 1,
       visible: true,
     });
   });
@@ -266,15 +275,22 @@ describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
     const persisted = useLayoutStore.getState().dashboardLayout;
     expect(persisted.find((p) => p.id === 'gamma')).toMatchObject({ x: 1, y: 0 });
     // Beta is displaced into the cell Gamma vacated rather than buried underneath it.
-    expect(persisted.find((p) => p.id === 'beta')).toEqual({ id: 'beta', x: 2, y: 0, visible: true });
+    expect(persisted.find((p) => p.id === 'beta')).toEqual({
+      id: 'beta',
+      x: 2,
+      y: 0,
+      w: 1,
+      h: 1,
+      visible: true,
+    });
     expect(new Set(visibleCells()).size).toBe(visibleCells().length);
   });
 
   it('never re-homes an added-back widget onto a gated widget’s cell', () => {
     useLayoutStore.setState({
       dashboardLayout: [
-        { id: 'beta', x: 0, y: 0, visible: true },
-        { id: 'alpha', x: 1, y: 0, visible: true },
+        { id: 'beta', x: 0, y: 0, w: 1, h: 1, visible: true },
+        { id: 'alpha', x: 1, y: 0, w: 1, h: 1, visible: true },
       ],
     });
     useModulesStore.getState().setFeatureIntent('projects', false);
@@ -289,6 +305,8 @@ describe('DashboardGrid — gated coords survive edits (Phase 4)', () => {
       id: 'alpha',
       x: 1,
       y: 0,
+      w: 1,
+      h: 1,
       visible: true,
     });
 
@@ -468,5 +486,116 @@ describe('DashboardGrid — read permissions', () => {
     expect(tileLink('gamma')).toBeNull();
     // The core-inventory link stays live: `items:read` covers /inventory.
     expect(tileLink('alpha')?.getAttribute('href')).toBe('/inventory');
+  });
+});
+
+// --- Resizable cards (issue #441) ----------------------------------------------------
+//
+// The default layout of the mocked registry is alpha(0,0) delta(1,0) beta(2,0) on the top
+// row, gamma(0,1) tau(1,1) sigma(2,1) on the next, and omega alone at (0,2) — so omega has
+// room to grow in every direction and alpha is boxed in on its right by delta.
+describe('DashboardGrid — resizable cards (issue #441)', () => {
+  /** The persisted placement for `id`, after the board has written a layout. */
+  function placement(id: string) {
+    return useLayoutStore.getState().dashboardLayout.find((p) => p.id === id);
+  }
+
+  it('offers the size picker only while the board is being customised', () => {
+    render(<DashboardGrid />);
+    expect(screen.queryByTestId('widget-size-omega-2x1')).toBeNull();
+
+    enterCustomise();
+    expect(screen.getByTestId('widget-size-omega-2x1')).toBeInTheDocument();
+  });
+
+  it('marks the size the card currently has as pressed', () => {
+    render(<DashboardGrid />);
+    enterCustomise();
+    expect(screen.getByTestId('widget-size-omega-1x1')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('widget-size-omega-2x2')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('resizes the card and persists the new span', () => {
+    render(<DashboardGrid />);
+    enterCustomise();
+    fireEvent.click(screen.getByTestId('widget-size-omega-2x2'));
+
+    expect(placement('omega')).toMatchObject({ id: 'omega', x: 0, y: 2, w: 2, h: 2 });
+  });
+
+  it('spans the grid cells it was given, and stops spanning when shrunk back', () => {
+    render(<DashboardGrid />);
+    enterCustomise();
+    fireEvent.click(screen.getByTestId('widget-size-omega-2x2'));
+    expect(screen.getByTestId('widget-omega').getAttribute('style')).toContain('--gw: 2');
+    expect(screen.getByTestId('widget-omega').getAttribute('style')).toContain('--gh: 2');
+
+    fireEvent.click(screen.getByTestId('widget-size-omega-1x1'));
+    expect(screen.getByTestId('widget-omega').getAttribute('style')).toContain('--gw: 1');
+    expect(placement('omega')).toMatchObject({ w: 1, h: 1 });
+  });
+
+  it('disables a size the card cannot take, rather than hiding it', () => {
+    render(<DashboardGrid />);
+    enterCustomise();
+    // Alpha sits at (0,0) with Delta immediately to its right, so it cannot widen.
+    expect(screen.getByTestId('widget-size-alpha-2x1')).toBeDisabled();
+    expect(screen.getByTestId('widget-size-alpha-1x1')).toBeEnabled();
+  });
+
+  it('leaves a refused resize unpersisted', () => {
+    useLayoutStore.setState({ dashboardLayout: [] });
+    render(<DashboardGrid />);
+    enterCustomise();
+    fireEvent.click(screen.getByTestId('widget-size-alpha-2x1'));
+
+    // Nothing was written at all: the pure op returned the same layout it was handed.
+    expect(useLayoutStore.getState().dashboardLayout).toEqual([]);
+  });
+
+  it('resizes from the keyboard with Shift and the arrow keys', () => {
+    render(<DashboardGrid />);
+    enterCustomise();
+    const tile = screen.getByTestId('widget-omega');
+
+    fireEvent.keyDown(tile, { key: 'ArrowRight', shiftKey: true });
+    expect(placement('omega')).toMatchObject({ w: 2, h: 1 });
+
+    fireEvent.keyDown(tile, { key: 'ArrowDown', shiftKey: true });
+    expect(placement('omega')).toMatchObject({ w: 2, h: 2 });
+
+    fireEvent.keyDown(tile, { key: 'ArrowLeft', shiftKey: true });
+    expect(placement('omega')).toMatchObject({ w: 1, h: 2 });
+  });
+
+  it('still moves the tile when the same arrow key is pressed without Shift', () => {
+    render(<DashboardGrid />);
+    enterCustomise();
+    fireEvent.keyDown(screen.getByTestId('widget-omega'), { key: 'ArrowRight' });
+
+    expect(placement('omega')).toMatchObject({ x: 1, y: 2, w: 1, h: 1 });
+  });
+
+  it('announces the new size for a screen reader', () => {
+    render(<DashboardGrid />);
+    enterCustomise();
+    fireEvent.click(screen.getByTestId('widget-size-omega-2x1'));
+
+    expect(screen.getByText(/resized to a 2 by 1 card/)).toBeInTheDocument();
+  });
+
+  it('keeps a resized card off every other card when the board is re-read', () => {
+    render(<DashboardGrid />);
+    enterCustomise();
+    fireEvent.click(screen.getByTestId('widget-size-omega-2x2'));
+
+    // Every cell claimed by a visible placement, counting each cell of a multi-cell card.
+    const cells = useLayoutStore
+      .getState()
+      .dashboardLayout.filter((p) => p.visible)
+      .flatMap((p) =>
+        Array.from({ length: p.w * p.h }, (_, i) => `${p.x + (i % p.w)},${p.y + Math.floor(i / p.w)}`),
+      );
+    expect(new Set(cells).size).toBe(cells.length);
   });
 });
