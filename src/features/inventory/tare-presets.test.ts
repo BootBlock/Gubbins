@@ -101,9 +101,16 @@ describe('tareFieldValue', () => {
     expect(tareFieldValue(1000, 'kg')).toBe('1');
   });
 
-  /** Without the rounding, 250 g → oz fills the box with floating-point noise. */
-  it('rounds to four decimals rather than leaking float noise', () => {
-    expect(tareFieldValue(250, 'oz')).toBe('8.8185');
+  /** Without the trim, 250 g → oz fills the box with floating-point noise. */
+  it('trims the float noise a conversion leaves behind', () => {
+    expect(tareFieldValue(250, 'oz')).toBe('8.81849');
+  });
+
+  it('keeps a small tare intact in a unit far coarser than a gram', () => {
+    // A flat four-decimal round is 0.635 g in stones: a 5 g tare rendered `0.0008`, which the
+    // save path read back as 5.08 g, and anything under 0.32 g rendered `0` and was erased.
+    expect(Number(tareFieldValue(5, 'st')) * 6350.29318).toBeCloseTo(5, 4);
+    expect(Number(tareFieldValue(0.1, 'st'))).toBeGreaterThan(0);
   });
 });
 
@@ -147,6 +154,17 @@ describe('gaugeTareWeightUnit', () => {
     expect(gaugeTareWeightUnit('sheets')).toBeNull();
     expect(gaugeTareWeightUnit('')).toBeNull();
     expect(gaugeTareWeightUnit(null)).toBeNull();
+  });
+
+  it('refuses a symbol that is more often written for something else', () => {
+    // `gr` is a grain but is written for a gram, and `ct` is a carat but is written for a
+    // count. A hand-labelled gauge is exactly where that happens, and a preset offered against
+    // one would be out by 15× or 5× — so these are refused rather than guessed at.
+    expect(gaugeTareWeightUnit('gr')).toBeNull();
+    expect(gaugeTareWeightUnit('CT')).toBeNull();
+    // The unambiguous specialist symbols still resolve.
+    expect(gaugeTareWeightUnit('ozt')).toBe('ozt');
+    expect(gaugeTareWeightUnit('st')).toBe('st');
   });
 });
 

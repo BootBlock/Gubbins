@@ -48,6 +48,7 @@
  * written here as plain facts about publicly-sold products.
  */
 import { includesAllTerms, splitSearchTerms } from '@/lib/text-terms';
+import { trimMeasureNoise } from '@/lib/measurement-format';
 import { WEIGHT_UNITS, fromGrams, type WeightUnit } from '@/lib/weight';
 
 /**
@@ -295,14 +296,28 @@ export function groupTarePresetsByKind(
 /**
  * Render a canonical gram weight as the *text* a weight field should hold, in `unit`.
  *
- * Rounding to 4 decimals keeps a converted value (e.g. 250 g → 8.8185 oz) from filling the box
- * with floating-point noise, while staying far finer than any scale's resolution. Shared by
- * every field a preset or a scale reading can fill, so all of them put the same text in the box
- * rather than each rounding slightly differently.
+ * Delegates to {@link trimMeasureNoise}, the same trim the item editor's own weight and dimension
+ * fields use, so every field a preset or a scale reading can fill puts the *same* text in the box
+ * rather than each rounding slightly differently. That shared rule is magnitude-aware for a
+ * reason: a flat four-decimal round is finer than any scale's resolution in grams, but it is
+ * 0.635 g in **stones**, which would quantise a small tare on its way into the field and erase
+ * one under 0.32 g outright.
  */
 export function tareFieldValue(grams: number, unit: WeightUnit): string {
-  return String(Math.round(fromGrams(grams, unit) * 10_000) / 10_000);
+  return trimMeasureNoise(fromGrams(grams, unit));
 }
+
+/**
+ * Weight symbols a gauge's **free-text** `unitOfMeasure` may not claim, because the same two
+ * letters are written far more often for something else: `gr` for a gram (a grain is 1/15th of
+ * one), and `ct` for a count. A gauge is labelled by hand, so a symbol that is *probably* not
+ * the mass unit it matches has to be refused — offering a gram preset against a gauge counted
+ * in `ct` would write a plausible-looking number that is out by a factor of five. The
+ * free-form paste importer refuses the same two words for the same reason.
+ *
+ * Typed as {@link WeightUnit}s so a symbol retired from the unit list cannot linger here.
+ */
+const AMBIGUOUS_GAUGE_UNITS = ['gr', 'ct'] as const satisfies readonly WeightUnit[];
 
 /**
  * The weight unit a gauge's tare is expressed in, or `null` when the gauge is not measured
@@ -314,10 +329,13 @@ export function tareFieldValue(grams: number, unit: WeightUnit): string {
  * number that means nothing — the picker is hidden entirely in that case rather than filling
  * the field with a plausible-looking wrong value.
  *
- * Matching is trimmed and case-insensitive so `G` / `Kg` resolve like `g` / `kg`.
+ * Matching is trimmed and case-insensitive so `G` / `Kg` resolve like `g` / `kg`, and it skips
+ * {@link AMBIGUOUS_GAUGE_UNITS} — reading one of those the wrong way is the very failure this
+ * function exists to prevent.
  */
 export function gaugeTareWeightUnit(unitOfMeasure: string | null | undefined): WeightUnit | null {
   const unit = (unitOfMeasure ?? '').trim().toLowerCase();
+  if ((AMBIGUOUS_GAUGE_UNITS as readonly string[]).includes(unit)) return null;
   return (WEIGHT_UNITS as readonly string[]).includes(unit) ? (unit as WeightUnit) : null;
 }
 

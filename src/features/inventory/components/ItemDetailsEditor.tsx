@@ -13,6 +13,8 @@ import {
 } from '@/components/foundry';
 import { CONVERTIBLE_TRACKING_MODES, type Item, type TrackingMode } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { dimensionUnitLabel } from '@/lib/dimensions';
+import { trimMeasureNoise } from '@/lib/measurement-format';
 import { fromGrams, toGrams, type WeightUnit } from '@/lib/weight';
 import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
 import { useT } from '@/features/i18n';
@@ -42,7 +44,7 @@ const isTrackingEditable = (mode: TrackingMode): boolean =>
  */
 function weightToInput(grams: number | null, unit: WeightUnit): string {
   if (grams == null) return '';
-  return String(Number(fromGrams(grams, unit).toFixed(6)));
+  return trimMeasureNoise(fromGrams(grams, unit));
 }
 
 /** Rich help for the "Unlimited supply" modifier (Phase 82). */
@@ -411,7 +413,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <FormField
-          label={`Width (${dimensionUnit})`}
+          label={`Width (${dimensionUnitLabel(dimensionUnit)})`}
           error={measureIssue(widthState.issue)}
           hint={
             'The item’s **width** for one unit, in your chosen dimension unit (change the unit in ' +
@@ -427,12 +429,12 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
             value={width}
             onChange={(e) => setWidth(e.target.value)}
             placeholder="—"
-            aria-label={`Width in ${dimensionUnit}`}
+            aria-label={`Width in ${dimensionUnitLabel(dimensionUnit)}`}
             data-testid="item-details-width"
           />
         </FormField>
         <FormField
-          label={`Height (${dimensionUnit})`}
+          label={`Height (${dimensionUnitLabel(dimensionUnit)})`}
           error={measureIssue(heightState.issue)}
           hint={
             'The item’s **height** for one unit, in your chosen dimension unit (change the unit in ' +
@@ -448,12 +450,12 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
             value={height}
             onChange={(e) => setHeight(e.target.value)}
             placeholder="—"
-            aria-label={`Height in ${dimensionUnit}`}
+            aria-label={`Height in ${dimensionUnitLabel(dimensionUnit)}`}
             data-testid="item-details-height"
           />
         </FormField>
         <FormField
-          label={`Depth (${dimensionUnit})`}
+          label={`Depth (${dimensionUnitLabel(dimensionUnit)})`}
           error={measureIssue(depthState.issue)}
           hint={
             'The item’s **depth** for one unit, in your chosen dimension unit (change the unit in ' +
@@ -469,7 +471,7 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
             value={depth}
             onChange={(e) => setDepth(e.target.value)}
             placeholder="—"
-            aria-label={`Depth in ${dimensionUnit}`}
+            aria-label={`Depth in ${dimensionUnitLabel(dimensionUnit)}`}
             data-testid="item-details-depth"
           />
         </FormField>

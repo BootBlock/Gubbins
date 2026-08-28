@@ -13,36 +13,73 @@
  * Kept free of any `./format` import so the reactive `Formatters` bundle can depend on
  * these conversions without a circular module reference.
  */
+import { measurementFormatOptions } from './measurement-format';
 import { normaliseOneOf } from './persisted-state';
 
-/** The weight units the user may read/enter weights in. Canonical storage is always grams. */
-export type WeightUnit = 'g' | 'kg' | 'oz' | 'lb';
+/**
+ * The weight units the user may read/enter weights in. Canonical storage is always grams.
+ *
+ * The set spans the ranges an inventory actually gets weighed in rather than every mass unit
+ * that exists: everyday metric and avoirdupois (`mg`/`g`/`kg`, `oz`/`lb`/`st`), plus the three
+ * specialist units whose users habitually read a *stock figure* in them and nothing else —
+ * troy ounces for bullion and coins, grains for reloading and jewellery, and metric carats for
+ * gemstones. Units far outside the range of a thing kept in a box (tonnes, hundredweight) are
+ * deliberately absent — see issue #416.
+ */
+export type WeightUnit = 'mg' | 'g' | 'kg' | 'oz' | 'lb' | 'st' | 'ozt' | 'gr' | 'ct';
 
 /** Every supported unit, for iteration/normalisation (SSOT). */
-export const WEIGHT_UNITS = ['g', 'kg', 'oz', 'lb'] as const satisfies readonly WeightUnit[];
+export const WEIGHT_UNITS = [
+  'mg',
+  'g',
+  'kg',
+  'oz',
+  'lb',
+  'st',
+  'ozt',
+  'gr',
+  'ct',
+] as const satisfies readonly WeightUnit[];
 
 /**
  * Grams per one of each unit — the single conversion table. `toGrams`/`fromGrams` are
  * defined purely in terms of these factors, so a value round-trips (`fromGrams(toGrams(v))`)
- * to within floating-point tolerance. The imperial factors are the exact international
- * definitions (1 oz = 28.349523125 g, 1 lb = 453.59237 g).
+ * to within floating-point tolerance. Every factor is an *exact* definition, not an
+ * approximation: the international avoirdupois pound is 453.59237 g by definition, from which
+ * 1 oz = 1/16 lb = 28.349523125 g, 1 st = 14 lb = 6350.29318 g and 1 gr = 1/7000 lb =
+ * 0.06479891 g all follow. The troy ounce is 480 gr = 31.1034768 g, and the metric carat is
+ * defined as exactly 0.2 g.
  */
 const GRAMS_PER_UNIT: Readonly<Record<WeightUnit, number>> = {
+  mg: 0.001,
   g: 1,
   kg: 1000,
   oz: 28.349523125,
   lb: 453.59237,
+  st: 6350.29318,
+  ozt: 31.1034768,
+  gr: 0.06479891,
+  ct: 0.2,
 };
 
 /** The default display/entry unit — grams, the canonical storage unit (stored == shown). */
 export const DEFAULT_WEIGHT_UNIT: WeightUnit = 'g';
 
-/** Choices for the Settings "Weight unit" control (default listed first). */
+/**
+ * Choices for the Settings "Weight unit" control — the default first, then the rest of the
+ * metric units and then the avoirdupois ones, each running light to heavy, and finally the
+ * specialist units in the order a reader is likeliest to want them.
+ */
 export const WEIGHT_UNIT_OPTIONS = [
   { value: 'g', label: 'Grams (g)' },
+  { value: 'mg', label: 'Milligrams (mg)' },
   { value: 'kg', label: 'Kilograms (kg)' },
   { value: 'oz', label: 'Ounces (oz)' },
   { value: 'lb', label: 'Pounds (lb)' },
+  { value: 'st', label: 'Stones (st)' },
+  { value: 'gr', label: 'Grains (gr)' },
+  { value: 'ozt', label: 'Troy ounces (ozt)' },
+  { value: 'ct', label: 'Carats (ct)' },
 ] as const satisfies readonly { value: WeightUnit; label: string }[];
 
 /**
@@ -66,13 +103,13 @@ export function fromGrams(grams: number, unit: WeightUnit): number {
 
 /**
  * Format a canonical gram weight for display in `unit`, e.g. `formatWeight(1250, 'kg')`
- * → `1.25 kg`. Locale-aware grouping/decimal via native `Intl`; up to three fraction
- * digits with trailing zeros trimmed (so `250 g`, not `250.000 g`). A non-finite weight
- * yields the same `—` placeholder the money/measure formatters use.
+ * → `1.25 kg`. Locale-aware grouping/decimal via native `Intl`;
+ * {@link measurementFormatOptions} decides the precision. A non-finite weight yields the
+ * same `—` placeholder the money/measure formatters use.
  */
 export function formatWeight(grams: number, unit: WeightUnit, locale = 'en-GB'): string {
   if (!Number.isFinite(grams)) return '—';
   const value = fromGrams(grams, unit);
-  const formatted = new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(value);
+  const formatted = new Intl.NumberFormat(locale, measurementFormatOptions(value)).format(value);
   return `${formatted} ${unit}`;
 }

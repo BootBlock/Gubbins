@@ -22,7 +22,7 @@
  *                    quantity and SKU from common shorthand ("Resistor 10k x50",
  *                    "50x M3 bolts", "Widget (qty: 12)", "Cap 100nF, sku: C-100"). A
  *                    labelled **weight** (`w:` / `weight:`) is read too — a bare number as
- *                    grams, or with a unit suffix (`2.5kg`, `16oz`, `1.1lb`). An **Amazon
+ *                    grams, or with a unit suffix (`2.5kg`, `16oz`, `1.1lb`, `11st`). An **Amazon
  *                    ASIN or listing URL** ({@link ./asin}), or another recognised
  *                    supplier's order code / listing URL ({@link ./supplier-codes} — LCSC,
  *                    DigiKey, RS Components, Farnell, Adafruit), is read as the SKU, and a
@@ -91,7 +91,7 @@ export interface FreeformItem {
   readonly unitCost?: number;
   /**
    * Labelled weight in canonical **grams** (`weight:` / `w:`), when present. A bare number is
-   * read as grams; a unit suffix (`kg` / `g` / `oz` / `lb`, or their long forms) converts to
+   * read as grams; a unit suffix (`kg` / `g` / `oz` / `lb` / `st`, or their long forms) converts to
    * grams, e.g. `w: 2.5kg` → 2500. Absent when the line labels no weight.
    */
   readonly weight?: number;
@@ -110,8 +110,17 @@ type LabelField = 'sku' | 'manufacturer' | 'location' | 'trackingMode' | 'quanti
  * Recognised weight-unit words for a free-form `weight:` / `w:` value, mapped to the canonical
  * {@link WeightUnit}. A bare number (no suffix) is read as grams — the canonical storage unit —
  * so `w:500` is 500 g and `w:2.5kg` is 2500 g.
+ *
+ * This is a *parsing* vocabulary, not the display-unit list `lib/weight.ts` holds: it is
+ * deliberately narrower wherever an abbreviation is ambiguous. `gr` is the symbol for a grain but
+ * is also written for a gram, and reading it wrong would misstate a weight by a factor of 15, so
+ * grains are spelled out here and the ambiguous form is left unrecognised (an unknown word yields
+ * `null` rather than a guess).
  */
 const WEIGHT_UNIT_WORDS: Readonly<Record<string, WeightUnit>> = {
+  mg: 'mg',
+  milligram: 'mg',
+  milligrams: 'mg',
   g: 'g',
   gram: 'g',
   grams: 'g',
@@ -128,13 +137,22 @@ const WEIGHT_UNIT_WORDS: Readonly<Record<string, WeightUnit>> = {
   lbs: 'lb',
   pound: 'lb',
   pounds: 'lb',
+  st: 'st',
+  stone: 'st',
+  stones: 'st',
+  ozt: 'ozt',
+  grain: 'gr',
+  grains: 'gr',
+  ct: 'ct',
+  carat: 'ct',
+  carats: 'ct',
 };
 
 /**
  * Parse a free-form weight value into canonical **grams**, or `null` when it is not a weight.
  * Accepts a leading number (locale-aware via `decimalSeparator`) with an optional unit suffix —
- * `500`, `2.5kg`, `16 oz`, `1.1 lb`, `750 grams`. A bare number is grams; an unrecognised unit
- * word yields `null` (so stray text is never stored as a weight). Trailing text after the
+ * `500`, `2.5kg`, `16 oz`, `1.1 lb`, `750 grams`, `11 st`. A bare number is grams; an unrecognised
+ * unit word yields `null` (so stray text is never stored as a weight). Trailing text after the
  * number+unit is ignored.
  */
 function parseWeightToGrams(value: string, decimalSeparator: string): number | null {
