@@ -77,12 +77,10 @@ describe('attention SQL predicates', () => {
       expect(await selected(variantParentSql('items.id'))).toEqual(['Parent']);
     });
 
-    it('negates exactly — the two polarities partition the table', async () => {
-      const parents = await selected(variantParentSql('items.id'));
-      const others = await selected(notAVariantParentSql('items.id'));
-
-      expect(others).toEqual(['Child', 'Standalone']);
-      expect([...parents, ...others].sort()).toEqual(await allNames());
+    it('negates to every other item — a child of its own is not itself a parent', async () => {
+      expect(await selected(notAVariantParentSql('items.id'))).toEqual(['Child', 'Standalone']);
+      // Pin the seed too, so the complement above cannot go vacuous if a row is ever dropped.
+      expect(await allNames()).toEqual(['Child', 'Parent', 'Standalone']);
     });
 
     it('correlates against whichever qualified column the caller passes', async () => {
