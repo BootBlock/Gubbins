@@ -1,24 +1,28 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Banner, Button, FormField, InfoHint, Input, Modal, Money, SelectField } from '@/components/foundry';
+import { Banner, Button, FormField, InfoHint, Input, Modal, Money } from '@/components/foundry';
 import { WarningIcon } from '@/components/icons';
-import type { CreatePurchaseOrderLineInput, PriceBreak, TrackingMode } from '@/db/repositories';
+import type { CreatePurchaseOrderLineInput, Item, PriceBreak } from '@/db/repositories';
 import { useT } from '@/features/i18n';
+import { ItemPicker } from '@/features/inventory/components/ItemPicker';
 import { TRACKING_MODE_LABELS } from '@/features/inventory/components/inventory-ui';
-import { effectiveUnitCostForQty } from '@/features/inventory/supplier-cost';
+import { useItem, useItemSupplierParts } from '@/features/inventory/queries';
+import { effectiveUnitCostForQty, preferredSupplierPart } from '@/features/inventory/supplier-cost';
 import { receiptLandingFor } from '@/features/projects/receipts';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useFormatters } from '@/lib/useFormatters';
 import { isCurrencyMismatch, normaliseCurrencyCode } from '@/lib/money';
 
 /**
- * A pickable item for a PO line, carrying the pricing needed to cost the line by quantity
- * (issue #37 — price breaks in the Order process). The dialog resolves the effective unit
- * cost for the ordered quantity: a manual item-level override wins outright; otherwise the
- * preferred supplier's flat cost refined by whichever price-break the quantity reaches.
+ * The pricing the dialog needs for the item a line is linked to (issue #37 — price breaks in the
+ * Order process). It resolves the effective unit cost for the ordered quantity: a manual
+ * item-level override wins outright; otherwise the preferred supplier's flat cost, refined by
+ * whichever price-break the quantity reaches.
+ *
+ * Read for the **chosen** item alone. It used to be assembled up-front for every pickable item,
+ * which was only ever affordable because the picker offered a fixed first page of the catalogue —
+ * now that it searches the whole of it (issue #484), the pricing follows the choice.
  */
-export interface LineItemOption {
-  readonly id: string;
-  readonly name: string;
+interface LinePricing {
   /** The manual item-level unit-cost override, or null — wins over supplier pricing. */
   readonly manualUnitCost: number | null;
   /** The preferred supplier part's flat unit cost (its qty-1 list price), or null. */
@@ -27,8 +31,18 @@ export interface LineItemOption {
   readonly priceBreaks: readonly PriceBreak[];
   /** The preferred supplier part's currency for the price display; null ⇒ the base currency. */
   readonly currency: string | null;
-  /** How the item is tracked — what decides whether receiving this line can move stock. */
-  readonly trackingMode: TrackingMode;
+}
+
+/**
+ * How a candidate item is named in the picker. An item whose tracking mode holds no counted
+ * quantity is named as such (issue #608). It stays linkable — recording the spend and the
+ * supplier against a serialised tool is an ordinary thing to want — but the label stops the
+ * picker implying a receipt against it will move stock, which it will not.
+ */
+function poItemLabel(item: Item): string {
+  return receiptLandingFor(item.trackingMode) === 'RECORD_ONLY'
+    ? item.name + ' · ' + TRACKING_MODE_LABELS[item.trackingMode] + ' — no stock movement'
+    : item.name;
 }
 
 /**
@@ -39,7 +53,6 @@ export interface LineItemOption {
  */
 export interface PurchaseOrderLineDialogProps {
   readonly open: boolean;
-  readonly items: readonly LineItemOption[];
   /**
    * The currency of the order this line joins; null ⇒ the base currency. A line stores a bare
    * number that is read as *this* currency, so it decides whether the supplier's quote can be
@@ -69,7 +82,6 @@ interface DisplayTier {
 
 export function PurchaseOrderLineDialog({
   open,
-  items,
   orderCurrency,
   isSaving,
   onSubmit,
@@ -104,7 +116,22 @@ export function PurchaseOrderLineDialog({
     wasOpenRef.current = open;
   }, [open]);
 
-  const chosen = useMemo(() => items.find((i) => i.id === itemId), [items, itemId]);
+  // The linked item and its supplier pricing, read only once a line is actually linked to one.
+  // Both reads are the same queries the picker itself makes of the chosen item, so they come from
+  // the cache rather than costing a second round-trip.
+  const chosenItem = useItem(itemId.length === 0 ? undefined : itemId);
+  const { data: supplierParts } = useItemSupplierParts(itemId.length === 0 ? undefined : itemId);
+  const chosen = useMemo<LinePricing | undefined>(() => {
+    const item = chosenItem.data;
+    if (!item) return undefined;
+    const preferred = preferredSupplierPart(supplierParts ?? []);
+    return {
+      manualUnitCost: item.unitCost,
+      supplierUnitCost: preferred?.unitCost ?? null,
+      priceBreaks: preferred?.priceBreaks ?? [],
+      currency: preferred?.currency ?? null,
+    };
+  }, [chosenItem.data, supplierParts]);
 
   // Whether the chosen item's supplier quotes in a different currency from this order. A line's
   // cost is stored as a bare number meaning the *order's* currency, so copying a €12.00 quote
@@ -172,8 +199,8 @@ export function PurchaseOrderLineDialog({
     return active;
   }, [tiers, effectiveQty]);
 
-  const handleItemChange = (id: string) => {
-    setItemId(id);
+  const handleItemChange = (id: string | null) => {
+    setItemId(id ?? '');
     // A different item has a different price — let its cost flow back into the field.
     setCostEdited(false);
   };
@@ -225,26 +252,14 @@ export function PurchaseOrderLineDialog({
       description="A part to order. Link a bulk-tracked inventory item so received stock lands automatically."
     >
       <form onSubmit={handleSubmit} className="space-y-3" data-testid="po-line-form">
-        <SelectField
+        <ItemPicker
           label="Item"
           hint="Link an inventory item, or leave unlinked and describe it below."
           value={itemId}
           onChange={handleItemChange}
+          labelFor={poItemLabel}
+          placeholder="Type to search — or leave blank for an unlinked line"
           data-testid="po-line-item"
-          options={[
-            { value: '', label: '— Unlinked —' },
-            // An item whose tracking mode holds no counted quantity is named as such in the list
-            // (issue #608). It stays linkable — recording the spend and the supplier against a
-            // serialised tool is an ordinary thing to want — but the label stops the picker
-            // implying a receipt against it will move stock, which it will not.
-            ...items.map((i) => ({
-              value: i.id,
-              label:
-                receiptLandingFor(i.trackingMode) === 'RECORD_ONLY'
-                  ? `${i.name} · ${TRACKING_MODE_LABELS[i.trackingMode]} — no stock movement`
-                  : i.name,
-            })),
-          ]}
         />
 
         <FormField label="Description" hint="Used when no item is linked (e.g. a not-yet-stocked part).">

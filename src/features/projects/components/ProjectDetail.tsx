@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   Button,
   Glyph,
@@ -23,7 +23,6 @@ import {
   ShoppingCartIcon,
 } from '@/components/icons';
 import { COSTING_MODES, type CostingMode } from '@/db/repositories';
-import { useInventoryItems } from '@/features/inventory/queries';
 import { useLocations } from '@/features/inventory/queries';
 import { useT } from '@/features/i18n';
 import { useProjectCheckouts } from '@/features/contacts/contacts';
@@ -67,9 +66,7 @@ export function ProjectDetail({
   const fmt = useFormatters();
   const t = useT();
 
-  const itemsQuery = useInventoryItems({}, 100);
   const locationsQuery = useLocations();
-  const items = useMemo(() => itemsQuery.data?.pages.flatMap((p) => p.rows) ?? [], [itemsQuery.data]);
   const locations = locationsQuery.data?.rows ?? [];
 
   const [addOpen, setAddOpen] = useState(false);
@@ -309,12 +306,7 @@ export function ProjectDetail({
         </section>
       </div>
 
-      <AddBomLineDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        projectId={projectId}
-        items={items}
-      />
+      <AddBomLineDialog open={addOpen} onClose={() => setAddOpen(false)} projectId={projectId} />
       <EditProjectDialog open={editOpen} onClose={() => setEditOpen(false)} project={project.data} />
       <ImportBomDialog open={importOpen} onClose={() => setImportOpen(false)} projectId={projectId} />
       <FinaliseAssemblyDialog

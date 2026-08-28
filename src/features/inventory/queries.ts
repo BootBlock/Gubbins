@@ -229,8 +229,8 @@ export const inventoryKeys = {
   /** The closest `limit` matches for a free-text query, plus the total that matched (issue #629).
    *  Its own `'relevance'` segment keeps it clear of both page families: it caches
    *  `{ rows, total }`, not `InfiniteData`, so the optimistic page patcher must never reach it. */
-  relevanceSearch: (search: string, limit: number) =>
-    [...inventoryKeys.search(), 'relevance', search, limit] as const,
+  relevanceSearch: (search: string, limit: number, includeInactive: boolean) =>
+    [...inventoryKeys.search(), 'relevance', search, limit, includeInactive] as const,
   // Phase 8 — Universal Alias Mapping (§4 external scraping).
   itemAliases: (itemId: string) => [...inventoryKeys.item(itemId), 'aliases'] as const,
   // Phase 60 — N suppliers per item (§4 supplier facet); under item() so an `items()`
@@ -615,11 +615,18 @@ export function useLocationSectionItems(filters: ItemQueryFilters, pageSize = DE
  * capped read as the whole set.
  *
  * `enabled` gates it off (default on) for an empty query or a session that may not read items.
+ * `includeInactive` widens the match set to decommissioned items — for a picker whose target may
+ * legitimately be one (the export scope), not for one that links live inventory together.
  */
-export function useItemRelevanceSearch(search: string, limit: number, enabled = true) {
+export function useItemRelevanceSearch(
+  search: string,
+  limit: number,
+  enabled = true,
+  includeInactive = false,
+) {
   return useQuery({
-    queryKey: inventoryKeys.relevanceSearch(search, limit),
-    queryFn: () => getItemRepository().searchByRelevance(search, { limit }),
+    queryKey: inventoryKeys.relevanceSearch(search, limit, includeInactive),
+    queryFn: () => getItemRepository().searchByRelevance(search, { limit, includeInactive }),
     enabled: enabled && search.trim().length > 0,
     // Hold the previous query's matches on screen while the next loads, so each keystroke
     // refines the list rather than blanking it to a spinner and back.

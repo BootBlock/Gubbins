@@ -11,7 +11,9 @@ import {
 } from '@/components/foundry';
 import { ExportIcon, ImportIcon, PackageIcon, ReportIcon, VaultIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
-import { getItemRepository, getLocationRepository, getProjectRepository } from '@/db/repositories';
+import { getLocationRepository } from '@/db/repositories';
+import { ItemPicker } from '@/features/inventory/components/ItemPicker';
+import { ProjectPicker } from '@/features/projects/components/ProjectPicker';
 import { buildItemLocationOptions } from '@/features/inventory/parent-options';
 import { useFormatters } from '@/lib/useFormatters';
 import { useT, type MessageKey } from '@/features/i18n';
@@ -128,15 +130,14 @@ const REPORT_KINDS: { value: ReportExportKind; label: string }[] = [
 ];
 
 /**
- * Query keys for the wizard's three scope pickers — the lists of items, projects and locations
- * the user chooses a target from. Named here rather than spelled inline at each `useQuery` so
- * the wizard's reads share one prefix a future invalidation can name (issue #379); they are
- * read-only pickers, so nothing invalidates them today.
+ * Query key for the wizard's location picker — the whole location tree the user chooses a target
+ * from. Named here rather than spelled inline at the `useQuery` so the wizard's reads share one
+ * prefix a future invalidation can name (issue #379); it is a read-only picker, so nothing
+ * invalidates it today. The item and project scopes are chosen through the shared search-driven
+ * pickers, which own their own reads.
  */
 const exportKeys = {
   all: ['export'] as const,
-  itemPicker: () => [...exportKeys.all, 'item-picker'] as const,
-  projectPicker: () => [...exportKeys.all, 'project-picker'] as const,
   locationPicker: () => [...exportKeys.all, 'location-picker'] as const,
 } as const;
 
@@ -194,16 +195,6 @@ export function ExportWizard({
   // The items export is the one format that also picks a *file* format (issue #132).
   const isItemsFile = format === 'CSV';
 
-  const itemList = useQuery({
-    queryKey: exportKeys.itemPicker(),
-    queryFn: () => getItemRepository().list({ limit: 100, includeInactive: true }),
-    enabled: open && scope === 'ITEM',
-  });
-  const projectList = useQuery({
-    queryKey: exportKeys.projectPicker(),
-    queryFn: () => getProjectRepository().list({ limit: 100 }),
-    enabled: open && scope === 'PROJECT',
-  });
   // Every location, not a page: this picker chooses *which* location to export, so a capped read
   // simply made the ones past the first page impossible to pick (issue #148).
   const locationList = useQuery({
@@ -337,29 +328,28 @@ export function ExportWizard({
               options={SCOPES.map((s) => ({ value: s.value, label: s.label }))}
             />
 
+            {/*
+             * Both target pickers *search* the catalogue rather than offering its first page:
+             * exporting a single item was otherwise limited to the alphabetically first hundred
+             * of them, with nothing on screen to say so (issue #484). A removed item stays
+             * offered here — exporting one is a legitimate reason to name it.
+             */}
             {scope === 'ITEM' ? (
-              <Select
-                value={scopeTargetId ?? ''}
-                onChange={(value) => setScopeTargetId(value || null)}
+              <ItemPicker
+                value={scopeTargetId}
+                onChange={(id) => setScopeTargetId(id)}
+                includeInactive
                 data-testid="export-target-item"
                 aria-label="Item to export"
-                options={[
-                  { value: '', label: 'Choose an item…' },
-                  ...(itemList.data?.rows ?? []).map((it) => ({ value: it.id, label: it.name })),
-                ]}
               />
             ) : null}
 
             {scope === 'PROJECT' ? (
-              <Select
-                value={scopeTargetId ?? ''}
-                onChange={(value) => setScopeTargetId(value || null)}
+              <ProjectPicker
+                value={scopeTargetId}
+                onChange={(id) => setScopeTargetId(id)}
                 data-testid="export-target-project"
                 aria-label="Project to export"
-                options={[
-                  { value: '', label: 'Choose a project…' },
-                  ...(projectList.data?.rows ?? []).map((p) => ({ value: p.id, label: p.name })),
-                ]}
               />
             ) : null}
 
