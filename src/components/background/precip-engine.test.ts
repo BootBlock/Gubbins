@@ -7,7 +7,13 @@
  * is under test, so the grain-vs-crystal path is exercised deterministically rather than by chance.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { startPrecip, snowSideStickChance, snowUnderCatchChance } from './precip-engine';
+import {
+  startPrecip,
+  snowSideStickChance,
+  snowUnderCatchChance,
+  snowMoundCapacity,
+  snowSettleChance,
+} from './precip-engine';
 import { blizzard } from './flow-field';
 import { NO_SURFACE, type HoverFollow, type SurfaceTracker } from './surface-map';
 
@@ -772,5 +778,106 @@ describe('snow stick-chance seams (issue #455 follow-up)', () => {
     for (let i = 0; i < 300; i++) pump((now += 50)); // 15s
     expect(orec.drawImages.length).toBeGreaterThan(0); // the fringe rendered and composited
     ctrl.stop();
+  });
+});
+
+describe('snow drift saturation (issue #437)', () => {
+  it('caps each column at its own capacity, undulating rather than level', () => {
+    const span = Array.from({ length: 300 }, (_, c) => snowMoundCapacity(c));
+    const low = Math.min(...span);
+    const high = Math.max(...span);
+    expect(low).toBeGreaterThan(0); // every column can hold some snow
+    // The whole point: a wide control does not share one flat ceiling across its width.
+    expect(high - low).toBeGreaterThan(high * 0.25);
+    // …but it is a drift shape, not per-column noise — the profile changes gradually.
+    for (let c = 1; c < span.length; c++) {
+      expect(Math.abs(span[c]! - span[c - 1]!)).toBeLessThan((high - low) / 4);
+    }
+    // Deterministic, so a map rebuild never reshuffles the crest under settled snow.
+    expect(snowMoundCapacity(137)).toBe(span[137]);
+  });
+
+  it('sheds onto lower ground once a drift fills: certain when shallow, impossible when full', () => {
+    const cap = 6;
+    expect(snowSettleChance(0, cap)).toBe(1); // bare surface always takes
+    expect(snowSettleChance(cap * 0.5, cap)).toBe(1); // still building
+    expect(snowSettleChance(cap, cap)).toBe(0); // full — the flake falls on past
+    expect(snowSettleChance(cap * 2, cap)).toBe(0); // and stays past, however over-full
+    expect(snowSettleChance(1, 0)).toBe(0); // no capacity, nothing settles
+    let prev = 1;
+    for (let d = 0; d <= cap; d += cap / 40) {
+      const p = snowSettleChance(d, cap);
+      expect(p).toBeLessThanOrEqual(prev + 1e-9); // monotonically shedding
+      expect(p).toBeGreaterThanOrEqual(0);
+      prev = p;
+    }
+  });
+
+  it('settles a drift whose crest rolls instead of levelling into a hard line', () => {
+    // Deterministic field: a seeded PRNG stands in for Math.random so flakes spread across the
+    // width (a pinned constant would stack them all in one column) and the run is reproducible.
+    let seed = 0x9e3779b9;
+    vi.spyOn(Math, 'random').mockImplementation(() => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    });
+    // Capture the crest the mound layer actually paints. The test DOM gives a canvas no real 2D
+    // context, so the offscreen mound cache gets a recording one — identified by its full-viewport
+    // backing store, which no sprite canvas comes close to. `traceCrest` passes every column's
+    // crest point as a quadratic control point, so the control-point ys *are* the drift profile.
+    const crestYs: number[] = [];
+    const moundCtx = new Proxy(
+      {
+        createLinearGradient: () => ({ addColorStop: () => {} }),
+        quadraticCurveTo: (_cx: number, cy: number) => {
+          crestYs.push(cy);
+        },
+      } as Record<string, unknown>,
+      {
+        get: (t, k) => (k in t ? t[k as string] : () => {}),
+        set: (t, k, v) => {
+          t[k as string] = v;
+          return true;
+        },
+      },
+    );
+    const proto = Object.getPrototypeOf(document.createElement('canvas')) as HTMLCanvasElement;
+    const realGetContext = proto.getContext;
+    vi.spyOn(proto, 'getContext').mockImplementation(function (this: HTMLCanvasElement, ...args: unknown[]) {
+      if (args[0] === '2d' && this.width >= 1000 && this.height >= 600) {
+        return moundCtx as unknown as CanvasRenderingContext2D;
+      }
+      return (realGetContext as (...a: unknown[]) => unknown).apply(this, args);
+    } as typeof proto.getContext);
+
+    const TOP = 400; // the flat control top every column of this map reports
+    const surfaces = makeSurfaces(TOP);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(makeCtx()),
+      surfaces: surfaces.factory,
+      weather: 'squall',
+    });
+    // Squall weather thickens the fall, and the pump runs long past saturation: with one shared
+    // cap every column ends on the same y and the painted crest collapses to a flat line (that
+    // is what this run produces if the capacity/shed pair is removed).
+    for (let i = 1; i <= 24000; i++) pump(i * 50);
+    ctrl.stop();
+
+    // A settled crest sits *on* the control top; the only other curve the layer paints is a
+    // wind-plaster strip hanging down the face, whose control point is below it — so the drift's
+    // top edge is exactly the captured points at or above the control top.
+    const crest = crestYs.filter((y) => y <= TOP);
+    expect(crest.length).toBeGreaterThan(50);
+    // Only the final render's profile matters — earlier ones are the drift still growing.
+    const settled = crest.slice(-200);
+    const high = Math.min(...settled);
+    const low = Math.max(...settled);
+    expect(TOP - high).toBeGreaterThan(2); // a real drift built up
+    expect(low - high).toBeGreaterThan(1.5); // …and its top rolls rather than shelving flat
   });
 });

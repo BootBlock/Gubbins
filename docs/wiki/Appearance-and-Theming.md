@@ -57,7 +57,9 @@ Gubbins has some gentle visual polish that you can dial up or down:
   snow or rain). While an effect is running, cards and item rows turn more translucent so the
   drift shows faintly through them, then return to their standard look when you switch it off. The
   weather also touches the interface itself: falling **snow** settles on buttons, cards and other
-  controls, slowly building little drifts along their tops — and a flake blown against a
+  controls, slowly building little drifts along their tops. A drift only piles so high before it
+  is full, and it fills unevenly, so its top rolls gently along the control instead of levelling
+  off flat; once it's full the flakes it turns away carry on falling. A flake blown against a
   control's side, or drifting out beneath its bottom edge, now and then sticks there too,
   plastering the windward face or clinging under the lip (wet, clumpy snow sticks the most;
   scroll or move things around and it's all knocked off, ready to build again) — while **rain**

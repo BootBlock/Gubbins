@@ -99,7 +99,10 @@
  *    as depth builds ({@link SETTLE.snow.alpha}), the surface map follows rounded corners' arcs
  *    (see {@link import('./surface-map').buildSurfaceMap}), and deposits taper off steep faces
  *    per snow's angle of repose ({@link SETTLE.snow.slopeMax}) — so drifts hug a card's corner
- *    instead of shelving flatly across it.
+ *    instead of shelving flatly across it. A drift also **fills up** (issue #437): each column
+ *    has its own gently undulating capacity ({@link snowMoundCapacity}) and stops taking snow as
+ *    it approaches it ({@link snowSettleChance}), so a long control gathers a rolling crest and
+ *    the flakes it turns away fall on past instead of levelling the top into a hard white line.
  *  - **Rain splashes.** A near drop hitting a control top is consumed by a brief **splash** — an
  *    expanding ripple with a crown of kicked-up droplets — playing pre-rendered animation frames.
  *    Splashes are low and wide: the surface is seen nearly edge-on (a strongly foreshortened
@@ -133,6 +136,7 @@ import {
   deadAir,
   lightningFlash,
   smooth01,
+  hash01,
 } from './flow-field';
 import { COLUMN_WIDTH, NO_SURFACE, type SurfaceSnapshot, type SurfaceTracker } from './surface-map';
 
@@ -583,6 +587,26 @@ const SETTLE = {
     kernel: [1, 0.6, 0.25] as const,
     /** Mound height cap (css px): build-up visibly grows over time, then holds. */
     maxDepth: 9,
+    /**
+     * Fraction of {@link maxDepth} a column may actually hold, low → high (issue #437). A real
+     * drift's crest is never level, and a uniform cap is exactly what produced the hard white
+     * line this replaces: every column across a wide card saturated at the same y. The capacity
+     * instead undulates along the surface ({@link snowMoundCapacity}), so the crest that a
+     * saturated drift converges on is a rolling one.
+     */
+    capacity: [0.5, 1] as const,
+    /**
+     * Wavelength (in columns) of the capacity's slow undulation; a second octave at a third of
+     * it detunes the result so the crest doesn't read as a regular wave. Long enough that the
+     * variation reads as drift shape rather than as noise on the edge.
+     */
+    capacityWavelength: 26,
+    /**
+     * Fill fraction at which a drift starts shedding: below it every landing takes, above it the
+     * chance eases to zero at capacity ({@link snowSettleChance}). A turned-away flake is *not*
+     * consumed — it keeps falling, so it can still settle on something lower down.
+     */
+    shedFrom: 0.55,
     /** Depth below which a column isn't worth drawing (css px). */
     minVisibleDepth: 0.4,
     /** Min seconds between mound-layer re-renders (per frame the layer is one cached blit). */
@@ -824,6 +848,41 @@ export function snowSideStickChance(lean: number, warm: number): number {
   const s = SETTLE.snow.side;
   const press = smooth01(lean / s.stickFullLean);
   return clamp((s.stickBase + (1 - s.stickBase) * press) * (1 + s.warmStick * warm), 0, 1);
+}
+
+/** Smooth 1-D value noise over a column index: hashed cell values, smoothstepped between. */
+function columnNoise(col: number, wavelength: number, seed: number): number {
+  const u = col / wavelength;
+  const cell = Math.floor(u);
+  return lerp(hash01(cell, seed), hash01(cell + 1, seed), smooth01(u - cell));
+}
+
+/**
+ * How deep settled snow may pile in one column (css px) before the drift is full (issue #437).
+ * Two octaves of value noise over the column index give a slow, irregular undulation between
+ * {@link SETTLE.snow.capacity} × the cap, which is what keeps a saturated drift's crest a rolling
+ * line rather than the flat one a shared cap produced. A pure function of the column, so it costs
+ * nothing to store, never shimmers between frames, and survives a surface-map rebuild unchanged.
+ * Exported for unit tests.
+ */
+export function snowMoundCapacity(col: number): number {
+  const t = SETTLE.snow;
+  const n =
+    0.65 * columnNoise(col, t.capacityWavelength, 0) + 0.35 * columnNoise(col, t.capacityWavelength / 3, 7);
+  return t.maxDepth * lerp(t.capacity[0], t.capacity[1], clamp(n, 0, 1));
+}
+
+/**
+ * Chance a flake landing on a column actually settles there, given the snow already on it and
+ * that column's {@link snowMoundCapacity}. Certain while the drift is shallow, then easing to
+ * zero as it fills — snow blows off a full crest rather than stacking on it. Pure and exported
+ * for unit tests.
+ */
+export function snowSettleChance(depth: number, capacity: number): number {
+  if (capacity <= 0) return 0;
+  const from = SETTLE.snow.shedFrom;
+  const fill = clamp(depth / capacity, 0, 1);
+  return fill <= from ? 1 : 1 - smooth01((fill - from) / (1 - from));
 }
 
 /**
@@ -1805,9 +1864,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    * neighbouring columns, but only while they stay on the same drift surface (per-distance
    * {@link SNOW_JOIN_STEP} allowance, so a corner arc's descent is included and the gap between
    * two controls never is), and each column takes its own {@link holdAt} share — a sloped
-   * shoulder receives a tapered spread even when the flake struck the flat top beside it. Once a
-   * mound has saturated at the depth cap, further landings change nothing and must not keep
-   * re-dirtying the render cache.
+   * shoulder receives a tapered spread even when the flake struck the flat top beside it. Each
+   * column stops at its own {@link snowMoundCapacity}; once a mound has saturated there, further
+   * landings change nothing and must not keep re-dirtying the render cache.
    *
    * Returns whether the surface held the snow at all — false on a too-steep face, so the caller
    * lets the flake slide off and keep falling instead of consuming it.
@@ -1823,8 +1882,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       if (Math.abs(topAt(c) - top) > SNOW_JOIN_STEP * Math.max(1, Math.abs(o))) continue;
       const hold = holdAt(c);
       if (hold <= 0) continue;
+      const cap = snowMoundCapacity(c);
       const d = depthAt(c) + t.deposit * hold * (t.kernel[Math.abs(o)] ?? 0);
-      const capped = d > t.maxDepth ? t.maxDepth : d;
+      const capped = d > cap ? cap : d;
       if (capped !== depthAt(c)) {
         depths[c] = capped;
         changed = true;
@@ -1850,6 +1910,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const line = kind === 'snow' ? top - depthAt(c) : top;
     if (prevY >= line || p.y < line) return;
     if (kind === 'snow') {
+      // A drift near its capacity sheds (issue #437) — the flake blows off the full crest and
+      // carries on down, so the mound rolls to a stop instead of levelling into a hard line.
+      if (Math.random() >= snowSettleChance(depthAt(c), snowMoundCapacity(c))) return;
       // A too-steep face (a corner's flank) doesn't hold snow — the flake slides off and falls on.
       if (!depositSnow(c, top)) return;
     } else {
