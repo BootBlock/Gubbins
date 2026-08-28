@@ -6,7 +6,7 @@
  * "Overdue Items" tracker (§3) and the checkout UI share one tested implementation
  * with no clock hidden inside them (callers pass `now`).
  */
-import { addCalendarDays } from '@/lib/calendar-days';
+import { addCalendarDays, startOfLocalDay } from '@/lib/calendar-days';
 import { nowMs } from '@/lib/clock';
 
 export const MS_PER_DAY = 86_400_000;
@@ -40,16 +40,19 @@ export function daysUntil(dueDate: number, now: number = nowMs()): number {
  * Classify a checkout's urgency. `dueDate` of `null` is `NONE`. Past due is
  * `OVERDUE`; within `dueSoonDays` (default 2) is `DUE_SOON`; otherwise `UPCOMING`.
  *
- * The "due soon" window steps `dueSoonDays` whole calendar days on from `now`
- * ({@link addCalendarDays}) rather than a fixed span, so the boundary does not slip an hour
- * across a DST change (issue #325) — mirroring `expiryStatus`.
+ * The "due soon" window steps `dueSoonDays` whole calendar days on from the *start* of the local
+ * day ({@link addCalendarDays}) rather than a fixed span from this instant, so the boundary neither
+ * slips an hour across a DST change (issue #325) nor moves as the day goes on (issue #498) —
+ * mirroring `expiryStatus`. A due date is stored at local end-of-day (issue #318), so the window
+ * takes in every loan due on or before the boundary day: the test is against the *start* of the day
+ * after it, which no end-of-day instant on the boundary day itself can reach.
  *
  * @internal Exported for unit tests only.
  */
 export function dueStatus(dueDate: number | null, now: number = nowMs(), dueSoonDays = 2): DueStatus {
   if (dueDate === null) return 'NONE';
   if (dueDate < now) return 'OVERDUE';
-  if (dueDate <= addCalendarDays(now, dueSoonDays)) return 'DUE_SOON';
+  if (dueDate < addCalendarDays(startOfLocalDay(now), dueSoonDays + 1)) return 'DUE_SOON';
   return 'UPCOMING';
 }
 

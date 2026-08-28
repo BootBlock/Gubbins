@@ -21,7 +21,8 @@ import {
   LOW_STOCK_QTY_THRESHOLD,
   WARRANTY_SOON_WINDOW_DAYS,
 } from '../constants';
-import { addCalendarDays } from '@/lib/calendar-days';
+import { localDayWindowCutoff } from '@/lib/calendar-days';
+import { toDateInputValue } from '@/lib/date-input';
 import type { LowStockThresholds } from '../types';
 import { onLoanCheckoutExistsSql, overdueCheckoutExistsSql } from '../CheckoutRepository';
 import { maintenanceDueExistsSql } from '../MaintenanceRepository';
@@ -142,11 +143,16 @@ function predicateFor(status: ItemStatusFilter, ctx: StatusFilterContext): [sql:
       return [`(${onOrderQtyForItemSql('items.id')} > 0)`, []];
     case 'expiring': {
       const windowDays = ctx.expirySoonWindowDays ?? EXPIRY_SOON_WINDOW_DAYS;
-      return [expiringPredicateSql(), [addCalendarDays(ctx.now, windowDays)]];
+      // The boundary is `windowDays` whole calendar days on from the viewer's *today*, in the
+      // midnight-UTC frame `expiry_date` is stored in — the same call `expiryStatus` classifies
+      // with, so the chip's match count is stable across the day rather than widening by one day
+      // each evening west of UTC (issue #498).
+      return [expiringPredicateSql(), [localDayWindowCutoff(ctx.now, windowDays)]];
     }
     case 'warranty': {
-      // `warranty_expires_at` is a TEXT YYYY-MM-DD date, so bind an ISO date-string cutoff.
-      const cutoff = new Date(addCalendarDays(ctx.now, WARRANTY_SOON_WINDOW_DAYS)).toISOString().slice(0, 10);
+      // `warranty_expires_at` is a TEXT YYYY-MM-DD date, so bind an ISO date-string cutoff — the
+      // same calendar-day boundary as the expiring chip above, read back as the day it names.
+      const cutoff = toDateInputValue(localDayWindowCutoff(ctx.now, WARRANTY_SOON_WINDOW_DAYS));
       return [warrantyExpiringPredicateSql(), [cutoff]];
     }
     case 'on-loan':

@@ -11,8 +11,8 @@
  */
 import { LOW_STOCK_GAUGE_PERCENT, LOW_STOCK_QTY_THRESHOLD } from '../constants';
 import type { HistoryAction } from '../constants';
-import { addCalendarDays } from '@/lib/calendar-days';
-import { todayDateInputValue } from '@/lib/date-input';
+import { localDayWindowCutoff } from '@/lib/calendar-days';
+import { toDateInputValue, todayDateInputValue } from '@/lib/date-input';
 import type { SqlValue } from '../../rpc/driver';
 import { rowToActivityFeedEntry, rowToFieldDueDate, rowToItem } from '../mappers';
 import type {
@@ -189,8 +189,9 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
     }
 
     /**
-     * Active perishable items expiring on or before `before` (a UNIX-ms cutoff,
-     * typically `now + N days`), soonest first — the §3 "Soon to Expire" widget feed.
+     * Active perishable items expiring on or before `before` (a UNIX-ms cutoff in the midnight-UTC
+     * frame `expiry_date` is stored in — see {@link listExpiringWithin}, which derives one from a
+     * day window), soonest first — the §3 "Soon to Expire" widget feed.
      * Already-expired items are included (their expiry is in the past, ≤ cutoff).
      *
      * "Expiring" means the item's *effective* expiry — the earlier of its own `expiry_date` and
@@ -223,13 +224,21 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       return this.toPage(rows.map(rowToItem), limit, offset);
     }
 
-    /** Convenience: perishables expiring within `withinDays` of `now` (inclusive). */
+    /**
+     * Convenience: perishables expiring within `withinDays` **calendar days** of `now` (inclusive).
+     *
+     * The cutoff is the boundary day's midnight-UTC stamp ({@link localDayWindowCutoff}), the frame
+     * `expiry_date` is stored in — so it is a pure function of the viewer's calendar day and this
+     * feed returns the same set all day, rather than widening by a day over the evening (issue
+     * #498). It is the same call `expiryStatus` classifies with, so the pre-filter and the badge
+     * cannot disagree.
+     */
     async listExpiringWithin(
       withinDays: number,
       now: number,
       params: DatedFeedParams = {},
     ): Promise<Page<Item>> {
-      return this.listExpiring(addCalendarDays(now, withinDays), params);
+      return this.listExpiring(localDayWindowCutoff(now, withinDays), params);
     }
 
     /**
@@ -298,15 +307,21 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       params: DatedFeedParams = {},
     ): Promise<Page<Item>> {
       const { limit, offset } = this.resolvePage(params);
-      // ISO date string for now + window. `warranty_expires_at` is stored as TEXT
-      // 'YYYY-MM-DD' so ISO-ordered string comparison gives correct date ordering.
-      // We include items already past expiry (warranty_expires_at <= today) as well
-      // as those expiring within the window (warranty_expires_at <= cutoff date).
-      const cutoff = new Date(addCalendarDays(now, withinDays)).toISOString().slice(0, 10);
-      // Optional lower bound, converted into the same TEXT-date frame as the cutoff. See
+      // ISO date string for the last calendar day the window covers. `warranty_expires_at` is
+      // stored as TEXT 'YYYY-MM-DD' so ISO-ordered string comparison gives correct date ordering.
+      // We include items already past expiry (warranty_expires_at <= today) as well as those
+      // expiring within the window (warranty_expires_at <= cutoff date).
+      //
+      // The day comes from {@link localDayWindowCutoff} — `withinDays` whole calendar days on from
+      // the viewer's *today*, not from this instant. Stepping off the raw instant kept its time of
+      // day, and `toISOString` then read the UTC day of a local wall-clock value, so the cutoff
+      // moved a day as the working day went on (issue #498).
+      const cutoff = toDateInputValue(localDayWindowCutoff(now, withinDays));
+      // Optional lower bound, converted into the same TEXT-date frame as the cutoff — its own local
+      // calendar day, so both ends of the window are days and neither drifts with the clock. See
       // {@link listExpiring} for why an unbounded past is wrong for a century-wide window, and
       // why this is a bound rather than an appended clause.
-      const since = params.since === undefined ? null : new Date(params.since).toISOString().slice(0, 10);
+      const since = params.since === undefined ? null : todayDateInputValue(params.since);
       const rows = await this.driver.query<ItemRowNoThumbnail>(
         // The warranty predicate is shared with the inventory list's status filter — see
         // `attention-sql.ts` — so the alert-centre feed and the filter can never diverge.
