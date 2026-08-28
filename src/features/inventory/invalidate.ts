@@ -48,14 +48,17 @@ function invalidateProjectsForStock(client: QueryClient): void {
 export function invalidateItems(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
   void client.invalidateQueries({ queryKey: inventoryKeys.itemAttention() });
-  // Sibling of `items()`, not a child, so the prefix above misses it — the same shape as the
-  // due-date feed named below. It moves on an expiry-date edit *and* on a stock write that
-  // receives or empties a dated lot, since the feed reads the effective expiry (issue #684).
+  // Siblings of `items()`, not children, so the prefix above misses all three — the same shape
+  // as the due-date feed named below.
+  //
+  // *Expiring* moves on an expiry-date edit *and* on a stock write that receives or empties a
+  // dated lot, since the feed reads the effective expiry (issue #684). *Low stock* moves on any
+  // quantity or gauge write, and on a reorder-point edit. *Warranty expiring* moves on a
+  // warranty-date edit. All three read `is_active = 1`, so deactivating or deleting a row drops
+  // it out of every one of them. Low stock and warranty had no sweep at all until issue #623, so
+  // the alert badge in the always-mounted nav — and the Dashboard Low-stock widget — went on
+  // counting an item the user had already restocked, edited or deleted.
   void client.invalidateQueries({ queryKey: inventoryKeys.expiring() });
-  // The other two attention feeds are siblings of `items()` in exactly the same way, and were
-  // swept by nothing at all: a stock write left the Low Stock widget and the alert centre's
-  // low-stock and warranty lanes showing pre-write rows until the screen was remounted, while
-  // the reports prefix below refreshed the *counts* printed over them (issue #606).
   void client.invalidateQueries({ queryKey: inventoryKeys.lowStock() });
   void client.invalidateQueries({ queryKey: inventoryKeys.warrantyExpiring() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
@@ -89,16 +92,28 @@ export function invalidateFieldDueDates(client: QueryClient): void {
  * The narrow counterpart to {@link invalidateItems} for a write that changed **only an item's
  * stock level** — the quantity stepper, a gauge adjust (issue #166).
  *
- * Identical to `invalidateItems` except that it leaves the `itemAttention()` prefix alone. That
- * prefix holds the status counts a stock write cannot move — *on order*, *warranty*, *on loan*,
- * *overdue*, *maintenance due* — which are decided by fields and tables a stock write never
- * touches (see `STOCK_DEPENDENT_STATUSES`). They are also the expensive half: each carries a
- * correlated per-row subquery, so recomputing them per stepper tap was most of the cost of a tap.
+ * Identical to `invalidateItems` except for three omissions: the `itemAttention()` prefix, the
+ * warranty-expiring feed, and the custom-field due-date feed. That prefix holds the status counts
+ * a stock write cannot move — *on order*, *warranty*, *on loan*, *overdue*, *maintenance due* —
+ * which are decided by fields and tables a stock write never touches (see
+ * `STOCK_DEPENDENT_STATUSES`). They are also the expensive half: each carries a correlated
+ * per-row subquery, so recomputing them per stepper tap was most of the cost of a tap.
  *
  * *Expiring* is **not** among them: a stock write that receives a dated lot, or draws the last
  * unit out of one, moves that count through the item's effective expiry (issue #684). Its status
  * count therefore lives under `items()` and is swept by the first line below, and the "Soon to
  * Expire" feed — a sibling key — is swept by name.
+ *
+ * The "Low Stock" feed is swept by name for the same reason, and a stronger one: a quantity or
+ * gauge write is *precisely* what puts an item into that feed or clears it out of one. Left
+ * uninvalidated, restocking an item below its reorder point updated the card and the Reports
+ * figure while the alert badge in the always-mounted nav — and the Dashboard Low-stock widget —
+ * kept counting it for as long as the user stayed on the screen (issue #623).
+ *
+ * The warranty and custom-field due-date feeds are deliberately **not** here: one reads
+ * `warranty_expires_at`, the other a custom field's value, and a stock-only write moves neither.
+ * {@link invalidateItems} sweeps both, which is what a date edit, a deactivation or a delete goes
+ * through.
  *
  * **Use this only where that claim genuinely holds.** `invalidateItems` is the safe default and
  * the right choice for anything that touches a row's other fields, its active flag, or the
@@ -112,8 +127,6 @@ export function invalidateFieldDueDates(client: QueryClient): void {
 export function invalidateItemStock(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: inventoryKeys.items() });
   void client.invalidateQueries({ queryKey: inventoryKeys.expiring() });
-  // Low stock *is* stock-dependent — a stepper tap can cross a reorder point — so its feed is
-  // swept here too. The warranty feed is not: no stock write can move a warranty date.
   void client.invalidateQueries({ queryKey: inventoryKeys.lowStock() });
   void client.invalidateQueries({ queryKey: reportKeys.all });
   void client.invalidateQueries({ queryKey: agendaKeys.all });

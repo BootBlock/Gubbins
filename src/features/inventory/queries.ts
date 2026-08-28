@@ -293,12 +293,19 @@ export const inventoryKeys = {
   /** How many items expire inside that window — the total behind the feed's bounded page
    *  (issue #606). Nested under {@link inventoryKeys.expiring} so one sweep refreshes both. */
   expiringWithinCount: (withinDays: number) => [...inventoryKeys.expiring(), 'count', withinDays] as const,
-  /** Active items running low — the §3 "Low Stock Alerts" dashboard widget (Phase 45). */
+  /** Active items running low — the §3 "Low Stock Alerts" dashboard widget (Phase 45) and the
+   *  alert centre's low-stock lane. A **sibling** of {@link inventoryKeys.items}, so no item
+   *  write reaches it by prefix: both {@link invalidateItems} and {@link invalidateItemStock}
+   *  sweep it by name, the latter because a quantity or gauge write is exactly what puts an item
+   *  into this feed or clears it out of one (issue #623). */
   lowStock: () => [...inventoryKeys.all, 'low-stock'] as const,
   /** Low-stock items for one set of thresholds; `null` means the repository defaults. Keyed on
    *  them so a caller that overrides the defaults gets its own cache entry. */
   lowStockFor: (thresholds: LowStockThresholds | null) => [...inventoryKeys.lowStock(), thresholds] as const,
-  /** Items whose warranty is expiring — the §3 alerts feed. */
+  /** Items whose warranty is expiring — the §3 alerts feed. A **sibling** of
+   *  {@link inventoryKeys.items}, like the expiry and due-date feeds, so {@link invalidateItems}
+   *  sweeps it by name (issue #623). {@link invalidateItemStock} deliberately does not: the feed
+   *  reads `warranty_expires_at`, which a stock-only write cannot move. */
   warrantyExpiring: () => [...inventoryKeys.all, 'warranty-expiring'] as const,
   /** How many items have a warranty expiring — the total behind the feed's page (issue #606). */
   warrantyExpiringCount: () => [...inventoryKeys.warrantyExpiring(), 'count'] as const,

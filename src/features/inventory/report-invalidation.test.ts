@@ -45,13 +45,13 @@ describe('invalidateItems', () => {
     // be named — and it is asserted here exactly once, since sweeping the agenda prefix already
     // covers that lane's agenda twin.
     // The "Soon to Expire" feed is a sibling too, and had to be named once it started reading a
-    // lot's expiry date as well as the item's own (issue #684).
+    // lot's expiry date as well as the item's own (issue #684). The "Low Stock" and warranty
+    // feeds are siblings on the same footing and had never been named at all, so the alert badge
+    // in the always-mounted nav went on counting items already restocked, edited away or deleted
+    // (issue #623).
     // The `projects` prefix joined for the same reason as the reports one: a project's shopping
     // list now reads stock, because a reservation only reduces what a line has to buy to the
     // extent stock backs it (issue #653).
-    // The low-stock and warranty feeds are siblings too, and had to be named for a plainer
-    // reason: nothing swept them at all, so both showed pre-write rows under counts that had
-    // already refreshed (issue #606).
     expect(invalidated).toEqual([
       [...inventoryKeys.items()],
       [...inventoryKeys.itemAttention()],
