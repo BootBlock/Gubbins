@@ -7,8 +7,9 @@
  * partitions rows into creates (no matching item found), updates (a match found
  * by the chosen key), and errors (invalid rows — never thrown, always collected).
  *
- * The CSV codec is re-used from the shared {@link parseCsv} in `@/features/import/tabular`
- * (same RFC-4180-safe parser, no new dependency). The apply helper runs the plan
+ * The CSV codec is re-used from the shared {@link readDelimited} in `@/features/import/tabular`
+ * (same RFC-4180-safe parser, no new dependency), so an unclosed quote is reported here rather
+ * than quietly shortening the plan. The apply helper runs the plan
  * through the existing {@link ItemRepository} `create`/`update` public methods —
  * no new SQL, no new columns.
  *

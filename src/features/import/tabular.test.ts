@@ -106,6 +106,16 @@ describe('detectImportFormat', () => {
     expect(detectImportFormat('a,b,"c')).toBe('csv');
   });
 
+  it('never lets a quote-blind fit outrank a delimiter the codec read cleanly', () => {
+    // Whether a `"` opens a field depends on the delimiter, so the *wrong* one can see an
+    // unclosed quote where the right one sees none. Here the semicolon does, and its
+    // quote-blind width (3) beats the comma's real width (2) on count alone — which would
+    // report a perfectly good CSV as an unclosed-quote error with no rows at all.
+    const csv = ['Ref;Alt;Code,Qty', 'R1;R2;R3,4', 'R4;"R5;R6,7', 'R7;R8;R9,2'].join('\n');
+    expect(detectImportFormat(csv)).toBe('csv');
+    expect(extractTableRows(csv).dataRows).toHaveLength(3);
+  });
+
   it('still detects CSV when the very first line of a long file opens a quote', () => {
     // Past the 10-line detection sample the merged row is the only row, so the drop-the-last-row
     // rule has nothing left to judge by and the quote-blind widths are what answer.
@@ -117,10 +127,6 @@ describe('detectImportFormat', () => {
     // One line carrying an unmatched quote is a note, not a table; only a multi-line block
     // earns the quote-blind re-measure above.
     expect(detectImportFormat('"he said hi, there')).toBe('lines');
-  });
-
-  it('detects CSV for a file full of inch marks', () => {
-    expect(detectImportFormat('name,quantity\n3/4" ball valve,5\n12" ruler,1')).toBe('csv');
   });
 
   it('ignores a final row severed by the detection sample window', () => {

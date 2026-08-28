@@ -194,6 +194,16 @@ function nonEmptyLines(text: string): string[] {
   return text.split(/\r\n|\r|\n/).filter((line) => line.trim().length > 0);
 }
 
+/** How well one delimiter fits a sample, and whether quoting had to be ignored to say so. */
+interface DelimiterFit {
+  /** The sampled rows all yielded the same number (> 1) of columns. */
+  readonly consistent: boolean;
+  /** That column count. */
+  readonly columns: number;
+  /** The count came from the quote-blind re-measure, so it is a last resort, not a verdict. */
+  readonly quoteBlind: boolean;
+}
+
 /** Column widths read by a plain split, ignoring quoting entirely. */
 function naiveWidths(sample: string, delimiter: string): number[] {
   return nonEmptyLines(sample).map((line) => line.split(delimiter).length);
@@ -214,14 +224,11 @@ function naiveWidths(sample: string, delimiter: string): number[] {
  * cell, so the codec is describing the merge rather than the file; the quote-blind widths still
  * show the delimiter, and saying the text is delimited is what lets {@link extractTableRows}
  * report the unclosed quote instead of falling through to a line list and offering each merged
- * line as an item (issue #591). Second place only: a properly quoted cell holding a delimiter
- * unbalances the quote-blind count, so this must never pre-empt the codec's own verdict.
+ * line as an item (issue #591). Such an answer is marked `quoteBlind`, because a properly quoted
+ * cell holding a delimiter inflates its count — {@link detectDelimited} must not let it outrank
+ * a delimiter the codec read cleanly.
  */
-function delimiterConsistency(
-  sample: string,
-  delimiter: string,
-  truncated: boolean,
-): { consistent: boolean; columns: number } {
+function delimiterConsistency(sample: string, delimiter: string, truncated: boolean): DelimiterFit {
   const read = readDelimited(sample, delimiter);
   const parsed = read.rows.filter((row) => row.some((c) => c.trim().length > 0));
   // A sample cut off mid-file may have severed the final row (or left a quoted cell unclosed,
@@ -230,7 +237,7 @@ function delimiterConsistency(
   const rows = truncated && parsed.length > 1 ? parsed.slice(0, -1) : parsed;
   const columns = rows.length > 0 ? rows[0]!.length : 0;
   if (columns > 1 && rows.every((row) => row.length === columns)) {
-    return { consistent: true, columns };
+    return { consistent: true, columns, quoteBlind: false };
   }
 
   // The codec made no sense of the sample. An unclosed quote explains why, and the quote-blind
@@ -240,17 +247,23 @@ function delimiterConsistency(
     const widths = naiveWidths(sample, delimiter);
     const naive = widths.length >= 2 ? widths[0]! : 0;
     if (naive > 1 && widths.every((w) => w === naive)) {
-      return { consistent: true, columns: naive };
+      return { consistent: true, columns: naive, quoteBlind: true };
     }
   }
 
-  return { consistent: false, columns };
+  return { consistent: false, columns, quoteBlind: false };
 }
 
 /**
  * Choose the best delimiter-based format for a block, or `null` when none is cleanly
  * tabular. The delimiter yielding the most consistent columns wins; ties fall to the
  * strongest paste signal (tab, then semicolon, then comma).
+ *
+ * A delimiter the codec read cleanly always beats one that only fits with quoting ignored,
+ * however many columns the latter counts. Whether a `"` opens a field at all depends on the
+ * delimiter, so a *wrong* delimiter can see an unclosed quote where the right one sees none —
+ * and its quote-blind count, inflated by the delimiters sitting inside quoted cells, would
+ * otherwise win and turn a perfectly good file into an unclosed-quote error (issue #591).
  */
 function detectDelimited(text: string): ImportFormat | null {
   // Sample whole lines (not the filtered set) so a quoted cell spanning a line break is still
@@ -266,14 +279,22 @@ function detectDelimited(text: string): ImportFormat | null {
   ];
   let best: ImportFormat | null = null;
   let bestColumns = 1;
+  let blindBest: ImportFormat | null = null;
+  let blindColumns = 1;
   for (const [format, delimiter] of candidates) {
-    const { consistent, columns } = delimiterConsistency(sample, delimiter, truncated);
-    if (consistent && columns > bestColumns) {
+    const fit = delimiterConsistency(sample, delimiter, truncated);
+    if (!fit.consistent) continue;
+    if (fit.quoteBlind) {
+      if (fit.columns > blindColumns) {
+        blindBest = format;
+        blindColumns = fit.columns;
+      }
+    } else if (fit.columns > bestColumns) {
       best = format;
-      bestColumns = columns;
+      bestColumns = fit.columns;
     }
   }
-  return best;
+  return best ?? blindBest;
 }
 
 /** Does the text parse as a JSON array/object we can turn into rows? */
