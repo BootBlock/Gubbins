@@ -30,6 +30,8 @@ import { useDashboardCustomise } from './useDashboardCustomise';
 import { useReorderFlip } from './useReorderFlip';
 import { useBoardPointerDrag, type DragSourceProps, type DropTargetProps } from './useBoardPointerDrag';
 import { BoardMoveButtons, type MoveDir } from './BoardMoveButtons';
+import { BoardSizeButtons, sizeKey } from './BoardSizeButtons';
+import { WidgetSizeProvider } from './widget-size';
 import { useSettingsDialog } from '@/features/settings/useSettingsDialog';
 import { featureForRoute } from '@/features/modules/feature-registry';
 import { ROUTE_PERMISSIONS, type AppRoutePath } from '@/components/nav/nav-destinations';
@@ -44,7 +46,9 @@ import {
   occupantAt,
   placedWidgets,
   reconcileLayout,
+  resizeWidget,
   setWidgetVisible,
+  WIDGET_SIZE_OPTIONS,
   type DashboardLayout,
   type NudgeDirection,
   type WidgetPlacement,
@@ -65,12 +69,23 @@ const ARROW_DIRECTIONS: Record<string, NudgeDirection> = {
   ArrowRight: 'right',
 };
 
-/** CSS-variable grid placement: 1-based lines, only applied at `sm` and up. */
-function cellStyle(x: number, y: number): CSSProperties {
-  return { ['--gx']: String(x + 1), ['--gy']: String(y + 1) } as CSSProperties;
+/**
+ * CSS-variable grid placement: 1-based start lines plus a cell span, only applied at `sm`
+ * and up. Below that the board is a single column and both spans are ignored, so a card
+ * sized on a desktop never stretches a phone's board (issue #441).
+ */
+function cellStyle(x: number, y: number, w = 1, h = 1): CSSProperties {
+  return {
+    ['--gx']: String(x + 1),
+    ['--gy']: String(y + 1),
+    ['--gw']: String(w),
+    ['--gh']: String(h),
+  } as CSSProperties;
 }
 
-const PLACEMENT = 'sm:[grid-column:var(--gx)] sm:[grid-row:var(--gy)]';
+const PLACEMENT =
+  'sm:[grid-column-start:var(--gx)] sm:[grid-column-end:span_var(--gw)] ' +
+  'sm:[grid-row-start:var(--gy)] sm:[grid-row-end:span_var(--gh)]';
 
 /** Drop-target key for grid cell `(x, y)`. */
 function cellKey(x: number, y: number): string {
@@ -202,6 +217,23 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
     );
   };
 
+  // Resizing runs through the same announce-on-change path as a move, so a screen-reader
+  // user is told the new span rather than only seeing the tile grow. A refused resize (it
+  // would overlap a neighbour, or run off the board) returns the same layout and says nothing
+  // — the button that offered it is disabled for the same reason.
+  const applyResize = (id: string, w: number, h: number) => {
+    const next = resizeWidget(fullLayout, id, w, h);
+    if (next === fullLayout) return;
+    apply(next);
+    const def = widgetById(id);
+    if (!def) return;
+    setAnnouncement(
+      t('dashboard.grid.resizeAnnounce', {
+        vars: { title: t(def.titleKey), width: w, height: h },
+      }),
+    );
+  };
+
   // Pointer drag-to-move (mouse / pen / touch, replacing the touch-blind HTML5 drag). Dropping a
   // widget onto a cell key moves it there (swapping any occupant); the arrow keys and the on-tile
   // move buttons are the touch-free equivalents. Enabled only while customising.
@@ -216,13 +248,18 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
   // The cell under the pointer during a drag, decoded from the active drop key — drives the ghost.
   const overCell = parseCellKey(drag.overKey);
 
-  // Where the dragged widget would land: the hovered cell, unless it's the tile's own
-  // current cell (a no-op move — no point flagging it). An occupied target swaps, so the
-  // ghost still correctly marks "your widget goes here".
-  const dragging = drag.draggingId ? layout.find((p) => p.id === drag.draggingId) : undefined;
+  // Where the dragged widget would land, taken from the move op itself rather than guessed
+  // at: a hover that would be a no-op (its own cell) or that the collision rule refuses (a
+  // differently-sized neighbour in the way) returns the same layout, and then there is no
+  // ghost — so the board only ever promises a drop it will actually make. The ghost carries
+  // the dragged card's own span, so a 2×2 card shows the whole footprint it will take.
+  const dropPreview =
+    editing && drag.draggingId && overCell
+      ? moveWidget(fullLayout, drag.draggingId, overCell.x, overCell.y)
+      : null;
   const ghost =
-    editing && dragging && overCell && !(dragging.x === overCell.x && dragging.y === overCell.y)
-      ? overCell
+    dropPreview && dropPreview !== fullLayout
+      ? (dropPreview.find((p) => p.id === drag.draggingId) ?? null)
       : null;
 
   // The widget (if any) sitting under the drop ghost. Its solid edit-mode ring is
@@ -230,18 +267,29 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
   // not a solid outline doubled up with a dashed inner line.
   const ghostTargetId = ghost ? (occupantAt(layout, ghost.x, ghost.y)?.id ?? null) : null;
 
+  // Arrow keys move the focused tile; Shift with them resizes it — grow towards the arrow,
+  // shrink away from it. That keeps one gesture family for "arrange this card" and gives the
+  // size picker a keyboard equivalent that needs no pointer at all.
   const handleKeyDown = (id: string) => (e: KeyboardEvent) => {
     const dir = ARROW_DIRECTIONS[e.key];
     if (!dir) return;
     e.preventDefault();
-    applyMove(id, nudgeWidget(fullLayout, id, dir));
+    if (!e.shiftKey) {
+      applyMove(id, nudgeWidget(fullLayout, id, dir));
+      return;
+    }
+    const p = fullLayout.find((q) => q.id === id);
+    if (!p) return;
+    const w = p.w + (dir === 'right' ? 1 : dir === 'left' ? -1 : 0);
+    const h = p.h + (dir === 'down' ? 1 : dir === 'up' ? -1 : 0);
+    applyResize(id, w, h);
   };
 
   // Empty drop cells fill the gaps (edit mode only) so a tile can be dragged onto a
   // free coordinate, plus one spare trailing row for "move down" room.
   const dropCells: { x: number; y: number }[] = [];
   if (editing) {
-    const maxRow = placed.reduce((m, p) => Math.max(m, p.y), 0);
+    const maxRow = placed.reduce((m, p) => Math.max(m, p.y + p.h - 1), 0);
     for (let y = 0; y <= maxRow + 1; y++) {
       for (let x = 0; x < DASHBOARD_COLUMNS; x++) {
         // Occupancy is read from the whole board: a cell held by a gated widget is not free,
@@ -277,7 +325,15 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:auto-rows-min sm:grid-cols-3">
+      {/* Rows take a minimum height rather than sizing purely to their content, so a card
+          spanning two of them is reliably about twice the card — and still grow to fit
+          anything that overflows, so nothing is ever clipped (issue #441). */}
+      <div
+        className={cn(
+          'grid grid-cols-1 gap-4 sm:grid-cols-3',
+          'sm:auto-rows-[minmax(var(--spacing-dashboard-row),auto)]',
+        )}
+      >
         {placed.map((p, i) => {
           const def = widgetById(p.id);
           if (!def) return null;
@@ -295,6 +351,8 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
               def={def}
               x={p.x}
               y={p.y}
+              w={p.w}
+              h={p.h}
               index={i}
               editing={editing}
               linkActive={linkActive}
@@ -310,6 +368,15 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
                 left: nudgeWidget(fullLayout, p.id, 'left') === fullLayout,
                 right: nudgeWidget(fullLayout, p.id, 'right') === fullLayout,
               }}
+              onResize={(w, h) => applyResize(p.id, w, h)}
+              sizeDisabled={Object.fromEntries(
+                WIDGET_SIZE_OPTIONS.map(({ w, h }) => [
+                  sizeKey(w, h),
+                  // The current size is offered, not disabled — it is the picker's "pressed"
+                  // state. Any other size that the pure op refuses cannot be taken.
+                  !(p.w === w && p.h === h) && resizeWidget(fullLayout, p.id, w, h) === fullLayout,
+                ]),
+              )}
               onKeyDown={handleKeyDown(p.id)}
               onHide={() => apply(setWidgetVisible(fullLayout, p.id, false))}
             />
@@ -338,7 +405,7 @@ function DashboardBoard({ healthy }: { healthy: ReadonlySet<string> }) {
         {ghost ? (
           <div
             key={`ghost-${ghost.x}-${ghost.y}`}
-            style={cellStyle(ghost.x, ghost.y)}
+            style={cellStyle(ghost.x, ghost.y, ghost.w, ghost.h)}
             data-testid="dashboard-drop-ghost"
             aria-hidden
             className={cn(
@@ -400,6 +467,8 @@ function WidgetTile({
   def,
   x,
   y,
+  w,
+  h,
   index,
   editing,
   linkActive,
@@ -410,12 +479,17 @@ function WidgetTile({
   dropProps,
   onMove,
   moveDisabled,
+  onResize,
+  sizeDisabled,
   onKeyDown,
   onHide,
 }: {
   def: WidgetDefinition;
   x: number;
   y: number;
+  /** Span in cells; the tile covers `w × h` of the grid and the body scales its content to it. */
+  w: number;
+  h: number;
   index: number;
   editing: boolean;
   /** Whether this tile's `to` link is live (its target route's feature is enabled). */
@@ -433,6 +507,10 @@ function WidgetTile({
   onMove: (dir: MoveDir) => void;
   /** Which move directions are at an edge (a no-op) and should render disabled. */
   moveDisabled: Record<MoveDir, boolean>;
+  /** Resize this widget to a span in cells (the size picker, mirroring Shift+arrow keys). */
+  onResize: (w: number, h: number) => void;
+  /** Which sizes this widget cannot take from where it sits, keyed by `sizeKey`. */
+  sizeDisabled: Record<string, boolean>;
   onKeyDown: (e: KeyboardEvent) => void;
   onHide: () => void;
 }) {
@@ -458,12 +536,16 @@ function WidgetTile({
   // Widgets are independent by design and each fetches its own data, so a render crash in one
   // — a malformed row, an unexpected shape — has no business taking the rest of the board with
   // it. Contain it to this tile and draw the shell's error state in place of the body (#313).
+  // The span is provided around the body, not passed to it, so a widget opts in to scaling
+  // by reading `useWidgetSize()` and every other one keeps drawing exactly what it always did.
   const body = (
     <ContainedErrorBoundary
       what={`dashboard widget "${def.id}"`}
       fallback={<WidgetCrashFallback icon={def.icon} title={title} />}
     >
-      <Body />
+      <WidgetSizeProvider w={w} h={h}>
+        <Body />
+      </WidgetSizeProvider>
     </ContainedErrorBoundary>
   );
 
@@ -474,7 +556,7 @@ function WidgetTile({
         {...dragSourceProps}
         {...dropProps}
         data-testid={`widget-${def.id}`}
-        style={cellStyle(x, y)}
+        style={cellStyle(x, y, w, h)}
         tabIndex={0}
         role="group"
         aria-label={t('dashboard.grid.tileAria', { vars: { title } })}
@@ -511,18 +593,35 @@ function WidgetTile({
         <div className="pointer-events-none">{body}</div>
         {/* Touch/click move controls — the drag-free, accessible way to reorder (issue #11).
             Arrow keys do the same for a physical keyboard. */}
-        <BoardMoveButtons
-          onMove={onMove}
-          disabled={moveDisabled}
-          labels={{
-            up: t('dashboard.grid.moveUp', { vars: { title } }),
-            down: t('dashboard.grid.moveDown', { vars: { title } }),
-            left: t('dashboard.grid.moveLeft', { vars: { title } }),
-            right: t('dashboard.grid.moveRight', { vars: { title } }),
-          }}
-          testIdPrefix={`widget-move-${def.id}`}
-          className="mt-3 justify-center border-t border-border/40 pt-2"
-        />
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-border/40 pt-2">
+          <BoardMoveButtons
+            onMove={onMove}
+            disabled={moveDisabled}
+            labels={{
+              up: t('dashboard.grid.moveUp', { vars: { title } }),
+              down: t('dashboard.grid.moveDown', { vars: { title } }),
+              left: t('dashboard.grid.moveLeft', { vars: { title } }),
+              right: t('dashboard.grid.moveRight', { vars: { title } }),
+            }}
+            testIdPrefix={`widget-move-${def.id}`}
+          />
+          {/* Resizing is a customise-mode affordance only: in view mode the board is read,
+              not arranged, so there is nothing here to mis-tap. */}
+          <BoardSizeButtons
+            size={{ w, h }}
+            onResize={onResize}
+            disabled={sizeDisabled}
+            labels={Object.fromEntries(
+              WIDGET_SIZE_OPTIONS.map(({ w: ow, h: oh }) => [
+                sizeKey(ow, oh),
+                t('dashboard.grid.resizeAria', {
+                  vars: { title, width: ow, height: oh },
+                }),
+              ]),
+            )}
+            testIdPrefix={`widget-size-${def.id}`}
+          />
+        </div>
       </Surface>
     );
   }
@@ -559,7 +658,7 @@ function WidgetTile({
         ref={nodeRef}
         type="button"
         onClick={() => openSettings(def.settingsTab)}
-        style={cellStyle(x, y)}
+        style={cellStyle(x, y, w, h)}
         className={cn(PLACEMENT, 'block w-full cursor-pointer text-left')}
       >
         {card}
@@ -572,7 +671,7 @@ function WidgetTile({
         ref={nodeRef}
         to={def.to}
         search={def.search}
-        style={cellStyle(x, y)}
+        style={cellStyle(x, y, w, h)}
         className={cn(PLACEMENT, 'block')}
       >
         {card}
@@ -580,7 +679,7 @@ function WidgetTile({
     );
   }
   return (
-    <div ref={nodeRef} style={cellStyle(x, y)} className={PLACEMENT}>
+    <div ref={nodeRef} style={cellStyle(x, y, w, h)} className={PLACEMENT}>
       {card}
     </div>
   );
