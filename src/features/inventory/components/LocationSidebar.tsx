@@ -94,6 +94,7 @@ export function LocationSidebar({
   flat,
   selectedId,
   onSelect,
+  onPick,
   totalCount,
   compact = false,
 }: {
@@ -101,6 +102,11 @@ export function LocationSidebar({
   flat: readonly LocationWithCount[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /**
+   * The user *chose* a row, as opposed to the selection being cleared on their behalf. See
+   * {@link useLocationSidebar}, which fires it.
+   */
+  onPick?: () => void;
   totalCount: number;
   /**
    * Render for the off-canvas {@link Drawer} the Inventory screen moves this pane into on a
@@ -140,9 +146,11 @@ export function LocationSidebar({
   // A selected location has to keep a row on screen, because the item list stays scoped to it:
   // with no row selected, the list is filtered by something the user can neither see nor click
   // away from (issue #713 — the delete path clears its own selection, in `useLocationSidebar`).
-  // Hiding archived branches is the other way a selected row leaves the tree while the selection
-  // stands — the user archives the location or an ancestor of it, or unticks "Show archived" — so
-  // hand the list back to "All items" whenever that happens.
+  // Hiding archived branches takes a selected row off the tree while the selection stands — the
+  // user archives the location or an ancestor of it, or unticks "Show archived" — so hand the list
+  // back to "All items" whenever that happens. The tag chips and the search box narrow the tree
+  // the same way and deliberately do *not* reset it: those are transient, the box that hid the row
+  // is on screen, and clearing it puts the row back. Archived-hiding is the one that persists.
   useEffect(() => {
     if (selectedId && !showArchived && withinArchivedBranch(selectedId, flat)) onSelect(null);
   }, [flat, onSelect, selectedId, showArchived]);
@@ -261,6 +269,7 @@ export function LocationSidebar({
     flat: shownFlat,
     selectedId,
     onSelect,
+    onPick,
     // While a filter is on, every retained ancestor opens so the matches are visible without
     // hand-expanding — and closes back to the user's own shape when the filter clears.
     forceExpandedIds: keptIds,

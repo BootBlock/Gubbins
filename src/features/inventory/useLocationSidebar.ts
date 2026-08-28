@@ -30,6 +30,7 @@ export function useLocationSidebar({
   flat,
   selectedId,
   onSelect,
+  onPick,
   forceExpandedIds,
   scrollRowIntoView,
 }: {
@@ -37,6 +38,13 @@ export function useLocationSidebar({
   flat: readonly LocationWithCount[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /**
+   * The user *chose* a row — as distinct from `onSelect`, which also fires when the selection is
+   * cleared on the user's behalf (the selected location is deleted, or archived out of view). Only
+   * a deliberate pick should dismiss the compact drawer the sidebar lives in (issue #147); closing
+   * it because a filter toggle invalidated the selection would take the pane away mid-task.
+   */
+  onPick?: () => void;
   /**
    * Locations forced open regardless of the stored overrides — the ancestors retained by an
    * active search/tag filter, so a deep match is reachable without hand-expanding branches
@@ -138,6 +146,7 @@ export function useLocationSidebar({
   const select = (id: string) => {
     setFocusedId(id);
     onSelect(id === ALL_ITEMS_ID ? null : id);
+    onPick?.();
   };
 
   // End an inline rename and return focus to the row it belonged to.

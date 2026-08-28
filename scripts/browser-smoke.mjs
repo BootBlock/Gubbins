@@ -988,16 +988,19 @@ try {
       // was scoped to. Deleting it must hand the list back to "All items" (issue #713) — leaving
       // the filter on a location that no longer exists empties the list with no selected row to
       // explain it or to click away from.
-      const tree = page.getByRole('tree', { name: 'Locations' });
-      const allItems = tree.getByRole('treeitem', { name: 'All items' });
+      const allItems = page
+        .getByRole('tree', { name: 'Locations' })
+        .getByRole('treeitem', { name: 'All items' });
       await allItems.waitFor({ state: 'visible', timeout: ms(5000) });
-      if ((await allItems.getAttribute('aria-selected')) !== 'true') {
-        throw new Error('deleting the selected location left the item list scoped to it');
+      let selected = false;
+      for (let i = 0; i < attempts(40) && !selected; i += 1) {
+        selected = (await allItems.getAttribute('aria-selected')) === 'true';
+        if (!selected) await page.waitForTimeout(100);
       }
+      if (!selected) throw new Error('deleting the selected location left the item list scoped to it');
 
-      // The drag step before this one also selected a location it created; put the tree back on
-      // the whole inventory — every step from here reads and creates across the full list.
-      await allItems.click();
+      // Every step from here reads and creates across the full list, and the tree is now back on
+      // it — the delete above cleared the selection it had made, so nothing needs clicking.
     });
 
     // --- Phase 3 flows ------------------------------------------------------------

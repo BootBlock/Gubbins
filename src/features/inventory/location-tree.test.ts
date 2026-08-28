@@ -264,6 +264,9 @@ describe('withinArchivedBranch (issue #713)', () => {
     { id: 'drawer', name: 'Drawer 3', parentId: 'cabinet', isSystem: false, archivedAt: null },
     { id: 'garage', name: 'Garage', parentId: null, isSystem: false, archivedAt: null },
     { id: 'bench', name: 'Bench', parentId: 'garage', isSystem: false, archivedAt: null },
+    // `pruneArchivedTree` keeps a node whose `archivedAt` is 0 (it tests falsiness, not null), so
+    // this side has to as well — the one input on which a `!= null` test would disagree with it.
+    { id: 'shed', name: 'Shed', parentId: null, isSystem: false, archivedAt: 0 },
   ];
 
   it('is true for the archived location itself', () => {
@@ -278,6 +281,10 @@ describe('withinArchivedBranch (issue #713)', () => {
   it('is false outside the archived subtree', () => {
     expect(withinArchivedBranch('garage', archivedNodes)).toBe(false);
     expect(withinArchivedBranch('bench', archivedNodes)).toBe(false);
+  });
+
+  it('reads a 0 timestamp as not archived, as the prune does', () => {
+    expect(withinArchivedBranch('shed', archivedNodes)).toBe(false);
   });
 
   it('is false for an id that is not in the list at all', () => {

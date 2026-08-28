@@ -82,7 +82,9 @@ export function pruneArchivedTree<T extends { archivedAt?: number | null; childr
  */
 export function withinArchivedBranch(id: string, nodes: readonly FlatSystemNode[]): boolean {
   const byId = new Map(nodes.map((n) => [n.id, n] as const));
-  return locationAncestry(id, nodes).some((ancestorId) => byId.get(ancestorId)?.archivedAt != null);
+  // Falsiness, not `!= null` — {@link pruneArchivedTree} drops a node on `!node.archivedAt`, so a
+  // `0` timestamp has to read as "not archived" on this side too or the two disagree on it.
+  return locationAncestry(id, nodes).some((ancestorId) => !!byId.get(ancestorId)?.archivedAt);
 }
 
 /**
