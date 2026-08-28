@@ -369,10 +369,10 @@ function OverdueWidget() {
   const t = useT();
   const openCheckouts = useOpenCheckouts();
   // `useOpenCheckouts` returns one bounded page of the loan board, so the rows below are the
-  // most urgent loans rather than all of them; both figures the tile states come from the
-  // repository's own conditional `SUM` over every open loan instead (issue #606). The comment
-  // here used to claim the one query returned every loan, and the derived "still on loan" was
-  // the remainder of a page — 80 rather than 280 on a board of 300.
+  // most urgent loans rather than all of them. Both figures the tile states therefore come from
+  // the repository's own conditional `SUM` over every open loan: derived from the page instead,
+  // "N still on loan" is the remainder of a page — 80 on a board of 300 with 20 late, not 280
+  // (issue #606).
   const now = nowMs();
   const open = openCheckouts.data?.rows ?? [];
   const overdue = open.filter((c) => c.isOverdue);

@@ -70,14 +70,13 @@ export function useOpenCheckouts() {
  *
  * The Dashboard's Overdue widget and the Contacts "On loan" summary both state a figure over
  * that page. Counting its rows capped both at the page size, and made "N still on loan" the
- * remainder of a page rather than of the board. `nowMs()` is read once per mount, as the other
- * `now`-dependent feeds do, so the figure is stable for the life of the query entry.
+ * remainder of a page rather than of the board. `now` decides overdue-ness and is read at fetch
+ * time, matching the sibling `now`-dependent feeds.
  */
 export function useOpenCheckoutCounts() {
-  const now = nowMs();
   return useQuery({
     queryKey: checkoutKeys.openCount(),
-    queryFn: () => getCheckoutRepository().countOpen(now),
+    queryFn: () => getCheckoutRepository().countOpen(nowMs()),
   });
 }
 

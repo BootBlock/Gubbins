@@ -85,8 +85,8 @@ export function ContactsScreen() {
 
   const onLoan = open.data?.rows ?? [];
   // Both figures come from the repository's own count over every open loan, not from the rows in
-  // hand: the list is one bounded page, so counting it stated the page size as the board (issue
-  // #606) — the same defect the dictionary below was given a notice for in #149. When the count
+  // hand: the list is one bounded page, so counting it states the page size as the board (issue
+  // #606) — the same defect the dictionary below carries a notice for, from #149. When the count
   // is unavailable they fall back to the rows, exactly as `totalContacts` does below: an
   // understated figure over a visible list beats announcing "nothing checked out" above one.
   const loanCounts = useOpenCheckoutCounts();
