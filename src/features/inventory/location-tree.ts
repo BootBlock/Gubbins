@@ -49,9 +49,11 @@ export function collectDescendantIds(id: string, nodes: readonly FlatNode[]): Re
   return result;
 }
 
-/** A flat node that also knows whether it is a system-locked location. */
+/** A flat node that also knows whether it is a system-locked or archived location. */
 export interface FlatSystemNode extends FlatNode {
   readonly isSystem: boolean;
+  /** Epoch-ms the location was archived; null/undefined = active. */
+  readonly archivedAt?: number | null;
 }
 
 /**
@@ -219,9 +221,15 @@ export function locationsMatchingQuery(
 /**
  * The parent a freshly-added location should default to, given the current sidebar
  * selection. Adding *inside* a real, user-created location nests under it; but the
- * synthetic "All items" (a `null` selection) and the system-locked rows ("Unassigned",
- * "In Transit") are never valid parents (mirroring the dialogs' `!isSystem` parent
- * filter), so a new location started from any of those defaults to top level (`null`).
+ * synthetic "All items" (a `null` selection), the system-locked rows ("Unassigned",
+ * "In Transit") and archived rows are never valid parents, so a new location started
+ * from any of those defaults to top level (`null`).
+ *
+ * The exclusions are exactly the dialogs' own `buildParentOptions` filter: a seeded
+ * parent the picker does not offer would either blank the field or — worse — survive
+ * submission and file the new location under a parent the user cannot see. The archived
+ * half is reachable only with "Show archived" on, which is why `archivedAt` has to reach
+ * this seam at all; a parity test in `location-tree.test.ts` holds the two together.
  */
 export function defaultParentForNewLocation(
   selectedId: string | null,
@@ -229,17 +237,17 @@ export function defaultParentForNewLocation(
 ): string | null {
   if (!selectedId) return null;
   const selected = nodes.find((n) => n.id === selectedId);
-  return selected && !selected.isSystem ? selected.id : null;
+  return selected && !selected.isSystem && !selected.archivedAt ? selected.id : null;
 }
 
 /**
  * The location a freshly-added *item* should default to, given the current sidebar
- * selection. Mirrors {@link defaultParentForNewLocation} and the "Add location"
- * behaviour: starting "Add item" from a real, user-created location pre-fills that
- * location; but the synthetic "All items" (a `null` selection) and the system-locked
- * rows ("Unassigned", "In Transit") are not meaningful homes to seed, so those fall
- * back to `fallbackLocationId` — the user's marked **default** location when one is set,
- * else the Unassigned holding pen. Unlike a top-level location (whose parent is `null`),
+ * selection. Built on {@link defaultParentForNewLocation} — one definition of "a real,
+ * selectable location", not a second copy of it: starting "Add item" from a real,
+ * user-created location pre-fills that location; but the synthetic "All items" (a `null`
+ * selection), the system-locked rows ("Unassigned", "In Transit") and archived rows are not
+ * meaningful homes to seed, so those fall back to `fallbackLocationId` — the user's marked
+ * **default** location when one is set, else the Unassigned holding pen. Unlike a top-level location (whose parent is `null`),
  * an item always needs a concrete home — hence the non-null return.
  */
 export function defaultLocationForNewItem(

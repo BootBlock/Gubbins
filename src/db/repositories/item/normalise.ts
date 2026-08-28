@@ -141,19 +141,30 @@ export function normalisePurchasePrice(value: number | null | undefined): number
 
 /**
  * Validate an optional depreciation-months value (Phase 66 asset lifecycle, v24):
- * null clears it (no depreciation); otherwise it must be a positive integer.
+ * null clears it (no depreciation); otherwise it must be a positive **whole** number of
+ * months, mirroring the `items.depreciation_months > 0` CHECK.
+ *
+ * The truncation happens before the range check, not after: a fraction under one month
+ * (`0.5`) is positive as typed but truncates to `0`, which the column refuses. Checking
+ * first passed that value out of here as a `0` and turned a field-level refusal into a
+ * constraint abort in the middle of the write (issue #254).
  */
 export function normaliseDepreciationMonths(value: number | null | undefined): number | null {
   if (value == null) return null;
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new DbError('SQLITE_CONSTRAINT', 'Depreciation months must be a positive number.');
+  const months = Number.isFinite(value) ? Math.trunc(value) : Number.NaN;
+  if (!Number.isFinite(months) || months <= 0) {
+    throw new DbError(
+      'SQLITE_CONSTRAINT',
+      'Depreciation months must be a whole number of months, at least 1.',
+    );
   }
-  return Math.trunc(value);
+  return months;
 }
 
 /**
  * Validate an optional intrinsic weight (issue #25): null clears it; otherwise it must be a
- * finite, non-negative number (canonical **grams**). Mirrors the `items.weight` DB CHECK.
+ * finite, non-negative number (canonical **grams**). Mirrors the `items.weight` DB CHECK; see
+ * `normalise-db-check.test.ts`, which asserts the two agree rather than assuming it (issue #254).
  */
 export function normaliseWeight(value: number | null | undefined): number | null {
   if (value == null) return null;
@@ -166,8 +177,9 @@ export function normaliseWeight(value: number | null | undefined): number | null
 /**
  * Validate an optional intrinsic dimension (issue #30): null clears it; otherwise it must be a
  * finite, non-negative number (canonical **millimetres**). Shared by width / height / depth,
- * mirroring their identical `items.width/height/depth` DB CHECKs. `label` names the offending
- * dimension in the error message.
+ * mirroring their identical `items.width/height/depth` DB CHECKs — asserted, not assumed, in
+ * `normalise-db-check.test.ts` (issue #254). `label` names the offending dimension in the error
+ * message.
  */
 export function normaliseDimension(
   value: number | null | undefined,
@@ -183,8 +195,10 @@ export function normaliseDimension(
 /**
  * Validate an optional manual current / market value (feature-gap G9, v4): null clears it
  * (valuation reverts to the depreciated replacement cost); otherwise it must be a finite,
- * non-negative number. Mirrors {@link normalisePurchasePrice} + the DB CHECK. Returned in
- * integer micro-units (issue #286).
+ * non-negative number. Mirrors {@link normalisePurchasePrice} + the `items.current_value >= 0`
+ * DB CHECK — a parity that `normalise-db-check.test.ts` holds up by driving the same probe values
+ * through this guard and the real constraint (issue #254). Returned in integer micro-units
+ * (issue #286).
  */
 export function normaliseCurrentValue(value: number | null | undefined): number | null {
   if (value == null) return null;

@@ -14,6 +14,7 @@ import {
   type FlatNode,
   type FlatSystemNode,
 } from './location-tree';
+import { buildParentOptions, type ParentLocationRow } from './parent-options';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 
 // workshop → cabinet → drawer; workshop → bench; plus a detached garage.
@@ -83,6 +84,29 @@ describe('locationPath', () => {
   });
 });
 
+/**
+ * The same rows as the `flat` fixtures below plus an archived one, in both the shapes the two
+ * seams take.
+ * "Show archived" is the only way an archived row reaches the sidebar selection at all, so it
+ * is the only way the seed and the picker can disagree.
+ */
+const ARCHIVED_AWARE_FLAT: FlatSystemNode[] = [
+  { id: 'workshop', name: 'Workshop', parentId: null, isSystem: false },
+  { id: 'cabinet', name: 'Cabinet A', parentId: 'workshop', isSystem: false },
+  { id: 'unassigned', name: 'Unassigned', parentId: null, isSystem: true },
+  { id: 'transit', name: 'In Transit', parentId: null, isSystem: true },
+  { id: 'retired', name: 'Old Shed', parentId: null, isSystem: false, archivedAt: 1_700_000_000_000 },
+];
+
+const ARCHIVED_AWARE_ROWS: ParentLocationRow[] = ARCHIVED_AWARE_FLAT.map((n) => ({
+  id: n.id,
+  name: n.name,
+  isSystem: n.isSystem,
+  itemCount: 0,
+  color: null,
+  archivedAt: n.archivedAt ?? null,
+}));
+
 describe('defaultParentForNewLocation', () => {
   const flat: FlatSystemNode[] = [
     { id: 'workshop', name: 'Workshop', parentId: null, isSystem: false },
@@ -106,6 +130,39 @@ describe('defaultParentForNewLocation', () => {
 
   it('defaults to top level when the selection is no longer in the list', () => {
     expect(defaultParentForNewLocation('deleted', flat)).toBeNull();
+  });
+
+  it('defaults to top level for an archived selection (reachable via "Show archived")', () => {
+    expect(defaultParentForNewLocation('retired', ARCHIVED_AWARE_FLAT)).toBeNull();
+  });
+});
+
+/**
+ * Drift guard (issue #254). `defaultParentForNewLocation`'s docstring claims its exclusions are
+ * the dialogs' own parent filter; this is what holds the claim up. A parent the picker does not
+ * offer would blank the field on open and still submit, filing the new location under a parent
+ * the user cannot see — which is exactly what an archived selection used to do.
+ */
+describe('defaultParentForNewLocation ↔ buildParentOptions parity (issue #254)', () => {
+  const offered = new Set(
+    buildParentOptions(ARCHIVED_AWARE_ROWS, (n) => String(n))
+      .map((o) => o.value)
+      .filter((v) => v !== ''),
+  );
+
+  it('only ever seeds a parent the Add-location picker actually offers', () => {
+    for (const node of ARCHIVED_AWARE_FLAT) {
+      const seeded = defaultParentForNewLocation(node.id, ARCHIVED_AWARE_FLAT);
+      if (seeded !== null) expect(offered.has(seeded)).toBe(true);
+    }
+    // And the null selection, which the picker represents as its leading "top level" row.
+    expect(defaultParentForNewLocation(null, ARCHIVED_AWARE_FLAT)).toBeNull();
+  });
+
+  it('seeds every parent the picker offers, so a selectable row is never silently ignored', () => {
+    for (const id of offered) {
+      expect(defaultParentForNewLocation(id, ARCHIVED_AWARE_FLAT)).toBe(id);
+    }
   });
 });
 
@@ -138,6 +195,10 @@ describe('defaultLocationForNewItem', () => {
     expect(defaultLocationForNewItem(null, flat, 'workshop')).toBe('workshop');
     // An explicit, valid selection still wins over the fallback.
     expect(defaultLocationForNewItem('cabinet', flat, 'workshop')).toBe('cabinet');
+  });
+
+  it('falls back rather than seeding an archived selection (issue #254)', () => {
+    expect(defaultLocationForNewItem('retired', ARCHIVED_AWARE_FLAT)).toBe(UNASSIGNED_LOCATION_ID);
   });
 });
 

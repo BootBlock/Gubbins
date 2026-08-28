@@ -35,7 +35,12 @@ export interface DiscoveryConfig {
 
 /** Options for {@link buildDiscoveryConfigs}. */
 export interface DiscoveryOptions {
-  /** The state-topic prefix the entities read from (must match the publisher's prefix). */
+  /**
+   * The state-topic prefix the entities read from (must match the publisher's prefix). HA learns
+   * where to read an entity solely from the topics in these payloads, so a mismatch yields
+   * entities that sit at `unknown` for ever with nothing logged. `publisher.test.ts` asserts every
+   * topic a discovery payload names is one the publisher actually publishes (issue #254).
+   */
   readonly prefix: string;
   /** The HA discovery prefix (default {@link DEFAULT_DISCOVERY_PREFIX}). */
   readonly discoveryPrefix: string;

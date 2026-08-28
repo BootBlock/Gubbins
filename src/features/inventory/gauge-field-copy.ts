@@ -28,6 +28,10 @@ export const GAUGE_TARE_HINT =
  * The tare hint as shown when *editing* an existing gauge. Identical to
  * {@link GAUGE_TARE_HINT} up to the last sentence, which answers the question only an edit
  * raises: re-taring changes what a scale is expected to read, not how much is in the gauge.
+ *
+ * Written out in full rather than composed from a shared prefix, so the copy reads as copy where
+ * it is defined; `gauge-field-copy.test.ts` is what keeps the shared half byte-identical in
+ * exchange (issue #254).
  */
 export const GAUGE_TARE_EDIT_HINT =
   'The weight of the **empty container** (the spool, bottle or reel). Subtracted from a ' +
