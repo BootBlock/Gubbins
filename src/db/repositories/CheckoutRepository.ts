@@ -31,6 +31,7 @@ import {
 } from './stock-batches';
 import { planBatchSelection } from '@/features/inventory/batches';
 import { nowMs } from '@/lib/clock';
+import { toDueDateInputValue } from '@/lib/date-input';
 import { rowToCheckout } from './mappers';
 import type {
   CheckoutBorrower,
@@ -586,10 +587,18 @@ function toCheckoutWithNames(row: CheckoutJoinRow, now: number): CheckoutWithNam
 
 /**
  * A British-English ledger note for a loan renewal (B3), describing the due-date change as
- * old → new. Dates render as `yyyy-MM-dd` (locale-independent, since the repository has no
- * formatter); a null date reads as "open-ended", covering set/clear/extend uniformly.
+ * old → new. Dates render as a bare `yyyy-MM-dd` day, since the repository has no formatter;
+ * a null date reads as "open-ended", covering set/clear/extend uniformly.
+ *
+ * The day is the **local** one, read back through {@link toDueDateInputValue} — not
+ * `toISOString()` (issue #516). A due date is anchored at *local* 23:59:59 (see the module
+ * docstring on `@/lib/date-input`), which is already the next day in UTC anywhere west of it, so
+ * a UTC render wrote a note naming a day later than the renew dialog, the loans list and the
+ * agenda all showed. The note is the durable record of the change and is never recomputed, so it
+ * has to agree with those screens at the moment it is written; `renew-note-timezone.test.ts`
+ * drives this repository in real zones either side of UTC and holds that.
  */
 function renewNote(from: number | null, to: number | null): string {
-  const label = (ms: number | null) => (ms === null ? 'open-ended' : new Date(ms).toISOString().slice(0, 10));
+  const label = (ms: number | null) => (ms === null ? 'open-ended' : toDueDateInputValue(ms));
   return `Loan due date changed from ${label(from)} to ${label(to)}.`;
 }
