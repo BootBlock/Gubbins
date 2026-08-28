@@ -113,6 +113,24 @@ detection — so a BOM export, a supplier basket or a typed shopping list can be
 going through the item importer first.
 
 > **ℹ️ Note**
+> Every row is matched against your catalogue by one column — the **match key**, either the
+> item's **name** or its **SKU/MPN** — and the review shows each row as *create* or *update*
+> before anything is written. Matching **by name** ignores capitals, spacing and how an accent was
+> typed, so a supplier sheet spelling `widget a` updates the `Widget A` you already have rather
+> than adding a second one. A **SKU/MPN** is a manufacturer's code rather than something you
+> typed, so it has to match exactly.
+>
+> Neither a name nor a SKU/MPN has to be unique in Gubbins, so a value can belong to **more than
+> one** item. Where it does, the row is flagged in the review naming the items it could mean,
+> rather than one of them being picked and updated. Give the items distinct values, or switch the
+> match key to the column that does tell them apart.
+>
+> The **Location** column behaves the same way. A location tree is meant to repeat names — a
+> `Shelf 1` in two rooms — so a cell naming a location that exists twice is flagged instead of
+> the item being filed in whichever came first. Put the location's **id** in the cell to say
+> exactly which one you mean; the **Locations** export carries it.
+
+> **ℹ️ Note**
 > A double-quote **inside** a cell is treated as ordinary text, so an inch mark reads as itself:
 > `3/4" ball valve`, `1/4" drive socket` and `12" ruler` all import as the names you typed. A
 > quote only marks the start of a quoted cell when it is the *first* character of that cell,

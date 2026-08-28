@@ -127,11 +127,12 @@ export function smooth01(t: number): number {
 
 /**
  * Deterministic pseudo-random in [0, 1) from an integer counter (the classic fract-sin hash).
- * Decoration-grade only — it seeds *when* a storm or gust happens, never anything security- or
- * fairness-sensitive — and being a pure function of the counter is the whole point: the "random"
- * event schedule is reproducible, so it can be unit-tested and never drifts between frames.
+ * Decoration-grade only — it seeds *when* a storm or gust happens and how deep a drift may pile,
+ * never anything security- or fairness-sensitive — and being a pure function of the counter is
+ * the whole point: the "random" schedule is reproducible, so it can be unit-tested and never
+ * drifts between frames.
  */
-function hash01(n: number, seed = 0): number {
+export function hash01(n: number, seed = 0): number {
   const s = Math.sin(n * 127.1 + seed * 311.7 + 0.13) * 43758.5453;
   return s - Math.floor(s);
 }

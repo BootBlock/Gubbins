@@ -23,6 +23,7 @@ import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { assertPermissions } from '@/features/users/assert-permission';
 import { currentAuthority } from '@/features/users/current-authority';
 import { fromDateInputValue, toDateInputValue } from '@/lib/date-input';
+import { foldName } from '@/lib/name-fold';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';
@@ -1107,6 +1108,12 @@ export interface BuildPlanOptions {
    * - `'name'` — match existing items by their name.
    * - `'sku'`  — match by SKU/MPN (`mpn` on the item record).
    * Defaults to `'name'`.
+   *
+   * A name is compared through `foldName`, so a spreadsheet spelling a name in a different case
+   * updates the item that is there rather than creating a second one; a SKU/MPN is compared
+   * verbatim (see `matchKeyFold`). Neither key is unique in the schema, so a value held by two
+   * items collects a row error naming the candidates instead of updating whichever was read
+   * last (issue #593).
    */
   readonly matchKey?: MatchKey;
   /**
@@ -1121,7 +1128,9 @@ export interface BuildPlanOptions {
    * as `loc: Workshop`, or a spreadsheet "Location" column) resolves to its id. A cell
    * that already holds a known id passes through. When omitted, location cells are
    * passed through verbatim (legacy behaviour). A non-empty, unresolvable location
-   * collects a row error rather than silently creating the item in the wrong place.
+   * collects a row error rather than silently creating the item in the wrong place —
+   * as does a name held by more than one location, which the tree is expected to allow
+   * (issue #593); the user disambiguates by putting the location's id in the cell.
    */
   readonly locations?: readonly { readonly id: string; readonly name: string }[];
   /**
@@ -1170,18 +1179,91 @@ export function normaliseTrackingMode(raw: string): TrackingMode | null {
 }
 
 /**
+ * The comparison key for a match value, per match key.
+ *
+ * A **name** compares through {@link foldName}, the one fold the app uses for every natural key
+ * a human types, so `widget a` finds the `Widget A` that is already there and a name typed with
+ * a combining accent finds its composed form.
+ *
+ * A **SKU/MPN** compares trimmed and verbatim, as this importer always has. It is a
+ * manufacturer's part number rather than a name a user typed, and `mpn` is deliberately not a
+ * folded key: `ItemRepository.findByMatchKey` records the same decision for the same reason
+ * (issue #679). Widening it is a separate question from this one, and the answer is not
+ * `foldName` — that would put a third rule on a column that already has two.
+ */
+function matchKeyFold(matchKey: MatchKey, value: string): string {
+  return matchKey === 'name' ? foldName(value) : value.trim();
+}
+
+/**
+ * Group rows by a natural key, keeping **every** row that claims a key rather than the last
+ * one to be read (issue #593).
+ *
+ * Nothing in the schema makes any of the importer's match keys unique — there is no unique
+ * index on `items(name)`, on `items(mpn)`, or on `locations(name)`, and a location tree is
+ * *expected* to repeat names (a `Shelf 1` in two rooms). A `Map` built by plain assignment
+ * therefore answers an ambiguous key with whichever row the read happened to return last,
+ * which is a silent wrong answer: the wrong item is updated, or the item lands in the wrong
+ * place. Collecting the candidates lets the caller report the ambiguity instead of guessing.
+ *
+ * `normalise` decides what counts as the same key — {@link matchKeyFold} for a match key,
+ * {@link foldName} for a location name. Rows whose selector returns `null` or a blank value
+ * (an item with no MPN) are skipped.
+ */
+function groupByKey<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => string | null,
+  normalise: (raw: string) => string,
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const raw = keyOf(row);
+    if (raw === null || raw.trim().length === 0) continue;
+    const key = normalise(raw);
+    const bucket = grouped.get(key);
+    if (bucket) bucket.push(row);
+    else grouped.set(key, [row]);
+  }
+  return grouped;
+}
+
+/** How a raw location cell resolved against the known locations. */
+type LocationResolution =
+  | { readonly kind: 'resolved'; readonly id: string }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'ambiguous'; readonly ids: readonly string[] };
+
+/**
  * Resolve a raw location cell (an id or a name) against the known locations. An exact
- * id match wins; otherwise a case-insensitive name match. Returns `null` when nothing
- * matches (the caller turns that into a row error).
+ * id match wins; otherwise a folded name match. A name held by more than one location
+ * resolves to `ambiguous` rather than to one of them, and an unmatched name to `unknown`
+ * — the caller turns either into a row error.
  */
 function resolveLocationId(
   raw: string,
   byId: ReadonlyMap<string, string>,
-  byName: ReadonlyMap<string, string>,
-): string | null {
+  byName: ReadonlyMap<string, readonly string[]>,
+): LocationResolution {
   const trimmed = raw.trim();
-  if (byId.has(trimmed)) return trimmed;
-  return byName.get(trimmed.toLowerCase()) ?? null;
+  if (byId.has(trimmed)) return { kind: 'resolved', id: trimmed };
+  const candidates = byName.get(foldName(trimmed));
+  if (candidates === undefined || candidates.length === 0) return { kind: 'unknown' };
+  if (candidates.length > 1) return { kind: 'ambiguous', ids: candidates };
+  return { kind: 'resolved', id: candidates[0]! };
+}
+
+/** Cap on how many candidates an ambiguity message spells out before it summarises the rest. */
+const MAX_LISTED_CANDIDATES = 3;
+
+/**
+ * Render a candidate list for an ambiguity message: up to {@link MAX_LISTED_CANDIDATES}
+ * quoted values, then `and N more` so a name shared by fifty rows does not produce a
+ * fifty-entry error.
+ */
+function listCandidates(values: readonly string[]): string {
+  const shown = values.slice(0, MAX_LISTED_CANDIDATES).map((v) => `"${v}"`);
+  const rest = values.length - shown.length;
+  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ');
 }
 
 /**
@@ -1261,15 +1343,23 @@ export function buildImportPlanFromRows(
   const locations = options.locations ?? [];
   const resolveLocations = locations.length > 0;
   const locationById = new Map(locations.map((l) => [l.id, l.id]));
-  const locationByName = new Map(locations.map((l) => [l.name.toLowerCase(), l.id]));
+  const locationIdsByName = new Map(
+    [...groupByKey(locations, (l) => l.name, foldName)].map(([key, ls]) => [key, ls.map((l) => l.id)]),
+  );
 
-  // Build fast lookup maps from existing items.
-  const byName = new Map<string, Item>();
-  const byMpn = new Map<string, Item>();
-  for (const item of existingItems) {
-    byName.set(item.name, item);
-    if (item.mpn) byMpn.set(item.mpn, item);
-  }
+  // Lookup maps from existing items, holding every item that claims a key so an ambiguous one is
+  // reported rather than resolved to whichever item was read last (issue #593). Both index through
+  // `matchKeyFold`, the same function the row lookup below keys on, so the two cannot drift apart.
+  const byName = groupByKey(
+    existingItems,
+    (item) => item.name,
+    (raw) => matchKeyFold('name', raw),
+  );
+  const byMpn = groupByKey(
+    existingItems,
+    (item) => item.mpn,
+    (raw) => matchKeyFold('sku', raw),
+  );
 
   // Track keys already seen in THIS import to catch intra-CSV duplicates (the second
   // occurrence is an error, not silently dropped, so the user sees the conflict).
@@ -1305,12 +1395,19 @@ export function buildImportPlanFromRows(
     // catalogue on an import that never mentioned locations.
     const locationStatedByRow = rawLocation !== null;
     if (rawLocation !== null && resolveLocations) {
-      const resolved = resolveLocationId(rawLocation, locationById, locationByName);
-      if (resolved === null) {
+      const resolved = resolveLocationId(rawLocation, locationById, locationIdsByName);
+      if (resolved.kind === 'unknown') {
         errors.push({ sourceRow, message: `Unknown location "${rawLocation}".` });
         continue;
       }
-      raw.core.locationId = resolved;
+      if (resolved.kind === 'ambiguous') {
+        errors.push({
+          sourceRow,
+          message: `Ambiguous location "${rawLocation}" — ${resolved.ids.length} locations share this name. Use the location's id instead (${listCandidates(resolved.ids)}).`,
+        });
+        continue;
+      }
+      raw.core.locationId = resolved.id;
     } else if (rawLocation === null && options.defaultLocationId !== undefined) {
       raw.core.locationId = options.defaultLocationId;
     }
@@ -1373,8 +1470,10 @@ export function buildImportPlanFromRows(
       continue;
     }
 
-    // Check for intra-CSV duplicates.
-    const prior = seenKeys.get(matchValue);
+    // Check for intra-CSV duplicates, on the same key the catalogue lookup below uses — so two
+    // name rows differing only in case collide here rather than both claiming one existing item.
+    const rowKey = matchKeyFold(matchKey, matchValue);
+    const prior = seenKeys.get(rowKey);
     if (prior !== undefined) {
       errors.push({
         sourceRow,
@@ -1382,10 +1481,22 @@ export function buildImportPlanFromRows(
       });
       continue;
     }
-    seenKeys.set(matchValue, sourceRow);
+    seenKeys.set(rowKey, sourceRow);
 
-    // Match against existing items.
-    const existingItem = matchKey === 'name' ? byName.get(matchValue) : byMpn.get(matchValue);
+    // Match against existing items. A key held by more than one item is an error naming the
+    // candidates, not a guess at which one the row meant (issue #593).
+    const candidates = (matchKey === 'name' ? byName : byMpn).get(rowKey) ?? [];
+    if (candidates.length > 1) {
+      errors.push({
+        sourceRow,
+        message:
+          matchKey === 'name'
+            ? `Ambiguous name "${matchValue}" — ${candidates.length} existing items share it. Rename them so the name is unique, or match by SKU/MPN instead.`
+            : `Ambiguous SKU/MPN "${matchValue}" — shared by ${listCandidates(candidates.map((c) => c.name))}. Give them distinct SKU/MPNs, or match by name instead.`,
+      });
+      continue;
+    }
+    const existingItem = candidates[0];
 
     if (existingItem) {
       // Matched → update. Mirror the DB CHECK against the *existing* item's mode (an update
