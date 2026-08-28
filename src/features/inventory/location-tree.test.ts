@@ -5,6 +5,7 @@ import {
   defaultParentForNewLocation,
   findTreeNode,
   flattenVisibleTree,
+  withinArchivedBranch,
   locationAncestry,
   locationPath,
   locationsMatchingQuery,
@@ -252,6 +253,58 @@ describe('pruneArchivedTree', () => {
   it('is a no-op when nothing is archived', () => {
     const tree = [n('a', null, [n('a1', null)])];
     expect(pruneArchivedTree(tree)).toEqual(tree);
+  });
+});
+
+describe('withinArchivedBranch (issue #713)', () => {
+  // workshop (archived) → cabinet → drawer; garage → bench. Only the workshop carries a date.
+  const archivedNodes: FlatSystemNode[] = [
+    { id: 'workshop', name: 'Workshop', parentId: null, isSystem: false, archivedAt: 1_700_000_000 },
+    { id: 'cabinet', name: 'Cabinet A', parentId: 'workshop', isSystem: false, archivedAt: null },
+    { id: 'drawer', name: 'Drawer 3', parentId: 'cabinet', isSystem: false, archivedAt: null },
+    { id: 'garage', name: 'Garage', parentId: null, isSystem: false, archivedAt: null },
+    { id: 'bench', name: 'Bench', parentId: 'garage', isSystem: false, archivedAt: null },
+  ];
+
+  it('is true for the archived location itself', () => {
+    expect(withinArchivedBranch('workshop', archivedNodes)).toBe(true);
+  });
+
+  it('is true for a live location beneath an archived one, at any depth', () => {
+    expect(withinArchivedBranch('cabinet', archivedNodes)).toBe(true);
+    expect(withinArchivedBranch('drawer', archivedNodes)).toBe(true);
+  });
+
+  it('is false outside the archived subtree', () => {
+    expect(withinArchivedBranch('garage', archivedNodes)).toBe(false);
+    expect(withinArchivedBranch('bench', archivedNodes)).toBe(false);
+  });
+
+  it('is false for an id that is not in the list at all', () => {
+    // A location created moments ago, before the tree refetch — nothing to hide it yet.
+    expect(withinArchivedBranch('not-here', archivedNodes)).toBe(false);
+  });
+
+  it('agrees with pruneArchivedTree on every node (the drift test the doc comment names)', () => {
+    // Both sides are driven over the same shape and compared by *verdict*: for every location,
+    // does the pruned tree still hold a row for it, and does the predicate say it is hidden?
+    interface TreeNode {
+      id: string;
+      archivedAt: number | null;
+      children: TreeNode[];
+    }
+    const byParent = (parentId: string | null): TreeNode[] =>
+      archivedNodes
+        .filter((n) => n.parentId === parentId)
+        .map((n) => ({ id: n.id, archivedAt: n.archivedAt ?? null, children: byParent(n.id) }));
+    const pruned = pruneArchivedTree(byParent(null));
+
+    for (const node of archivedNodes) {
+      expect({ id: node.id, hidden: withinArchivedBranch(node.id, archivedNodes) }).toEqual({
+        id: node.id,
+        hidden: findTreeNode(pruned, node.id) === undefined,
+      });
+    }
   });
 });
 

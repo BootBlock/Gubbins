@@ -39,6 +39,7 @@ import { locationColorTextClass } from '../location-color';
 import { locationPath } from '../labels/location-label';
 import {
   collectDescendantIds,
+  withinArchivedBranch,
   locationAncestry,
   locationsMatchingQuery,
   matchingWithAncestors,
@@ -135,6 +136,16 @@ export function LocationSidebar({
     () => (showArchived ? flat : flat.filter((l) => !l.archivedAt)),
     [flat, showArchived],
   );
+
+  // A selected location has to keep a row on screen, because the item list stays scoped to it:
+  // with no row selected, the list is filtered by something the user can neither see nor click
+  // away from (issue #713 — the delete path clears its own selection, in `useLocationSidebar`).
+  // Hiding archived branches is the other way a selected row leaves the tree while the selection
+  // stands — the user archives the location or an ancestor of it, or unticks "Show archived" — so
+  // hand the list back to "All items" whenever that happens.
+  useEffect(() => {
+    if (selectedId && !showArchived && withinArchivedBranch(selectedId, flat)) onSelect(null);
+  }, [flat, onSelect, selectedId, showArchived]);
 
   // Tag filter (issue #84): narrow the tree to locations carrying any of the selected tags,
   // keeping their ancestors so the matches stay reachable in context — structurally the same

@@ -152,10 +152,16 @@ export function useLocationSidebar({
     updateLocation.mutate({ id, input: { name } }, { onError: reportLocationUpdate });
   };
 
-  // Focus retreats to "All items" before a deleted row leaves the tree.
-  const retreatFocusToAllItems = () => {
+  /**
+   * Retreat to "All items" before a deleted row leaves the tree: the roving tab stop always, and
+   * the *selection* too when the doomed row is the one the item list is scoped to. Without the
+   * second half the screen keeps filtering on an id that no longer exists — the list empties, and
+   * no row is selected to explain why or to click away from (issue #713).
+   */
+  const retreatToAllItems = (deletedId: string) => {
     setFocusedId(ALL_ITEMS_ID);
     focusRow(ALL_ITEMS_ID);
+    if (selectedId === deletedId) onSelect(null);
   };
 
   // Either delete an empty location outright, or open the confirmation dialog when
@@ -165,13 +171,13 @@ export function useLocationSidebar({
       setConfirmDelete({ id, name, itemCount });
       return;
     }
-    retreatFocusToAllItems();
+    retreatToAllItems(id);
     deleteLocation.mutate(id);
   };
 
   const confirmDeleteNow = () => {
     if (!confirmDelete) return;
-    retreatFocusToAllItems();
+    retreatToAllItems(confirmDelete.id);
     deleteLocation.mutate(confirmDelete.id, {
       onSuccess: () => setConfirmDelete(null),
     });

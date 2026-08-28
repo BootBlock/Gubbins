@@ -945,6 +945,86 @@ describe('LocationSidebar — a newly created location is selected (issue #612)'
   });
 });
 
+describe('LocationSidebar — the selection never outlives its row (issue #713)', () => {
+  /** Render with a location already selected, the way the Inventory screen scopes its item list. */
+  function renderSelected(selectedId: string, rows: LocationWithCount[] = flat, onSelect = vi.fn()) {
+    const ui = (id: string | null, list: LocationWithCount[]) => (
+      <ToastProvider>
+        <LocationSidebar tree={tree} flat={list} selectedId={id} onSelect={onSelect} totalCount={7} />
+      </ToastProvider>
+    );
+    const { rerender } = render(ui(selectedId, rows));
+    return { onSelect, refetch: (id: string | null, list: LocationWithCount[]) => rerender(ui(id, list)) };
+  }
+
+  /** `flat` with `id` marked archived, as the refetched list would carry it. */
+  function archived(id: string): LocationWithCount[] {
+    return flat.map((loc) => (loc.id === id ? { ...loc, archivedAt: 1_700_000_000 } : loc));
+  }
+
+  it('falls back to All items when the selected location is deleted', () => {
+    // Drawer is empty, so the Edit dialog deletes it outright — and it is the location the item
+    // list is currently scoped to, so that filter has to go with it.
+    const { onSelect } = renderSelected('drawer');
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    cabinet.focus();
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    expect(spies.del).toHaveBeenCalledWith('drawer');
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('falls back to All items once a non-empty selected location is confirmed for deletion', () => {
+    const { onSelect } = renderSelected('workshop');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    // The confirmation still stands in the way, so the selection is untouched until it is taken.
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-delete-location'));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('leaves the selection alone when a different location is deleted', () => {
+    const { onSelect } = renderSelected('workshop');
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    cabinet.focus();
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    expect(spies.del).toHaveBeenCalledWith('drawer');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('falls back to All items when the selected location is archived out of view', () => {
+    const { onSelect, refetch } = renderSelected('workshop');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-archive'));
+    expect(spies.archive).toHaveBeenCalledWith({ id: 'workshop', archived: true });
+    // The archive lands and the locations query refetches: the row is now hidden.
+    refetch('workshop', archived('workshop'));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('falls back to All items when an *ancestor* of the selection is archived out of view', () => {
+    // Cabinet is live, but archiving the Workshop above it hides the whole branch.
+    const { onSelect, refetch } = renderSelected('cabinet');
+    expect(onSelect).not.toHaveBeenCalled();
+    refetch('cabinet', archived('workshop'));
+    expect(onSelect).toHaveBeenCalledWith(null);
+  });
+
+  it('keeps the selection while "Show archived" is on', () => {
+    const { onSelect, refetch } = renderSelected('workshop');
+    // The toggle only appears once something is archived, so bring an unrelated archived row in.
+    refetch('workshop', archived('drawer'));
+    fireEvent.click(screen.getByLabelText(/Show archived/));
+    // Now archive the selected Workshop: its row stays on screen, so the filter still makes sense.
+    refetch('workshop', archived('workshop'));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * The location list export (issue #617, `N7`). The sidebar is the app's location list, so this is
  * where the shared list-export control lives — and it must serialise the *list*, not the tree on
