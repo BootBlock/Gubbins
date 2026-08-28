@@ -38,8 +38,8 @@ export function normaliseText(
  * UPC-A scan of the same article yields are the *same* barcode. Storing whichever form happened
  * to arrive would make them two, and only one of them would ever be found again by scanning.
  * Normalising here rather than at each entry point means a typed code, a scan and an imported
- * spreadsheet column all land on the same value. Every other code — an EAN-8, a Code 128 part
- * label, a shelf code — is stored exactly as given.
+ * spreadsheet column all land on the same value. Every other code — a Code 128 part label, a
+ * shelf code, an EAN-8 that is not also a valid UPC-E — is stored exactly as given.
  *
  * Pass `current` on an update: a value that matches what is already stored is left untouched.
  * Re-saving an item must not migrate a barcode nobody edited — that would rewrite a record on an

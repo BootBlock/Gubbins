@@ -222,3 +222,29 @@ describe('BarcodeField — typed UPC-E (issue #508)', () => {
     expect((input as HTMLInputElement).value).toBe('04252614');
   });
 });
+
+describe('BarcodeField — announcing the UPC-E rewrite (issue #508)', () => {
+  it('announces the value it recorded, since the change is invisible to a screen reader', () => {
+    const { input } = renderField();
+    typeAndBlur(input, '04252614');
+    const announcement = screen.getByText(/042100005264/);
+    // Announce-only: it must not add a second visible line under the field.
+    expect(announcement.closest('[aria-live]')).toBeTruthy();
+    expect(announcement.closest('.sr-only')).toBeTruthy();
+  });
+
+  it('stops announcing as soon as the value on screen is something else', () => {
+    // The field is re-used across items, so a value that arrives without a keystroke must not
+    // leave the previous announcement standing.
+    const { input } = renderField();
+    typeAndBlur(input, '04252614');
+    fireEvent.change(input, { target: { value: '4006381333931' } });
+    expect(screen.queryByText(/042100005264/)).toBeNull();
+  });
+
+  it('says nothing when there was no rewrite', () => {
+    const { input } = renderField();
+    typeAndBlur(input, '4006381333931');
+    expect(screen.queryByText(/Recorded as/i)).toBeNull();
+  });
+});

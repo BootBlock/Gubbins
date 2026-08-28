@@ -67,8 +67,10 @@ export function BarcodeField({
   // anywhere else — an item's stored barcode, a switch to another item, a camera capture — is
   // judged the moment it lands, with no interaction needed to reveal it.
   const [editing, setEditing] = useState(false);
-  // What the field last replaced a typed UPC-E with, announced once so the rewrite is not a
-  // silent change for a screen-reader user, who has no way to see the digits count go up.
+  // What the field last replaced a typed UPC-E with, announced so the rewrite is not a silent
+  // change for a screen-reader user, who has no way to see the digit count go up. The
+  // announcement is shown only while it still describes the value on screen, so a switch to
+  // another item — which replaces the value without a keystroke — cannot leave it standing.
   const [expanded, setExpanded] = useState('');
 
   const concern = editing ? null : describeGtinConcern(value);
@@ -109,7 +111,6 @@ export function BarcodeField({
           value={value}
           onChange={(e) => {
             setEditing(true);
-            setExpanded('');
             onChange(e.target.value);
           }}
           onBlur={() => {
@@ -131,7 +132,9 @@ export function BarcodeField({
         />
       </FormField>
       <LiveRegion visuallyHidden>
-        {expanded ? <p>{t('inventory.barcode.expanded', { vars: { barcode: expanded } })}</p> : null}
+        {expanded && expanded === value ? (
+          <p>{t('inventory.barcode.expanded', { vars: { barcode: expanded } })}</p>
+        ) : null}
       </LiveRegion>
       {scannerEnabled ? (
         <div className="flex flex-col">

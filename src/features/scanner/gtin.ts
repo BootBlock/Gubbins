@@ -74,10 +74,12 @@ export function hasValidGtinCheckDigit(digits: string): boolean {
  * if that fails.
  *
  * The UPC-E reading must also **round-trip**: the expansion has to compress back to the same
- * eight digits ({@link compressUpcA}). A handful of zero-heavy codes expand to a UPC-A that
- * compresses to a *different* UPC-E — `00000030` and `00000040` both expand to
- * `000000000000` — and accepting those would store two distinct printed codes as one value,
- * losing whichever was written second. No real UPC-E fails the round-trip.
+ * eight digits ({@link compressUpcA}). Expansion is not injective — `00000030` and `00000040`
+ * both expand to `000000000000` — so accepting every eight digits that expand would store two
+ * distinct printed codes as one value, losing whichever was written second. The codes that fail
+ * the round-trip are exactly those no encoder produces: `compressUpcA` is the GS1 encoder, so a
+ * code it does not emit is not a code any symbol carries. `upce.test.ts` enumerates the whole
+ * space to hold that claim up.
  */
 function resolveEightDigits(digits: string): string | null {
   const expanded = expandUpcE(digits);
@@ -171,16 +173,24 @@ export function canonicaliseBarcode(raw: string): string {
 
 /**
  * Every stored form of one barcode, for a lookup that has to match them all: the value itself,
- * plus the compressed UPC-E when it is a UPC-A that compresses (issue #508).
+ * plus its other UPC-E/UPC-A form when it has one (issue #508).
  *
  * A barcode recorded before Gubbins expanded UPC-E codes still holds the eight digits printed on
- * the pack, while a scan of that pack now resolves to the twelve. Lookup is an exact match, so
- * without the second form those items would quietly stop being found — by the scanner, by the
- * Barcode field's duplicate advisory, by anything else that asks. Returned most-canonical first,
- * and never more than two.
+ * the pack, while one recorded since holds the twelve. Lookup is an exact match, so a caller that
+ * asked for only the form it happened to hold would miss the other — the scanner would stop
+ * finding an older item, and the Barcode field's duplicate advisory would stop warning about a
+ * newer one. Both directions are covered, so it does not matter which form the caller has.
+ *
+ * Only a genuine GTIN gains a second form: a 12-digit code that is not a valid GTIN is left
+ * alone rather than being asked for under a UPC-E it never stood for. Never more than two.
  */
 export function barcodeMatchForms(barcode: string): readonly string[] {
   const value = barcode.trim();
+  const canonical = parseGtin(value);
+  if (canonical === null) return [value];
+  // An 8-digit UPC-E resolves to its expansion, which is the form a code recorded since the
+  // expansion landed is stored in.
+  if (canonical !== value) return [value, canonical];
   const compressed = compressUpcA(value);
-  return compressed === null || compressed === value ? [value] : [value, compressed];
+  return compressed === null ? [value] : [value, compressed];
 }

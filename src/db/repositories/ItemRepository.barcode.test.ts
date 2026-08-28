@@ -138,6 +138,15 @@ describe('ItemRepository — barcodes recorded in the compressed form', () => {
     expect((await items.findByBarcode('04252614')).map((i) => i.id)).toEqual([id]);
   });
 
+  it('finds an item recorded since, when asked for the eight digits printed on the pack', async () => {
+    // The other direction, which the Barcode field's duplicate advisory depends on: it judges an
+    // item's stored value, so a legacy item must still be told about a newer one holding the
+    // expanded form of the same code.
+    const item = await items.create({ name: 'AA cells', barcode: '04252614' });
+    expect(item.barcode).toBe('042100005264');
+    expect((await items.findByBarcode('04252614')).map((i) => i.id)).toEqual([item.id]);
+  });
+
   it('leaves an untouched barcode alone when an unrelated field is saved', async () => {
     // The item editor sends its whole draft on every save, so a rename must not silently migrate
     // the barcode — that would rewrite a record nobody edited and log it as a change they made.

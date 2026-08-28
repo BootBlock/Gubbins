@@ -95,3 +95,35 @@ describe('compressUpcA — the inverse of expandUpcE', () => {
     }
   });
 });
+
+describe('compressUpcA is the encoder every printed UPC-E comes from', () => {
+  /** The GTIN mod-10 check digit, computed here so the property test drives real codes. */
+  const checkDigit = (eleven: string): string => {
+    let sum = 0;
+    for (let i = 0; i < eleven.length; i += 1) {
+      sum += Number(eleven[i]) * ((eleven.length - i) % 2 === 1 ? 3 : 1);
+    }
+    return String((10 - (sum % 10)) % 10);
+  };
+
+  it('round-trips every UPC-A that any UPC-E expands to, across the whole space', () => {
+    // The claim the round-trip guard in `gtin.ts` rests on. Expansion is not injective, so
+    // `compressUpcA(expandUpcE(e)) === e` is false for about 9% of the 8-digit space — but the
+    // codes it is false for are ones no encoder emits. What must hold, and is asserted here over
+    // all two million bodies, is the other direction: the UPC-A an encoder's own output expands
+    // to is the one it was compressed from. Take either function's branches out of order and
+    // this goes red at once. Asserted in one go rather than per code, to keep it quick.
+    const failures: string[] = [];
+    for (const system of ['0', '1']) {
+      for (let body = 0; body < 1_000_000 && failures.length < 5; body += 1) {
+        const upcA = expandUpcE(`${system}${String(body).padStart(6, '0')}0`)!;
+        const withCheck = `${upcA.slice(0, 11)}${checkDigit(upcA.slice(0, 11))}`;
+        const encoded = compressUpcA(withCheck);
+        if (encoded === null || expandUpcE(encoded) !== withCheck) {
+          failures.push(`${withCheck} -> ${encoded} -> ${encoded === null ? '' : expandUpcE(encoded)}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+});

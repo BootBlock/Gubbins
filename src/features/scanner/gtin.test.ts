@@ -173,10 +173,18 @@ describe('barcodeMatchForms — every stored form of one barcode (issue #508)', 
     expect(barcodeMatchForms('  042100005264 ')).toEqual(['042100005264', '04252614']);
   });
 
+  it('adds the expansion when given the printed eight digits', () => {
+    // The other direction: a caller holding the compressed form must still find an item recorded
+    // since the expansion landed.
+    expect(barcodeMatchForms('04252614')).toEqual(['04252614', '042100005264']);
+  });
+
   it('is the value alone for everything else', () => {
     expect(barcodeMatchForms('4006381333931')).toEqual(['4006381333931']);
     expect(barcodeMatchForms('036000291452')).toEqual(['036000291452']); // no zero run to squeeze
     expect(barcodeMatchForms('96385074')).toEqual(['96385074']);
     expect(barcodeMatchForms('RS-482-9021')).toEqual(['RS-482-9021']);
+    // A 12-digit code that is not a valid GTIN is never asked for under a UPC-E it never was.
+    expect(barcodeMatchForms('012345000067')).toEqual(['012345000067']);
   });
 });

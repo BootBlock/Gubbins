@@ -63,15 +63,21 @@ export function expandUpcE(raw: string): string | null {
 }
 
 /**
- * Compress a 12-digit UPC-A back to the UPC-E that expands to it, or `null` when no UPC-E does.
- * The exact inverse of {@link expandUpcE}: the branches are tried in the same order, so a code
- * that both produce agrees with itself.
+ * Compress a 12-digit UPC-A to the UPC-E an encoder would print for it, or `null` when none
+ * would. This is the **GS1 encoder**: its four branches are the four zero-suppression rules in
+ * the priority order the standard applies them, which is why the first matching branch wins even
+ * where a later one also fits.
  *
- * Two things need this. A round-trip through it is what makes {@link expandUpcE} safe to apply
- * to an arbitrary 8-digit code — only a handful of degenerate zero-runs expand to a UPC-A that
- * compresses back to something else, and those are the ones where two printed codes would
- * otherwise collide on one stored value. And a barcode recorded before Gubbins expanded UPC-E
- * codes still holds the compressed form, so a lookup has to be able to ask for it.
+ * It is *not* a plain inverse of {@link expandUpcE}. More than one UPC-E can expand to the same
+ * UPC-A — around 9% of the 8-digit space does — and this returns the one the standard would have
+ * printed. What holds in the direction that matters is that `expandUpcE(compressUpcA(a))` is
+ * `a` for every UPC-A a UPC-E expands to, so every code a real symbol carries survives the
+ * round-trip. `upce.test.ts` enumerates the whole space and asserts exactly that.
+ *
+ * Two things need it. {@link ./gtin}'s round-trip guard uses it to tell a printed UPC-E from
+ * eight digits that merely happen to expand, which is what keeps two distinct codes from
+ * collapsing onto one stored value. And a barcode recorded before Gubbins expanded UPC-E codes
+ * still holds the compressed form, so a lookup has to be able to ask for it.
  */
 export function compressUpcA(raw: string): string | null {
   const digits = raw.trim();
