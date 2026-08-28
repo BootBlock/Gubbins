@@ -324,7 +324,9 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
     messageKey: 'hotkeys.action.startScan',
     defaultBinding: '',
     effect: { kind: 'command', command: 'start-scan' },
-    feature: 'inventory',
+    // Live camera scanning, not Inventory: `inventory` is always on, so gating on it left the
+    // action listed and bindable with the Scanner capability switched off (issue #636).
+    feature: 'scanner',
   },
   {
     id: 'action.newProject',

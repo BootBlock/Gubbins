@@ -340,14 +340,18 @@ function InventoryWorkspace() {
   useEffect(() => {
     if (pendingIntent === null) return;
     if (pendingIntent === 'add') setAddOpen(true);
-    else if (pendingIntent === 'scan') setScannerOpen(true);
+    // The `scan` intent is a store handoff any caller can raise (the dashboard hero, the
+    // Getting-started panel, a hotkey), so the capability is checked here as well as at each
+    // entry point — otherwise one unguarded caller reopens the camera for a user who switched
+    // live scanning off (issue #636). Refused intents are still cleared below.
+    else if (pendingIntent === 'scan' && scannerEnabled) setScannerOpen(true);
     // An import intent is raised elsewhere (the dashboard hero, the command palette) and consumed
     // here, so it is a second route to the very dialog the menu no longer offers. Refusing it here
     // is what stops a hidden control from staying drivable; the intent is still cleared either
     // way, or it would re-fire on the next visit to this screen.
     else if (pendingIntent === 'import' && mayImport) setImportOpen(true);
     useInventoryEntry.getState().clearIntent();
-  }, [pendingIntent, mayImport]);
+  }, [pendingIntent, mayImport, scannerEnabled]);
 
   // The contextual shortcuts (issue #127): on this screen `N` adds an item and `/` jumps to the
   // quick-search box. Both reuse the very controls the buttons drive, so the keyboard route and

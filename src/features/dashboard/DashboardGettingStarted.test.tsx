@@ -15,13 +15,18 @@ vi.mock('@/features/inventory/queries', () => ({ useItemCount: () => itemCountMo
 import { DashboardGettingStarted } from './DashboardGettingStarted';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useInventoryEntry } from '@/features/inventory/useInventoryEntry';
+import { useModulesStore } from '@/state/stores/useModulesStore';
 
 beforeEach(() => {
+  useModulesStore.setState({ intent: {} });
   usePreferencesStore.setState({ dashboardGettingStarted: true });
   useInventoryEntry.setState({ pendingSearch: null, pendingIntent: null });
   itemCountMock.mockReturnValue({ data: 0, isPending: false });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useModulesStore.setState({ intent: {} });
+});
 
 describe('DashboardGettingStarted', () => {
   it('shows the panel when the inventory is empty', () => {
@@ -48,6 +53,28 @@ describe('DashboardGettingStarted', () => {
     usePreferencesStore.setState({ dashboardGettingStarted: false });
     render(<DashboardGettingStarted />);
     expect(screen.queryByTestId('dashboard-getting-started')).toBeNull();
+  });
+
+  it('drops the Scan action when the Scanner capability is off, keeping the rest', () => {
+    useModulesStore.getState().setFeatureIntent('scanner', false);
+    render(<DashboardGettingStarted />);
+    expect(screen.getByTestId('dashboard-getting-started')).toBeTruthy();
+    expect(screen.queryByTestId('getting-started-scan')).toBeNull();
+    expect(screen.getByTestId('getting-started-add')).toBeTruthy();
+    expect(screen.getByTestId('getting-started-import')).toBeTruthy();
+  });
+
+  it('drops the barcode clause from the body copy along with the button', () => {
+    // Matched on the trailing clause, not the bare phrase — the Scan button's own label is
+    // "Scan a barcode" too, so a looser pattern would match the button rather than the copy.
+    render(<DashboardGettingStarted />);
+    expect(screen.getByText(/or scan a barcode to get started/i)).toBeTruthy();
+    cleanup();
+
+    useModulesStore.getState().setFeatureIntent('scanner', false);
+    render(<DashboardGettingStarted />);
+    expect(screen.queryByText(/or scan a barcode to get started/i)).toBeNull();
+    expect(screen.getByText(/bring in an existing list as a CSV, to get started/i)).toBeTruthy();
   });
 
   it('records the matching intent when an action is clicked', () => {

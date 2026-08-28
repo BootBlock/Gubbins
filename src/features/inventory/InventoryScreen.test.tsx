@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useSessionStore } from '@/state/stores/useSessionStore';
+import { useModulesStore } from '@/state/stores/useModulesStore';
 import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { useInventoryEntry } from './useInventoryEntry';
 import { InventoryScreen } from './InventoryScreen';
@@ -101,7 +102,6 @@ vi.mock('./components/LocationDetailCard', () => ({ LocationDetailCard: () => <d
 vi.mock('./components/CreateItemDialog', () => ({ CreateItemDialog: () => <div /> }));
 vi.mock('./components/CategoryManagerDialog', () => ({ CategoryManagerDialog: () => <div /> }));
 vi.mock('./components/ItemDetailDialog', () => ({ ItemDetailDialog: () => <div /> }));
-vi.mock('@/features/scanner/components/ScannerOverlay', () => ({ ScannerOverlay: () => <div /> }));
 vi.mock('@/features/lifecycle/components/AuditDayDialog', () => ({ AuditDayDialog: () => <div /> }));
 vi.mock('@/features/lifecycle/components/CycleCountDialog', () => ({ CycleCountDialog: () => <div /> }));
 vi.mock('@/features/search/components/VisualBuilder', () => ({ VisualBuilder: () => <div /> }));
@@ -119,6 +119,11 @@ vi.mock('./components/ImportDataDialog', () => ({ ImportDataDialog: openMarker('
 vi.mock('@/features/export/ExportWizard', () => ({ ExportWizard: openMarker('export-wizard') }));
 vi.mock('./components/PrintLabelsDialog', () => ({ PrintLabelsDialog: openMarker('print-labels-dialog') }));
 vi.mock('./components/BulkEditDialog', () => ({ BulkEditDialog: openMarker('bulk-edit-dialog') }));
+// The scanner overlay reports the same way: a `scan` intent that slipped past the capability
+// gate would mount it *open*, which is exactly what issue #636 was.
+vi.mock('@/features/scanner/components/ScannerOverlay', () => ({
+  ScannerOverlay: openMarker('scanner-overlay'),
+}));
 
 // ─── harness ──────────────────────────────────────────────────────────────────
 
@@ -141,6 +146,7 @@ afterEach(() => {
   cleanup();
   useInventoryEntry.setState({ pendingIntent: null });
   useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+  useModulesStore.setState({ intent: {} });
 });
 
 describe('InventoryScreen — an unrestricted session', () => {
@@ -222,6 +228,27 @@ describe('InventoryScreen — labels:print and reports:read', () => {
     expect(screen.getByTestId('print-labels')).toBeInTheDocument();
     expect(screen.getByTestId('print-catalogue')).toBeInTheDocument();
     expect(screen.queryByTestId('bulk-edit')).not.toBeInTheDocument();
+  });
+});
+
+describe('InventoryScreen — a scan intent raised elsewhere', () => {
+  it('opens the scanner overlay while the Scanner capability is on', () => {
+    useInventoryEntry.setState({ pendingIntent: 'scan' });
+    render(<InventoryScreen />);
+
+    expect(screen.getByTestId('scanner-overlay')).toBeInTheDocument();
+    expect(useInventoryEntry.getState().pendingIntent).toBeNull();
+  });
+
+  it('refuses the intent — and still clears it — with Scanner switched off (#636)', () => {
+    useModulesStore.getState().setFeatureIntent('scanner', false);
+    useInventoryEntry.setState({ pendingIntent: 'scan' });
+    render(<InventoryScreen />);
+
+    // Any caller can raise the intent, so the camera must stay shut here too — not only at
+    // whichever entry points remembered to check.
+    expect(screen.queryByTestId('scanner-overlay')).not.toBeInTheDocument();
+    expect(useInventoryEntry.getState().pendingIntent).toBeNull();
   });
 });
 

@@ -57,6 +57,11 @@ describe('the action registry', () => {
   it('keeps the command palette on its pre-existing Ctrl+/ chord', () => {
     expect(DEFAULT_HOTKEY_BINDINGS['command.palette']).toBe('Ctrl+/');
   });
+
+  it('gates Start a scan on the Scanner capability, not on always-on Inventory (#636)', () => {
+    const scan = HOTKEY_ACTIONS.find((a) => a.id === 'action.startScan');
+    expect(scan?.feature).toBe('scanner');
+  });
 });
 
 describe('normaliseHotkeyKey', () => {

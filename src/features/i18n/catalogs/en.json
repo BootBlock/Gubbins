@@ -236,6 +236,7 @@
   "dashboard.actions.scan": "Scan",
   "dashboard.gettingStarted.heading": "Welcome to Gubbins — let’s add your first item",
   "dashboard.gettingStarted.body": "Your inventory is empty. Add something by hand, bring in an existing list as a CSV, or scan a barcode to get started.",
+  "dashboard.gettingStarted.bodyNoScan": "Your inventory is empty. Add something by hand, or bring in an existing list as a CSV, to get started.",
   "dashboard.gettingStarted.add": "Add an item",
   "dashboard.gettingStarted.import": "Import",
   "dashboard.gettingStarted.scan": "Scan a barcode",
