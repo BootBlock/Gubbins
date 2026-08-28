@@ -53,9 +53,9 @@ describe('warranty ↔ condition colour parity (issue #254)', () => {
   it('uses only semantic text tokens, never a raw colour or palette class', () => {
     const entries = [...Object.values(CONDITION_COLOR_CLASS), ...Object.values(WARRANTY_STATUS_COLOR_CLASS)];
     for (const cls of entries) {
+      // Admits no digits, which is what rules out a palette class: `text-red-500` and friends
+      // are a numbered scale step, and a raw `text-[#aabbcc]` carries brackets and a hash.
       expect(cls).toMatch(/^text-[a-z-]+$/);
-      // `text-red-500` and friends: a palette class is a numbered scale step.
-      expect(cls).not.toMatch(/-\d+$/);
     }
   });
 

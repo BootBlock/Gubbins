@@ -64,9 +64,9 @@ The **+** button above the tree opens **Add location**. Give it a name — and, 
 icon, a colour, a description, a capacity and its internal size — then select **Create**.
 
 - **It nests where you are.** With one of your own locations selected, the new one is created
-  *inside* it. From **All items**, or from the built-in **Unassigned** and **In Transit** rows
-  (which can't hold other locations), it starts at the top level instead. Either way you can pick
-  a different parent in the dialog.
+  *inside* it. From **All items**, from the built-in **Unassigned** and **In Transit** rows (which
+  can't hold other locations), or from an archived location (which is not offered as a parent), it
+  starts at the top level instead. Either way you can pick a different parent in the dialog.
 - **It becomes the selection.** The new location is selected as soon as it is created, and the
   branch it landed in is opened up — so the inventory is already filtered to it and you can start
   putting things in straight away.

@@ -83,19 +83,24 @@ describe('history prune watermark: erase target ↔ StorageRepository (issue #25
     // `create` logs a CREATED row stamped with the real clock, which sits far past the fixed
     // NOW used here. Clear it so the three seeded rows are the only ones under test.
     await driver.execute('DELETE FROM item_history;');
-    for (const createdAt of [NOW - 10_000, NOW - 1_000, NOW + 1_000]) {
+    // The last row is stamped *after* the instant the erase target is later run at, so a
+    // hypothetical erase that pruned by cutoff rather than wholesale would leave it behind.
+    // Without that row the two behaviours are indistinguishable and the erase half of this
+    // test asserts nothing.
+    for (const createdAt of [NOW - 10_000, NOW - 1_000, NOW + 1_000, NOW + 5_000]) {
       await driver.execute(
         'INSERT INTO item_history (id, item_id, action, created_at) VALUES (?, ?, ?, ?);',
         [crypto.randomUUID(), item.id, 'QUANTITY_CHANGE', createdAt],
       );
     }
 
-    // The repository prunes strictly older than the cutoff; the newer row survives.
+    // The repository prunes strictly older than the cutoff; the two newer rows survive.
     await storage.pruneHistoryBefore(NOW);
     const left = await driver.query<{ n: number }>('SELECT COUNT(*) AS n FROM item_history;');
-    expect(Number(left[0]!.n)).toBe(1);
+    expect(Number(left[0]!.n)).toBe(2);
 
-    // The Danger-Zone target clears the log wholesale, watermarked to the same instant.
+    // The Danger-Zone target clears the log wholesale — including the row stamped after the
+    // instant it runs at, which a cutoff-based delete would have spared.
     await runEraseTarget(NOW + 2_000);
     const none = await driver.query<{ n: number }>('SELECT COUNT(*) AS n FROM item_history;');
     expect(Number(none[0]!.n)).toBe(0);

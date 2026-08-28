@@ -225,11 +225,14 @@ export function locationsMatchingQuery(
  * "In Transit") and archived rows are never valid parents, so a new location started
  * from any of those defaults to top level (`null`).
  *
- * The exclusions are exactly the dialogs' own `buildParentOptions` filter: a seeded
- * parent the picker does not offer would either blank the field or — worse — survive
- * submission and file the new location under a parent the user cannot see. The archived
- * half is reachable only with "Show archived" on, which is why `archivedAt` has to reach
- * this seam at all; a parity test in `location-tree.test.ts` holds the two together.
+ * These are the same exclusions the Add-location dialog's own `buildParentOptions` applies
+ * to every row it offers. (That filter drops one thing more — the `excludeIds` a *re-parent*
+ * passes to keep a node off its own subtree — which has no counterpart here, because seeding
+ * a brand-new location has no subtree to avoid.) A seeded parent the picker does not offer
+ * would either blank the field or — worse — survive submission and file the new location
+ * under a parent the user cannot see. The archived half is reachable only with "Show
+ * archived" on, which is why `archivedAt` has to reach this seam at all; a parity test in
+ * `location-tree.test.ts` holds the two together.
  */
 export function defaultParentForNewLocation(
   selectedId: string | null,
@@ -247,8 +250,9 @@ export function defaultParentForNewLocation(
  * user-created location pre-fills that location; but the synthetic "All items" (a `null`
  * selection), the system-locked rows ("Unassigned", "In Transit") and archived rows are not
  * meaningful homes to seed, so those fall back to `fallbackLocationId` — the user's marked
- * **default** location when one is set, else the Unassigned holding pen. Unlike a top-level location (whose parent is `null`),
- * an item always needs a concrete home — hence the non-null return.
+ * **default** location when one is set, else the Unassigned holding pen. Unlike a top-level
+ * location (whose parent is `null`), an item always needs a concrete home — hence the
+ * non-null return.
  */
 export function defaultLocationForNewItem(
   selectedId: string | null,

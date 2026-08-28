@@ -142,7 +142,8 @@ export function normalisePurchasePrice(value: number | null | undefined): number
 /**
  * Validate an optional depreciation-months value (Phase 66 asset lifecycle, v24):
  * null clears it (no depreciation); otherwise it must be a positive **whole** number of
- * months, mirroring the `items.depreciation_months > 0` CHECK.
+ * months, mirroring the `items.depreciation_months > 0` CHECK — asserted in
+ * `normalise-db-check.test.ts` alongside the other numeric guards (issue #254).
  *
  * The truncation happens before the range check, not after: a fraction under one month
  * (`0.5`) is positive as typed but truncates to `0`, which the column refuses. Checking

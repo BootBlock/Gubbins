@@ -1,12 +1,18 @@
 /**
- * Drift guard (issue #254): the numeric item normalisers versus the `items` CHECK constraints
- * they claim to mirror.
+ * Drift guard (issue #254): the numeric item normalisers versus the storage contract of the
+ * `items` columns they claim to mirror.
  *
  * Several of these guards' docstrings assert parity with a SQL CHECK — a TypeScript predicate
  * standing in for a constraint written in another language, in another file, that nothing
  * compared. That is the same risk class as the two predicates issue #156 fixed, so it gets the
  * same treatment: drive a spread of probe values through **both** and require the verdicts to
  * agree, against the schema as SQLite actually built it rather than against the DDL source text.
+ *
+ * The column side is deliberately the *whole* contract, not the `CHECK` alone. `items` is a
+ * STRICT table, so a column refuses a value for two reasons that are indistinguishable to a
+ * caller and equally fatal to a write: `depreciation_months = 0` trips the `> 0` CHECK, while
+ * `depreciation_months = 0.5` trips STRICT's integer typing. A guard that only matched the CHECK
+ * would still hand the write path a value the column rejects.
  *
  * "Agree" is stricter than "both reject something": a value the guard accepts must be storable,
  * and a value the guard rejects must be one the column would have refused anyway. A guard that
@@ -76,13 +82,22 @@ describe('item numeric normalisers ↔ the items CHECK constraints they mirror (
     await driver.close();
   });
 
-  /** Whether the column's CHECK accepts `value`, written straight to the real schema. */
+  /**
+   * The two ways a column here refuses a value: its `CHECK`, and — because `items` is STRICT —
+   * its declared type. Matched explicitly so anything else (a mistyped column, a closed driver,
+   * a transient failure) rethrows instead of being counted as a refusal. A bare `catch` would
+   * read a broken test as a passing one, which is the failure this whole file exists to prevent.
+   */
+  const REFUSAL = /CHECK constraint failed|cannot store .+ value in .+ column/i;
+
+  /** Whether the column accepts `value`, written straight to the real schema. */
   async function columnAccepts(column: string, value: number | null): Promise<boolean> {
     try {
       await driver.execute(`UPDATE items SET ${column} = ? WHERE id = 'item';`, [value]);
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (err instanceof DbError && REFUSAL.test(err.message)) return false;
+      throw err;
     }
   }
 
