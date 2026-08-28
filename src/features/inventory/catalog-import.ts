@@ -797,6 +797,12 @@ export interface CatalogStockChange {
   readonly before: number;
   /** The absolute on-hand quantity the file states. */
   readonly counted: number;
+  /**
+   * The item's home placement at plan time — the one `adjustQuantity` absorbs the change at.
+   * Carried so the apply step can tell whether a *decrease* fits there before writing anything;
+   * a whole-item figure says nothing about which drawer the missing units left.
+   */
+  readonly atLocationId: string;
 }
 
 /** A fully-validated row destined for {@link ItemRepository.update}. */
@@ -1415,7 +1421,15 @@ export function buildImportPlanFromRows(
         input: toUpdateInput(data),
         ...withFieldValues(fieldValues),
         ...withTags(data.tags),
-        ...(wantsStock ? { stock: { before: existingItem.quantity, counted: data.quantity! } } : {}),
+        ...(wantsStock
+          ? {
+              stock: {
+                before: existingItem.quantity,
+                counted: data.quantity!,
+                atLocationId: existingItem.locationId,
+              },
+            }
+          : {}),
         ...(wantsMove ? { moveToLocationId: data.locationId! } : {}),
       });
     } else {
@@ -1473,6 +1487,12 @@ export interface CatalogItemRepository {
    * Optional on the same terms as {@link move}.
    */
   adjustQuantity?(id: string, delta: number, note?: string): Promise<Item>;
+  /**
+   * Where an item's stock currently sits, per location (issue #592). Read before a *decrease*, to
+   * check the draw fits the placement {@link adjustQuantity} will take it from. Optional on the
+   * same terms as {@link move}; without it a decrease is refused rather than risked.
+   */
+  listStock?(itemId: string): Promise<readonly { readonly locationId: string; readonly quantity: number }[]>;
 }
 
 /**
@@ -1661,16 +1681,56 @@ export async function applyCatalogImportPlan(
  * importer used to show both and write neither.
  *
  * The delta is measured from the quantity the plan was built against, so it applies as the
- * relative movement the preview described. That is also the form that composes correctly when
- * two devices reconcile the same item offline (see the note on `withAssertedCount`).
+ * relative movement the preview described. Like the whole-item branch of a cycle count, it is
+ * **not** captured as an absolute assertion, so the same import run on two devices before they
+ * sync applies the correction twice — the hazard `withAssertedCount` describes
+ * (`db/repositories/stock-batches.ts`). An assertion is per `stock_batches` row, and a
+ * whole-item figure does not name a lot.
+ *
+ * `ItemRepository.reconcile` states an absolute count and composes its own note from live
+ * figures, which would be the better fit but for the note itself: it reads "Cycle count of
+ * <location>: …", and a spreadsheet arriving in the importer is not a cycle count of anywhere.
+ * Writing that would be a false ledger entry of exactly the kind this issue is about, so the
+ * change goes through `adjustQuantity`, whose note the caller supplies.
  *
  * The move is attempted first — see the caller — because `adjustQuantity` draws a shortfall from
- * the item's primary location only.
+ * the item's primary location only. Where there is no move to gather the item, a decrease the
+ * home placement cannot cover is refused outright — see {@link drawTooWideToLand}.
  *
  * Like {@link applyRowSideEffects} this never throws: a failure is returned as a message so the
  * item's own update is not rolled back, and both halves are attempted so a row that got the
  * location wrong *and* the count wrong says so once.
  */
+/**
+ * Why a decrease cannot be applied, or `null` when it can (issue #592).
+ *
+ * `adjustQuantity` checks the delta against the item's grand total and then draws it from the
+ * home placement alone, discarding whatever that placement could not cover. On an item split
+ * across drawers a whole-item count would therefore empty the home placement, leave the rest
+ * where it was, and still write the full variance to the ledger — a figure the item never
+ * reached, recorded as though it had.
+ *
+ * A row that names a location never gets here: its move gathers every placement at the target
+ * first, so the draw always fits. Nor does an *increase*, which lands in one place regardless.
+ */
+async function drawTooWideToLand(
+  repo: CatalogItemRepository,
+  entry: CatalogUpdate,
+  draw: number,
+): Promise<string | null> {
+  const stock = entry.stock;
+  if (stock === undefined) return null;
+  // A gathered item is a single placement by construction — see the caller's ordering.
+  if (entry.moveToLocationId !== undefined) return null;
+  if (!repo.listStock) {
+    return 'The quantity was not changed: this repository cannot check where the stock sits.';
+  }
+  const placements = await repo.listStock(entry.itemId);
+  const atHome = placements.find((p) => p.locationId === stock.atLocationId)?.quantity ?? 0;
+  if (atHome >= draw) return null;
+  return "The quantity was not changed: this item's stock sits in more than one location, and an imported count says nothing about which one lost units. Count each location with a stock-take, or add a location column to the file.";
+}
+
 async function applyStockAndLocation(
   repo: CatalogItemRepository,
   entry: CatalogUpdate,
@@ -1691,8 +1751,11 @@ async function applyStockAndLocation(
 
   if (entry.stock !== undefined) {
     const delta = entry.stock.counted - entry.stock.before;
+    const unlandable = delta < 0 ? await drawTooWideToLand(repo, entry, -delta) : null;
     if (!repo.adjustQuantity) {
       messages.push('The quantity was ignored: this repository cannot adjust stock.');
+    } else if (unlandable !== null) {
+      messages.push(unlandable);
     } else {
       try {
         await repo.adjustQuantity(

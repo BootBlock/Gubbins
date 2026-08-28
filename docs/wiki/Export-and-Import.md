@@ -126,9 +126,11 @@ going through the item importer first.
 > **ℹ️ Note**
 > Once you've pressed import and the rows are actually being written, the dialog stays put until
 > it's done — pressing Escape, clicking outside it and the ✕ all wait. It finishes on a summary:
-> how many items were created, how many updated, and how many rows were skipped with the reason
-> for each. That summary is the only place those reasons appear, and closing part-way through
-> wouldn't have stopped the import — only hidden what it did.
+> how many items were created, how many updated, and how many were skipped, followed by every row
+> that hit a problem with the reason for it. That includes a row that landed only in part — its
+> details saved but its quantity, location or tags refused — so a partial success is never dressed
+> up as a clean one. That summary is the only place those reasons appear, and closing part-way
+> through wouldn't have stopped the import — only hidden what it did.
 
 > **ℹ️ Note**
 > A chosen file is checked *before* anything is read from it, because a file picker's "All files"
@@ -169,6 +171,12 @@ going through the item importer first.
 > Only a [[bulk item|Tracking-Modes]] has a count an import can set. A serialised, consumable or
 > untracked item is flagged in the review instead, with the reason, rather than showing a number
 > that would never land.
+>
+> One more count an import won't guess at: if an item's stock is **[[split across more than one
+> location|Locations-and-Stock]]** and the file asks for a *lower* figure without saying where the
+> units went, the row is reported and the stock left alone. A single number can't say which drawer
+> emptied. Add a location column, or count each place with a
+> [[stock-take|Cycle-Counts-and-Audit-Day]].
 >
 > The preview's **Qty** column shows what each row will do: a new item shows the figure from your
 > file, and a matched one shows the new count with the current one beside it (`250 (was 200)`).

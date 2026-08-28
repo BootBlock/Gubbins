@@ -19,8 +19,39 @@ import { ItemRepository } from '@/db/repositories/ItemRepository';
 import { LocationRepository } from '@/db/repositories/LocationRepository';
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { Item, TrackingMode } from '@/db/repositories/types';
-import { buildCatalogImportPlan, applyCatalogImportPlan } from './catalog-import';
+import { buildCatalogImportPlan, applyCatalogImportPlan, type CatalogItemRepository } from './catalog-import';
 import { buildPreviewRows } from './text-import';
+
+/** A minimal existing DISCRETE item, for the plan-building tests that need no database. */
+function stubDiscreteItem(id: string, name: string, quantity: number): Item {
+  return {
+    id,
+    name,
+    mpn: null,
+    description: null,
+    locationId: UNASSIGNED_LOCATION_ID,
+    categoryId: null,
+    trackingMode: 'DISCRETE',
+    quantity,
+    serialNo: null,
+    manufacturer: null,
+    unitCost: null,
+    expiryDate: null,
+    batchNumber: null,
+    lotNumber: null,
+    condition: null,
+    parentId: null,
+    reorderPoint: null,
+    reorderGaugePercent: null,
+    reorderQty: null,
+    isUnlimited: false,
+    isActive: true,
+    createdAt: 0,
+    updatedAt: 0,
+    gauge: null,
+    operationalMetadata: null,
+  };
+}
 
 describe('an import applies the quantity and location it previews', () => {
   let driver: MemoryDriver;
@@ -137,6 +168,38 @@ describe('an import applies the quantity and location it previews', () => {
     ]);
   });
 
+  it('refuses a whole-item count it cannot land, rather than drawing part of it', async () => {
+    // A count states a figure for the item as a whole, but `adjustQuantity` draws the shortfall
+    // out of the home placement alone — so on a split item it would take what is there, stop, and
+    // log a variance that never happened. The row is reported instead: nothing written, nothing
+    // claimed. A file that names the location takes the gather-then-count path above.
+    const workshop = await locations.create({ name: 'Workshop' });
+    const item = await repo.create({ name: 'Widget A', quantity: 12 });
+    await repo.transferStock(item.id, UNASSIGNED_LOCATION_ID, workshop.id, 7);
+
+    const { result } = await importAgainst('name,quantity\r\nWidget A,3\r\n', [
+      (await repo.getById(item.id))!,
+    ]);
+
+    expect(result.rows[0]!.error).toMatch(/more than one location/i);
+    expect((await repo.getById(item.id))!.quantity).toBe(12);
+    const history = (await repo.getHistory(item.id)).rows;
+    expect(history.some((h) => h.action === 'QUANTITY_CHANGE')).toBe(false);
+  });
+
+  it('still counts down a split item when the draw fits its home placement', async () => {
+    const workshop = await locations.create({ name: 'Workshop' });
+    const item = await repo.create({ name: 'Widget A', quantity: 12 });
+    await repo.transferStock(item.id, UNASSIGNED_LOCATION_ID, workshop.id, 4);
+
+    const { result } = await importAgainst('name,quantity\r\nWidget A,9\r\n', [
+      (await repo.getById(item.id))!,
+    ]);
+
+    expect(result.rows[0]!.error).toBeUndefined();
+    expect((await repo.getById(item.id))!.quantity).toBe(9);
+  });
+
   it('does not move a matched item to the batch default location it never asked for', async () => {
     // The dialog's Location dropdown answers "where do the NEW items go?". Reading it as a move
     // would relocate a whole catalogue on an import that never mentioned locations.
@@ -172,6 +235,42 @@ describe('an import applies the quantity and location it previews', () => {
     // A create has nothing to compare against — the cell is the whole story.
     expect(rows[1]).toMatchObject({ status: 'create', quantity: '9' });
     expect(rows[1]!.quantityChange).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A repository that cannot do the stock half says so
+// ---------------------------------------------------------------------------
+
+/**
+ * `move`, `adjustQuantity` and `listStock` are optional on {@link CatalogItemRepository} so a
+ * lightweight double keeps compiling. A double that lacks them must still say the quantity and
+ * the location did not land — dropping them quietly is the defect this seam exists to fix, and
+ * "the double happens not to implement it" is not a reason to be silent about it.
+ */
+describe('a repository without the stock methods reports rather than drops', () => {
+  it('says so on the row instead of counting a clean update', async () => {
+    const existing = stubDiscreteItem('item-1', 'Widget A', 200);
+    const plan = buildCatalogImportPlan(
+      'name,quantity,location\r\nWidget A,250,Workshop\r\n',
+      null,
+      [existing],
+      { locations: [{ id: 'loc-workshop', name: 'Workshop' }] },
+    );
+    expect(plan.update[0]!.stock).toBeDefined();
+    expect(plan.update[0]!.moveToLocationId).toBe('loc-workshop');
+
+    const bare: CatalogItemRepository = {
+      create: async () => {
+        throw new Error('no creates in this plan');
+      },
+      update: async () => existing,
+    };
+    const result = await applyCatalogImportPlan(plan, bare);
+
+    expect(result.updated).toBe(1);
+    expect(result.rows[0]!.error).toMatch(/location was ignored/i);
+    expect(result.rows[0]!.error).toMatch(/quantity was ignored/i);
   });
 });
 

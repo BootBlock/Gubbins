@@ -241,7 +241,11 @@ describe('buildCatalogImportPlan — update path (match by name)', () => {
     expect('quantity' in upd).toBe(false);
     // It rides beside the input instead, and lands through the stock ledger (issue #592) — see
     // `catalog-import-stock.test.ts` for the counts actually moving.
-    expect(plan.update[0]!.stock).toEqual({ before: 0, counted: 50 });
+    expect(plan.update[0]!.stock).toEqual({
+      before: 0,
+      counted: 50,
+      atLocationId: UNASSIGNED_LOCATION_ID,
+    });
   });
 });
 
