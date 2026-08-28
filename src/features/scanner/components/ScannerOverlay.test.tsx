@@ -247,6 +247,50 @@ describe('ScannerOverlay — "What can I scan?" explainer', () => {
   });
 });
 
+describe('ScannerOverlay — leaving it (issue #590)', () => {
+  const escape = () => fireEvent.keyDown(document, { key: 'Escape' });
+
+  it('closes on Escape, the affordance a full-screen overlay had no way to offer', () => {
+    const onClose = vi.fn();
+    render(<ScannerOverlay open onClose={onClose} />);
+
+    escape();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Escape to a dialog opened over it, and takes it back afterwards', async () => {
+    const onClose = vi.fn();
+    render(<ScannerOverlay open onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'What can I scan?' }));
+    await screen.findByRole('dialog', { name: 'What can I scan?' });
+
+    escape();
+
+    // The explainer went, the scanner stayed: one Escape is one dismissal, topmost first.
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'What can I scan?' })).toBeNull());
+    expect(onClose).not.toHaveBeenCalled();
+
+    escape();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the page its scroll back once the overlay and its dialogs have gone', async () => {
+    const { unmount } = render(<ScannerOverlay open onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'What can I scan?' }));
+    await screen.findByRole('dialog', { name: 'What can I scan?' });
+    expect(document.body.style.overflow).toBe('hidden');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'What can I scan?' })).toBeNull());
+    unmount();
+
+    // The lock is released when the last *Modal* closes. An overlay that claimed a place on that
+    // stack without owning the lock itself would strand `overflow: hidden` on the whole app.
+    expect(document.body.style.overflow).toBe('');
+  });
+});
+
 describe('ScannerOverlay — header layout on a phone (issue #657)', () => {
   /** The header row: the icon, the title, the mode toggle and the two icon buttons. */
   const header = () => screen.getByRole('button', { name: 'Close scanner' }).parentElement!;

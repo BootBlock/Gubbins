@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { plural } from '@/lib/plural';
 import { createPortal } from 'react-dom';
 import { Button, Input, LiveRegion, Modal, Select, Surface, Tooltip } from '@/components/foundry';
+import { useDialogHistoryEntry } from '@/components/foundry/dialog-history';
+import { openModalCount } from '@/components/foundry/modal-stack';
 import {
   AddIcon,
   CheckoutIcon,
@@ -342,10 +344,38 @@ function ScannerOverlayInner({
   });
   const nfcReady = nfcFeature && nfc.supported;
 
-  const close = () => {
+  const close = useCallback(() => {
     dispatch({ type: 'CLOSE' });
     onClose();
-  };
+  }, [onClose]);
+
+  // The two dismissals a full-screen surface is expected to have, and had neither of (issue
+  // #590): the system Back gesture — the *only* back affordance an installed PWA has, and the
+  // one that used to navigate the screen out from under a shelf's worth of queued scans — and
+  // Escape. Both run the same `close` the ✕ does.
+  useDialogHistoryEntry(true, close);
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    // Deferring to the modal stack by *reading* it rather than joining it. Every dialog this
+    // overlay opens — the explainer, the checkout form — is a Modal above it, so "no Modal is
+    // open" is exactly "this overlay is the topmost surface", and nothing else can be open
+    // beneath it (the overlay is launched from a screen, never from a dialog).
+    //
+    // Registering a token instead would be wrong twice over: the shared body scroll-lock is
+    // released only when the last Modal closes, so a permanent token from a non-Modal would
+    // strand `overflow: hidden` on the document after the explainer and the scanner had both
+    // gone; and the count also gates the global hotkeys, which this change has no business
+    // turning off. No Tab trap either: the overlay covers the viewport, and its camera picker
+    // portals a menu outside it that owns its own keyboard contract — see `BarcodeScanDialog`
+    // for that fuller treatment.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || openModalCount() > 0) return;
+      closeRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   const submitManual = () => {
     const value = manual.trim();

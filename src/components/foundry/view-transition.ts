@@ -11,7 +11,9 @@
  *    the general-purpose seam for any non-route swap.
  *  - {@link resolveRouteViewTransitionTypes} is the router's `defaultViewTransition.types`
  *    function, so *every* navigation (declarative `<Link>` and imperative `navigate`) is
- *    gated through the same predicate at the router level, with no per-screen wiring.
+ *    gated through the same predicate at the router level, with no per-screen wiring — on a
+ *    browser that consults it at all. Where it would not be consulted, route transitions are
+ *    configured off instead; see {@link viewTransitionTypesSupported}.
  *  - {@link useViewTransitionsEnabled} is the reactive read for render-time decisions (e.g.
  *    suppressing an entrance animation that would otherwise double up with the cross-fade).
  *
@@ -41,6 +43,26 @@ export const ROUTE_VIEW_TRANSITION_TYPE = 'gubbins-route';
  */
 export function viewTransitionsSupported(): boolean {
   return typeof document !== 'undefined' && typeof document.startViewTransition === 'function';
+}
+
+/**
+ * `true` when this environment can select on a view transition's *type*
+ * (`:active-view-transition-type()`).
+ *
+ * This is not a nicety — it decides whether {@link resolveRouteViewTransitionTypes} is consulted
+ * at all. TanStack Router only reads a `defaultViewTransition` **object** (the form that carries a
+ * `types` resolver) where that selector is supported; everywhere else it falls through to a plain
+ * `document.startViewTransition(update)`, cross-fading the whole document with no gate in front of
+ * it. So on such a browser the object form does not mean "transition, gated" — it means
+ * "transition, always", including for a same-path change that this app has decided should never
+ * cross-fade. `src/app/router.tsx` therefore asks this before choosing which form to configure,
+ * and turns route transitions off outright rather than let an ungated one through.
+ */
+export function viewTransitionTypesSupported(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.CSS?.supports?.('selector(:active-view-transition-type(a))') === true
+  );
 }
 
 /**
@@ -114,8 +136,10 @@ interface RouteChangeInfo {
 /**
  * The router's `defaultViewTransition.types` resolver. Returning `false` makes TanStack
  * Router run the navigation's DOM update directly (no `startViewTransition`); returning a
- * types array runs the cross-fade. So this is the single ON/OFF lever for *all* route
- * navigation, gated by the same predicate as {@link withViewTransition}.
+ * types array runs the cross-fade. So this is the ON/OFF lever for route navigation, gated by
+ * the same predicate as {@link withViewTransition} — wherever the router asks it. It is not
+ * asked on a browser without `:active-view-transition-type()`, which is why route transitions
+ * are configured off there rather than left ungated ({@link viewTransitionTypesSupported}).
  *
  * Scoped to **pathname** changes — a screen-to-screen navigation — so an in-screen
  * search/hash-only param update (which keeps its own local swap animation) is not
