@@ -8,8 +8,18 @@
  * whoever is refused — the two are one decision, and a disable with no explanation is the state
  * the issue specifically asked to avoid.
  */
-import { useState } from 'react';
-import { Banner, Button, Checkbox, FormField, Input, Modal, SelectField } from '@/components/foundry';
+import { useId, useState } from 'react';
+import {
+  Banner,
+  Button,
+  Checkbox,
+  FormField,
+  GlyphPickerButton,
+  Input,
+  Modal,
+  SelectField,
+} from '@/components/foundry';
+import { AccountIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import type { Role, User } from '@/db/repositories/types';
 import { builtinRoleName } from '../builtin-role-labels';
@@ -19,6 +29,7 @@ export interface UserFormValues {
   readonly displayName: string;
   readonly email: string | null;
   readonly description: string | null;
+  readonly icon: string | null;
   readonly roleId: string | null;
   readonly isEnabled: boolean;
   readonly disabledMessage: string | null;
@@ -36,10 +47,12 @@ export interface UserFormDialogProps {
 
 export function UserFormDialog({ user, roles, busy, error, onSubmit, onClose }: UserFormDialogProps) {
   const t = useT();
+  const iconFieldId = useId();
   const [username, setUsername] = useState(user?.username ?? '');
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [description, setDescription] = useState(user?.description ?? '');
+  const [icon, setIcon] = useState<string | null>(user?.icon ?? null);
   const [roleId, setRoleId] = useState(user?.roleId ?? '');
   const [isEnabled, setIsEnabled] = useState(user?.isEnabled ?? true);
   const [disabledMessage, setDisabledMessage] = useState(user?.disabledMessage ?? '');
@@ -56,6 +69,7 @@ export function UserFormDialog({ user, roles, busy, error, onSubmit, onClose }: 
       displayName: displayName.trim() || trimmedUsername,
       email: email.trim() || null,
       description: description.trim() || null,
+      icon,
       roleId: roleId || null,
       isEnabled,
       disabledMessage: disabledMessage.trim() || null,
@@ -124,6 +138,25 @@ export function UserFormDialog({ user, roles, busy, error, onSubmit, onClose }: 
             onChange={(event) => setDescription(event.target.value)}
           />
         </FormField>
+
+        {/* An explicit <label htmlFor> (a <button> is a labelable element) rather than
+            FormField's implicit-label wrap, which is meant for a single input — the same
+            shape the project and location icon fields use. */}
+        <div>
+          <label htmlFor={iconFieldId} className="mb-field-gap block text-sm font-medium">
+            {t('users.form.icon.label')}
+          </label>
+          <GlyphPickerButton
+            id={iconFieldId}
+            value={icon}
+            onChange={setIcon}
+            fallback={AccountIcon}
+            placeholder={t('users.form.icon.placeholder')}
+            title={t('users.form.icon.title')}
+            disabled={busy}
+            clearable
+          />
+        </div>
 
         <SelectField
           label={t('users.form.role.label')}

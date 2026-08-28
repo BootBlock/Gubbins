@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_ROLES, BUILTIN_ROLE_IDS } from './builtin-roles';
+import { isGlyphName } from '@/components/foundry/glyph-picker/glyph-registry';
 import { PERMISSION_KEYS, isPermissionGrant } from './permission-registry';
 import { mayEraseTarget } from '@/features/danger-zone/erase-actions';
 import { can, resolveAuthority, type Authority } from './permissions';
@@ -56,6 +57,20 @@ describe('built-in roles', () => {
     for (const role of BUILTIN_ROLES) {
       expect(role.description.length).toBeGreaterThan(0);
     }
+  });
+
+  // A glyph name that is not in the catalogue does not fail — `Glyph` quietly falls back to the
+  // default role icon — so a typo would ship looking exactly like a role that chose no icon.
+  // This is the only thing that can tell the two apart before release (issue #431).
+  it('gives every role an icon that is really in the glyph catalogue', () => {
+    for (const role of BUILTIN_ROLES) {
+      expect(isGlyphName(role.icon), `${role.name} → ${role.icon}`).toBe(true);
+    }
+  });
+
+  it('gives each role a distinct icon, so a list of roles is readable at a glance', () => {
+    const icons = BUILTIN_ROLES.map((role) => role.icon);
+    expect(new Set(icons).size).toBe(icons.length);
   });
 
   describe('Administrator', () => {

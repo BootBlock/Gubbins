@@ -16,6 +16,7 @@ import {
   Banner,
   Button,
   FormField,
+  Glyph,
   Input,
   MAIN_CONTENT_ID,
   Modal,
@@ -250,7 +251,7 @@ function AccountList({
             )}
           >
             <span aria-hidden="true" className="text-muted-foreground [&_svg]:size-5">
-              {user.hasPassword ? <PasswordIcon /> : <AccountIcon />}
+              <Glyph name={user.icon} fallback={user.hasPassword ? PasswordIcon : AccountIcon} />
             </span>
             <span className="flex min-w-0 flex-col">
               <span className="truncate font-medium">{user.displayName}</span>

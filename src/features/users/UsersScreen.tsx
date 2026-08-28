@@ -15,6 +15,7 @@ import { useState } from 'react';
 import {
   Banner,
   Button,
+  Glyph,
   LiveRegion,
   MAIN_CONTENT_ID,
   Modal,
@@ -540,8 +541,11 @@ function UserRow({
 
   return (
     <Surface className="flex flex-wrap items-center gap-3 p-3">
+      {/* The account's own glyph where one is set. Without it the row keeps the padlock /
+          person pair, which says whether the account is password-protected — a signal the
+          no-password warning below repeats in words, so a chosen icon can safely replace it. */}
       <span aria-hidden className="text-muted-foreground [&_svg]:size-5">
-        {user.hasPassword ? <PasswordIcon /> : <AccountIcon />}
+        <Glyph name={user.icon} fallback={user.hasPassword ? PasswordIcon : AccountIcon} />
       </span>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -640,7 +644,7 @@ function RoleRow({
   return (
     <Surface className="flex flex-wrap items-center gap-3 p-3">
       <span aria-hidden className="text-muted-foreground [&_svg]:size-5">
-        <RoleIcon />
+        <Glyph name={role.icon} fallback={RoleIcon} />
       </span>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">

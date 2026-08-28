@@ -37,6 +37,12 @@ export interface BuiltinRoleDef {
   readonly id: string;
   readonly name: string;
   readonly description: string;
+  /**
+   * The role's icon: a canonical Lucide glyph name, seeded into `roles.icon` by the baseline
+   * (issue #431). It is a *starting point* like the name and description are — an operator may
+   * change or clear it — so nothing re-asserts it after the seed.
+   */
+  readonly icon: string;
   readonly grants: readonly PermissionGrant[];
 }
 
@@ -75,6 +81,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     id: ADMINISTRATOR_ROLE_ID,
     name: 'Administrator',
     description: 'Full access to everything, including managing users and roles.',
+    icon: 'ShieldCheck',
     grants: [GRANT_ALL],
   },
   {
@@ -82,6 +89,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     name: 'Manager',
     description:
       'Full access to inventory, projects and settings, but cannot manage users or switch modules off.',
+    icon: 'BriefcaseBusiness',
     // `modules` is withheld for the same reason `users` is, and it is the sharper of the two:
     // switching the Users module off takes the sign-in gate down with it, so a role that could
     // write it could hand itself every permission this role is defined as not having.
@@ -92,6 +100,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     name: 'Stocker',
     description:
       'Can add and edit items, move stock and run counts, but cannot delete or see the audit trail.',
+    icon: 'Boxes',
     grants: [
       'items:read',
       'items:write',
@@ -114,6 +123,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     name: 'Viewer',
     description:
       'Can look at everything except the audit trail and user accounts, but cannot change anything.',
+    icon: 'Eye',
     grants: [
       'items:read',
       'stock:read',
@@ -136,6 +146,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     name: 'Auditor',
     description:
       'Can look at everything including the activity history, and export it, but cannot change anything.',
+    icon: 'ScrollText',
     // The one role defined by what Viewer withholds: the activity history. Export rides with it
     // because an auditor who can read a figure on screen and cannot take it away to check it is
     // being asked to audit from memory.
@@ -163,6 +174,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     id: PURCHASER_ROLE_ID,
     name: 'Purchaser',
     description: 'Owns suppliers, purchase orders and the wishlist, and can receive stock against an order.',
+    icon: 'ShoppingCart',
     // `stock:write` is what makes receiving a delivery possible; `items:write` covers the supplier
     // part and cost fields an order writes back. Neither extends to deleting an item.
     grants: [
@@ -192,6 +204,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     id: TECHNICIAN_ROLE_ID,
     name: 'Technician',
     description: 'Services assets and runs maintenance, with read-only stock and no deleting of items.',
+    icon: 'Wrench',
     // `stock:write` covers consuming parts on a job. Items stay read-only: servicing an asset is
     // not the same authority as rewriting the catalogue entry describing it.
     grants: [
@@ -215,6 +228,7 @@ export const BUILTIN_ROLES: readonly BuiltinRoleDef[] = [
     name: 'Loans desk',
     description:
       'Books, lends and returns equipment, and keeps borrower contacts, without editing the catalogue.',
+    icon: 'Handshake',
     // The counter role for a shared tool store. It owns the whole booking and loan lifecycle,
     // including cancelling a booking raised in error, while the catalogue itself stays read-only.
     // `checkouts:delete` is the loan *ledger* rather than one loan — there is no per-loan delete,
