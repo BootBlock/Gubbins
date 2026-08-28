@@ -36,6 +36,16 @@ A narrower selection is usually the more useful document — a single collection
 supplier's parts — and it is also what to reach for if the whole inventory turns out to be too big
 to print (below).
 
+## Browsing a large catalogue
+
+The catalogue is shown **a page at a time**, with the page controls at the bottom. The totals above
+and below the document — the item count, the total in stock and the grand total — always cover the
+**whole** catalogue, not just the page you are looking at, so the headline figures are right however
+much of the document is on screen.
+
+Where a section is split across pages, its heading says **"showing 25 of 240"** so a part-page is
+never mistaken for the whole section. The section's own subtotal is always its full subtotal.
+
 ## How lines are valued
 
 With the money columns switched on, each line shows a **unit cost** and a **value** (unit cost ×
@@ -61,23 +71,39 @@ two-page parts list from a two-hundred-page one before you commit to anything.
 Ask for a long print and Gubbins checks with you first, so a whole-inventory catalogue is never a
 surprise waiting at the printer.
 
+**Use the Print / Save as PDF button** to print the catalogue. Because the document is read a page
+at a time, the button first loads *every* remaining page — you'll see its progress — and then prints
+the complete catalogue. That is what makes the printed document trustworthy: what comes out is
+always the whole catalogue, never the page you happened to be on.
+
+If you print straight from your browser instead (Ctrl+P, or the browser's own menu), Gubbins prints
+a **summary** — one line per section with its item count and subtotal, plus the totals — headed
+*"Summary — section subtotals only"*. It's a useful short document in its own right, and it can
+never be mistaken for the full catalogue.
+
+> **ℹ️ Note**
+> Whichever you print, the document says at the top which one it is. A printed catalogue never
+> shows only part of your inventory while looking complete.
+
 > **💡 Tip**
 > The **Photo** and **QR** columns make every row several times taller. Turning them off is the
 > quickest way to shorten a long catalogue — and the only way to keep a large one printable at all.
 
 ### Very large catalogues
 
-Printing has a size limit, because a very large catalogue runs to thousands of pages. Above roughly
-**20,000 items** — or **2,000** with the **Photo** or **QR** column on, since each of those has to
-be built for every single row — the catalogue isn't produced and the Print button is switched off.
-Narrow the selection to a location or a project, or turn those columns off, and it comes straight
-back.
+**Printing** has a size limit, because a very large catalogue runs to thousands of pages. Above
+roughly **20,000 items** — or **2,000** with the **Photo** or **QR** column on, since each of those
+has to be built for every single row — the Print button is switched off. Narrow the selection to a
+location or a project, or turn those columns off, and it comes straight back.
+
+Reading the catalogue on screen has no such limit: however many items a selection covers, you can
+still page through it and read its totals.
 
 > **ℹ️ Note**
 > The [[insurance schedule|Insurance-and-Estate-Schedule]] draws the same line, for the same
-> reason. If you need a document of everything at that size, export your data as a file instead
-> (see [[Export & import|Export-and-Import]]) — a file can be searched, re-sorted and printed a
-> part at a time.
+> reason. If you need a printable document of everything at that size, export your data as a file
+> instead (see [[Export & import|Export-and-Import]]) — a file can be searched, re-sorted and
+> printed a part at a time.
 
 ## Related pages
 

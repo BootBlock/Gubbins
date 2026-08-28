@@ -1,20 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildPartsCatalogue,
   CATALOGUE_FIELDS,
   CATALOGUE_MONEY_FIELDS,
   CATALOGUE_PRINT_LIMIT,
   CATALOGUE_PRINT_MEDIA_LIMIT,
   DEFAULT_CATALOGUE_FIELDS,
   UNASSIGNED_GROUP_LABEL,
+  UNCATEGORISED_GROUP_LABEL,
   cataloguePrintLimit,
   estimateCataloguePages,
+  finalisePartsCatalogueSummary,
+  toCatalogueLine,
   type CatalogueFieldKey,
+  type CatalogueGroupTally,
   type CatalogueItemInput,
   type CatalogueLocationInput,
 } from './parts-catalogue';
 
 const NOW = Date.parse('2026-07-09T00:00:00Z');
+/** Every test reports in a 2dp currency unless it is specifically about the minor unit. */
+const DP = 2;
 
 /** A fully-specified item; each test overrides only the fields it exercises. */
 function item(overrides: Partial<CatalogueItemInput> & Pick<CatalogueItemInput, 'id'>): CatalogueItemInput {
@@ -41,224 +46,170 @@ function item(overrides: Partial<CatalogueItemInput> & Pick<CatalogueItemInput, 
   };
 }
 
+/** One grouped row as the repository's summary read returns it. */
+function tally(overrides: Partial<CatalogueGroupTally> = {}): CatalogueGroupTally {
+  return {
+    groupId: null,
+    groupName: null,
+    itemCount: 1,
+    subtotalMinorUnits: 0,
+    totalQuantity: 0,
+    pricedCount: 0,
+    ...overrides,
+  };
+}
+
 const LOCATIONS: CatalogueLocationInput[] = [
   { id: 'garage', name: 'Garage', parentId: null },
   { id: 'attic', name: 'Attic', parentId: null },
   { id: 'shelf-a', name: 'Shelf A', parentId: 'garage' },
 ];
 
-describe('buildPartsCatalogue', () => {
-  it('groups items by location, ordered by the hierarchy, with per-line values and totals', () => {
-    const catalogue = buildPartsCatalogue(
-      [
-        item({ id: 'widget', locationId: 'shelf-a', quantity: 3, unitCost: 2 }),
-        item({ id: 'anvil', locationId: 'garage', quantity: 1, unitCost: 10 }),
-        item({ id: 'box', locationId: 'attic', quantity: 2, unitCost: 5 }),
-      ],
-      LOCATIONS,
+describe('toCatalogueLine', () => {
+  it('values a line at quantity × unit cost, quantised to the currency minor unit', () => {
+    const line = toCatalogueLine(
+      item({ id: 'widget', locationId: 'shelf-a', quantity: 3, unitCost: 2 }),
       NOW,
+      DP,
     );
+    expect(line.unitCost).toBe(2);
+    expect(line.lineValue).toBe(6);
+  });
 
-    // Attic (root, alphabetical) → Garage → Garage › Shelf A.
-    expect(catalogue.groups.map((g) => g.groupLabel)).toEqual(['Attic', 'Garage', 'Garage › Shelf A']);
-    const shelf = catalogue.groups.find((g) => g.groupId === 'shelf-a')!;
-    expect(shelf.subtotal).toBe(6);
-    expect(shelf.totalQuantity).toBe(3);
-    expect(catalogue.itemCount).toBe(3);
-    expect(catalogue.totalQuantity).toBe(6); // 3 + 1 + 2
-    expect(catalogue.grandTotal).toBe(10 + 6 + 10); // box 10 + widget 6 + anvil 10
-    expect(catalogue.hasValue).toBe(true);
-    expect(catalogue.generatedAt).toBe(NOW);
+  // Issue #288: a printed column of figures must add up to the subtotal beneath it, so the line
+  // is quantised before anything sums it — not left at a precision the page cannot show.
+  it('rounds a line to the reporting currency minor unit, not to a flat 2dp', () => {
+    const third = item({ id: 'a', locationId: 'garage', quantity: 3, unitCost: 0.335 });
+    expect(toCatalogueLine(third, NOW, 2).lineValue).toBe(1.01);
+    expect(toCatalogueLine(third, NOW, 0).lineValue).toBe(1);
   });
 
   it('prefers a manual unit cost over the preferred supplier cost', () => {
-    const catalogue = buildPartsCatalogue(
-      [item({ id: 'a', locationId: 'garage', quantity: 2, unitCost: 4, preferredSupplierCost: 9 })],
-      LOCATIONS,
+    const line = toCatalogueLine(
+      item({ id: 'a', locationId: 'garage', quantity: 2, unitCost: 4, preferredSupplierCost: 9 }),
       NOW,
+      DP,
     );
-    const line = catalogue.groups[0]!.lines[0]!;
     expect(line.unitCost).toBe(4);
     expect(line.lineValue).toBe(8);
+  });
+
+  it('falls back to the preferred supplier cost when there is no manual cost', () => {
+    const line = toCatalogueLine(
+      item({ id: 'a', locationId: 'garage', quantity: 3, unitCost: null, preferredSupplierCost: 5 }),
+      NOW,
+      DP,
+    );
+    expect(line.unitCost).toBe(5);
+    expect(line.lineValue).toBe(15);
   });
 
   // Issue #683 — a gauge's count is always 0, so the catalogue would print "0 g" against a
   // line value of nothing and quietly under-total the document by every consumable on it.
   it('quantifies and values a gauge line by its contents, not its always-zero count', () => {
-    const catalogue = buildPartsCatalogue(
-      [
-        item({
-          id: 'spool',
-          locationId: 'garage',
-          quantity: 0,
-          unitOfMeasure: 'g',
-          unitCost: null,
-          gauge: { netValue: 400, costPerUnitOfMeasure: 0.025 },
-        }),
-      ],
-      LOCATIONS,
+    const line = toCatalogueLine(
+      item({
+        id: 'spool',
+        locationId: 'garage',
+        quantity: 0,
+        unitOfMeasure: 'g',
+        unitCost: null,
+        gauge: { netValue: 400, costPerUnitOfMeasure: 0.025 },
+      }),
       NOW,
+      DP,
     );
-    const line = catalogue.groups[0]!.lines[0]!;
     expect(line.quantity).toBe(400);
     expect(line.unitCost).toBe(0.025);
     expect(line.lineValue).toBe(10);
-    expect(catalogue.grandTotal).toBe(10);
     // …but 400 grams is not 400 units: the "in stock" count must not absorb a measure.
     expect(line.measured).toBe(true);
-    expect(catalogue.totalQuantity).toBe(0);
-    expect(catalogue.groups[0]!.totalQuantity).toBe(0);
   });
 
   it('reads an unpriced gauge as unpriced, never as a line worth zero', () => {
     // A unit cost prices one countable unit, so it must not stand in per gram — that would be
     // wrong by the container's whole capacity. A manual current value is refused for the same
     // reason, even though it outranks every other source on a counted item (issue #706).
-    const catalogue = buildPartsCatalogue(
-      [
-        item({
-          id: 'cylinder',
-          locationId: 'garage',
-          quantity: 0,
-          unitOfMeasure: 'g',
-          unitCost: 25,
-          preferredSupplierCost: 30,
-          currentValuePerUnit: 40,
-          gauge: { netValue: 500, costPerUnitOfMeasure: null },
-        }),
-      ],
-      LOCATIONS,
+    const line = toCatalogueLine(
+      item({
+        id: 'cylinder',
+        locationId: 'garage',
+        quantity: 0,
+        unitOfMeasure: 'g',
+        unitCost: 25,
+        preferredSupplierCost: 30,
+        currentValuePerUnit: 40,
+        gauge: { netValue: 500, costPerUnitOfMeasure: null },
+      }),
       NOW,
+      DP,
     );
-    const line = catalogue.groups[0]!.lines[0]!;
     expect(line.quantity).toBe(500);
     expect(line.unitCost).toBeNull();
     expect(line.lineValue).toBeNull();
-    expect(catalogue.hasValue).toBe(false);
   });
 
-  it('falls back to the preferred supplier cost when there is no manual cost', () => {
-    const catalogue = buildPartsCatalogue(
-      [item({ id: 'a', locationId: 'garage', quantity: 3, unitCost: null, preferredSupplierCost: 5 })],
-      LOCATIONS,
-      NOW,
-    );
-    const line = catalogue.groups[0]!.lines[0]!;
-    expect(line.unitCost).toBe(5);
-    expect(line.lineValue).toBe(15);
-  });
-
-  it('prices a revalued asset at its manual current value, and counts it in the totals (issue #706)', () => {
+  it('prices a revalued asset at its manual current value, above every source beneath it (issue #706)', () => {
     // The catalogue used to select no `current_value` at all, so an asset priced only by a manual
     // revaluation printed a dash in both money columns and added nothing to its room subtotal —
     // while the insurance schedule listed that same asset at that same figure.
-    const catalogue = buildPartsCatalogue(
-      [
-        item({ id: 'coin', locationId: 'garage', quantity: 2, currentValuePerUnit: 400 }),
-        // …and it still outranks every source beneath it, exactly as it does everywhere else.
-        item({
-          id: 'guitar',
-          locationId: 'garage',
-          quantity: 1,
-          currentValuePerUnit: 900,
-          unitCost: 300,
-          preferredSupplierCost: 250,
-          depreciatedPurchasePrice: 120,
-        }),
-      ],
-      LOCATIONS,
+    const coin = toCatalogueLine(
+      item({ id: 'coin', locationId: 'garage', quantity: 2, currentValuePerUnit: 400 }),
       NOW,
+      DP,
     );
-    const [coin, guitar] = catalogue.groups[0]!.lines;
-    expect(coin!.unitCost).toBe(400);
-    expect(coin!.lineValue).toBe(800);
-    expect(guitar!.unitCost).toBe(900);
-    expect(guitar!.lineValue).toBe(900);
-    expect(catalogue.groups[0]!.subtotal).toBe(1700);
-    expect(catalogue.grandTotal).toBe(1700);
-    expect(catalogue.hasValue).toBe(true);
+    expect(coin.unitCost).toBe(400);
+    expect(coin.lineValue).toBe(800);
+
+    const guitar = toCatalogueLine(
+      item({
+        id: 'guitar',
+        locationId: 'garage',
+        quantity: 1,
+        currentValuePerUnit: 900,
+        unitCost: 300,
+        preferredSupplierCost: 250,
+        depreciatedPurchasePrice: 120,
+      }),
+      NOW,
+      DP,
+    );
+    expect(guitar.unitCost).toBe(900);
+    expect(guitar.lineValue).toBe(900);
   });
 
   it('leaves an unpriced item without a cost or line value (never a misleading zero)', () => {
-    const catalogue = buildPartsCatalogue(
-      [item({ id: 'a', locationId: 'garage', quantity: 4 })],
-      LOCATIONS,
-      NOW,
-    );
-    const line = catalogue.groups[0]!.lines[0]!;
+    const line = toCatalogueLine(item({ id: 'a', locationId: 'garage', quantity: 4 }), NOW, DP);
     expect(line.unitCost).toBeNull();
     expect(line.lineValue).toBeNull();
-    expect(catalogue.groups[0]!.subtotal).toBe(0);
-    expect(catalogue.hasValue).toBe(false);
-    expect(catalogue.grandTotal).toBe(0);
-  });
-
-  it('collects items with an unknown or missing location into a trailing "Unassigned" group', () => {
-    const catalogue = buildPartsCatalogue(
-      [
-        item({ id: 'homed', locationId: 'garage' }),
-        item({ id: 'ghost', locationId: 'nowhere' }),
-        item({ id: 'nolocation', locationId: null }),
-      ],
-      LOCATIONS,
-      NOW,
-    );
-    const last = catalogue.groups.at(-1)!;
-    expect(last.groupLabel).toBe(UNASSIGNED_GROUP_LABEL);
-    expect(last.groupId).toBeNull();
-    expect(last.lines.map((l) => l.id).sort()).toEqual(['ghost', 'nolocation']);
-  });
-
-  it('omits locations that hold no items and sorts lines within a group by name', () => {
-    const catalogue = buildPartsCatalogue(
-      [
-        item({ id: 'z', name: 'Zebra', locationId: 'garage' }),
-        item({ id: 'a', name: 'Apple', locationId: 'garage' }),
-      ],
-      LOCATIONS,
-      NOW,
-    );
-    expect(catalogue.groups).toHaveLength(1);
-    expect(catalogue.groups[0]!.groupId).toBe('garage');
-    expect(catalogue.groups[0]!.lines.map((l) => l.name)).toEqual(['Apple', 'Zebra']);
-  });
-
-  it('returns an empty catalogue for no items', () => {
-    const catalogue = buildPartsCatalogue([], LOCATIONS, NOW);
-    expect(catalogue).toEqual({
-      groups: [],
-      grandTotal: 0,
-      totalQuantity: 0,
-      itemCount: 0,
-      hasValue: false,
-      generatedAt: NOW,
-    });
   });
 
   it('carries every display field through onto the resolved line', () => {
-    const catalogue = buildPartsCatalogue(
-      [
-        item({
-          id: 'a',
-          name: 'Resistor',
-          locationId: 'garage',
-          category: 'Passives',
-          quantity: 100,
-          unitOfMeasure: 'pcs',
-          serialNo: null,
-          mpn: 'RC0805',
-          manufacturer: 'Acme',
-          supplier: 'Parts Co',
-          purchasePrice: 0.01,
-          notes: 'bulk reel',
-        }),
-      ],
-      LOCATIONS,
+    const bytes = new Uint8Array([1, 2, 3]);
+    const line = toCatalogueLine(
+      item({
+        id: 'a',
+        name: 'Resistor',
+        locationId: 'garage',
+        category: 'Passives',
+        description: 'A 10k resistor',
+        thumbnail: bytes,
+        quantity: 100,
+        unitOfMeasure: 'pcs',
+        serialNo: null,
+        mpn: 'RC0805',
+        manufacturer: 'Acme',
+        supplier: 'Parts Co',
+        purchasePrice: 0.01,
+        notes: 'bulk reel',
+      }),
       NOW,
+      DP,
     );
-    const line = catalogue.groups[0]!.lines[0]!;
     expect(line).toMatchObject({
       category: 'Passives',
+      description: 'A 10k resistor',
+      thumbnail: bytes,
       unitOfMeasure: 'pcs',
       mpn: 'RC0805',
       manufacturer: 'Acme',
@@ -267,58 +218,167 @@ describe('buildPartsCatalogue', () => {
       notes: 'bulk reel',
     });
   });
+});
 
-  it('groups by category (alphabetical), uncategorised items trailing', () => {
-    const catalogue = buildPartsCatalogue(
+describe('finalisePartsCatalogueSummary', () => {
+  it('orders location sections by the hierarchy and rolls the tallies up into the totals', () => {
+    const summary = finalisePartsCatalogueSummary(
       [
-        item({ id: 'r1', category: 'Resistors', locationId: 'garage' }),
-        item({ id: 'c1', category: 'Capacitors', locationId: 'attic' }),
-        item({ id: 'x1', category: null, locationId: 'garage' }),
+        tally({
+          groupId: 'shelf-a',
+          itemCount: 1,
+          subtotalMinorUnits: 600,
+          totalQuantity: 3,
+          pricedCount: 1,
+        }),
+        tally({
+          groupId: 'garage',
+          itemCount: 1,
+          subtotalMinorUnits: 1000,
+          totalQuantity: 1,
+          pricedCount: 1,
+        }),
+        tally({ groupId: 'attic', itemCount: 1, subtotalMinorUnits: 1000, totalQuantity: 2, pricedCount: 1 }),
       ],
       LOCATIONS,
       NOW,
-      { groupBy: 'category' },
+      { decimals: DP },
     );
-    expect(catalogue.groups.map((g) => g.groupLabel)).toEqual(['Capacitors', 'Resistors', 'Uncategorised']);
-    expect(catalogue.groups[0]!.groupId).toBe('category:Capacitors');
+
+    // Attic (root, alphabetical) → Garage → Garage › Shelf A.
+    expect(summary.groups.map((g) => g.groupLabel)).toEqual(['Attic', 'Garage', 'Garage › Shelf A']);
+    const shelf = summary.groups.find((g) => g.groupId === 'shelf-a')!;
+    expect(shelf.subtotal).toBe(6);
+    expect(shelf.totalQuantity).toBe(3);
+    expect(shelf.ref).toEqual({ kind: 'location', locationId: 'shelf-a' });
+    expect(summary.itemCount).toBe(3);
+    expect(summary.totalQuantity).toBe(6);
+    expect(summary.grandTotal).toBe(26);
+    expect(summary.hasValue).toBe(true);
+    expect(summary.generatedAt).toBe(NOW);
+  });
+
+  it('folds an unknown or missing location into a trailing "Unassigned" section', () => {
+    const summary = finalisePartsCatalogueSummary(
+      [
+        tally({ groupId: 'garage', itemCount: 1 }),
+        tally({ groupId: 'nowhere', itemCount: 2, subtotalMinorUnits: 500 }),
+        tally({ groupId: null, itemCount: 3, subtotalMinorUnits: 250 }),
+      ],
+      LOCATIONS,
+      NOW,
+      { decimals: DP },
+    );
+    const last = summary.groups.at(-1)!;
+    expect(last.groupLabel).toBe(UNASSIGNED_GROUP_LABEL);
+    expect(last.groupId).toBeNull();
+    // Both tallies land in the one bucket — an item pointing at a deleted room must still appear.
+    expect(last.itemCount).toBe(5);
+    expect(last.subtotal).toBe(7.5);
+    expect(last.ref).toEqual({ kind: 'unassigned' });
+  });
+
+  it('omits locations that hold no items', () => {
+    const summary = finalisePartsCatalogueSummary(
+      [tally({ groupId: 'garage', itemCount: 2 })],
+      LOCATIONS,
+      NOW,
+      { decimals: DP },
+    );
+    expect(summary.groups).toHaveLength(1);
+    expect(summary.groups[0]!.groupId).toBe('garage');
+  });
+
+  it('groups by category (alphabetical), uncategorised trailing, and names each section’s ids', () => {
+    const summary = finalisePartsCatalogueSummary(
+      [
+        tally({ groupId: 'cat-r', groupName: 'Resistors', itemCount: 1 }),
+        tally({ groupId: 'cat-c', groupName: 'Capacitors', itemCount: 1 }),
+        tally({ groupId: null, groupName: null, itemCount: 1 }),
+      ],
+      LOCATIONS,
+      NOW,
+      { groupBy: 'category', decimals: DP },
+    );
+    expect(summary.groups.map((g) => g.groupLabel)).toEqual([
+      'Capacitors',
+      'Resistors',
+      UNCATEGORISED_GROUP_LABEL,
+    ]);
+    expect(summary.groups[0]!.groupId).toBe('category:Capacitors');
+    expect(summary.groups[0]!.ref).toEqual({ kind: 'category', categoryIds: ['cat-c'] });
+    expect(summary.groups[2]!.ref).toEqual({ kind: 'uncategorised', blankCategoryIds: [] });
+  });
+
+  // Category names carry no uniqueness constraint, so a heading can cover more than one category.
+  // The section's page predicate has to cover both, or half its lines vanish from the document.
+  it('merges categories that share a name into one section, over both of their ids', () => {
+    const summary = finalisePartsCatalogueSummary(
+      [
+        tally({ groupId: 'cat-1', groupName: 'Fixings', itemCount: 2, subtotalMinorUnits: 300 }),
+        tally({ groupId: 'cat-2', groupName: 'Fixings', itemCount: 3, subtotalMinorUnits: 200 }),
+      ],
+      LOCATIONS,
+      NOW,
+      { groupBy: 'category', decimals: DP },
+    );
+    expect(summary.groups).toHaveLength(1);
+    expect(summary.groups[0]!.itemCount).toBe(5);
+    expect(summary.groups[0]!.subtotal).toBe(5);
+    expect(summary.groups[0]!.ref).toEqual({ kind: 'category', categoryIds: ['cat-1', 'cat-2'] });
+  });
+
+  // A blank name is no heading at all, so those items read as uncategorised — but the category
+  // still exists, so the trailing bucket's predicate has to name it explicitly.
+  it('treats a blank category name as uncategorised and carries its id into the bucket', () => {
+    const summary = finalisePartsCatalogueSummary(
+      [
+        tally({ groupId: 'cat-blank', groupName: '   ', itemCount: 1 }),
+        tally({ groupId: null, groupName: null, itemCount: 1 }),
+      ],
+      LOCATIONS,
+      NOW,
+      { groupBy: 'category', decimals: DP },
+    );
+    expect(summary.groups).toHaveLength(1);
+    expect(summary.groups[0]!.groupLabel).toBe(UNCATEGORISED_GROUP_LABEL);
+    expect(summary.groups[0]!.ref).toEqual({ kind: 'uncategorised', blankCategoryIds: ['cat-blank'] });
   });
 
   it('supports a single unheaded section with "no grouping"', () => {
-    const catalogue = buildPartsCatalogue(
-      [
-        item({ id: 'b', name: 'Bolt', locationId: 'garage' }),
-        item({ id: 'a', name: 'Anvil', locationId: 'attic' }),
-      ],
+    const summary = finalisePartsCatalogueSummary(
+      [tally({ groupId: null, itemCount: 4, subtotalMinorUnits: 1234, totalQuantity: 9 })],
       LOCATIONS,
       NOW,
-      { groupBy: 'none' },
+      { groupBy: 'none', decimals: DP },
     );
-    expect(catalogue.groups).toHaveLength(1);
-    expect(catalogue.groups[0]!.groupLabel).toBe('');
-    expect(catalogue.groups[0]!.lines.map((l) => l.name)).toEqual(['Anvil', 'Bolt']);
+    expect(summary.groups).toHaveLength(1);
+    expect(summary.groups[0]!.groupLabel).toBe('');
+    expect(summary.groups[0]!.ref).toEqual({ kind: 'all' });
+    expect(summary.groups[0]!.subtotal).toBe(12.34);
+    expect(summary.itemCount).toBe(4);
   });
 
-  it('sorts by value (high to low) and by quantity (high to low)', () => {
-    const items = [
-      item({ id: 'lo', name: 'Cheap', locationId: 'garage', quantity: 1, unitCost: 1 }),
-      item({ id: 'hi', name: 'Dear', locationId: 'garage', quantity: 10, unitCost: 5 }),
-    ];
-    const byValue = buildPartsCatalogue(items, LOCATIONS, NOW, { groupBy: 'none', sortBy: 'value' });
-    expect(byValue.groups[0]!.lines.map((l) => l.id)).toEqual(['hi', 'lo']); // 50 before 1
-    const byQty = buildPartsCatalogue(items, LOCATIONS, NOW, { groupBy: 'none', sortBy: 'quantity' });
-    expect(byQty.groups[0]!.lines.map((l) => l.id)).toEqual(['hi', 'lo']); // 10 before 1
-  });
-
-  it('carries the description and thumbnail through onto the line', () => {
-    const bytes = new Uint8Array([1, 2, 3]);
-    const catalogue = buildPartsCatalogue(
-      [item({ id: 'a', locationId: 'garage', description: 'A 10k resistor', thumbnail: bytes })],
+  it('reports no value when nothing in scope is priced', () => {
+    const summary = finalisePartsCatalogueSummary(
+      [tally({ groupId: 'garage', itemCount: 4, pricedCount: 0 })],
       LOCATIONS,
       NOW,
+      { decimals: DP },
     );
-    const line = catalogue.groups[0]!.lines[0]!;
-    expect(line.description).toBe('A 10k resistor');
-    expect(line.thumbnail).toBe(bytes);
+    expect(summary.hasValue).toBe(false);
+    expect(summary.grandTotal).toBe(0);
+  });
+
+  it('returns an empty summary for a scope holding nothing', () => {
+    expect(finalisePartsCatalogueSummary([], LOCATIONS, NOW, { decimals: DP })).toEqual({
+      groups: [],
+      grandTotal: 0,
+      totalQuantity: 0,
+      itemCount: 0,
+      hasValue: false,
+      generatedAt: NOW,
+    });
   });
 });
 

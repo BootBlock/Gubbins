@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Checkbox,
@@ -32,6 +32,7 @@ import { buildScheduleExport, scheduleExportFilename } from './schedule-export';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ForeignCurrencyNotice } from './components/ForeignCurrencyNotice';
 import { UnpricedGaugeNotice } from './components/UnpricedGaugeNotice';
+import { usePreparedDocumentPrint } from './usePreparedDocumentPrint';
 import {
   loadFullScheduleLines,
   useForeignCurrencyCostCount,
@@ -238,91 +239,41 @@ interface PageSlice {
 }
 
 /**
- * Drive the "prepare the whole document, then print" flow.
+ * Drive the Print button for the schedule: assemble the whole document, then print it.
  *
- * The document is loaded into state and `window.print()` is called from an effect once React has
- * committed it — never with `flushSync` inside the click handler, which would raise the print
- * dialog against a half-built page. When photos are on, every image is decoded first or the
- * thumbnails print blank. `afterprint` drops the document again so a whole schedule's BLOBs are
- * not held alive once the print is over, and a prepared document is dropped whenever the photo
- * choice or the underlying summary changes — a document that no longer matches the settings it
- * was built under is a wrong document, not a stale one.
+ * The mechanics — printing from an effect after the commit, decoding images first, dropping the
+ * document on `afterprint` — are {@link usePreparedDocumentPrint}, shared with the parts
+ * catalogue (issue #410). This only says what a schedule's document *is*, and memoises that on
+ * the settings it depends on, which is what lets the shared hook drop a document that no longer
+ * matches them. It also owns the print ceiling, which is a property of *this* document: photos
+ * bind long before the asset count does.
  */
 function usePreparedPrint(
   summary: InsuranceScheduleSummary | undefined,
   includePhotos: boolean,
   t: ReturnType<typeof useT>,
 ) {
-  const [lines, setLines] = useState<Map<string | null, ScheduleLine[]> | null>(null);
-  const [status, setStatus] = useState('');
-  const [busy, setBusy] = useState(false);
-  const abort = useRef<AbortController | null>(null);
-
   const itemCount = summary?.itemCount ?? 0;
   const limit = includePhotos ? PRINT_PHOTO_LIMIT : PRINT_FULL_LIMIT;
-  const tooLarge = itemCount > limit;
-
-  // A prepared document is only valid for the settings it was prepared under.
-  useEffect(() => {
-    setLines(null);
-  }, [includePhotos, summary]);
-
-  useEffect(() => {
-    const drop = () => setLines(null);
-    window.addEventListener('afterprint', drop);
-    return () => window.removeEventListener('afterprint', drop);
-  }, []);
-
-  // Print only once the full document has actually been committed to the DOM.
-  useEffect(() => {
-    if (lines === null) return;
-    let cancelled = false;
-    void (async () => {
-      // Thumbnails are decoded before the dialog opens, or they print as blanks.
-      const images = Array.from(document.querySelectorAll<HTMLImageElement>('.schedule-print-doc img'));
-      await Promise.all(images.map((img) => img.decode().catch(() => undefined)));
-      if (!cancelled) window.print();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [lines]);
-
-  const start = useCallback(async () => {
-    if (summary === undefined) return;
-    const controller = new AbortController();
-    abort.current = controller;
-    setBusy(true);
-    setStatus(t('reports.insurance.print.preparing'));
-    try {
-      const loaded = await loadFullScheduleLines(
-        summary.groups,
-        includePhotos,
-        (done, total) =>
-          setStatus(
-            t('reports.insurance.print.progress', {
-              vars: { done: String(done), total: String(total) },
-            }),
-          ),
-        controller.signal,
-      );
-      setLines(loaded);
-      setStatus(t('reports.insurance.print.ready'));
-    } catch (err) {
-      setStatus(
-        (err as Error)?.name === 'AbortError'
-          ? t('reports.insurance.print.cancelled')
-          : t('reports.insurance.print.failed'),
-      );
-    } finally {
-      setBusy(false);
-      abort.current = null;
-    }
-  }, [summary, includePhotos, t]);
-
-  const cancel = useCallback(() => abort.current?.abort(), []);
-
-  return { lines, status, busy, start, cancel, tooLarge, limit };
+  const load = useCallback(
+    (onProgress: (done: number, total: number) => void, signal: AbortSignal) =>
+      loadFullScheduleLines(summary!.groups, includePhotos, onProgress, signal),
+    [summary, includePhotos],
+  );
+  const print = usePreparedDocumentPrint<ScheduleLine>({
+    printDocSelector: '.schedule-print-doc',
+    load,
+    enabled: summary !== undefined,
+    messages: {
+      preparing: t('reports.insurance.print.preparing'),
+      progress: (done, total) =>
+        t('reports.insurance.print.progress', { vars: { done: String(done), total: String(total) } }),
+      ready: t('reports.insurance.print.ready'),
+      cancelled: t('reports.insurance.print.cancelled'),
+      failed: t('reports.insurance.print.failed'),
+    },
+  });
+  return { ...print, tooLarge: itemCount > limit, limit };
 }
 
 /** The document's title band: when it was generated, how many assets, and the grand total. */

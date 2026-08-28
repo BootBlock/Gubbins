@@ -64,19 +64,42 @@ export const reportKeys = {
   insuranceSchedulePage: (offset: number, limit: number, includePhotos: boolean, currency: string) =>
     [...reportKeys.insuranceSchedule(), 'page', offset, limit, includePhotos, currency] as const,
 
-  partsCatalogue: (
+  /** The parts catalogue's own prefix — its summary and its pages share it (issue #410). */
+  partsCatalogue: () => [...reportKeys.all, 'parts-catalogue'] as const,
+  /**
+   * Keyed on the scope and the grouping — and deliberately not on the chosen columns or the sort,
+   * neither of which changes a section's heading, its item count or its subtotal.
+   */
+  partsCatalogueSummary: (
     scope: CatalogueScope | null,
-    includePhotos: boolean,
+    groupBy: CatalogueGroupBy | undefined,
+    currency: string,
+  ) => [...reportKeys.partsCatalogue(), 'summary', scope, groupBy, currency] as const,
+  /**
+   * A page is addressed *through* the summary's section order, so the grouping is part of its
+   * key as well as the window itself: the same offset over a differently-grouped document is a
+   * different set of lines.
+   */
+  partsCataloguePage: (
+    scope: CatalogueScope | null,
     groupBy: CatalogueGroupBy | undefined,
     sortBy: CatalogueSortBy | undefined,
+    offset: number,
+    limit: number,
+    includePhotos: boolean,
     currency: string,
-  ) => [...reportKeys.all, 'parts-catalogue', scope, includePhotos, groupBy, sortBy, currency] as const,
-  /**
-   * Deliberately keyed on the scope alone — neither the chosen columns nor the grouping change
-   * which items are in scope, so switching a column on must not re-run the count (issue #338).
-   */
-  partsCatalogueCount: (scope: CatalogueScope | null) =>
-    [...reportKeys.all, 'parts-catalogue-count', scope] as const,
+  ) =>
+    [
+      ...reportKeys.partsCatalogue(),
+      'page',
+      scope,
+      groupBy,
+      sortBy,
+      offset,
+      limit,
+      includePhotos,
+      currency,
+    ] as const,
 
   foreignCurrencyCostCount: (currency: string) =>
     [...reportKeys.all, 'foreign-currency-cost-count', currency] as const,

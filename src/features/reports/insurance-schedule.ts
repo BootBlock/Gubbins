@@ -24,6 +24,7 @@
  * rounded form: line → location subtotal → grand total.
  */
 import { stockValue, type ValuedStock } from './reports';
+import { sliceGroupsForPage } from './group-slices';
 import { MONEY_DECIMALS, roundMoney, sumMoney } from '@/lib/money';
 import { warrantyStatus, type WarrantyStatus } from '@/features/inventory/asset-lifecycle';
 import type { Condition } from '@/db/repositories/constants';
@@ -406,30 +407,20 @@ export interface ScheduleSlice {
  * hierarchy — a JS concern over a bounded set of locations — so a page is expressed as a handful
  * of single-location reads rather than an ordering SQLite would have to reproduce. A page
  * straddling a room boundary simply yields two slices.
+ *
+ * The slicing arithmetic itself is {@link sliceGroupsForPage}, shared verbatim with the parts
+ * catalogue (issue #410); this only names the location each slice reads from.
  */
 export function scheduleSlices(
   groups: readonly ScheduleGroupSummary[],
   offset: number,
   limit: number,
 ): ScheduleSlice[] {
-  const slices: ScheduleSlice[] = [];
-  if (limit <= 0) return slices;
-
-  let remaining = limit;
-  let cursor = Math.max(0, offset);
-  for (const group of groups) {
-    if (remaining <= 0) break;
-    if (cursor >= group.itemCount) {
-      // The whole group sits before the requested window — skip it and charge its size.
-      cursor -= group.itemCount;
-      continue;
-    }
-    const take = Math.min(group.itemCount - cursor, remaining);
-    slices.push({ locationId: group.locationId, offset: cursor, limit: take });
-    remaining -= take;
-    cursor = 0;
-  }
-  return slices;
+  return sliceGroupsForPage(groups, offset, limit).map((slice) => ({
+    locationId: slice.group.locationId,
+    offset: slice.offset,
+    limit: slice.limit,
+  }));
 }
 
 /**

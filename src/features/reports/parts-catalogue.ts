@@ -6,10 +6,17 @@
  *
  * Same "logic out of glue" seam as {@link ./insurance-schedule} and `reports.ts`: kept free
  * of React, repositories, SQL and the DOM so the grouping, ordering, per-line valuation and
- * totals are exhaustively unit-tested in isolation. `ReportRepository` resolves the scope to
- * the minimal raw rows and hands them here; the screen renders the returned DTO, showing only
- * the columns the reader selected (the field selection is a *presentation* choice and does not
- * change what this builds — every field is always resolved).
+ * totals are exhaustively unit-tested in isolation. The screen renders the returned DTOs, showing
+ * only the columns the reader selected (the field selection is a *presentation* choice and does
+ * not change what is resolved — every field always is).
+ *
+ * **The catalogue is read in two halves** (issue #410), exactly as the insurance schedule is
+ * (issue #163). `ReportRepository` first sums the whole scope in SQLite into one tally per section
+ * and {@link finalisePartsCatalogueSummary} turns those into the document's ordered headings and
+ * totals — bounded by the section count, not the item count. It then reads one section's lines at
+ * a time through {@link toCatalogueLine}. Nothing here ever holds a row per item, so "All items"
+ * over a large inventory costs a few dozen numbers rather than a whole-inventory transfer, a
+ * whole-inventory structured clone and a whole-inventory DOM.
  *
  * Location grouping, hierarchy ordering and the trailing "Unassigned" bucket are shared with
  * the insurance schedule via {@link flattenLocationHierarchy}, so the two documents order
@@ -17,16 +24,18 @@
  * other valuation (a manual current value wins, else a manual cost, else the preferred supplier
  * cost, else the depreciated purchase price — or, for a gauge, its cost per unit of measure, since
  * it holds a measure rather than countable units); an item with none of those is *unpriced* — its
- * cost and line value read as "—" rather than a misleading £0.
+ * cost and line value read as a dash rather than a misleading zero.
  */
 import { hasValuationSource, valuedAmount, valuedUnitValue, type ValuedStock } from './reports';
 import {
   flattenLocationHierarchy,
   PRINT_FULL_LIMIT,
   PRINT_PHOTO_LIMIT,
+  scheduleLineValue,
   UNASSIGNED_GROUP_LABEL,
   type ScheduleLocationInput,
 } from './insurance-schedule';
+import { MONEY_DECIMALS, sumMoney } from '@/lib/money';
 import { warrantyStatus, type WarrantyStatus } from '@/features/inventory/asset-lifecycle';
 import type { Condition } from '@/db/repositories/constants';
 
@@ -228,10 +237,14 @@ export const DEFAULT_CATALOGUE_SORT_BY: CatalogueSortBy = 'name';
  * ---------------------------------------------------------------------------------------
  * Print ceiling (issue #338)
  *
- * The catalogue reads its whole scope in one go and renders every line into one document, so
- * "All items" over a large inventory had nothing standing between the reader and a browser
- * print dialog holding hundreds of pages — and, with the QR column on, one synchronous QR
- * encode per line before it could even open.
+ * Printing renders every line of the scope into one document, so "All items" over a large
+ * inventory had nothing standing between the reader and a browser print dialog holding hundreds
+ * of pages — and, with the QR column on, one synchronous QR encode per line before it could even
+ * open.
+ *
+ * The ceiling now bounds **printing alone**. Reading the catalogue on screen is paged (issue
+ * #410), so a scope of any size can be browsed a page at a time; what a ceiling still has to
+ * stand in front of is the one artefact whose size is the whole document.
  *
  * The insurance schedule — the other printable document, and its peer in every other respect —
  * already draws exactly this line, so the catalogue reuses its ceilings rather than inventing
@@ -417,24 +430,83 @@ export interface CatalogueLine {
   readonly notes: string | null;
 }
 
-/** A catalogue section (a location, a category, or the single "no grouping" bucket). */
-export interface CatalogueGroup {
-  /** Stable id of the section (location id, or `category:<name>`), or null for an unresolved/blank bucket. */
+/**
+ * How one group's lines are **addressed** when the repository reads a bounded page of them
+ * (issue #410).
+ *
+ * The catalogue's group *ordering* is resolved in TypeScript — the location hierarchy, or
+ * category names compared the way the reader sees them — so a page read has to be told which
+ * rows a group covers rather than reproducing that ordering in SQL. Each variant names a
+ * predicate the repository can bind directly, and every one of them is derived from the summary
+ * read that produced the group, so a page can never describe a different set from its heading.
+ *
+ *  - `all` — the whole scope, for the single unheaded "No grouping" section.
+ *  - `location` / `unassigned` — a room, or the trailing bucket of items whose location is unset
+ *    **or** points at a deleted location (the half that is easy to lose; see
+ *    {@link ./insurance-schedule}'s `resolveScheduleGroupKey`).
+ *  - `category` — every category id folded into this heading. Category names carry no uniqueness
+ *    constraint, so two categories sharing a name are one section on the page and must be one
+ *    predicate here too.
+ *  - `uncategorised` — items with no category, items pointing at a deleted one, and items in a
+ *    category whose name is blank (`blankCategoryIds`), which reads as no heading at all.
+ */
+export type CatalogueGroupRef =
+  | { readonly kind: 'all' }
+  | { readonly kind: 'location'; readonly locationId: string }
+  | { readonly kind: 'unassigned' }
+  | { readonly kind: 'category'; readonly categoryIds: readonly string[] }
+  | { readonly kind: 'uncategorised'; readonly blankCategoryIds: readonly string[] };
+
+/**
+ * One raw grouped tally, exactly as the repository's summary read returns it — one row per
+ * location or per category, never one per item.
+ *
+ * Holding these rather than the lines is what lets a whole-inventory catalogue be totalled
+ * without materialising a row per item (issue #410, the shape issue #163 gave the insurance
+ * schedule): memory and transfer are O(groups), not O(items).
+ */
+export interface CatalogueGroupTally {
+  /** The grouping row's id — a location id, a category id, or null when it did not resolve. */
+  readonly groupId: string | null;
+  /** The grouping row's name (categories only); null when the row did not resolve. */
+  readonly groupName: string | null;
+  readonly itemCount: number;
+  /**
+   * The group's value as an exact integer count of the reporting currency's **minor units**.
+   *
+   * Integer addition is exact and associative, so a subtotal cannot depend on the order rows
+   * happened to be scanned in — the same reason the schedule's tally counts minor units
+   * (issue #163). Each line is quantised before it is summed, so the column of figures the
+   * document prints adds up to the subtotal beneath it (issue #288).
+   */
+  readonly subtotalMinorUnits: number;
+  /** Sum of the on-hand **counts**; a gauge holds a measure, not units, and contributes 0. */
+  readonly totalQuantity: number;
+  /** How many of the group's lines any source prices at all — 0 means every line reads a dash. */
+  readonly pricedCount: number;
+}
+
+/** A catalogue section's headline figures and page address, without its lines. */
+export interface CatalogueGroupSummary {
+  /** Stable id of the section (location id, or `category:<name>`), or null for a trailing bucket. */
   readonly groupId: string | null;
   /** Heading text — a location path (`Garage › Shelf A`), a category name, or `''` for no grouping. */
   readonly groupLabel: string;
   /** Depth in the location tree (0 = root); 0 for category/none. Drives the print indentation. */
   readonly depth: number;
-  readonly lines: readonly CatalogueLine[];
+  /** How many lines the section holds in total — **not** how many are on the current page. */
+  readonly itemCount: number;
   /** Sum of the section's line values (priced lines only). */
   readonly subtotal: number;
   /** Sum of the section's on-hand quantities. */
   readonly totalQuantity: number;
+  /** How the repository reads a bounded page of this section's lines. */
+  readonly ref: CatalogueGroupRef;
 }
 
-/** The whole catalogue: ordered sections, a grand total and headline counts. */
-export interface PartsCatalogue {
-  readonly groups: readonly CatalogueGroup[];
+/** The catalogue's totals and section ordering, with no lines: bounded by the group count. */
+export interface PartsCatalogueSummary {
+  readonly groups: readonly CatalogueGroupSummary[];
   /** Total line value across every section (priced lines only). */
   readonly grandTotal: number;
   /** Total on-hand quantity across every section. */
@@ -462,16 +534,28 @@ function isPriced(item: CatalogueItemInput): boolean {
   return hasValuationSource(item);
 }
 
-/** Resolve a single item input to its display line, valuing it through the cost seam. */
-function toLine(item: CatalogueItemInput, now: number): CatalogueLine {
+/**
+ * Resolve one item to its catalogue line, valuing it through the shared cost seam.
+ *
+ * Exported because the catalogue is read a **page at a time** (issue #410): `ReportRepository`
+ * resolves each page's rows through here, so there is exactly one place that decides what a line
+ * says and what it is worth.
+ *
+ * The line value is {@link scheduleLineValue} — the insurance schedule's line, quantised to the
+ * reporting currency's minor unit — gated on {@link isPriced}. Sharing it is what makes the
+ * subtotal beneath a printed column the sum of the figures in it (issue #288), and what keeps a
+ * catalogue line and the same item's schedule line from ever disagreeing about the same asset.
+ *
+ * `decimals` is the reporting currency's minor unit, not a flat 2dp (issue #292).
+ */
+export function toCatalogueLine(item: CatalogueItemInput, now: number, decimals: number): CatalogueLine {
   // A gauge's count is always 0, so its line is quantified and valued by its contents — the
   // same `valuedAmount` seam the valuation reports and the schedule use (issue #683).
   const qty = valuedAmount(item);
-  // Only priced items get a cost/line value; an unpriced item reads "—" rather than £0 so the
-  // catalogue never implies a real zero price. The value seams return 0 when unpriced, so gate
-  // on `isPriced` first.
-  const unitCost = isPriced(item) ? valuedUnitValue(item) : null;
-  const lineValue = unitCost != null ? qty * unitCost : null;
+  // Only priced items get a cost/line value; an unpriced item reads a dash rather than a zero, so
+  // the catalogue never implies a real zero price. The value seams return 0 when unpriced, so
+  // gate on `isPriced` first.
+  const priced = isPriced(item);
   return {
     id: item.id,
     name: item.name,
@@ -487,8 +571,8 @@ function toLine(item: CatalogueItemInput, now: number): CatalogueLine {
     mpn: item.mpn,
     manufacturer: item.manufacturer,
     supplier: item.supplier,
-    unitCost,
-    lineValue,
+    unitCost: priced ? valuedUnitValue(item) : null,
+    lineValue: priced ? scheduleLineValue(item, decimals) : null,
     purchasePrice: item.purchasePrice,
     acquiredAt: item.acquiredAt,
     // Only `warrantyExpiresAt` (+ acquisition) drives the status; depreciation is never applied.
@@ -505,133 +589,198 @@ function toLine(item: CatalogueItemInput, now: number): CatalogueLine {
   };
 }
 
-/** Options controlling how the catalogue is grouped and ordered. */
-export interface BuildCatalogueOptions {
-  /** How sections are grouped (default `location`). */
-  readonly groupBy?: CatalogueGroupBy;
-  /** How lines are ordered within a section (default `name`). */
-  readonly sortBy?: CatalogueSortBy;
+/** A running merge of the tallies that fold into one printed section. */
+interface SectionAccumulator {
+  itemCount: number;
+  minorUnits: number;
+  totalQuantity: number;
+  /** Category ids folded into this section (empty for a location or the ungrouped section). */
+  readonly categoryIds: string[];
 }
 
-/** Repository-level options: the {@link BuildCatalogueOptions} plus whether to fetch thumbnails. */
-export interface CataloguePartsOptions extends BuildCatalogueOptions {
-  /** Fetch each item's thumbnail BLOB — only needed when the Photo column is on. */
-  readonly includePhotos?: boolean;
-}
-
-/** Line comparator for the chosen sort — falls back to name (then id) for a stable order. */
-function lineComparator(sortBy: CatalogueSortBy): (a: CatalogueLine, b: CatalogueLine) => number {
-  const byName = (a: CatalogueLine, b: CatalogueLine) =>
-    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id);
-  if (sortBy === 'value') return (a, b) => (b.lineValue ?? 0) - (a.lineValue ?? 0) || byName(a, b);
-  if (sortBy === 'quantity') return (a, b) => b.quantity - a.quantity || byName(a, b);
-  return byName;
-}
-
-/** Build one resolved section from its lines, applying the sort and rolling up its totals. */
-function makeGroup(
-  groupId: string | null,
-  groupLabel: string,
-  depth: number,
-  lines: CatalogueLine[],
-  compare: (a: CatalogueLine, b: CatalogueLine) => number,
-): CatalogueGroup {
-  const sorted = [...lines].sort(compare);
-  const subtotal = sorted.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
-  // Measured lines are deliberately excluded: a group's "in stock" figure is a count of units,
-  // and a gauge holds grams or millilitres (issue #683).
-  const totalQuantity = sorted.reduce((sum, l) => sum + (l.measured ? 0 : Math.max(0, l.quantity)), 0);
-  return { groupId, groupLabel, depth, lines: sorted, subtotal, totalQuantity };
+/** Fold one tally into the section keyed by `key`, creating the section on first sight. */
+function foldTally(
+  sections: Map<string | null, SectionAccumulator>,
+  key: string | null,
+  tally: CatalogueGroupTally,
+): SectionAccumulator {
+  let entry = sections.get(key);
+  if (entry === undefined) {
+    entry = { itemCount: 0, minorUnits: 0, totalQuantity: 0, categoryIds: [] };
+    sections.set(key, entry);
+  }
+  entry.itemCount += tally.itemCount;
+  entry.minorUnits += tally.subtotalMinorUnits;
+  entry.totalQuantity += tally.totalQuantity;
+  return entry;
 }
 
 /**
- * Build the parts catalogue: resolve each item to a line, group the lines by the chosen key
- * (`location` — its home location, ordered by the hierarchy; `category` — its category name,
- * alphabetical; or `none` — a single section), sort lines within each section, and roll up a
- * per-section value subtotal + total quantity and the overall totals.
+ * Resolve one merged section to its summary.
  *
- * For `location`, items whose location cannot be resolved fall into a trailing "Unassigned"
- * section; for `category`, uncategorised items fall into a trailing "Uncategorised" section.
- * Only sections that hold at least one item are emitted. `now` is injected (for the warranty
- * derivation and the `generatedAt` stamp) so the result is deterministic.
+ * The subtotal is the integer minor-unit tally divided back to major units. Above roughly 90
+ * trillion at 2dp that count leaves JavaScript's exact-integer range and the figure degrades to
+ * the nearest representable double — a total no real inventory reaches, and the same documented
+ * ceiling the insurance schedule's tally carries.
  */
-export function buildPartsCatalogue(
-  items: readonly CatalogueItemInput[],
-  locations: readonly CatalogueLocationInput[],
-  now: number,
-  options: BuildCatalogueOptions = {},
-): PartsCatalogue {
-  const groupBy = options.groupBy ?? DEFAULT_CATALOGUE_GROUP_BY;
-  const compare = lineComparator(options.sortBy ?? DEFAULT_CATALOGUE_SORT_BY);
-  const lines = items.map((item) => toLine(item, now));
-
-  let groups: CatalogueGroup[];
-  if (groupBy === 'none') {
-    // A single unheaded section holding every line.
-    groups = lines.length > 0 ? [makeGroup(null, '', 0, lines, compare)] : [];
-  } else if (groupBy === 'category') {
-    groups = groupByCategory(lines, compare);
-  } else {
-    groups = groupByLocation(lines, locations, compare);
-  }
-
-  const grandTotal = groups.reduce((sum, g) => sum + g.subtotal, 0);
-  const totalQuantity = groups.reduce((sum, g) => sum + g.totalQuantity, 0);
-  const itemCount = groups.reduce((sum, g) => sum + g.lines.length, 0);
-  const hasValue = groups.some((g) => g.lines.some((l) => l.lineValue != null));
-  return { groups, grandTotal, totalQuantity, itemCount, hasValue, generatedAt: now };
+function toSectionSummary(
+  groupId: string | null,
+  groupLabel: string,
+  depth: number,
+  entry: SectionAccumulator,
+  ref: CatalogueGroupRef,
+  decimals: number,
+): CatalogueGroupSummary {
+  return {
+    groupId,
+    groupLabel,
+    depth,
+    itemCount: entry.itemCount,
+    subtotal: entry.minorUnits / 10 ** decimals,
+    totalQuantity: entry.totalQuantity,
+    ref,
+  };
 }
 
-/** Group lines by home location, ordered by the location hierarchy (unresolved → trailing bucket). */
-function groupByLocation(
-  lines: readonly CatalogueLine[],
+/** Sections grouped by home location, ordered by the hierarchy (unresolved into a trailing bucket). */
+function locationSections(
+  tallies: readonly CatalogueGroupTally[],
   locations: readonly CatalogueLocationInput[],
-  compare: (a: CatalogueLine, b: CatalogueLine) => number,
-): CatalogueGroup[] {
+  decimals: number,
+): CatalogueGroupSummary[] {
   const known = new Set(locations.map((l) => l.id));
-  const byLocation = new Map<string | null, CatalogueLine[]>();
-  for (const line of lines) {
-    const key = line.locationId != null && known.has(line.locationId) ? line.locationId : null;
-    const bucket = byLocation.get(key);
-    if (bucket) bucket.push(line);
-    else byLocation.set(key, [line]);
+  const sections = new Map<string | null, SectionAccumulator>();
+  for (const tally of tallies) {
+    // A location that no longer exists folds into "Unassigned" rather than vanishing — the same
+    // rule `resolveScheduleGroupKey` states for the schedule.
+    foldTally(sections, tally.groupId != null && known.has(tally.groupId) ? tally.groupId : null, tally);
   }
 
-  const groups: CatalogueGroup[] = [];
+  const groups: CatalogueGroupSummary[] = [];
   for (const loc of flattenLocationHierarchy(locations)) {
-    const bucket = byLocation.get(loc.id);
-    if (bucket && bucket.length > 0) groups.push(makeGroup(loc.id, loc.path, loc.depth, bucket, compare));
+    const entry = sections.get(loc.id);
+    if (entry === undefined || entry.itemCount === 0) continue;
+    groups.push(
+      toSectionSummary(
+        loc.id,
+        loc.path,
+        loc.depth,
+        entry,
+        { kind: 'location', locationId: loc.id },
+        decimals,
+      ),
+    );
   }
-  const unassigned = byLocation.get(null);
-  if (unassigned && unassigned.length > 0) {
-    groups.push(makeGroup(null, UNASSIGNED_GROUP_LABEL, 0, unassigned, compare));
+  const unassigned = sections.get(null);
+  if (unassigned !== undefined && unassigned.itemCount > 0) {
+    groups.push(
+      toSectionSummary(null, UNASSIGNED_GROUP_LABEL, 0, unassigned, { kind: 'unassigned' }, decimals),
+    );
   }
   return groups;
 }
 
-/** Group lines by category name (alphabetical), uncategorised items in a trailing bucket. */
-function groupByCategory(
-  lines: readonly CatalogueLine[],
-  compare: (a: CatalogueLine, b: CatalogueLine) => number,
-): CatalogueGroup[] {
-  const byCategory = new Map<string | null, CatalogueLine[]>();
-  for (const line of lines) {
-    const key = line.category && line.category.trim() ? line.category : null;
-    const bucket = byCategory.get(key);
-    if (bucket) bucket.push(line);
-    else byCategory.set(key, [line]);
+/** Sections grouped by category name (alphabetical), uncategorised items in a trailing bucket. */
+function categorySections(
+  tallies: readonly CatalogueGroupTally[],
+  decimals: number,
+): CatalogueGroupSummary[] {
+  const sections = new Map<string | null, SectionAccumulator>();
+  for (const tally of tallies) {
+    // Grouped by the *name* the heading shows, so two categories that read the same are one
+    // section; a blank or absent name is no heading at all and joins the trailing bucket.
+    const key = tally.groupName && tally.groupName.trim() ? tally.groupName : null;
+    const entry = foldTally(sections, key, tally);
+    if (tally.groupId != null) entry.categoryIds.push(tally.groupId);
   }
 
-  const named = [...byCategory.keys()].filter((k): k is string => k !== null);
+  const named = [...sections.keys()].filter((k): k is string => k !== null);
   named.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
-  const groups: CatalogueGroup[] = [];
+  const groups: CatalogueGroupSummary[] = [];
   for (const name of named) {
-    groups.push(makeGroup(`category:${name}`, name, 0, byCategory.get(name)!, compare));
+    const entry = sections.get(name)!;
+    if (entry.itemCount === 0) continue;
+    groups.push(
+      toSectionSummary(
+        `category:${name}`,
+        name,
+        0,
+        entry,
+        { kind: 'category', categoryIds: entry.categoryIds },
+        decimals,
+      ),
+    );
   }
-  const uncategorised = byCategory.get(null);
-  if (uncategorised && uncategorised.length > 0) {
-    groups.push(makeGroup(null, UNCATEGORISED_GROUP_LABEL, 0, uncategorised, compare));
+  const uncategorised = sections.get(null);
+  if (uncategorised !== undefined && uncategorised.itemCount > 0) {
+    groups.push(
+      toSectionSummary(
+        null,
+        UNCATEGORISED_GROUP_LABEL,
+        0,
+        uncategorised,
+        // Only the ids of *existing* categories whose name is blank need naming: an unset or
+        // dangling `category_id` is matched by the predicate itself.
+        { kind: 'uncategorised', blankCategoryIds: uncategorised.categoryIds },
+        decimals,
+      ),
+    );
   }
   return groups;
+}
+
+/**
+ * Resolve the repository's grouped tallies into the catalogue's ordered sections and totals.
+ *
+ * This is the catalogue's whole shape with none of its lines (issue #410): section order,
+ * headings, per-section counts and subtotals, and the grand totals beneath them. The screen
+ * reads it first — it is what page navigation and the printed summary are built from — and then
+ * asks for one bounded page of lines at a time.
+ *
+ * Sections are ordered exactly as the printed document orders them: by the location hierarchy
+ * (unresolved rooms last), by category name (uncategorised last), or a single unheaded section
+ * for "No grouping". Empty sections are omitted. `now` is injected for the `generatedAt` stamp
+ * so the result is deterministic.
+ *
+ * @param options.decimals Places every rung of the document is quantised to — the reporting
+ * currency's **minor unit**, not a flat 2dp (issue #292). Each line is already quantised to it by
+ * {@link toCatalogueLine}, so the subtotals here sum the figures the document actually prints and
+ * the grand total sums those subtotals (issue #288).
+ */
+export function finalisePartsCatalogueSummary(
+  tallies: readonly CatalogueGroupTally[],
+  locations: readonly CatalogueLocationInput[],
+  now: number,
+  options: { readonly groupBy?: CatalogueGroupBy; readonly decimals?: number } = {},
+): PartsCatalogueSummary {
+  const groupBy = options.groupBy ?? DEFAULT_CATALOGUE_GROUP_BY;
+  const decimals = options.decimals ?? MONEY_DECIMALS;
+
+  let groups: CatalogueGroupSummary[];
+  if (groupBy === 'none') {
+    const sections = new Map<string | null, SectionAccumulator>();
+    for (const tally of tallies) foldTally(sections, null, tally);
+    const only = sections.get(null);
+    groups =
+      only !== undefined && only.itemCount > 0
+        ? [toSectionSummary(null, '', 0, only, { kind: 'all' }, decimals)]
+        : [];
+  } else if (groupBy === 'category') {
+    groups = categorySections(tallies, decimals);
+  } else {
+    groups = locationSections(tallies, locations, decimals);
+  }
+
+  return {
+    groups,
+    grandTotal: sumMoney(
+      groups.map((g) => g.subtotal),
+      decimals,
+    ),
+    totalQuantity: groups.reduce((sum, g) => sum + g.totalQuantity, 0),
+    itemCount: groups.reduce((sum, g) => sum + g.itemCount, 0),
+    hasValue: tallies.some((t) => t.pricedCount > 0),
+    generatedAt: now,
+  };
 }

@@ -14,9 +14,17 @@ import { SupplierPartRepository } from './SupplierPartRepository';
 import { SupplierRepository } from './SupplierRepository';
 import {
   buildInsuranceSchedule,
+  UNASSIGNED_GROUP_LABEL,
   type ScheduleItemInput,
   type ScheduleLocationInput,
 } from '@/features/reports/insurance-schedule';
+import { sliceGroupsForPage } from '@/features/reports/group-slices';
+import {
+  UNCATEGORISED_GROUP_LABEL,
+  type CatalogueGroupBy,
+  type CatalogueScope,
+  type CatalogueSortBy,
+} from '@/features/reports/parts-catalogue';
 
 /**
  * ReportRepository — read-only §3 valuation/consumption/movement/low-stock/dead-stock
@@ -1024,8 +1032,9 @@ describe('ReportRepository', () => {
         );
       }
 
-      const catalogue = await reports.partsCatalogue({ kind: 'all' }, {}, now);
-      const lines = catalogue.groups.flatMap((g) => g.lines);
+      const lines = (
+        await reports.partsCatalogueGroupPage({ kind: 'all' }, { kind: 'all' }, { limit: 500 }, {}, now)
+      ).rows;
       expect(lines).toHaveLength(expected.size);
       for (const line of lines) {
         // Both sides quantise to whole stored micro-units (1e-6 of a major unit), so five decimal
@@ -2503,7 +2512,39 @@ describe('ReportRepository', () => {
     });
   });
 
-  describe('partsCatalogue', () => {
+  describe('parts catalogue', () => {
+    /**
+     * Read a whole catalogue the way the screen does — one bounded summary read, then a page of
+     * lines per section. Every assertion below therefore exercises the *pair*: a heading that
+     * described a different set from the lines beneath it would fail here rather than in review.
+     */
+    async function readCatalogue(
+      scope: CatalogueScope,
+      options: {
+        groupBy?: CatalogueGroupBy;
+        sortBy?: CatalogueSortBy;
+        includePhotos?: boolean;
+      } = {},
+      now?: number,
+    ) {
+      const summary = await reports.partsCatalogueSummary(scope, { groupBy: options.groupBy }, now);
+      const groups = await Promise.all(
+        summary.groups.map(async (group) => ({
+          ...group,
+          lines: (
+            await reports.partsCatalogueGroupPage(
+              scope,
+              group.ref,
+              { limit: 500 },
+              { includePhotos: options.includePhotos, sortBy: options.sortBy },
+              now,
+            )
+          ).rows,
+        })),
+      );
+      return { ...summary, groups };
+    }
+
     it('for the "all" scope groups every active item by location, excluding variant parents and removed items', async () => {
       const garage = await locations.create({ name: 'Garage' });
       const shelf = await locations.create({ name: 'Shelf A', parentId: garage.id });
@@ -2515,13 +2556,14 @@ describe('ReportRepository', () => {
       const removed = await items.create({ name: 'Gone', quantity: 1 });
       await items.softDelete(removed.id);
 
-      const catalogue = await reports.partsCatalogue({ kind: 'all' });
+      const catalogue = await readCatalogue({ kind: 'all' });
       const names = catalogue.groups.flatMap((g) => g.lines.map((l) => l.name)).sort();
       // The abstract parent and the soft-deleted item drop out; the real variant stays.
       expect(names).toEqual(['Anvil', 'Kit v2', 'Widget']);
       expect(catalogue.groups.find((g) => g.groupId === shelf.id)?.subtotal).toBe(6);
       expect(catalogue.grandTotal).toBe(16);
       expect(catalogue.totalQuantity).toBe(4); // 1 anvil + 3 widget (the new variant holds 0)
+      expect(catalogue.itemCount).toBe(3);
       expect(catalogue.hasValue).toBe(true);
     });
 
@@ -2545,7 +2587,7 @@ describe('ReportRepository', () => {
         currentValue: 1200,
       });
 
-      const catalogue = await reports.partsCatalogue({ kind: 'all' });
+      const catalogue = await readCatalogue({ kind: 'all' });
       const lines = catalogue.groups.flatMap((g) => g.lines);
       expect(lines.find((l) => l.id === coin.id)).toMatchObject({ unitCost: 900, lineValue: 1800 });
       expect(lines.find((l) => l.name === 'Guitar')).toMatchObject({ unitCost: 1200, lineValue: 1200 });
@@ -2553,7 +2595,12 @@ describe('ReportRepository', () => {
       expect(catalogue.hasValue).toBe(true);
     });
 
-    it('counts a scope without fetching it, describing exactly the set the document would (issue #338)', async () => {
+    /**
+     * The summary is what the screen sizes the print job by and pages the document from, so its
+     * count has to describe exactly the set the pages return — not "about" it (issue #410, and
+     * the ceiling issue #338 introduced, which is now the same number).
+     */
+    it('totals a scope without fetching it, describing exactly the set the pages return', async () => {
       const garage = await locations.create({ name: 'Garage' });
       const shelf = await locations.create({ name: 'Shelf A', parentId: garage.id });
       const kitchen = await locations.create({ name: 'Kitchen' });
@@ -2561,8 +2608,8 @@ describe('ReportRepository', () => {
       await items.create({ name: 'Widget', locationId: shelf.id, quantity: 1 });
       await items.create({ name: 'Kettle', locationId: kitchen.id, quantity: 1 });
 
-      // A variant parent is abstract and a removed item is gone — neither is counted, exactly as
-      // neither is catalogued. The count and the document must never describe different sets.
+      // A variant parent is abstract and a removed item is gone — neither is totalled, exactly as
+      // neither is catalogued. The summary and the pages must never describe different sets.
       const parent = await items.create({ name: 'Kit', trackingMode: 'SERIALISED' });
       await items.createVariant(parent.id, { name: 'Kit v2' });
       const removed = await items.create({ name: 'Gone', quantity: 1 });
@@ -2573,12 +2620,17 @@ describe('ReportRepository', () => {
         { kind: 'location', locationId: garage.id } as const,
         { kind: 'items', itemIds: [] } as const,
       ]) {
-        const catalogue = await reports.partsCatalogue(scope);
-        expect(await reports.partsCatalogueCount(scope)).toBe(catalogue.itemCount);
+        const catalogue = await readCatalogue(scope);
+        const lineCount = catalogue.groups.reduce((n, g) => n + g.lines.length, 0);
+        expect(catalogue.itemCount).toBe(lineCount);
+        // …and every section's own count agrees with the page beneath it.
+        for (const group of catalogue.groups) expect(group.itemCount).toBe(group.lines.length);
       }
-      expect(await reports.partsCatalogueCount({ kind: 'all' })).toBe(4); // Anvil, Widget, Kettle, Kit v2
-      expect(await reports.partsCatalogueCount({ kind: 'location', locationId: garage.id })).toBe(2);
-      expect(await reports.partsCatalogueCount({ kind: 'items', itemIds: [] })).toBe(0);
+      expect((await reports.partsCatalogueSummary({ kind: 'all' })).itemCount).toBe(4);
+      expect(
+        (await reports.partsCatalogueSummary({ kind: 'location', locationId: garage.id })).itemCount,
+      ).toBe(2);
+      expect((await reports.partsCatalogueSummary({ kind: 'items', itemIds: [] })).itemCount).toBe(0);
     });
 
     it('for the "location" scope includes the whole subtree but nothing outside it', async () => {
@@ -2589,7 +2641,7 @@ describe('ReportRepository', () => {
       await items.create({ name: 'Widget', locationId: shelf.id, quantity: 1 });
       await items.create({ name: 'Kettle', locationId: kitchen.id, quantity: 1 });
 
-      const catalogue = await reports.partsCatalogue({ kind: 'location', locationId: garage.id });
+      const catalogue = await readCatalogue({ kind: 'location', locationId: garage.id });
       const names = catalogue.groups.flatMap((g) => g.lines.map((l) => l.name)).sort();
       expect(names).toEqual(['Anvil', 'Widget']); // Kettle is in a different root — excluded
     });
@@ -2605,7 +2657,7 @@ describe('ReportRepository', () => {
         [inBom.id],
       );
 
-      const catalogue = await reports.partsCatalogue({ kind: 'project', projectId: 'proj-1' });
+      const catalogue = await readCatalogue({ kind: 'project', projectId: 'proj-1' });
       const names = catalogue.groups.flatMap((g) => g.lines.map((l) => l.name));
       expect(names).toEqual(['Resistor']);
     });
@@ -2615,12 +2667,16 @@ describe('ReportRepository', () => {
       const a = await items.create({ name: 'Alpha', locationId: shelf.id, quantity: 1 });
       await items.create({ name: 'Beta', locationId: shelf.id, quantity: 1 });
 
-      const chosen = await reports.partsCatalogue({ kind: 'items', itemIds: [a.id] });
+      const chosen = await readCatalogue({ kind: 'items', itemIds: [a.id] });
       expect(chosen.groups.flatMap((g) => g.lines.map((l) => l.name))).toEqual(['Alpha']);
 
-      const none = await reports.partsCatalogue({ kind: 'items', itemIds: [] });
+      const none = await readCatalogue({ kind: 'items', itemIds: [] });
       expect(none.itemCount).toBe(0);
       expect(none.groups).toEqual([]);
+      // An empty selection resolves to nothing rather than an `IN ()` — and a page read of it,
+      // which the screen never issues but which must not fall through to the whole catalogue.
+      const page = await reports.partsCatalogueGroupPage({ kind: 'items', itemIds: [] }, { kind: 'all' });
+      expect(page.rows).toEqual([]);
     });
 
     it('resolves the preferred supplier name and cost onto the line (falling back to it when no manual cost)', async () => {
@@ -2632,11 +2688,12 @@ describe('ReportRepository', () => {
         isPreferred: true,
       });
 
-      const catalogue = await reports.partsCatalogue({ kind: 'items', itemIds: [item.id] });
+      const catalogue = await readCatalogue({ kind: 'items', itemIds: [item.id] });
       const line = catalogue.groups[0].lines[0];
       expect(line.supplier).toBe('Parts Co');
       expect(line.unitCost).toBe(4);
       expect(line.lineValue).toBe(8);
+      expect(catalogue.hasValue).toBe(true);
     });
 
     it('carries the item description, and only fetches the thumbnail when photos are requested', async () => {
@@ -2654,14 +2711,11 @@ describe('ReportRepository', () => {
         fullResOpfsPath: '/c.webp',
       });
 
-      const noPhotos = await reports.partsCatalogue({ kind: 'items', itemIds: [item.id] });
+      const noPhotos = await readCatalogue({ kind: 'items', itemIds: [item.id] });
       expect(noPhotos.groups[0].lines[0].description).toBe('A 10µF capacitor');
       expect(noPhotos.groups[0].lines[0].thumbnail).toBeNull(); // not fetched by default
 
-      const withPhotos = await reports.partsCatalogue(
-        { kind: 'items', itemIds: [item.id] },
-        { includePhotos: true },
-      );
+      const withPhotos = await readCatalogue({ kind: 'items', itemIds: [item.id] }, { includePhotos: true });
       expect(withPhotos.groups[0].lines[0].thumbnail).toBeInstanceOf(Uint8Array);
     });
 
@@ -2672,8 +2726,230 @@ describe('ReportRepository', () => {
       await items.create({ name: 'Cap', locationId: shelf.id, categoryId: caps.id, quantity: 1 });
       await items.create({ name: 'Res', locationId: shelf.id, categoryId: res.id, quantity: 1 });
 
-      const catalogue = await reports.partsCatalogue({ kind: 'all' }, { groupBy: 'category' });
+      const catalogue = await readCatalogue({ kind: 'all' }, { groupBy: 'category' });
       expect(catalogue.groups.map((g) => g.groupLabel)).toEqual(['Capacitors', 'Resistors']);
+      expect(catalogue.groups.map((g) => g.lines.map((l) => l.name))).toEqual([['Cap'], ['Res']]);
+    });
+
+    /**
+     * The two folds a naive `IS NULL` predicate loses. An item pointing at a row that no longer
+     * exists still belongs on the document, in the trailing bucket — and the page read has to
+     * agree with the heading that counted it, or the section shows fewer lines than it claims.
+     */
+    it('keeps an item whose location or category was deleted in the trailing bucket', async () => {
+      const garage = await locations.create({ name: 'Garage' });
+      const caps = await categories.create({ name: 'Capacitors' });
+      await items.create({ name: 'Bolt', locationId: garage.id, categoryId: caps.id, quantity: 1 });
+      await items.create({ name: 'Nut', locationId: garage.id, categoryId: caps.id, quantity: 1 });
+      // Break both references without touching the items.
+      await driver.execute('PRAGMA foreign_keys = OFF;');
+      await driver.execute('DELETE FROM locations WHERE id = ?;', [garage.id]);
+      await driver.execute('DELETE FROM categories WHERE id = ?;', [caps.id]);
+
+      const byLocation = await readCatalogue({ kind: 'all' });
+      expect(byLocation.groups).toHaveLength(1);
+      expect(byLocation.groups[0].groupLabel).toBe(UNASSIGNED_GROUP_LABEL);
+      expect(byLocation.groups[0].itemCount).toBe(2);
+      expect(byLocation.groups[0].lines.map((l) => l.name)).toEqual(['Bolt', 'Nut']);
+
+      const byCategory = await readCatalogue({ kind: 'all' }, { groupBy: 'category' });
+      expect(byCategory.groups).toHaveLength(1);
+      expect(byCategory.groups[0].groupLabel).toBe(UNCATEGORISED_GROUP_LABEL);
+      expect(byCategory.groups[0].lines.map((l) => l.name)).toEqual(['Bolt', 'Nut']);
+    });
+
+    // `categories.name` carries no uniqueness constraint, so one heading can cover two categories.
+    // A predicate that bound only one id would print half the section's lines under a count
+    // claiming all of them.
+    it('reads both categories of a shared heading under one section', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const one = await categories.create({ name: 'Fixings' });
+      const two = await categories.create({ name: 'Fixings' });
+      await items.create({ name: 'Bolt', locationId: shelf.id, categoryId: one.id, quantity: 1 });
+      await items.create({ name: 'Nut', locationId: shelf.id, categoryId: two.id, quantity: 1 });
+
+      const catalogue = await readCatalogue({ kind: 'all' }, { groupBy: 'category' });
+      expect(catalogue.groups).toHaveLength(1);
+      expect(catalogue.groups[0].itemCount).toBe(2);
+      expect(catalogue.groups[0].lines.map((l) => l.name)).toEqual(['Bolt', 'Nut']);
+    });
+
+    /**
+     * The point of the whole change: a document-wide window is served by per-section reads, so
+     * every line appears exactly once, in document order, however the pages fall.
+     */
+    it('pages a document across its section boundaries without gaps or repeats', async () => {
+      const attic = await locations.create({ name: 'Attic' });
+      const garage = await locations.create({ name: 'Garage' });
+      for (const [name, where] of [
+        ['A1', attic],
+        ['A2', attic],
+        ['A3', attic],
+        ['G1', garage],
+        ['G2', garage],
+      ] as const) {
+        await items.create({ name, locationId: where.id, quantity: 1 });
+      }
+
+      const summary = await reports.partsCatalogueSummary({ kind: 'all' });
+      expect(summary.groups.map((g) => g.itemCount)).toEqual([3, 2]);
+
+      // Walk the document two lines at a time, exactly as the screen's pagination does.
+      const seen: string[] = [];
+      for (let offset = 0; offset < summary.itemCount; offset += 2) {
+        for (const slice of sliceGroupsForPage(summary.groups, offset, 2)) {
+          const page = await reports.partsCatalogueGroupPage({ kind: 'all' }, slice.group.ref, {
+            limit: slice.limit,
+            offset: slice.offset,
+          });
+          seen.push(...page.rows.map((r) => r.name));
+        }
+      }
+      expect(seen).toEqual(['A1', 'A2', 'A3', 'G1', 'G2']);
+    });
+
+    it('orders a section by name, by value or by quantity, as the reader asked', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      await items.create({ name: 'Cheap', locationId: shelf.id, quantity: 1, unitCost: 1 });
+      await items.create({ name: 'Dear', locationId: shelf.id, quantity: 10, unitCost: 5 });
+      await items.create({ name: 'Middling', locationId: shelf.id, quantity: 4, unitCost: 2 });
+
+      const order = async (sortBy: CatalogueSortBy) =>
+        (await readCatalogue({ kind: 'all' }, { groupBy: 'none', sortBy })).groups[0].lines.map(
+          (l) => l.name,
+        );
+      expect(await order('name')).toEqual(['Cheap', 'Dear', 'Middling']);
+      expect(await order('value')).toEqual(['Dear', 'Middling', 'Cheap']); // 50, 8, 1
+      expect(await order('quantity')).toEqual(['Dear', 'Middling', 'Cheap']); // 10, 4, 1
+    });
+
+    /**
+     * `hasValuationSourceSql` is a third statement of the valuation precedence — beside the pure
+     * `hasValuationSource` seam and `effectiveUnitValueSql` — so it is pinned against the pure one
+     * rather than left to a comment claiming parity.
+     *
+     * Each fixture is read as a **scope of one**, so the summary's document-wide `hasValue` is
+     * that single item's SQL verdict, and the page's `unitCost` (null exactly when the pure seam
+     * finds no source) is the same item's JavaScript verdict. Both sides are driven; neither is
+     * restated. Break either and this goes red on the fixture that distinguishes them.
+     */
+    it('agrees with the pure `hasValuationSource` seam on what counts as priced', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      const gauge = (name: string, extra: Record<string, unknown> = {}) => ({
+        name,
+        locationId: shelf.id,
+        trackingMode: 'CONSUMABLE_GAUGE' as const,
+        gauge: { unitOfMeasure: 'g', grossCapacity: 1000, currentNetValue: 400 },
+        ...extra,
+      });
+      // One fixture per branch of the precedence, plus the two that nothing prices at all.
+      const created = [
+        await items.create({ name: 'nothing', locationId: shelf.id, quantity: 1 }),
+        // A real 0 is a price, not an absence — the distinction the whole seam exists for.
+        await items.create({ name: 'zero-cost', locationId: shelf.id, quantity: 1, unitCost: 0 }),
+        await items.create({ name: 'cost', locationId: shelf.id, quantity: 1, unitCost: 5 }),
+        await items.create({ name: 'revalued', locationId: shelf.id, quantity: 1, currentValue: 7 }),
+        // Priced only by a purchase price and a term: the branch that stands in for the
+        // depreciated book value without evaluating its formula (issue #688).
+        await items.create({
+          name: 'purchase-only',
+          locationId: shelf.id,
+          quantity: 1,
+          purchasePrice: 9,
+          depreciationMonths: 12,
+        }),
+        await items.create(
+          gauge('gauge-priced', {
+            gauge: {
+              unitOfMeasure: 'g',
+              grossCapacity: 1000,
+              currentNetValue: 400,
+              costPerUnitOfMeasure: 0.02,
+            },
+          }),
+        ),
+        // A gauge is never priced by the four per-unit sources — they price a countable unit.
+        await items.create(gauge('gauge-unpriced', { unitCost: 25, currentValue: 40, purchasePrice: 30 })),
+      ];
+      // …and one priced only by a preferred supplier part, the branch the CASE reaches last.
+      const supplied = await items.create({ name: 'supplied', locationId: shelf.id, quantity: 1 });
+      await supplierParts.create(supplied.id, {
+        supplier: { supplierName: 'Parts Co' },
+        unitCost: 3,
+        isPreferred: true,
+      });
+
+      for (const one of [...created, supplied]) {
+        const scope = { kind: 'items', itemIds: [one.id] } as const;
+        const summary = await reports.partsCatalogueSummary(scope, { groupBy: 'none' });
+        const page = await reports.partsCatalogueGroupPage(scope, { kind: 'all' }, { limit: 10 });
+        expect(page.rows).toHaveLength(1);
+        // The SQL predicate's verdict, and the pure seam's, on the same row.
+        expect({ name: one.name, priced: summary.hasValue }).toEqual({
+          name: one.name,
+          priced: page.rows[0]!.unitCost !== null,
+        });
+      }
+    });
+
+    /**
+     * Issue #683, at the totals. A gauge's line is *quantified* by its contents — 400 g reads as
+     * "400 g" on the page — but a section's "in stock" figure is a count of units, and grams are
+     * not a count. Two independent ways of getting that wrong are covered here, because the
+     * summary sums quantity and value from **different** expressions and either could be made to
+     * follow the other:
+     *
+     *  - Sum the quantity through `valuedAmountSql` — the seam the *value* multiplies by, which
+     *    answers a gauge with its contents — and the spool's 400 g lands in the units in stock.
+     *  - Drop the summary's `WHEN isGauge THEN 0` arm and a gauge carrying a stray non-zero
+     *    `items.quantity` starts counting. The app never writes one (a gauge's count is pinned at
+     *    0), so the second fixture below sets the column directly: that arm is a defence against a
+     *    value arriving from a sync merge, and a defence nothing exercises is a defence that has
+     *    already been deleted in every way but the text.
+     */
+    it('values a gauge from its contents but keeps its measure out of the in-stock count', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      await items.create({ name: 'Bolt', locationId: shelf.id, quantity: 3, unitCost: 2 });
+      const spool = await items.create({
+        name: 'Spool',
+        locationId: shelf.id,
+        trackingMode: 'CONSUMABLE_GAUGE',
+        gauge: {
+          unitOfMeasure: 'g',
+          grossCapacity: 1000,
+          tareWeight: 0,
+          currentNetValue: 400,
+          costPerUnitOfMeasure: 0.025,
+        },
+      });
+
+      const catalogue = await readCatalogue({ kind: 'all' });
+      const line = catalogue.groups[0].lines.find((l) => l.name === 'Spool')!;
+      // The line is quantified and valued by what it holds — 400 g at 0.025 is 10.
+      expect(line.quantity).toBe(400);
+      expect(line.measured).toBe(true);
+      expect(line.lineValue).toBe(10);
+      // …and the section and document totals count the bolts only, while valuing both.
+      expect(catalogue.groups[0].totalQuantity).toBe(3);
+      expect(catalogue.totalQuantity).toBe(3);
+      expect(catalogue.groups[0].subtotal).toBe(16);
+      expect(catalogue.grandTotal).toBe(16);
+
+      // A gauge whose count column is not the 0 the app writes: still not a count of units.
+      await driver.execute('UPDATE items SET quantity = 7 WHERE id = ?;', [spool.id]);
+      const withStrayCount = await readCatalogue({ kind: 'all' });
+      expect(withStrayCount.groups[0].totalQuantity).toBe(3);
+      expect(withStrayCount.totalQuantity).toBe(3);
+      // The gauge is still valued from its contents, not from that count.
+      expect(withStrayCount.grandTotal).toBe(16);
+    });
+
+    it('reports a scope nothing prices as having no value at all', async () => {
+      const shelf = await locations.create({ name: 'Shelf A' });
+      await items.create({ name: 'Plain', locationId: shelf.id, quantity: 2 });
+      const summary = await reports.partsCatalogueSummary({ kind: 'all' });
+      expect(summary.hasValue).toBe(false);
+      expect(summary.grandTotal).toBe(0);
     });
   });
 });

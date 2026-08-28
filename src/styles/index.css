@@ -2811,7 +2811,8 @@
  * the full schedule once prepared, or a room-subtotal summary — and exists purely so that what
  * prints is never derived from the paged reading view. Hidden on screen; the `@media print`
  * block below swaps the two over. */
-.schedule-print-doc {
+.schedule-print-doc,
+.catalogue-print-doc {
   display: none;
 }
 
@@ -2854,12 +2855,19 @@
    * document beside it — which is always a complete artefact, either the full schedule or a
    * clearly-headed room-subtotal summary — takes its place. Making this structural means no
    * route to the printer (the button, Ctrl+P, or the browser's own menu) can produce a partial
-   * document. Both class names are load-bearing: see InsuranceScheduleScreen.tsx. */
-  .schedule-window {
+   * document. Both class names are load-bearing: see InsuranceScheduleScreen.tsx.
+   *
+   * The parts catalogue is paged for the same reason and gets the same treatment (issue #410):
+   * `.catalogue-window` is the paged reading view, `.catalogue-print-doc` the complete artefact —
+   * the full catalogue once prepared, or a clearly-headed section-subtotal summary. See
+   * CatalogueScreen.tsx. */
+  .schedule-window,
+  .catalogue-window {
     display: none !important;
   }
 
-  .schedule-print-doc {
+  .schedule-print-doc,
+  .catalogue-print-doc {
     display: flex !important;
     flex-direction: column;
     gap: 1.5rem;
