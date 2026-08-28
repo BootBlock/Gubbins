@@ -18,8 +18,8 @@ scale that only resolves to the nearest gram.
 
 > **💡 Tip**
 > Weights are entered and shown in whatever [[weight unit|Units-of-Measure]] you've chosen —
-> grams, kilograms, ounces or pounds. Gubbins stores them in one canonical unit behind the
-> scenes, so changing the setting never alters your data.
+> grams, ounces and pounds through to stones, troy ounces, grains and carats. Gubbins stores them
+> in one canonical unit behind the scenes, so changing the setting never alters your data.
 
 ## Counting a handful
 

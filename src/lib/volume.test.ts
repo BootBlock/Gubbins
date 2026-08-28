@@ -67,8 +67,9 @@ describe('volume units', () => {
     expect(volumeSystemForDimensionUnit('in')).toBe('imperial');
     expect(volumeSystemForDimensionUnit('ft')).toBe('imperial');
     expect(volumeSystemForDimensionUnit('yd')).toBe('imperial');
-    // Every supported length unit is covered above — a new one must be classified here too,
-    // or a user picking it silently reads their storage capacity in the wrong family.
+    // The classification itself is a compile error to omit (it is an exhaustive `Record`), so
+    // what this guards is the *coverage above*: a ninth length unit turns this red, which is
+    // what sends a reader back to add its case rather than leaving it silently unasserted.
     expect(DIMENSION_UNITS).toHaveLength(8);
   });
 

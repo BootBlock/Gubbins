@@ -78,9 +78,10 @@ The same is true of anything already typed in: a part recorded as `500 g` shows 
 moment you switch, and an item you then enter as `2 lb` is stored so that it reads `907.185 g` if
 you switch back.
 
-Figures are shown to three decimal places, or to three significant figures when they fall below
-one of the unit you've chosen — so a 500 mg part still reads `0.0000787 st` rather than rounding
-away to nothing.
+A **weight** or a **dimension** is shown to three decimal places, or to three significant figures
+when it falls below one of the unit you've chosen — so a 500 mg part still reads `0.0000787 st`
+rather than rounding away to nothing. A derived **volume** is shown to two decimal places, which
+is why pinning one to a unit far larger than the thing you're measuring can still round it away.
 
 > **ℹ️ Note**
 > These three units live in the **Language, units & currency** group, so they travel with your

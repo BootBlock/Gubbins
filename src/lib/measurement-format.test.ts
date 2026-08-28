@@ -15,10 +15,9 @@ describe('measurementFormatOptions', () => {
   });
 
   it('gives a small value three real figures where a fraction cap gave none', () => {
+    // Half a gram in stones. The flat three-decimal cap this replaced rendered it as `0`.
     const small = 0.000_078_74;
     expect(new Intl.NumberFormat('en-GB', measurementFormatOptions(small)).format(small)).toBe('0.0000787');
-    // The rule it replaced: a flat three-decimal cap rendered the same value as nothing at all.
-    expect(new Intl.NumberFormat('en-GB', { maximumFractionDigits: 3 }).format(small)).toBe('0');
   });
 });
 

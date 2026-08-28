@@ -23,8 +23,9 @@ describe('weight units', () => {
   });
 
   it('keeps the derived units exactly consistent with their parents', () => {
-    // A stone is 14 lb, a grain 1/7000 lb, and a troy ounce 480 gr — by definition, not by
-    // approximation, so these hold to full double precision rather than to a tolerance.
+    // A stone is 14 lb, a grain 1/7000 lb, and a troy ounce 480 gr — exact decimal definitions,
+    // so a factor that drifts from its parent is a typo rather than a rounding difference. The
+    // tolerance is here only because the decimals are not all exactly representable in binary.
     expect(toGrams(1, 'st')).toBeCloseTo(toGrams(14, 'lb'), 9);
     expect(toGrams(7000, 'gr')).toBeCloseTo(toGrams(1, 'lb'), 9);
     expect(toGrams(1, 'ozt')).toBeCloseTo(toGrams(480, 'gr'), 9);

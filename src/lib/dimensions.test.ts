@@ -22,7 +22,8 @@ describe('dimension units', () => {
   });
 
   it('keeps the derived units exactly consistent with their parents', () => {
-    // A thou is 1/1000 in, a foot 12 in and a yard 3 ft — by definition, not by approximation.
+    // A thou is 1/1000 in, a foot 12 in and a yard 3 ft — exact decimal definitions, so a factor
+    // that drifts from its parent is a typo rather than a rounding difference.
     expect(toMm(1000, 'thou')).toBeCloseTo(toMm(1, 'in'), 9);
     expect(toMm(12, 'in')).toBeCloseTo(toMm(1, 'ft'), 9);
     expect(toMm(3, 'ft')).toBeCloseTo(toMm(1, 'yd'), 9);

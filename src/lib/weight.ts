@@ -66,8 +66,9 @@ const GRAMS_PER_UNIT: Readonly<Record<WeightUnit, number>> = {
 export const DEFAULT_WEIGHT_UNIT: WeightUnit = 'g';
 
 /**
- * Choices for the Settings "Weight unit" control — the default first, then metric, then
- * avoirdupois, then the specialist units, each group running light to heavy.
+ * Choices for the Settings "Weight unit" control — the default first, then the rest of the
+ * metric units and then the avoirdupois ones, each running light to heavy, and finally the
+ * specialist units in the order a reader is likeliest to want them.
  */
 export const WEIGHT_UNIT_OPTIONS = [
   { value: 'g', label: 'Grams (g)' },
