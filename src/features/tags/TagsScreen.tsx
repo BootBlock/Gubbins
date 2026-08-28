@@ -166,8 +166,6 @@ export function TagsScreen() {
         tabIndex={-1}
         className="flex flex-1 animate-rise flex-col gap-6 outline-none"
       >
-        <p className="max-w-2xl text-sm text-muted-foreground">{t('tags.intro')}</p>
-
         <section aria-labelledby="tags-new-heading" className="flex flex-col gap-3">
           <h2 id="tags-new-heading" className="text-sm font-semibold text-foreground">
             {t('tags.add.heading')}
@@ -273,12 +271,36 @@ export function TagsScreen() {
             </Surface>
           ) : tags.length === 0 ? (
             // "No tags yet" would be wrong when a filter is what emptied the list, and it would
-            // send the user to add a tag they may well already have.
-            <Surface className="flex flex-col items-center gap-2 p-8 text-center">
+            // send the user to add a tag they may well already have. The unfiltered branch is the
+            // only place the feature is explained (issue #425): a first-time user meets it here,
+            // in the middle of the screen they landed on, rather than in a line of small print
+            // above a screen they cannot yet use.
+            <Surface className="flex flex-col items-center gap-3 p-8 text-center">
               <TagIcon aria-hidden className="size-8 text-muted-foreground/60" />
-              <p className="text-sm text-muted-foreground" data-testid="tags-empty">
-                {searching ? t('tags.search.empty', { vars: { query } }) : t('tags.list.empty')}
-              </p>
+              {searching ? (
+                <p className="text-sm text-muted-foreground" data-testid="tags-empty">
+                  {t('tags.search.empty', { vars: { query } })}
+                </p>
+              ) : (
+                <div
+                  className="flex max-w-prose flex-col gap-3 text-sm text-muted-foreground"
+                  data-testid="tags-empty"
+                >
+                  <h3 className="text-base font-semibold text-foreground">{t('tags.empty.heading')}</h3>
+                  <p>{t('tags.empty.lead')}</p>
+                  {/* The explanation itself reads left-aligned: centred prose of this length is
+                      hard to follow, so only the block is centred, not the sentences in it. */}
+                  <div className="flex flex-col gap-2 text-left">
+                    <h4 className="text-sm font-semibold text-foreground">{t('tags.empty.why.heading')}</h4>
+                    <ul className="flex list-disc flex-col gap-2 pl-5">
+                      <li>{t('tags.empty.why.crossCutting')}</li>
+                      <li>{t('tags.empty.why.find')}</li>
+                      <li>{t('tags.empty.why.tidy')}</li>
+                    </ul>
+                  </div>
+                  <p className="text-left">{t('tags.empty.start')}</p>
+                </div>
+              )}
             </Surface>
           ) : (
             <>

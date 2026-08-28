@@ -74,8 +74,10 @@ uncluttered until you ask for it.
 **Where to find it:** the **Manage tags** screen — from the inventory **⋯ (More)** menu
 (**Tags**, right below **Categories**), or the command palette (`Ctrl/⌘ + K`).
 
-This is the place to tidy the whole dictionary. Every tag is listed with how many items and
-locations carry it, and you can:
+This is the place to tidy the whole dictionary. Before you have any tags, the screen introduces
+what tags are and what they're good for, so it doubles as the starting point if you've not used
+them yet. Once you have some, every tag is listed with how many items and locations carry it, and
+you can:
 
 - **Add** a tag up front, before you attach it to anything.
 - **Rename** a tag — the new name flows to every item and location at once.
