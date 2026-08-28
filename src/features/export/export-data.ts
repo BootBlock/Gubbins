@@ -16,6 +16,8 @@ import type {
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
 import { truncateByCodePoints } from '@/lib/text-limits';
 import { toDateInputValue } from '@/lib/date-input';
+import { foldName } from '@/lib/name-fold';
+import { foldLocationPath, isLocationPathCell } from '@/features/inventory/labels/location-path';
 import { isoTimestamp } from './export-every-page';
 import {
   buildTabularExport,
@@ -354,24 +356,50 @@ export interface CatalogNameLookup {
  * @internal Exported for unit tests only.
  */
 export function buildCatalogNameLookup(
-  locations: readonly { readonly id: string; readonly path: string }[],
+  locations: readonly { readonly id: string; readonly name: string; readonly path: string }[],
   categories: readonly { readonly id: string; readonly name: string }[],
 ): CatalogNameLookup {
+  // A location is judged by the index the importer will really answer its cell from
+  // ({@link isLocationPathCell}): a nested location's cell is a path and is compared against
+  // paths, but a root's cell is a single segment and is compared against *names* — so a root
+  // whose name a nested location repeats is not writable, however unique its path is.
+  const pathCounts = tally(locations.map((l) => foldLocationPath(l.path)));
+  const nameCounts = tally(locations.map((l) => foldName(l.name)));
+  const writable = locations.filter((l) =>
+    isLocationPathCell(l.path)
+      ? pathCounts.get(foldLocationPath(l.path)) === 1
+      : nameCounts.get(foldName(l.name)) === 1,
+  );
   return {
-    locationPathById: unambiguous(locations.map((l) => [l.id, l.path])),
-    categoryNameById: unambiguous(categories.map((c) => [c.id, c.name])),
+    locationPathById: new Map(writable.map((l) => [l.id, l.path])),
+    categoryNameById: unambiguous(
+      categories.map((c) => [c.id, c.name]),
+      foldName,
+    ),
   };
 }
 
-/** Id → label, with every label borne by more than one id removed. Case-insensitive, as the
- * importer's own matching is. */
-function unambiguous(pairs: readonly (readonly [string, string])[]): ReadonlyMap<string, string> {
+/** How many times each key appears. */
+function tally(keys: readonly string[]): ReadonlyMap<string, number> {
   const counts = new Map<string, number>();
-  for (const [, label] of pairs) {
-    const key = label.trim().toLowerCase();
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return new Map(pairs.filter(([, label]) => counts.get(label.trim().toLowerCase()) === 1));
+  for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * Id → label, with every label borne by more than one id removed.
+ *
+ * `fold` is the importer's own comparison key — {@link foldName} — passed in rather than
+ * restated, because "unique enough to write" and "resolvable on the way back" have to be the
+ * same question. A looser fold here would export `Größe` and `GRÖSSE` as names and have the
+ * importer reject both as ambiguous, which is the round-trip this function exists to protect.
+ */
+function unambiguous(
+  pairs: readonly (readonly [string, string])[],
+  fold: (raw: string) => string,
+): ReadonlyMap<string, string> {
+  const counts = tally(pairs.map(([, label]) => fold(label)));
+  return new Map(pairs.filter(([, label]) => counts.get(fold(label)) === 1));
 }
 
 /**

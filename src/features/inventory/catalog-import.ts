@@ -24,7 +24,12 @@ import { assertPermissions } from '@/features/users/assert-permission';
 import { currentAuthority } from '@/features/users/current-authority';
 import { fromDateInputValue, toDateInputValue } from '@/lib/date-input';
 import { foldName } from '@/lib/name-fold';
-import { fullLocationPath, LOCATION_PATH_SEPARATOR, type LocationPathNode } from './labels/location-path';
+import {
+  foldLocationPath,
+  fullLocationPath,
+  isLocationPathCell,
+  type LocationPathNode,
+} from './labels/location-path';
 import { validateFieldValue } from './custom-fields';
 import { TRACKING_MODES, CONDITIONS, UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import type { TrackingMode } from '@/db/repositories/constants';
@@ -1149,8 +1154,8 @@ export interface BuildPlanOptions {
   /**
    * Known categories, so a `categoryId` cell holding a category **name** resolves to its id
    * (issue #596). A cell that already holds a known id passes through. When omitted, category
-   * cells are passed through verbatim (legacy behaviour). A non-empty, unresolvable category is
-   * a row error rather than a foreign-key failure at apply time (issue #407).
+   * cells are passed through verbatim (legacy behaviour); see {@link resolveCategoryId} for what
+   * an unresolvable one costs.
    */
   readonly categories?: readonly { readonly id: string; readonly name: string }[];
   /**
@@ -1267,22 +1272,6 @@ function fromCandidates(candidates: readonly string[] | undefined): ReferenceRes
 }
 
 /**
- * Normalise a location path for comparison: lower-cased through {@link foldName} segment by
- * segment, so a person typing `Workshop/drawer 1` and the exporter writing
- * `Workshop / Drawer 1` key the same. The file's own spacing convention is not something the
- * user has to reproduce by hand.
- */
-function foldPath(raw: string): string {
-  // The separator without its padding, so the surrounding spaces are what gets normalised away
-  // rather than being what the two sides have to agree on.
-  const bare = LOCATION_PATH_SEPARATOR.trim();
-  return raw
-    .split(bare)
-    .map((segment) => foldName(segment))
-    .join(bare);
-}
-
-/**
  * Resolve a raw location cell against the known locations. An exact id match wins, then a full
  * **path** (`Workshop / Drawer 1`, what the catalogue CSV writes — issue #596), then a folded
  * bare name. A path or a name held by more than one location resolves to `ambiguous` rather
@@ -1301,8 +1290,14 @@ function resolveLocationId(
 ): ReferenceResolution {
   const trimmed = raw.trim();
   if (byId.has(trimmed)) return { kind: 'resolved', id: trimmed };
-  const byPath = fromCandidates(idsByPath.get(foldPath(trimmed)));
-  if (byPath.kind !== 'unknown') return byPath;
+  // Only a cell that actually spells a path is answered by the path map. A single-segment cell
+  // is the *same question* as a bare name — a root location's full path is its own name — and
+  // answering it from the path map would hand back that root while a nested location of the
+  // same name went unmentioned, which is the silent wrong-room outcome issue #593 removed.
+  if (isLocationPathCell(trimmed)) {
+    const byPath = fromCandidates(idsByPath.get(foldLocationPath(trimmed)));
+    if (byPath.kind !== 'unknown') return byPath;
+  }
   return fromCandidates(idsByName.get(foldName(trimmed)));
 }
 
@@ -1348,14 +1343,24 @@ function idsGroupedBy<T extends { readonly id: string }>(
 }
 
 /**
- * The row error for an ambiguous location cell. A **bare name** can be qualified, so the message
- * offers the path the catalogue CSV already writes (issue #596) alongside the id; a path that is
- * itself ambiguous leaves only the id, and saying "use its full path" there would be advice the
- * user has already taken.
+ * The row error for an ambiguous location cell.
+ *
+ * The path is offered as the fix only when writing one would actually separate the candidates —
+ * that is, when some candidate's path differs from what the user wrote. Two locations of the
+ * same name at *top level* share their path as well as their name, so telling the user to write
+ * the full path there is advice they have already taken; the id is all that is left.
  */
-function ambiguousLocationMessage(raw: string, ids: readonly string[]): string {
-  const shared = raw.includes(LOCATION_PATH_SEPARATOR.trim()) ? 'this path' : 'this name';
-  const fix = shared === 'this name' ? "Use its full path, or the location's id" : "Use the location's id";
+function ambiguousLocationMessage(
+  raw: string,
+  ids: readonly string[],
+  pathById: ReadonlyMap<string, string>,
+): string {
+  const shared = isLocationPathCell(raw) ? 'this path' : 'this name';
+  const pathHelps = ids.some((id) => {
+    const path = pathById.get(id);
+    return path !== undefined && foldLocationPath(path) !== foldLocationPath(raw);
+  });
+  const fix = pathHelps ? "Use its full path, or the location's id" : "Use the location's id";
   return `Ambiguous location "${raw}" — ${ids.length} locations share ${shared}. ${fix} instead (${listCandidates(ids)}).`;
 }
 
@@ -1446,7 +1451,12 @@ export function buildImportPlanFromRows(
     name: l.name,
     parentId: l.parentId ?? null,
   }));
-  const locationIdsByPath = idsGroupedBy(locationNodes, (n) => fullLocationPath(n, locationNodes), foldPath);
+  const locationPathById = new Map(locationNodes.map((n) => [n.id, fullLocationPath(n, locationNodes)]));
+  const locationIdsByPath = idsGroupedBy(
+    locationNodes,
+    (n) => locationPathById.get(n.id) ?? null,
+    foldLocationPath,
+  );
   // Presence of the option, not the length of it: a database with no categories at all would
   // otherwise fall back to the pass-through and hand a name to the foreign key (issue #407) in
   // exactly the case where *every* name is unresolvable. `undefined` still means "no repository
@@ -1509,7 +1519,10 @@ export function buildImportPlanFromRows(
         continue;
       }
       if (resolved.kind === 'ambiguous') {
-        errors.push({ sourceRow, message: ambiguousLocationMessage(rawLocation, resolved.ids) });
+        errors.push({
+          sourceRow,
+          message: ambiguousLocationMessage(rawLocation, resolved.ids, locationPathById),
+        });
         continue;
       }
       raw.core.locationId = resolved.id;
@@ -1517,10 +1530,8 @@ export function buildImportPlanFromRows(
       raw.core.locationId = options.defaultLocationId;
     }
 
-    // Resolve the category the same way (issue #596). Before this the cell was handed to the
-    // database verbatim, so a name planned as importable and then failed the row on a foreign
-    // key with the raw SQLite text (issue #407). A blank cell still clears the category, so
-    // only a non-empty one is resolved.
+    // Resolve the category the same way (issue #596), through {@link resolveCategoryId}. A
+    // blank cell still clears the category, so only a non-empty one is resolved.
     const rawCategory = raw.core.categoryId ?? null;
     if (rawCategory !== null && resolveCategories) {
       const resolved = resolveCategoryId(rawCategory, categoryById, categoryIdsByName);

@@ -299,7 +299,7 @@ async function collectCatalogNames(): Promise<CatalogNameLookup> {
     getCategoryRepository().listAll(),
   ]);
   return buildCatalogNameLookup(
-    toLocationExportRows(locations).map((r) => ({ id: r.location.id, path: r.path })),
+    toLocationExportRows(locations).map((r) => ({ id: r.location.id, name: r.location.name, path: r.path })),
     categories,
   );
 }

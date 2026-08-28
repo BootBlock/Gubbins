@@ -6,7 +6,7 @@
  */
 import { UNASSIGNED_LOCATION_ID } from '@/db/repositories/constants';
 import { includesAllTerms, splitSearchTerms } from '@/lib/text-terms';
-import { fullLocationPath } from './labels/location-path';
+import { fullLocationPath, LOCATION_PATH_SEPARATOR } from './labels/location-path';
 
 /** The minimal shape these helpers need from a location row. */
 export interface FlatNode {
@@ -215,6 +215,10 @@ export function locationsMatchingQuery(
   if (terms.length === 0) return matches;
 
   const byId = new Map(flat.map((n) => [n.id, n] as const));
+  // A memoised walk rather than {@link fullLocationPath} per node: this runs over the whole tree
+  // on every keystroke, and that helper rebuilds its own index each call. It must nevertheless
+  // spell a path exactly as the helper does, or a query matching what the sidebar shows would
+  // miss — `location-tree.test.ts` drives both and compares (issue #596).
   const paths = new Map<string, string>();
   const pathOf = (id: string): string => {
     const cached = paths.get(id);
@@ -225,7 +229,7 @@ export function locationsMatchingQuery(
     // resolves to that partial value instead of recursing forever.
     paths.set(id, node.name);
     const parent = node.parentId ? pathOf(node.parentId) : '';
-    const full = parent ? `${parent} / ${node.name}` : node.name;
+    const full = parent ? `${parent}${LOCATION_PATH_SEPARATOR}${node.name}` : node.name;
     paths.set(id, full);
     return full;
   };

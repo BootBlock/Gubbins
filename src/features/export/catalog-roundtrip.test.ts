@@ -255,7 +255,7 @@ describe('catalogue CSV round-trip — readable location & category (issue #596)
     // shared name would take a row that always imported and make it unimportable, so the row
     // keeps its id and only loses the readability it could not honestly have had.
     const names = buildCatalogNameLookup(
-      [{ id: 'l1', path: 'Workshop / Cabinet A / Drawer 3' }],
+      [{ id: 'l1', name: 'Drawer 3', path: 'Workshop / Cabinet A / Drawer 3' }],
       [
         { id: 'c1', name: 'Spares' },
         { id: 'c2', name: 'spares' },
@@ -269,14 +269,56 @@ describe('catalogue CSV round-trip — readable location & category (issue #596)
   it('keeps the stored id for a location path two locations share', () => {
     const names = buildCatalogNameLookup(
       [
-        { id: 'l1', path: 'Shed / Drawer 1' },
-        { id: 'l2', path: 'Shed / Drawer 1' },
+        { id: 'l1', name: 'Drawer 1', path: 'Shed / Drawer 1' },
+        { id: 'l2', name: 'Drawer 1', path: 'Shed / Drawer 1' },
       ],
       [{ id: 'c1', name: 'Passives' }],
     );
     const cells = cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names));
     expect(cells.location).toBe('l1');
     expect(cells.category).toBe('Passives');
+  });
+
+  it('judges a category name unique by the fold the importer will match it with', () => {
+    // `Grosse` and `GROSSE` differ under a plain lower-casing and are one key under
+    // `foldName`, which is what the importer asks. Writing the name because the exporter
+    // thought it distinct would export a row the importer then rejects as ambiguous — the
+    // exact round-trip the id fallback exists to keep.
+    const names = buildCatalogNameLookup(
+      [{ id: 'l1', name: 'Drawer 3', path: 'Workshop / Cabinet A / Drawer 3' }],
+      [
+        { id: 'c1', name: 'Gr\u00f6\u00dfe' },
+        { id: 'c2', name: 'GR\u00d6SSE' },
+      ],
+    );
+    expect(cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names)).category).toBe('c1');
+  });
+
+  it('judges a location path unique by the fold the importer will match it with', () => {
+    // A location literally named `A/B` under `Shed`, and a `B` under `Shed / A`, are
+    // different strings and one folded path.
+    const names = buildCatalogNameLookup(
+      [
+        { id: 'l1', name: 'A/B', path: 'Shed / A/B' },
+        { id: 'l2', name: 'B', path: 'Shed / A / B' },
+      ],
+      [{ id: 'c1', name: 'Passives' }],
+    );
+    expect(cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names)).location).toBe('l1');
+  });
+
+  it('keeps the id for a root whose name a nested location repeats, though its path is unique', () => {
+    // The importer answers a single-segment cell from the *name* index, so `Drawer 1` at top
+    // level is not writable while a `Shed / Drawer 1` exists — its path is unique, and the
+    // question the importer asks of that cell is not about paths.
+    const names = buildCatalogNameLookup(
+      [
+        { id: 'l1', name: 'Drawer 1', path: 'Drawer 1' },
+        { id: 'nested', name: 'Drawer 1', path: 'Shed / Drawer 1' },
+      ],
+      [{ id: 'c1', name: 'Passives' }],
+    );
+    expect(cellsOf(buildCatalogCsv([makeItem()], [], new Map(), new Map(), names)).location).toBe('l1');
   });
 
   it('names the second install the place it has never heard of', () => {

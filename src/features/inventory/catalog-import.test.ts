@@ -797,6 +797,29 @@ describe('buildCatalogImportPlan — location paths & category names (issue #596
     expect(plan.errors[0]!.message).not.toContain('full path');
   });
 
+  it('does not let a root location win a bare name a nested location also bears', () => {
+    // A root's full path is its own name, so answering a single-segment cell from the path
+    // map would hand back the root and never mention the other candidate — the silent
+    // wrong-room outcome issue #593 removed.
+    const csv = 'name,location\r\nWidget,Drawer 1\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], {
+      locations: [
+        { id: 'root-d1', name: 'Drawer 1', parentId: null },
+        { id: 'work', name: 'Workshop', parentId: null },
+        { id: 'nested-d1', name: 'Drawer 1', parentId: 'work' },
+      ],
+    });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/2 locations share this name/);
+  });
+
+  it('resolves a root location by its own name when only it bears that name', () => {
+    const csv = 'name,location\r\nWidget,Workshop\r\n';
+    const plan = buildCatalogImportPlan(csv, null, [], { locations: [...AMBIGUOUS_TREE] });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('work');
+  });
+
   it('still resolves a bare name only one location bears', () => {
     const csv = 'name,location\r\nWidget,Shed\r\n';
     const plan = buildCatalogImportPlan(csv, null, [], { locations: [...AMBIGUOUS_TREE] });
