@@ -10,8 +10,11 @@
  * `list({ search })` resolves the filter in the database, so typing reaches projects that sort
  * past the offered page; {@link useProjectCount} over the same filter is what lets the control
  * say how many matches it is *not* showing rather than presenting a capped read as the whole set.
- * The offered page stays in name order — the project list has no relevance ranking to sort by, so
- * this picker says "the first" where the item picker says "the closest".
+ *
+ * The page is asked for in **name order** rather than the list's newest-first default: a picker is
+ * looked *along*, so the order a reader can predict beats the order the Projects screen opens in.
+ * There is no relevance ranking to offer instead — which is why this picker says "the first" where
+ * the item picker says "the closest".
  */
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
@@ -58,7 +61,9 @@ export function ProjectPicker({
   const query = box.committed ? '' : box.text.trim();
   const browse = useMemo(() => (query.length > 0 ? { search: query } : {}), [query]);
 
-  const page = useProjects(1, PICKER_OPTION_LIMIT, browse);
+  // The sort belongs to the page read alone: a count is order-independent, and threading it into
+  // the count's filter would only fragment that cache.
+  const page = useProjects(1, PICKER_OPTION_LIMIT, { ...browse, sort: 'NAME_ASC' });
   const total = useProjectCount(browse);
   const rows = useMemo<readonly Project[]>(() => page.data?.rows ?? [], [page.data]);
 
@@ -74,7 +79,10 @@ export function ProjectPicker({
 
   const matched = total.data ?? 0;
   let status: string | null = null;
-  if (total.data !== undefined && matched === 0 && query.length > 0) {
+  // Silent once a project has been chosen — see {@link ItemPicker}.
+  if (box.committed) {
+    status = null;
+  } else if (total.data !== undefined && matched === 0 && query.length > 0) {
     status = t('projectPicker.noMatches', { vars: { query } });
   } else if (matched > rows.length) {
     status = t('projectPicker.truncated', { vars: { shown: rows.length, total: matched } });

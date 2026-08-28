@@ -1621,7 +1621,6 @@ try {
         await choosePickerOption(
           dialog.getByRole('combobox', { name: 'Inventory item (optional)' }),
           unlimitedName,
-          { exact: false },
         );
         await dialog.getByLabel('Quantity').fill('1000');
         await dialog.getByRole('button', { name: 'Add line' }).click();
@@ -3066,9 +3065,6 @@ try {
       await choosePickerOption(
         lineDialog.getByRole('combobox', { name: 'Inventory item (optional)' }),
         batchItemName,
-        {
-          exact: false,
-        },
       );
       await lineDialog.getByLabel('Quantity').fill('6');
       await lineDialog.getByRole('button', { name: 'Add line' }).click();

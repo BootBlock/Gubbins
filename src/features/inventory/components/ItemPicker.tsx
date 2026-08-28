@@ -106,20 +106,20 @@ export function ItemPicker({
     !searching,
   );
 
+  // Everything the browse read holds. It shares a cache entry with any other read of the same
+  // filters — `useInventoryItems` keys on the filters alone, not the page size — so it can hold
+  // more rows than this picker asked for, and the extra rows are not rows the picker offered.
+  const browsed = useMemo(() => browse.data?.pages.flatMap((page) => page.rows) ?? [], [browse.data]);
+
   const rows = useMemo<readonly Item[]>(() => {
-    const found = searching
-      ? (relevance.data?.rows ?? [])
-      : // Sliced because this browse shares a cache entry with any other read of the same filters,
-        // whose further pages are not rows this picker offered (`useInventoryItems` keys on the
-        // filters alone, not the page size).
-        (browse.data?.pages.flatMap((page) => page.rows) ?? []).slice(0, PICKER_OPTION_LIMIT);
+    const found = searching ? (relevance.data?.rows ?? []) : browsed.slice(0, PICKER_OPTION_LIMIT);
     return exclude ? found.filter((item) => !exclude.has(item.id)) : found;
-  }, [searching, relevance.data, browse.data, exclude]);
+  }, [searching, relevance.data, browsed, exclude]);
 
   /** How many rows the read returned before any exclusion — what says whether it was truncated. */
   const returned = searching
     ? (relevance.data?.rows.length ?? 0)
-    : Math.min(browse.data?.pages.flatMap((page) => page.rows).length ?? 0, PICKER_OPTION_LIMIT);
+    : Math.min(browsed.length, PICKER_OPTION_LIMIT);
 
   const { suggestions, onText } = usePickerSelection<Item>({
     value,
@@ -135,9 +135,14 @@ export function ItemPicker({
    * What the control is not showing. Silent while it is showing everything there is — there is
    * nothing to tell the user then — and specific about which of the two reads is truncated, since
    * "type to search" is the remedy for one and "keep typing" for the other.
+   *
+   * Silent, too, once an item has been chosen: what the list is not showing is advice for someone
+   * still looking, and "keep typing to narrow" beside a completed choice reads as a complaint.
    */
   let status: string | null = null;
-  if (searching) {
+  if (box.committed) {
+    status = null;
+  } else if (searching) {
     const total = relevance.data?.total ?? 0;
     if (relevance.data && total === 0) {
       status = t('itemPicker.noMatches', { vars: { query } });
@@ -146,7 +151,10 @@ export function ItemPicker({
       // being edited would report matches that no amount of typing could ever reveal.
       status = t('itemPicker.matchesTruncated', { vars: { shown: rows.length, total } });
     }
-  } else if (browse.data?.pages[0]?.hasMore) {
+    // Either the read says the catalogue holds more, or it handed over more than this picker
+    // offers. The second is not hypothetical: the shared cache entry can already hold several
+    // pages, and silently dropping those would present a capped read as the whole set again.
+  } else if ((browse.data?.pages.at(-1)?.hasMore ?? false) || browsed.length > PICKER_OPTION_LIMIT) {
     status = t('itemPicker.browseTruncated', { vars: { shown: rows.length } });
   }
 

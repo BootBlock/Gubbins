@@ -190,6 +190,28 @@ describe('ItemPicker — saying what it is not showing', () => {
     expect(status()).toBeNull();
   });
 
+  it('counts the browse against what it offers, not what the shared cache holds', async () => {
+    // `useInventoryItems` keys on the filters alone, so this read's cache entry can already hold
+    // several pages of a longer list. Offering 20 of them silently would present a capped read as
+    // the whole set — the very thing the notice exists to prevent.
+    const many = Array.from({ length: 32 }, (_, i) => item(`i${i}`, `Part ${i}`));
+    h.browse = { rows: many, hasMore: false };
+    render(<Harness />);
+    await waitFor(() => expect(status()?.textContent).toMatch(/first 20 items/));
+  });
+
+  it('falls silent once an item is chosen', async () => {
+    // What the list is not showing is advice for someone still looking.
+    h.browse = { rows: [item('b', 'Nut')], hasMore: true };
+    h.byId.set('b', item('b', 'Nut'));
+    render(<Harness />);
+    await waitFor(() => expect(status()).not.toBeNull());
+
+    fireEvent.click(box());
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Nut' }));
+    await waitFor(() => expect(status()).toBeNull());
+  });
+
   it('says so when a query matches nothing', async () => {
     h.relevance = { rows: [], total: 0 };
     render(<Harness />);
