@@ -549,7 +549,7 @@ describe('ScannerOverlay — unknown barcode product lookup (issue #59)', () => 
     const onCreateFromBarcode = vi.fn();
     render(<ScannerOverlay open onClose={vi.fn()} onCreateFromBarcode={onCreateFromBarcode} />);
 
-    // Scan a valid retail barcode no item carries (getByBarcode → null) via the manual seam.
+    // Scan a valid retail barcode no item carries (findByBarcode → []) via the manual seam.
     fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value: EAN13 } });
     fireEvent.click(screen.getByTestId('scanner-manual-submit'));
     await screen.findByTestId('scanner-gtin-result');

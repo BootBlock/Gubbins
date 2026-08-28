@@ -151,12 +151,17 @@ location, exactly as scanning would have. See
 
 Nothing stops two items carrying the same barcode, and often it's deliberate — an opened tub and a
 sealed one kept as separate items, a multipack that shares its unit's code, or two copies of a
-product stored in different places. When you scan a code more than one item carries, Gubbins shows
-you every item that has it and asks which one you meant, rather than picking one for you. Each row
+product stored in different places. When you scan a code more than one item carries, Gubbins lists
+the items that have it and asks which one you meant, rather than picking one for you. Each row
 names the item's **location** and its **short code**, so two variants with the same name are still
 easy to tell apart. Tap the one you meant and the scan carries on exactly as usual — the result
 card in a single scan, or straight back to the viewfinder with it added to a
 [[continuous scan|Continuous-Scan-and-Batch-Actions]].
+
+> **ℹ️ Note**
+> The list shows up to ten items. If a code is somehow shared by more than that, Gubbins says so —
+> **at least** that many carry it — and you can [[search|Search-Overview]] for the code itself to
+> see every one of them.
 
 > **⚠️ Heads-up**
 > This is why it matters: adjusting stock by scanning is the quickest way to keep counts right,
