@@ -70,6 +70,35 @@ export const SPEND_BUCKETS = 15;
 export const SALES_BUCKETS = 15;
 
 /**
+ * How long a slow-moving report stays fresh before a remount will refetch it (issue #528).
+ *
+ * The §3 analytics — ABC over a year of consumption, turnover, stock aging, the valuation
+ * trend, the hygiene checklist, dead stock, spend and sales — are each a whole-catalogue pass,
+ * and each answers a question whose shape does not move from minute to minute: a Pareto
+ * classification or a six-month tidy-up list is not a live figure. The app-wide 30-second default therefore
+ * bought nothing and cost a full recompute every time the reader scrolled a panel out of view
+ * and back, or navigated away and returned.
+ *
+ * This is **not** a correctness lever. `invalidateQueries` marks a query stale whatever its
+ * `staleTime`, so every write still refreshes what is on screen exactly as before (issue #375);
+ * all this changes is the *unprompted* refetch when nothing has written.
+ */
+export const ANALYTICS_STALE_TIME_MS = 5 * 60_000;
+
+/**
+ * The gate a report hook accepts so its caller can leave the query idle.
+ *
+ * The Reports screen is long and mostly below the fold, so it passes each panel's on-screen
+ * state here (see `useInViewport`): a report nobody is looking at neither runs on mount nor
+ * refetches when a write invalidates it, and picks the new figures up when the panel is next
+ * scrolled to. Defaults to enabled, so a caller that wants the report unconditionally — the
+ * CSV export, a test — says nothing.
+ */
+export interface ReportQueryOptions {
+  readonly enabled?: boolean;
+}
+
+/**
  * The user's base currency, folded into the query key of every report whose figures depend on
  * it (issue #284).
  *
@@ -115,10 +144,12 @@ export function useConsumptionRate(windowDays: number = REPORT_WINDOW_DAYS) {
 export function useMovement(
   windowDays: number = REPORT_WINDOW_DAYS,
   buckets: number = REPORT_MOVEMENT_BUCKETS,
+  options?: ReportQueryOptions,
 ) {
   return useQuery({
     queryKey: reportKeys.movement(windowDays, buckets),
     queryFn: () => getReportRepository().movement(windowDays, buckets),
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -166,6 +197,9 @@ export function useDeadStock(sinceDays?: number) {
   return useQuery({
     queryKey: reportKeys.deadStock(effective, currency),
     queryFn: () => getReportRepository().deadStock(effective),
+    // Eager (a headline card reads it) but slow-moving: an item crosses its idle threshold on
+    // a timescale of months, and any write that moves the figure invalidates the key anyway.
+    staleTime: ANALYTICS_STALE_TIME_MS,
   });
 }
 
@@ -182,38 +216,49 @@ export function useDeadStockPolicy(itemId: string) {
   });
 }
 
-export function useAbcAnalysis() {
+export function useAbcAnalysis(options?: ReportQueryOptions) {
   const currency = useValuationCurrency();
   return useQuery({
     queryKey: reportKeys.abc(ABC_WINDOW_DAYS, currency),
     queryFn: () => getReportRepository().abcAnalysis(ABC_WINDOW_DAYS),
+    enabled: options?.enabled ?? true,
+    staleTime: ANALYTICS_STALE_TIME_MS,
   });
 }
 
-export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
+export function useTurnover(windowDays: number = DEFAULT_ANALYTICS_WINDOW, options?: ReportQueryOptions) {
   const currency = useValuationCurrency();
   return useQuery({
     queryKey: reportKeys.turnover(windowDays, currency),
     queryFn: () => getReportRepository().turnover(windowDays),
+    enabled: options?.enabled ?? true,
+    staleTime: ANALYTICS_STALE_TIME_MS,
     // The window toggle re-keys this query; hold the previous window's table on screen
     // while the new one loads so toggling never flashes the panel to a spinner and back.
     placeholderData: keepPreviousData,
   });
 }
 
-export function useStockAging() {
+export function useStockAging(options?: ReportQueryOptions) {
   const currency = useValuationCurrency();
   return useQuery({
     queryKey: reportKeys.stockAging(currency),
     queryFn: () => getReportRepository().stockAging(),
+    enabled: options?.enabled ?? true,
+    staleTime: ANALYTICS_STALE_TIME_MS,
   });
 }
 
-export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW) {
+export function useValuationTrend(
+  windowDays: number = DEFAULT_ANALYTICS_WINDOW,
+  options?: ReportQueryOptions,
+) {
   const currency = useValuationCurrency();
   return useQuery({
     queryKey: reportKeys.valuationTrend(windowDays, VALUATION_TREND_POINTS, currency),
     queryFn: () => getReportRepository().valuationTrend(windowDays, VALUATION_TREND_POINTS),
+    enabled: options?.enabled ?? true,
+    staleTime: ANALYTICS_STALE_TIME_MS,
     // Re-keyed by the same analytics window toggle — keep the previous sparkline visible
     // while the new window loads (flicker-free, mirrors useTurnover above).
     placeholderData: keepPreviousData,
@@ -230,13 +275,15 @@ export function useValuationTrend(windowDays: number = DEFAULT_ANALYTICS_WINDOW)
  */
 export function useDataHygiene(
   staleDays: number = DATA_HYGIENE_STALE_DAYS,
-  options?: { omitKinds?: readonly HygieneIssueKind[] },
+  options?: ReportQueryOptions & { omitKinds?: readonly HygieneIssueKind[] },
 ) {
   const currency = useValuationCurrency();
   const omitKinds = options?.omitKinds ?? NO_OMITTED_HYGIENE_KINDS;
   return useQuery({
     queryKey: reportKeys.dataHygiene(staleDays, currency, omitKinds),
     queryFn: () => getReportRepository().dataHygiene(staleDays, undefined, omitKinds),
+    enabled: options?.enabled ?? true,
+    staleTime: ANALYTICS_STALE_TIME_MS,
   });
 }
 
@@ -249,12 +296,13 @@ export function useDataHygiene(
  */
 export function useSpendAnalytics(
   windowDays: number = DEFAULT_ANALYTICS_WINDOW,
-  options?: { enabled?: boolean },
+  options?: ReportQueryOptions,
 ) {
   return useQuery({
     queryKey: reportKeys.spend(windowDays, SPEND_BUCKETS),
     queryFn: () => getReportRepository().spendAnalytics(windowDays, SPEND_BUCKETS),
     enabled: options?.enabled ?? true,
+    staleTime: ANALYTICS_STALE_TIME_MS,
     // The spend window toggle re-keys this query; hold the previous breakdown on screen
     // while the new window loads instead of flashing the panel to a spinner.
     placeholderData: keepPreviousData,
@@ -269,12 +317,13 @@ export function useSpendAnalytics(
  */
 export function useSalesAnalytics(
   windowDays: number = DEFAULT_ANALYTICS_WINDOW,
-  options?: { enabled?: boolean },
+  options?: ReportQueryOptions,
 ) {
   return useQuery({
     queryKey: reportKeys.sales(windowDays, SALES_BUCKETS),
     queryFn: () => getReportRepository().salesAnalytics(windowDays, SALES_BUCKETS),
     enabled: options?.enabled ?? true,
+    staleTime: ANALYTICS_STALE_TIME_MS,
     // The window toggle re-keys this query; hold the previous breakdown on screen while the new
     // window loads instead of flashing the panel to a spinner (mirrors useSpendAnalytics).
     placeholderData: keepPreviousData,

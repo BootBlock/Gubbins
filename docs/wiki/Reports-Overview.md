@@ -60,6 +60,25 @@ computed over **every** row, not just the ones on screen.
 > For a long list you want to work through properly — dead stock especially — the **CSV export**
 > gives you every row at once, ready to sort and tick off in a spreadsheet.
 
+## How reports load
+
+The Reports screen is long, and several panels on it are a fresh pass over your whole catalogue.
+Rather than compute all of them the moment the screen opens, Gubbins works out the ones further
+down **as you scroll to them**. The headline cards, the valuation breakdown, consumption and dead
+stock are ready immediately; stock movement, the advanced analytics, data hygiene, spend and sales
+fill in just before they reach the screen. On a large inventory that is the difference between a
+screen that opens instantly and one that stalls while a dozen reports are computed at once.
+
+The slower-moving reports — ABC, turnover, stock aging, valuation over time, data hygiene, dead
+stock, spend and sales — are also **held for a few minutes** once computed, so scrolling up and
+down, or stepping away to another screen and back, re-reads the answer rather than recomputing it.
+Any change you make to your stock still refreshes the reports that are on screen straight away,
+and a panel you scroll back to picks up the new figures as it arrives.
+
+> **💡 Tip**
+> If you like to leave Reports open on a second screen, this is what keeps it from working the
+> whole time. Only the panels you are actually looking at stay live.
+
 ## Consumption rate
 
 The **consumption rate** looks at everything that was *used up* over the last 30 days — stock
