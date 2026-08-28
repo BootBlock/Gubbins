@@ -91,8 +91,9 @@ describe('the checks that back the manifest up (§9.1 defence-in-depth)', () => 
     // The three request kinds are narrowed to one `BackgroundRequest` before the sender is
     // checked, so they share a single refusal — which has to come BEFORE the dispatch, or a
     // foreign page's request would be served on its way to being refused.
-    const dispatch = worker.slice(worker.indexOf('const request = asBackgroundRequest(bag);'));
-    expect(dispatch).not.toBe('');
+    const narrowed = worker.indexOf('const request = asBackgroundRequest(bag);');
+    expect(narrowed).toBeGreaterThan(-1);
+    const dispatch = worker.slice(narrowed);
     const refusal = dispatch.indexOf('if (!fromApp) {');
     expect(refusal).toBeGreaterThan(-1);
     for (const kind of ['FETCH', 'LOOKUP', 'DATA_FETCH']) {

@@ -45,8 +45,10 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
 
-    // Same alias the app and bridge use, so a shared module that imports itself via `@/`
-    // resolves to the one real source rather than being re-resolved or forked.
+    // The same alias the app and the bridge declare. Nothing in this program reaches an `@/`
+    // import today — the entry points and the app modules they pull in all use relative paths —
+    // so it is here for the day one of those shared modules starts using it, which would
+    // otherwise fail to resolve only in this build.
     "paths": {
       "@/*": ["../src/*"]
     }

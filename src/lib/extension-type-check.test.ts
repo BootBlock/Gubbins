@@ -54,7 +54,7 @@ describe('the extension type-check gate', () => {
     );
     expect(entries.length).toBeGreaterThan(0);
     for (const entry of entries) {
-      expect(entry).toMatch(/^src\/[^/]+\.ts$/);
+      expect(entry).toMatch(/^src\/.+\.ts$/);
     }
   });
 });

@@ -346,7 +346,7 @@ rule applied to issue handling.
    accessibility wiring, Foundry primitives, and the no-secrets / public-hygiene rules. Match the
    surrounding code's style.
 4. **Verify it works.** Typecheck with `npm run type-check` — **not** `npx tsc -b`, which builds the
-   app project only and skips the bridge's separate tsconfig entirely. Run any tests the change
+   app project only and skips the bridge's and the browser extension's separate tsconfigs entirely. Run any tests the change
    touches; where the change has a runtime surface, drive it (the `verify` skill) rather than
    trusting types alone. If the change reaches anything the bridge imports (`bridge/**`, and much of
    `src/db` and the search/backup modules), also run `npm run smoke:bridge` — it is the only check

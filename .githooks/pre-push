@@ -104,8 +104,9 @@ if ! npm run --silent smoke:bridge; then
   exit 1
 fi
 
-# The extension's own gate. It has no tests and no runtime smoke — it only ever runs inside a
-# browser — so the type-check is the whole of it, and it is fast (a single `tsc --noEmit`).
+# The extension's own gate. Nothing can execute it outside a browser, so there is no suite or
+# boot-smoke to run here (the source-text guards it does have belong to the app's suite) — the
+# type-check is the whole of it, and it is fast: a single `tsc --noEmit`.
 if ! npm run --silent type-check:extension; then
   err 'extension type-check failed (tsc -p extension/tsconfig.json) — push aborted.'
   note 'The extension imports the app source by relative path, so an app-side change can break it.'

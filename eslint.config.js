@@ -14,9 +14,9 @@ import globals from 'globals';
 // the bridge, a Node server that runs for days) that `tsc` alone won't catch. Kept as a focused
 // set, not the full type-checked preset, so real findings aren't buried in stylistic noise.
 //
-// Shared by the two type-aware blocks below — the app's and the bridge's — so the two can never
-// drift apart. Both need type information, so each points the parser at its own tsconfig via the
-// project service.
+// Shared by the three type-aware blocks below — the app's, the bridge's and the extension's — so
+// they can never drift apart. Each needs type information, so each points the parser at its own
+// tsconfig via the project service.
 const asyncSafetyRules = {
   '@typescript-eslint/no-floating-promises': 'error',
   // JSX event handlers are legitimately `async` (React ignores the returned promise), so exempt
