@@ -4,8 +4,11 @@ import { buildReorderExport, flattenReorderPlan, reorderExportColumns } from './
 
 function makeGroup(overrides: Partial<ReorderPlanGroup> = {}): ReorderPlanGroup {
   return {
+    supplierId: 'sup-acme',
     supplierKey: 'acme',
     supplierName: 'Acme Parts',
+    currency: null,
+    hasMixedCurrency: false,
     lines: [
       {
         itemId: 'i1',
@@ -14,8 +17,17 @@ function makeGroup(overrides: Partial<ReorderPlanGroup> = {}): ReorderPlanGroup 
         orderQty: 10,
         onOrder: 0,
         unitCost: 0.25,
+        currency: null,
       },
-      { itemId: 'i2', itemName: 'Cap, 10µF', supplierPartId: 'sp2', orderQty: 2, onOrder: 3, unitCost: null },
+      {
+        itemId: 'i2',
+        itemName: 'Cap, 10µF',
+        supplierPartId: 'sp2',
+        orderQty: 2,
+        onOrder: 3,
+        unitCost: null,
+        currency: null,
+      },
     ],
     ...overrides,
   };
@@ -25,7 +37,13 @@ describe('flattenReorderPlan', () => {
   it('produces one self-contained row per line with the supplier repeated', () => {
     const rows = flattenReorderPlan([makeGroup()]);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toEqual({ supplier: 'Acme Parts', item: 'NE555 timer', orderQty: 10, unitCost: 0.25 });
+    expect(rows[0]).toEqual({
+      supplier: 'Acme Parts',
+      item: 'NE555 timer',
+      orderQty: 10,
+      unitCost: 0.25,
+      currency: '',
+    });
     expect(rows[1]!.supplier).toBe('Acme Parts');
     expect(rows[1]!.unitCost).toBeNull();
   });
@@ -37,7 +55,15 @@ describe('flattenReorderPlan', () => {
         supplierKey: 'other',
         supplierName: 'Other Co',
         lines: [
-          { itemId: 'i3', itemName: 'Bolt', supplierPartId: 'sp3', orderQty: 1, onOrder: 0, unitCost: 1 },
+          {
+            itemId: 'i3',
+            itemName: 'Bolt',
+            supplierPartId: 'sp3',
+            orderQty: 1,
+            onOrder: 0,
+            unitCost: 1,
+            currency: null,
+          },
         ],
       }),
     ]);
@@ -47,20 +73,26 @@ describe('flattenReorderPlan', () => {
 
 describe('reorderExportColumns', () => {
   it('keeps the stable header set for spreadsheet round-trips', () => {
-    expect(reorderExportColumns().map((c) => c.header)).toEqual(['supplier', 'item', 'orderQty', 'unitCost']);
+    expect(reorderExportColumns().map((c) => c.header)).toEqual([
+      'supplier',
+      'item',
+      'orderQty',
+      'unitCost',
+      'currency',
+    ]);
   });
 });
 
 describe('buildReorderExport', () => {
   it('builds a CSV whose header + rows match the flattened plan (RFC-4180 quoting)', async () => {
-    const { content, mimeType, extension } = await buildReorderExport([makeGroup()], 'csv');
+    const { content, mimeType, extension } = await buildReorderExport([makeGroup()], 'csv', 'GBP');
     expect(mimeType).toContain('text/csv');
     expect(extension).toBe('csv');
     const out = (content as string).split('\r\n');
-    expect(out[0]).toBe('supplier,item,orderQty,unitCost');
-    expect(out[1]).toBe('Acme Parts,NE555 timer,10,0.25');
+    expect(out[0]).toBe('supplier,item,orderQty,unitCost,currency');
+    expect(out[1]).toBe('Acme Parts,NE555 timer,10,0.25,GBP');
     // A comma-bearing item name is quoted; a null unit cost is blank.
-    expect(out[2]).toBe('Acme Parts,"Cap, 10µF",2,');
+    expect(out[2]).toBe('Acme Parts,"Cap, 10µF",2,,GBP');
   });
 
   it('offers the other formats with a titled document and line count', async () => {
@@ -74,6 +106,37 @@ describe('buildReorderExport', () => {
   });
 
   it('is header-only for an empty plan', async () => {
-    expect((await buildReorderExport([], 'csv')).content).toBe('supplier,item,orderQty,unitCost');
+    expect((await buildReorderExport([], 'csv')).content).toBe('supplier,item,orderQty,unitCost,currency');
+  });
+
+  it('names each line’s own currency, so a mixed plan is legible outside the app', async () => {
+    // Issue #569: a bare cost column left a EUR quote and a GBP one indistinguishable in the file.
+    const mixed = makeGroup({
+      currency: null,
+      hasMixedCurrency: true,
+      lines: [
+        {
+          itemId: 'i1',
+          itemName: 'Imported relay',
+          supplierPartId: 'sp1',
+          orderQty: 4,
+          onOrder: 0,
+          unitCost: 9,
+          currency: 'EUR',
+        },
+        {
+          itemId: 'i2',
+          itemName: 'Local bolt',
+          supplierPartId: 'sp2',
+          orderQty: 1,
+          onOrder: 0,
+          unitCost: 2,
+          currency: null,
+        },
+      ],
+    });
+    const out = ((await buildReorderExport([mixed], 'csv', 'GBP')).content as string).split('\r\n');
+    expect(out[1]).toBe('Acme Parts,Imported relay,4,9,EUR');
+    expect(out[2]).toBe('Acme Parts,Local bolt,1,2,GBP');
   });
 });

@@ -370,6 +370,8 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
         supplierId: digikey.id,
         supplierName: 'DigiKey',
         supplierKey: digikey.id,
+        currency: null,
+        hasMixedCurrency: false,
         lines: [
           {
             itemId: res.id,
@@ -378,6 +380,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
             orderQty: 8,
             onOrder: 0,
             unitCost: 0.05,
+            currency: null,
           },
           {
             itemId: cap.id,
@@ -386,6 +389,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
             orderQty: 5,
             onOrder: 0,
             unitCost: 0.1,
+            currency: null,
           },
         ],
       },
@@ -393,14 +397,26 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
         supplierId: mouser.id,
         supplierName: 'Mouser',
         supplierKey: mouser.id,
+        currency: null,
+        hasMixedCurrency: false,
         lines: [
-          { itemId: led.id, itemName: 'LED', supplierPartId: null, orderQty: 10, onOrder: 0, unitCost: 0.2 },
+          {
+            itemId: led.id,
+            itemName: 'LED',
+            supplierPartId: null,
+            orderQty: 10,
+            onOrder: 0,
+            unitCost: 0.2,
+            currency: null,
+          },
         ],
       },
       {
         supplierId: null,
         supplierName: 'Unassigned',
         supplierKey: '~unassigned',
+        currency: null,
+        hasMixedCurrency: false,
         lines: [
           {
             itemId: res.id,
@@ -409,6 +425,7 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
             orderQty: 1,
             onOrder: 0,
             unitCost: null,
+            currency: null,
           },
         ],
       },
@@ -438,9 +455,142 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     expect(result).toHaveLength(0);
 
     const result2 = await pos.createDraftFromReorderPlan([
-      { supplierId: null, supplierName: 'Unassigned', supplierKey: '~unassigned', lines: [] },
+      {
+        supplierId: null,
+        supplierName: 'Unassigned',
+        supplierKey: '~unassigned',
+        currency: null,
+        hasMixedCurrency: false,
+        lines: [],
+      },
     ]);
     expect(result2).toHaveLength(0);
+  });
+
+  // --- currency on a drafted order (issue #569) ----------------------------------
+
+  it("defaults a new order's currency to the supplier's own, and honours an explicit one", async () => {
+    const euroSupplier = await suppliers.create({ name: 'Eurotech', currency: 'EUR' });
+
+    // Omitted — the supplier's record is the one place the intended denomination is written down.
+    const inherited = await pos.create({ supplier: { supplierId: euroSupplier.id } });
+    expect(inherited.currency).toBe('EUR');
+
+    // Explicit null is a decision, not an omission: this order is in the base currency.
+    const base = await pos.create({ supplier: { supplierId: euroSupplier.id }, currency: null });
+    expect(base.currency).toBeNull();
+
+    // An explicit code always wins.
+    const stated = await pos.create({ supplier: { supplierId: euroSupplier.id }, currency: 'USD' });
+    expect(stated.currency).toBe('USD');
+  });
+
+  it('drafts the order in the currency the plan was quoted in, copying the costs into it', async () => {
+    const gbpPos = new PurchaseOrderRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+    const relay = await items.create({ name: 'Relay', quantity: 0 });
+    const supplier = await suppliers.create({ name: 'Eurotech', currency: 'EUR' });
+
+    const [created] = await gbpPos.createDraftFromReorderPlan([
+      {
+        supplierId: supplier.id,
+        supplierName: 'Eurotech',
+        supplierKey: supplier.id,
+        currency: 'EUR',
+        hasMixedCurrency: false,
+        lines: [
+          {
+            itemId: relay.id,
+            itemName: 'Relay',
+            supplierPartId: null,
+            orderQty: 4,
+            onOrder: 0,
+            unitCost: 12.5,
+            currency: 'EUR',
+          },
+        ],
+      },
+    ]);
+
+    // €12.50 recorded on a EUR order is the supplier's own figure, meaning what it says.
+    expect(created!.currency).toBe('EUR');
+    expect(created!.lines[0]!.unitCost).toBe(12.5);
+  });
+
+  it("falls back to the supplier's currency for a group that prices nothing", async () => {
+    const relay = await items.create({ name: 'Relay', quantity: 0 });
+    const supplier = await suppliers.create({ name: 'Eurotech', currency: 'EUR' });
+
+    const [created] = await pos.createDraftFromReorderPlan([
+      {
+        supplierId: supplier.id,
+        supplierName: 'Eurotech',
+        supplierKey: supplier.id,
+        currency: null,
+        hasMixedCurrency: false,
+        lines: [
+          {
+            itemId: relay.id,
+            itemName: 'Relay',
+            supplierPartId: null,
+            orderQty: 4,
+            onOrder: 0,
+            unitCost: null,
+            currency: null,
+          },
+        ],
+      },
+    ]);
+
+    // An unpriced group states no denomination of its own, so the supplier's record decides —
+    // rather than the plan asserting the base currency on the strength of no figures at all.
+    expect(created!.currency).toBe('EUR');
+  });
+
+  it('leaves a line unpriced rather than copying a quote the order cannot express', async () => {
+    const gbpPos = new PurchaseOrderRepository(driver, { resolveBaseCurrency: () => 'GBP' });
+    const relay = await items.create({ name: 'Relay', quantity: 0 });
+    const bolt = await items.create({ name: 'Bolt', quantity: 0 });
+    // No currency on the supplier, so the mixed group's order falls back to the base currency.
+    const supplier = await suppliers.create({ name: 'Mixed Supplies' });
+
+    const [created] = await gbpPos.createDraftFromReorderPlan([
+      {
+        supplierId: supplier.id,
+        supplierName: 'Mixed Supplies',
+        supplierKey: supplier.id,
+        currency: null,
+        hasMixedCurrency: true,
+        lines: [
+          {
+            itemId: relay.id,
+            itemName: 'Relay',
+            supplierPartId: null,
+            orderQty: 4,
+            onOrder: 0,
+            unitCost: 12.5,
+            currency: 'EUR',
+          },
+          {
+            itemId: bolt.id,
+            itemName: 'Bolt',
+            supplierPartId: null,
+            orderQty: 2,
+            onOrder: 0,
+            unitCost: 0.4,
+            currency: null,
+          },
+        ],
+      },
+    ]);
+
+    expect(created!.currency).toBeNull();
+    const relayLine = created!.lines.find((l) => l.itemId === relay.id)!;
+    const boltLine = created!.lines.find((l) => l.itemId === bolt.id)!;
+    // The part is still ordered — only the €12.50, which would have been read as £12.50, is
+    // withheld for the user to price in the order's own terms.
+    expect(relayLine.orderedQty).toBe(4);
+    expect(relayLine.unitCost).toBeNull();
+    expect(boltLine.unitCost).toBe(0.4);
   });
 
   // --- overlapping receipts & atomic status (issue #298) -------------------------

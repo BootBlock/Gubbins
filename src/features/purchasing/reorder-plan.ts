@@ -11,6 +11,7 @@
  */
 import type { PriceBreak } from '@/db/repositories';
 import { unitCostForQty } from '@/features/inventory/supplier-cost';
+import { normaliseCurrencyCode } from '@/lib/money';
 
 /** Minimal supplier-part data needed to compute order quantities. */
 export interface ReorderSupplierPart {
@@ -20,6 +21,13 @@ export interface ReorderSupplierPart {
   /** The supplier's canonical name, carried for display only; never used as an identity. */
   readonly supplierName: string;
   readonly unitCost?: number | null;
+  /**
+   * The ISO-4217 code this supplier quotes the part in; `null`/absent means the base currency
+   * (the `supplier_parts.currency` convention). Carried because {@link unitCost} is a bare
+   * number that means nothing without it — Gubbins holds no exchange rates, so a foreign quote
+   * is labelled and kept apart rather than added to a base-currency figure (issue #569).
+   */
+  readonly currency?: string | null;
   readonly packQty?: number | null;
   readonly minOrderQty?: number | null;
   /** Quantity price-breaks, ascending by qty; the plan costs each line at its order quantity. */
@@ -61,6 +69,12 @@ export interface ReorderPlanLine {
   /** Units already on order (display-only; the shortfall is already net of this). */
   readonly onOrder: number;
   readonly unitCost: number | null;
+  /**
+   * The currency {@link unitCost} is quoted in, normalised (upper-case, blank ⇒ `null`), where
+   * `null` means the base currency. Never dropped: the figure is the supplier's own quote, so
+   * anything that totals, formats, exports or orders from it has to say which currency it is.
+   */
+  readonly currency: string | null;
 }
 
 /** One supplier group in the reorder plan. */
@@ -81,6 +95,20 @@ export interface ReorderPlanGroup {
    * display name (see {@link buildReorderPlan}).
    */
   readonly supplierKey: string;
+  /**
+   * The single currency this group's **priced** lines are quoted in, `null` for the base
+   * currency — the denomination a PO drafted from the group is raised in, and the one its
+   * estimated total is shown under. `null` also when the group prices nothing and when
+   * {@link hasMixedCurrency} is true, so read that flag first.
+   */
+  readonly currency: string | null;
+  /**
+   * True when the group's priced lines carry more than one currency — one supplier quoting
+   * some parts in EUR and others in the base currency, say. There is then no currency the
+   * group's costs can be added up in, so the estimate is withheld rather than mis-summed, and
+   * a drafted PO prices only the lines that match the order's own currency.
+   */
+  readonly hasMixedCurrency: boolean;
   readonly lines: readonly ReorderPlanLine[];
 }
 
@@ -173,6 +201,7 @@ export function buildReorderPlan(rows: readonly ReorderShortfallRow[]): readonly
       unitCost: sp
         ? unitCostForQty({ unitCost: sp.unitCost ?? null, priceBreaks: sp.priceBreaks ?? [] }, orderQty)
         : null,
+      currency: normaliseCurrencyCode(sp?.currency),
     });
   }
 
@@ -189,10 +218,17 @@ export function buildReorderPlan(rows: readonly ReorderShortfallRow[]): readonly
   });
 
   return sorted.map(([key, g]) => {
+    // Only a *priced* line names a currency worth honouring — an unpriced one carries the
+    // part's code but no figure denominated in it, so counting it would report a group as
+    // mixed on the strength of a quote that contributes nothing.
+    const codes = new Set(g.lines.filter((l) => l.unitCost !== null).map((l) => l.currency));
+    const hasMixedCurrency = codes.size > 1;
     return {
       supplierId: g.supplierId,
       supplierName: g.supplierName,
       supplierKey: key,
+      currency: hasMixedCurrency ? null : ([...codes][0] ?? null),
+      hasMixedCurrency,
       lines: g.lines,
     } satisfies ReorderPlanGroup;
   });

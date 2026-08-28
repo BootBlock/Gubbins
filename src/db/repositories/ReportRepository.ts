@@ -1420,6 +1420,14 @@ export class ReportRepository extends BaseRepository {
    * out of the plan entirely (`buildReorderPlan` skips a zero shortfall). The low-stock *alert*
    * deliberately stays on-hand-based — you are low now even if more is coming — so this netting
    * lives only here, on the procurement action.
+   *
+   * The preferred part's `currency` is selected alongside its `unit_cost` and carried through
+   * unfiltered (issue #569). This read deliberately does **not** apply the
+   * `preferredSupplierCostSql` base-currency guard the valuation seam does: a valuation has to
+   * *add* prices up, so a foreign one is dropped, whereas a reorder plan exists to be ordered
+   * from — it wants the supplier's own quote, and needs the code to say what the figure means.
+   * Everything downstream (the on-screen estimate, the export, the drafted PO) is denominated
+   * by that code rather than assuming the base currency.
    */
   async listReorderShortfall(thresholds: LowStockThresholds = {}): Promise<ReorderShortfallRow[]> {
     const qty = thresholds.qtyThreshold ?? LOW_STOCK_QTY_THRESHOLD;
@@ -1432,6 +1440,7 @@ export class ReportRepository extends BaseRepository {
       supplier_id: string | null;
       supplier_name: string | null;
       unit_cost: number | null;
+      supplier_currency: string | null;
       pack_qty: number | null;
       min_order_qty: number | null;
       price_breaks: string | null;
@@ -1455,6 +1464,7 @@ export class ReportRepository extends BaseRepository {
               sp.supplier_id AS supplier_id,
               s.name         AS supplier_name,
               sp.unit_cost,
+              sp.currency AS supplier_currency,
               sp.pack_qty,
               sp.min_order_qty,
               sp.price_breaks
@@ -1488,6 +1498,11 @@ export class ReportRepository extends BaseRepository {
               supplierName: r.supplier_name!,
               // Stored in micro-units (issue #286); major units for the reorder-plan costing.
               unitCost: fromStoredMoney(r.unit_cost),
+              // The quote's own currency, so the plan can label the figure, keep a foreign one
+              // out of a base-currency total, and draft the PO in the currency it was quoted
+              // in (issue #569). Read unguarded — unlike the valuation seam, which drops a
+              // foreign price because it must add it up, the plan needs the price and the code.
+              currency: r.supplier_currency,
               packQty: r.pack_qty,
               minOrderQty: r.min_order_qty,
               // Threaded through so the plan can cost each line at its computed order quantity

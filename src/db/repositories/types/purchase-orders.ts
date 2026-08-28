@@ -99,6 +99,12 @@ export interface CreatePurchaseOrderInput {
   /** Existing supplier by id, or a typed name to resolve-or-create. */
   readonly supplier: SupplierRef;
   readonly reference?: string | null;
+  /**
+   * ISO currency code for the order. **Omitted** and **null** differ here: omitting the key
+   * defaults the order to the supplier's own `suppliers.currency` (the only place the intended
+   * denomination is already recorded), while an explicit `null` states the base currency and is
+   * not overridden. See `PurchaseOrderRepository.create` (issue #569).
+   */
   readonly currency?: string | null;
 }
 

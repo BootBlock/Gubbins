@@ -1547,6 +1547,33 @@ describe('ReportRepository', () => {
       expect(row.preferredSupplier!.minOrderQty).toBe(5);
     });
 
+    it('carries the preferred quote’s own currency, guard-free (issue #569)', async () => {
+      const item = await items.create({ name: 'Imported relay', quantity: 0 });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Eurotech' },
+        unitCost: 12.5,
+        currency: 'EUR',
+        isPreferred: true,
+      });
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      const row = rows.find((r) => r.itemId === item.id)!;
+      // A valuation drops a foreign quote because it has to sum it; a reorder plan keeps it,
+      // because it is what the part actually costs to buy — the code is what makes it usable.
+      expect(row.preferredSupplier!.unitCost).toBe(12.5);
+      expect(row.preferredSupplier!.currency).toBe('EUR');
+    });
+
+    it('reports no currency for a quote in the base one', async () => {
+      const item = await items.create({ name: 'Local bolt', quantity: 0 });
+      await supplierParts.create(item.id, {
+        supplier: { supplierName: 'Acme' },
+        unitCost: 0.4,
+        isPreferred: true,
+      });
+      const rows = await reports.listReorderShortfall({ qtyThreshold: 5 });
+      expect(rows.find((r) => r.itemId === item.id)!.preferredSupplier!.currency).toBeNull();
+    });
+
     it('threads the preferred supplier price-breaks through (issue #37)', async () => {
       const item = await items.create({ name: 'Resistor', quantity: 0, reorderPoint: 250 });
       await supplierParts.create(item.id, {
