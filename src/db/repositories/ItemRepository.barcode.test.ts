@@ -72,3 +72,37 @@ describe('ItemRepository — barcode', () => {
     expect(page.rows.map((r) => r.id)).toContain(item.id);
   });
 });
+
+/** UPC-E canonicalisation on the write path (issue #508). */
+describe('ItemRepository — UPC-E barcodes', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  it('stores a UPC-E as the UPC-A it compresses, whichever form was written', async () => {
+    // The eight digits an importer or a typist supplies, and the twelve a UPC-A scan of the same
+    // article yields, are one barcode — so they must store as one value and find each other.
+    const item = await items.create({ name: 'AA cells', barcode: '04252614' });
+    expect(item.barcode).toBe('042100005264');
+    expect((await items.findByBarcode('042100005264')).map((i) => i.id)).toEqual([item.id]);
+
+    const updated = await items.update(item.id, { barcode: ' 14252611 ' });
+    expect(updated.barcode).toBe('142100005261');
+  });
+
+  it('stores every other code exactly as given', async () => {
+    // An EAN-8 that is not also a UPC-E, and a non-retail label, are untouched.
+    expect((await items.create({ name: 'Small pack', barcode: '96385074' })).barcode).toBe('96385074');
+    expect((await items.create({ name: 'Shelf', barcode: 'SHELF-A12' })).barcode).toBe('SHELF-A12');
+    expect((await items.create({ name: 'Odd', barcode: '07350053' })).barcode).toBe('07350053');
+  });
+});

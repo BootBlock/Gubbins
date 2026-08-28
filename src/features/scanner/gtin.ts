@@ -135,16 +135,21 @@ export function describeGtinConcern(raw: string): GtinConcern | null {
 }
 
 /**
- * Canonicalise a **typed** barcode entry, returning `raw` unchanged unless it is a printed
- * UPC-E — in which case the expanded 12-digit UPC-A replaces it (issue #508).
+ * Canonicalise a barcode **on its way into storage**, returning `raw` unchanged unless it is a
+ * printed UPC-E — in which case the expanded 12-digit UPC-A replaces it (issue #508).
  *
- * Deliberately narrow. The field legitimately holds any code at all, and rewriting what
- * someone typed is only justified where the two forms name the *same* article and only one of
- * them matches a scan: a UPC-E typed off the pack would otherwise be stored as eight digits
- * that no camera scan of that product ever reproduces. Every other entry — including a plain
- * EAN-8 — is left exactly as typed.
+ * Deliberately narrow. The field legitimately holds any code at all, and rewriting what someone
+ * typed or imported is only justified where the two forms name the *same* article and only one of
+ * them matches a scan: a UPC-E read off the pack would otherwise be stored as eight digits that no
+ * camera scan of that product ever reproduces. Anything that is not an 8-digit code {@link
+ * parseGtin} resolves to a 12-digit UPC-A is returned exactly as given — which includes an EAN-8
+ * that is not also a valid UPC-E, and every non-GTIN code.
+ *
+ * Note the one case where an EAN-8 *is* rewritten: eight digits led by `0` that read validly both
+ * ways are taken as the UPC-E, per the precedence in {@link resolveEightDigits}, so that a typed
+ * code and a scan of the same pack agree.
  */
-export function canonicaliseTypedBarcode(raw: string): string {
+export function canonicaliseBarcode(raw: string): string {
   const digits = raw.trim();
   if (digits.length !== 8) return raw;
   const parsed = parseGtin(digits);

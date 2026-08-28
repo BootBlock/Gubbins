@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { describeGtinConcern, hasValidGtinCheckDigit, isValidGtin, parseGtin } from './gtin';
+import {
+  canonicaliseBarcode,
+  describeGtinConcern,
+  hasValidGtinCheckDigit,
+  isValidGtin,
+  parseGtin,
+} from './gtin';
 
 describe('GTIN check digit', () => {
   it('accepts known-valid codes across every width', () => {
@@ -122,5 +128,28 @@ describe('UPC-E — the compressed 8-digit code (issue #508)', () => {
     expect(describeGtinConcern('14252611')).toBeNull();
     // A genuinely wrong eight digits is still flagged.
     expect(describeGtinConcern('07350053')).toBe('check-digit');
+  });
+});
+
+describe('canonicaliseBarcode — what is rewritten on the way into storage (issue #508)', () => {
+  it('replaces a UPC-E with the UPC-A it compresses', () => {
+    expect(canonicaliseBarcode('04252614')).toBe('042100005264');
+    expect(canonicaliseBarcode('  04252614  ')).toBe('042100005264');
+  });
+
+  it('rewrites an EAN-8 that is also a valid UPC-E, following the same precedence', () => {
+    // The docstring's 'left exactly as typed' has this one exception, and it is deliberate: the
+    // camera resolves this code the same way, so storing the eight digits would not match a scan.
+    expect(canonicaliseBarcode('01234565')).toBe('012345000065');
+  });
+
+  it('leaves every other entry byte-for-byte as given', () => {
+    expect(canonicaliseBarcode('96385074')).toBe('96385074');
+    expect(canonicaliseBarcode('4006381333931')).toBe('4006381333931');
+    expect(canonicaliseBarcode('SHELF-A12')).toBe('SHELF-A12');
+    expect(canonicaliseBarcode('07350053')).toBe('07350053');
+    // Untrimmed input is returned untouched rather than quietly trimmed.
+    expect(canonicaliseBarcode('  RS-482-9021 ')).toBe('  RS-482-9021 ');
+    expect(canonicaliseBarcode('')).toBe('');
   });
 });

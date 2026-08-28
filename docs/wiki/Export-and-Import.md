@@ -182,6 +182,8 @@ going through the item importer first.
 >
 > - **Barcode** — the retail barcode (GTIN / EAN / UPC) printed on the article; a column headed
 >   any of those names is picked up automatically. This is what the scanner looks an item up by.
+>   A short eight-digit UPC‑E is recorded as the full twelve-digit code it stands for, so an
+>   imported row and a scan of the same pack agree (see [[Camera scanning|Camera-Scanning]]).
 > - **Serial number** — the maker's per-unit identifier. Headings `Serial number` and `Serial no`
 >   are recognised; a bare **Serial** is left alone, in case that's one of your own
 >   [[custom fields|Custom-Fields-and-Capabilities]].

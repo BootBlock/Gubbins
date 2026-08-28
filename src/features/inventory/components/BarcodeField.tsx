@@ -3,7 +3,7 @@ import { Button, FormField, Input } from '@/components/foundry';
 import { ScanIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useFeature } from '@/features/modules/useFeature';
-import { canonicaliseTypedBarcode, describeGtinConcern } from '@/features/scanner/gtin';
+import { canonicaliseBarcode, describeGtinConcern } from '@/features/scanner/gtin';
 import { useBarcodeCarriers } from '../queries';
 
 export interface BarcodeFieldProps {
@@ -114,7 +114,7 @@ export function BarcodeField({
             // actually typed: an item's existing barcode must never change just because the
             // field was focused and left.
             if (editing) {
-              const canonical = canonicaliseTypedBarcode(value);
+              const canonical = canonicaliseBarcode(value);
               if (canonical !== value) onChange(canonical);
             }
             setEditing(false);

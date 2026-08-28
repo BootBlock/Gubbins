@@ -283,8 +283,19 @@ function ScannerOverlayInner({
       // symbology — a Code 128 part label, a Code 39 asset tag, an ITF carton code — verbatim
       // into an item's Barcode field. The read path has to accept the same range: "an item
       // records this exact string" is a resolution in its own right, not a privilege of GTINs.
-      const barcode = code?.kind === 'gtin' ? code.gtin : raw.trim();
-      const carriers = await getItemRepository().findByBarcode(barcode);
+      const canonical = code?.kind === 'gtin' ? code.gtin : raw.trim();
+      // An item whose barcode was recorded before UPC-E codes were expanded (issue #508) still
+      // holds the eight digits printed on the pack, while the same pack now decodes to its
+      // 12-digit UPC-A. So the printed form is tried when the canonical one matches nothing,
+      // and whichever form matched is what the rest of this path carries — a picker, or the
+      // prompt to record the code, then names the value the item actually stores.
+      const printed = raw.trim();
+      let barcode = canonical;
+      let carriers = await getItemRepository().findByBarcode(canonical);
+      if (carriers.length === 0 && printed !== canonical) {
+        carriers = await getItemRepository().findByBarcode(printed);
+        if (carriers.length > 0) barcode = printed;
+      }
       if (carriers.length === 1) {
         presentItem(carriers[0]!);
         return;

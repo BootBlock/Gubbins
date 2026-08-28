@@ -27,7 +27,7 @@ describe('expandUpcE — every branch of the zero-run table', () => {
 
   it('expands last body digit 0/1/2 — d1 d2 d6 0000 d3 d4 d5', () => {
     expect(expandUpcE('01234505')).toBe('012000003455');
-    expect(expandUpcE('04252614')).toBe('042100005264');
+    expect(expandUpcE('01234523')).toBe('012200003453');
   });
 
   it('expands last body digit 3 — d1 d2 d3 00000 d4 d5', () => {

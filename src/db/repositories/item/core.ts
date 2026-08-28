@@ -44,6 +44,7 @@ import {
   type Cursor,
 } from './list-order';
 import {
+  normaliseBarcode,
   normaliseCurrentValue,
   normaliseExpiry,
   normaliseIsoDate,
@@ -543,7 +544,7 @@ export class ItemCoreRepository extends BaseRepository {
       track('manufacturer', 'manufacturer', existing.manufacturer, manufacturer);
     }
     if (input.barcode !== undefined) {
-      const barcode = normaliseText(input.barcode, TEXT_LIMITS.line, 'A barcode');
+      const barcode = normaliseBarcode(input.barcode);
       sets.push('barcode = ?');
       params.push(barcode);
       track('barcode', 'barcode', existing.barcode, barcode);

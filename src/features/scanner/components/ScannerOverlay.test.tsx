@@ -27,6 +27,9 @@ let shortCodeMatches: Item[] = [];
 // the scanner resolves *any* symbology it captured, not only a valid GTIN (issue #506). More
 // than one match is the shared-barcode case the picker exists for (issue #513).
 let barcodeMatches: Item[] = [];
+// Set instead of {@link barcodeMatches} when a test needs the answer to depend on *which* value
+// was asked for — the UPC-E fallback (issue #508) turns on one form matching and the other not.
+let barcodeMatchesByValue: Record<string, Item[]> | null = null;
 const barcodeQueries: string[] = [];
 // Every id the overlay asked the repository for. The count is the point: the double-scan guard
 // has to sit in *front* of the read, or a label resting in the viewfinder costs one round-trip
@@ -91,7 +94,7 @@ vi.mock('@/db/repositories', async (importOriginal) => ({
     },
     findByBarcode: (value: string) => {
       barcodeQueries.push(value);
-      return Promise.resolve(barcodeMatches);
+      return Promise.resolve(barcodeMatchesByValue ? (barcodeMatchesByValue[value] ?? []) : barcodeMatches);
     },
     findByShortCode: () => Promise.resolve(shortCodeMatches),
   }),
@@ -184,6 +187,7 @@ beforeEach(() => {
   scanResult = null;
   shortCodeMatches = [];
   barcodeMatches = [];
+  barcodeMatchesByValue = null;
   barcodeQueries.length = 0;
   idQueries.length = 0;
   feedbackCalls.confirm = 0;
@@ -736,5 +740,35 @@ describe('ScannerOverlay — returning to the viewfinder re-arms the guard (issu
     await screen.findByTestId('scanner-discrete-result');
     expect(idQueries).toEqual([UUID, UUID]);
     expect(feedbackCalls).toEqual({ confirm: 2, repeat: 0 });
+  });
+});
+
+describe('ScannerOverlay — a barcode stored before UPC-E codes were expanded (issue #508)', () => {
+  const enter = (value: string) => {
+    fireEvent.change(screen.getByTestId('scanner-manual-input'), { target: { value } });
+    fireEvent.click(screen.getByTestId('scanner-manual-submit'));
+  };
+
+  it('still resolves an item holding the eight digits printed on the pack', async () => {
+    // The item was recorded when a UPC-E was stored compressed, so only that form matches. The
+    // same pack now decodes to its UPC-A, and the item must not become unreachable by scanning.
+    barcodeMatchesByValue = { '04252614': [{ ...baseItem, barcode: '04252614' }] };
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter('04252614');
+
+    expect(await screen.findByTestId('scanner-discrete-result')).toHaveTextContent('NE555 timer');
+    // The canonical form is asked for first — a barcode recorded since is stored that way.
+    expect(barcodeQueries).toEqual(['042100005264', '04252614']);
+  });
+
+  it('asks only once when there is no other form to try', async () => {
+    barcodeMatchesByValue = {};
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    enter('RS-482-9021');
+
+    await screen.findByTestId('scanner-notice');
+    expect(barcodeQueries).toEqual(['RS-482-9021']);
   });
 });
