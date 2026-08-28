@@ -7,9 +7,12 @@
  * Home Assistant sensor, the MQTT `gubbins/summary` counts, the Prometheus gauge and
  * `/api/v1/status` reporting on per-item reorder points alone.
  *
- * So the assertion is deliberately made across all of them together, over one synthetic vault: the
- * same fixture the other feed tests use, whose "Hook-up Wire 22AWG" carries 250 on hand and no
- * reorder point of its own — invisible to low-stock until a blanket says otherwise.
+ * So the assertion is deliberately made across the three count projections together, over one
+ * synthetic vault: the same fixture the other feed tests use, whose "Hook-up Wire 22AWG" carries
+ * 250 on hand and no reorder point of its own — invisible to low-stock until a blanket says
+ * otherwise. (The Home Assistant sensor reads the MQTT summary, so it is covered by the state
+ * projection here; the derived `item.low_stock` event is pinned in `events/generation.test.ts`,
+ * which needs a ledger this fixture does not carry.)
  */
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +40,7 @@ afterEach(async () => {
   hydrated = undefined;
 });
 
-/** Every low-stock figure the bridge publishes, from the four surfaces that publish one. */
+/** Every low-stock figure the bridge publishes, from the three projections that compute one. */
 async function lowStockEverywhere(result: HydrateResult): Promise<readonly number[]> {
   const { driver } = result;
   return [

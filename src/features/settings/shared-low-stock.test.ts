@@ -15,7 +15,12 @@ import type { SettingRow, SettingUpsert } from '@/db/repositories/types/settings
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { isLiveSyncableGroup, ownerOfStoreField, PREFERENCES_KEY } from '@/features/backup/settings-groups';
 import { DEFAULT_LIVE_SETTINGS_SELECTION, settingRowId } from './settings-sync';
-import { flushSettingsSync, setSettingsSyncPort, startSettingsSync } from './settings-sync-runtime';
+import {
+  SHARED_SETTINGS_STORES,
+  flushSettingsSync,
+  publishSharedSettings,
+  setSettingsSyncPort,
+} from './settings-sync-runtime';
 import {
   LOW_STOCK_GAUGE_FIELD,
   LOW_STOCK_GAUGE_SETTING_ID,
@@ -46,23 +51,22 @@ function row(id: string, value: string): SettingRow {
 }
 
 let port: FakePort;
-let stop: (() => void) | undefined;
 
 beforeEach(() => {
   port = new FakePort();
   setSettingsSyncPort(port);
+  // Reset every participating store, and its stored blob with it, so a preference another test file
+  // left in `localStorage` cannot decide what this one publishes.
+  for (const store of Object.values(SHARED_SETTINGS_STORES)) store.setState({});
   usePreferencesStore.setState({
     ...usePreferencesStore.getInitialState(),
     settingsSyncEnabled: false,
     settingsSyncGroups: DEFAULT_LIVE_SETTINGS_SELECTION,
   });
-  stop = startSettingsSync();
 });
 
 afterEach(async () => {
   await flushSettingsSync();
-  stop?.();
-  stop = undefined;
   setSettingsSyncPort(null);
 });
 
@@ -91,7 +95,11 @@ describe('resolveSharedLowStockThresholds', () => {
     prefs.setSettingsSyncEnabled(true);
     prefs.setLowStockQtyThreshold(7);
     prefs.setLowStockGaugePercent(25);
-    await flushSettingsSync();
+    // Publishing explicitly rather than waiting on the store subscription: what is pinned here is
+    // the publisher and the reader agreeing on a row, not the runtime's delivery timing, which
+    // `settings-sync-runtime.test.ts` covers. This still runs the real `planSettingPublishes` over
+    // the real store state, so a renamed field or a changed encoding still fails it.
+    await publishSharedSettings();
 
     expect(resolveSharedLowStockThresholds([...port.rows.values()])).toEqual({
       qtyThreshold: 7,

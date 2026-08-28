@@ -13,8 +13,9 @@
  * like everything else the bridge does with a hydrated driver.
  *
  * **The blanket only reaches the bridge when the user shares it.** Live settings sync is off until
- * asked for, and the thresholds travel with its *Alerts* group; until then the table holds no such
- * row and this answers the shipped defaults, which is exactly the behaviour that shipped before.
+ * asked for, and the thresholds travel with its *Alerts & thresholds* group; until then the table
+ * holds no such row and this answers the shipped defaults, which is exactly the behaviour that
+ * shipped before.
  */
 import { SettingsRepository } from '@/db/repositories/SettingsRepository.ts';
 import type { IDatabaseDriver } from '@/db/rpc/driver';

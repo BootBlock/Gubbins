@@ -22,9 +22,11 @@
  * land on the same answer, because the shipped default *is* zero. That keeps the bridge's
  * behaviour unchanged for everyone who has not turned live settings sync on.
  *
- * `bridge/src/low-stock-settings-parity.test.ts` holds the two halves together: it publishes
- * through the real `planSettingPublishes` and reads back through this module, so a rename on
- * either side fails rather than silently reverting the bridge to the defaults.
+ * Two drift tests hold the halves together, so a rename on either side fails rather than silently
+ * reverting the bridge to the defaults. `shared-low-stock.test.ts` beside this file changes the
+ * thresholds on the real preferences store and lets the real sync runtime plan the publish, then
+ * reads the rows back through here; `bridge/src/low-stock-thresholds.test.ts` makes the same round
+ * trip through the real `SettingsRepository` over a migrated database.
  */
 import type { SettingRow } from '@/db/repositories/types/settings';
 import { PREFERENCES_KEY } from '@/features/backup/settings-groups';
