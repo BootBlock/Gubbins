@@ -666,6 +666,129 @@ describe('buildCatalogImportPlan — location & tracking options', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Issue #593 — an ambiguous catalogue key is reported, never guessed
+// ---------------------------------------------------------------------------
+
+describe('buildCatalogImportPlan — ambiguous catalogue keys (issue #593)', () => {
+  it('errors rather than updating one of two items sharing the matched name', () => {
+    const existing = [stubItem('item-1', 'Widget A'), stubItem('item-2', 'Widget A')];
+    const plan = buildCatalogImportPlan('name,unitCost\r\nWidget A,1.50\r\n', null, existing);
+    expect(plan.update).toHaveLength(0);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/Ambiguous name "Widget A" — 2 existing items share it/);
+  });
+
+  it('counts a case-only difference as the same name, so it is ambiguous too', () => {
+    const existing = [stubItem('item-1', 'Widget A'), stubItem('item-2', 'widget a')];
+    const plan = buildCatalogImportPlan('name,unitCost\r\nWidget A,1.50\r\n', null, existing);
+    expect(plan.update).toHaveLength(0);
+    expect(plan.errors[0]!.message).toMatch(/Ambiguous name/);
+  });
+
+  it('errors rather than updating one of two items sharing the matched SKU/MPN, naming them', () => {
+    const existing = [
+      stubItem('item-1', 'NPN Transistor', 'BC547'),
+      stubItem('item-2', 'NPN Transistor (reel)', 'BC547'),
+    ];
+    const plan = buildCatalogImportPlan('sku,manufacturer\r\nBC547,Fairchild\r\n', null, existing, {
+      matchKey: 'sku',
+    });
+    expect(plan.update).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toContain('"NPN Transistor", "NPN Transistor (reel)"');
+  });
+
+  it('summarises the tail rather than listing every candidate SKU/MPN holder', () => {
+    const existing = ['a', 'b', 'c', 'd', 'e'].map((n, i) => stubItem(`item-${i}`, n, 'BC547'));
+    const plan = buildCatalogImportPlan('sku,manufacturer\r\nBC547,Fairchild\r\n', null, existing, {
+      matchKey: 'sku',
+    });
+    expect(plan.errors[0]!.message).toContain('"a", "b", "c" and 2 more');
+  });
+
+  it('still updates when only one item holds the key', () => {
+    const existing = [stubItem('item-1', 'Widget A'), stubItem('item-2', 'Widget B')];
+    const plan = buildCatalogImportPlan('name,unitCost\r\nWidget A,1.50\r\n', null, existing);
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.update[0]!.itemId).toBe('item-1');
+  });
+
+  it('errors rather than placing the item in one of two locations sharing a name', () => {
+    const plan = buildCatalogImportPlan('name,location\r\nWidget,Drawer 1\r\n', null, [], {
+      locations: [
+        { id: 'loc-1', name: 'Drawer 1' },
+        { id: 'loc-2', name: 'Drawer 1' },
+      ],
+    });
+    expect(plan.create).toHaveLength(0);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/Ambiguous location "Drawer 1"/);
+    expect(plan.errors[0]!.message).toContain('"loc-1", "loc-2"');
+  });
+
+  it('lets an explicit location id through even when its name is ambiguous', () => {
+    const plan = buildCatalogImportPlan('name,location\r\nWidget,loc-2\r\n', null, [], {
+      locations: [
+        { id: 'loc-1', name: 'Drawer 1' },
+        { id: 'loc-2', name: 'Drawer 1' },
+      ],
+    });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('loc-2');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #593 — the match key folds, like every other natural key in the app
+// ---------------------------------------------------------------------------
+
+describe('buildCatalogImportPlan — match keys fold (issue #593)', () => {
+  it('updates the existing item when the sheet spells its name in a different case', () => {
+    const existing = [stubItem('item-1', 'Widget A')];
+    const plan = buildCatalogImportPlan('name,unitCost\r\nwidget a,1.50\r\n', null, existing);
+    expect(plan.create).toHaveLength(0);
+    expect(plan.update).toHaveLength(1);
+    expect(plan.update[0]!.itemId).toBe('item-1');
+  });
+
+  it('matches a name typed with a combining accent against its composed form', () => {
+    const composed = 'Café';
+    const decomposed = composed.normalize('NFD'); // e + combining acute; renders identically
+    expect(composed).not.toBe(decomposed);
+    const plan = buildCatalogImportPlan(`name,unitCost\r\n${decomposed},1.50\r\n`, null, [
+      stubItem('item-1', composed),
+    ]);
+    expect(plan.update).toHaveLength(1);
+    expect(plan.update[0]!.itemId).toBe('item-1');
+  });
+
+  it('leaves SKU/MPN unfolded — it is a part number, not a typed name (issue #679)', () => {
+    const existing = [stubItem('item-1', 'NPN Transistor', 'bc547')];
+    const plan = buildCatalogImportPlan('sku,name\r\nBC547,NPN Transistor\r\n', null, existing, {
+      matchKey: 'sku',
+    });
+    expect(plan.update).toHaveLength(0);
+    expect(plan.create).toHaveLength(1);
+  });
+
+  it('resolves a location name case-insensitively', () => {
+    const plan = buildCatalogImportPlan('name,location\r\nWidget,WORKSHOP\r\n', null, [], {
+      locations: [{ id: 'loc-1', name: 'Workshop' }],
+    });
+    expect(plan.errors).toHaveLength(0);
+    expect(plan.create[0]!.input.locationId).toBe('loc-1');
+  });
+
+  it('treats two rows differing only in case as one intra-file duplicate', () => {
+    const plan = buildCatalogImportPlan('name,unitCost\r\nWidget A,1\r\nwidget a,2\r\n', null, []);
+    expect(plan.create).toHaveLength(1);
+    expect(plan.errors).toHaveLength(1);
+    expect(plan.errors[0]!.message).toMatch(/Duplicate name "widget a" — already used in row 1/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 72 — custom-field column mapping & coercion (pure)
 // ---------------------------------------------------------------------------
 
