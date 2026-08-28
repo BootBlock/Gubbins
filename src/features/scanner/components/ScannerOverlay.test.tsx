@@ -133,6 +133,7 @@ vi.mock('@/features/scraping', async (importOriginal) => ({
   ),
 }));
 
+import { openModalCount } from '@/components/foundry/modal-stack';
 import { ScannerOverlay } from './ScannerOverlay';
 
 // A valid EAN-13 (check digit correct) so it parses as a GTIN rather than a raw code.
@@ -284,11 +285,152 @@ describe('ScannerOverlay — leaving it (issue #590)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'What can I scan?' })).toBeNull());
+    expect(document.body.style.overflow).toBe('hidden');
+
     unmount();
 
-    // The lock is released when the last *Modal* closes. An overlay that claimed a place on that
-    // stack without owning the lock itself would strand `overflow: hidden` on the whole app.
+    // The lock is shared and released only when the last surface on the modal stack goes, so the
+    // explainer closing must not free it while the scanner is still up — and the scanner closing
+    // must not strand `overflow: hidden` on the whole app.
     expect(document.body.style.overflow).toBe('');
+  });
+});
+
+describe('ScannerOverlay — it is a dialog, not an anonymous div (issue #540)', () => {
+  /** The tab stops the overlay offers, in DOM order: the mode toggle first, "Enter" last. */
+  const firstStop = () => screen.getByRole('button', { name: /Discrete/ });
+  const lastStop = () => screen.getByTestId('scanner-manual-submit');
+  const tab = (shiftKey = false) => fireEvent.keyDown(document, { key: 'Tab', shiftKey });
+
+  /**
+   * Stand in for the screen the overlay covers: a control that is still in the page's tab
+   * order behind it. Nothing the overlay does may ever put focus here — it is invisible under
+   * an opaque takeover, so activating it would have consequences the user cannot see.
+   */
+  const strays: Element[] = [];
+  function behindTheOverlay() {
+    const button = document.createElement('button');
+    button.textContent = 'Inventory control behind the scanner';
+    document.body.append(button);
+    strays.push(button);
+    return button;
+  }
+  // Torn down here rather than at the end of each test: a failing `expect` throws past a trailing
+  // `remove()`, and a stray button or menu left on the body would then break every `getByRole`
+  // after it — one red test reading as a dozen.
+  afterEach(() => {
+    strays.forEach((node) => node.remove());
+    strays.length = 0;
+  });
+
+  it('announces itself as a modal dialog named by its own visible title', () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'Scanner' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toBe(screen.getByTestId('scanner-overlay'));
+  });
+
+  it('parks focus on the overlay, not on the trigger it now covers', () => {
+    const trigger = behindTheOverlay();
+    trigger.focus();
+
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    // The dialog container itself, so a screen reader reads the dialog rather than whichever
+    // control happened to come first — and so the first Tab steps *into* the scanner.
+    expect(document.activeElement).toBe(screen.getByTestId('scanner-overlay'));
+  });
+
+  it('gives focus back to whatever opened it when it closes', () => {
+    const trigger = behindTheOverlay();
+    trigger.focus();
+    const { unmount } = render(<ScannerOverlay open onClose={vi.fn()} />);
+    // Somewhere inside the overlay, as a keyboard user would be by the time they leave it —
+    // the control they were on is about to be torn down with the rest of the takeover.
+    lastStop().focus();
+
+    unmount();
+
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('wraps Tab back to the top instead of walking into the page behind it', () => {
+    const behind = behindTheOverlay();
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    lastStop().focus();
+
+    tab();
+
+    expect(document.activeElement).toBe(firstStop());
+    expect(document.activeElement).not.toBe(behind);
+  });
+
+  it('wraps Shift+Tab the other way, so backwards is no way out either', () => {
+    const behind = behindTheOverlay();
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    firstStop().focus();
+
+    tab(true);
+
+    expect(document.activeElement).toBe(lastStop());
+    expect(document.activeElement).not.toBe(behind);
+  });
+
+  it('holds the keyboard the way an open dialog does, so the global hotkeys stand aside', () => {
+    expect(openModalCount()).toBe(0);
+    const { unmount } = render(<ScannerOverlay open onClose={vi.fn()} />);
+
+    // `useGlobalHotkeys` returns early while any surface is on the stack, so joining it is what
+    // stops `G`-prefixed navigation and the theme toggle acting on the screen the camera covers.
+    // The count is the contract between the two; nothing else connects them.
+    expect(openModalCount()).toBeGreaterThan(0);
+
+    unmount();
+    expect(openModalCount()).toBe(0);
+  });
+
+  it('leaves Tab to a menu it opened outside itself (issue #135)', () => {
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    // A stand-in for the viewfinder's camera picker, which portals its panel to the body and so
+    // sits outside the dialog while still belonging to it. Driving the real `Menu` would not
+    // exercise this: it claims Tab itself (`menu.tsx` closes and hands focus back to its
+    // trigger), so the trap would see focus already back inside. This pins the branch that keeps
+    // the two handlers from fighting if that ordering ever changes.
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = '<button role="menuitem">Front camera</button>';
+    document.body.append(menu);
+    strays.push(menu);
+    const menuItem = menu.querySelector('button')!;
+    menuItem.focus();
+
+    tab();
+
+    expect(document.activeElement).toBe(menuItem);
+  });
+
+  it('hands the keyboard to a dialog opened over it, then takes it back', async () => {
+    behindTheOverlay();
+    render(<ScannerOverlay open onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'What can I scan?' }));
+    await screen.findByRole('dialog', { name: 'What can I scan?' });
+
+    // The explainer is topmost, so its own trap owns Tab — the overlay must not also act on the
+    // press and drag focus out of the dialog the user is actually in.
+    lastStop().focus();
+    tab();
+    // The explainer's own trap took the press: focus is inside it, not dragged back to the
+    // scanner behind it.
+    expect(screen.getByRole('dialog', { name: 'What can I scan?' })).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'What can I scan?' })).toBeNull());
+    lastStop().focus();
+    tab();
+    expect(document.activeElement).toBe(firstStop());
   });
 });
 
