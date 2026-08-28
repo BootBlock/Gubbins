@@ -31,7 +31,7 @@ import {
   type LocationWithCount,
 } from '@/db/repositories';
 import { getReportRepository } from '@/db/repositories';
-import { bucketIds, ID_BUCKET_SIZE } from '@/features/inventory/id-buckets';
+import { bucketIds } from '@/features/inventory/id-buckets';
 import { toLocationExportRows } from '@/features/inventory/locations-export';
 import { readImageBlob } from '@/features/images/opfs-images';
 import { assertPermissions } from '@/features/users/assert-permission';
@@ -375,12 +375,26 @@ function scopedLocations(
  * Batched one query per {@link bucketIds} slice (issue #527) rather than one per item. That also
  * removes an accidental cap: the per-item read asked for a single page of 100, so an item lent
  * out more often than that had the rest of its loan history silently left out of the file.
+ *
+ * Deliberately uncapped, where the vault's Activity Log read below keeps its per-item cap. The
+ * two are asked for different reasons: the JSON payload is a data extract, and a `checkouts`
+ * array that quietly stops at 100 rows per item is wrong in a way the file cannot admit to,
+ * whereas the vault note renders a *recent activity* section that was always an excerpt.
  */
 async function collectCheckouts(items: readonly Item[]): Promise<Checkout[]> {
   const repo = getCheckoutRepository();
   const all: Checkout[] = [];
-  for (const bucket of bucketIds(items.map((i) => i.id))) {
-    all.push(...(await repo.listForItems(bucket)));
+  for (const bucket of bucketIds(items)) {
+    // The batched read groups by `item_id`; the payload is re-grouped into the order the items
+    // themselves are exported in, which is the order the per-item loop produced. Otherwise the
+    // `checkouts` array would silently resort itself by raw id for no reason a reader could see.
+    const byItem = new Map<string, Checkout[]>();
+    for (const loan of await repo.listForItems(bucket.map((i) => i.id))) {
+      const list = byItem.get(loan.itemId);
+      if (list) list.push(loan);
+      else byItem.set(loan.itemId, [loan]);
+    }
+    for (const item of bucket) all.push(...(byItem.get(item.id) ?? []));
   }
   return all;
 }
@@ -507,8 +521,7 @@ export async function runExport(format: ExportFormat, options: ExportOptions): P
   // three queries per item. The image *bytes* still resolve one file at a time below — those are
   // OPFS reads, not database round-trips, and each one is a distinct file.
   const vaultItems: VaultItem[] = [];
-  for (let start = 0; start < items.length; start += ID_BUCKET_SIZE) {
-    const bucket = items.slice(start, start + ID_BUCKET_SIZE);
+  for (const bucket of bucketIds(items)) {
     const ids = bucket.map((i) => i.id);
     const [historyByItem, imagesByItem, attachmentsByItem] = await Promise.all([
       itemRepo.getHistoryForItems(ids, PAGE),

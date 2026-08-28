@@ -174,10 +174,11 @@ describe('batched per-item reads (issue #527)', () => {
 
       const rows = await checkouts.listForItems([drill.id, sander.id]);
       expect(rows).toHaveLength(3);
-      // The drill's two loans arrive together, the still-open one first — the order
-      // `listForItem` returns them in.
+      // The drill's two loans arrive together, the still-open one first. Compared against the
+      // single-item read rather than against a literal, so the two cannot drift apart unnoticed.
       const drillLoans = rows.filter((r) => r.itemId === drill.id).map((r) => r.id);
       expect(drillLoans).toEqual([open.id, closed.id]);
+      expect(drillLoans).toEqual((await checkouts.listForItem(drill.id)).rows.map((r) => r.id));
       expect(rows.map((r) => r.id)).toContain(other.id);
     });
 
@@ -198,7 +199,7 @@ describe('batched per-item reads (issue #527)', () => {
   });
 
   describe('ImageRepository / AttachmentRepository listForItems', () => {
-    it('keys each item’s rows to that item, in the single-item read’s order', async () => {
+    it('keys each item’s rows to that item, in the same order as the single-item read', async () => {
       const drill = await items.create({ name: 'Drill' });
       const sander = await items.create({ name: 'Sander' });
       const bare = await items.create({ name: 'Bare' });
@@ -208,6 +209,8 @@ describe('batched per-item reads (issue #527)', () => {
       await attachments.add({ itemId: drill.id, kind: 'URL', value: 'https://example.com/b', position: 1 });
       await attachments.add({ itemId: drill.id, kind: 'URL', value: 'https://example.com/a', position: 0 });
 
+      // Position, not insertion order, decides the order — asserted against a literal so the
+      // expectation cannot be satisfied by whatever the reads happen to agree on …
       const imagesByItem = await images.listForItems([drill.id, sander.id, bare.id]);
       expect(imagesByItem.get(drill.id)?.map((i) => i.fullResOpfsPath)).toEqual(['a.webp', 'b.webp']);
       expect(imagesByItem.get(sander.id)?.map((i) => i.fullResOpfsPath)).toEqual(['c.webp']);
@@ -219,6 +222,15 @@ describe('batched per-item reads (issue #527)', () => {
         'https://example.com/b',
       ]);
       expect(attachmentsByItem.has(bare.id)).toBe(false);
+
+      // … and then against the single-item reads, which is the comparison that goes red if the
+      // two ever stop sharing an ordering.
+      expect(imagesByItem.get(drill.id)?.map((i) => i.id)).toEqual(
+        (await images.listForItem(drill.id)).map((i) => i.id),
+      );
+      expect(attachmentsByItem.get(drill.id)?.map((a) => a.id)).toEqual(
+        (await attachments.listForItem(drill.id)).map((a) => a.id),
+      );
     });
 
     it('queries nothing for an empty set', async () => {

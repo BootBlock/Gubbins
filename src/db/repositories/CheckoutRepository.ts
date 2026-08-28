@@ -49,6 +49,19 @@ interface CheckoutJoinRow extends CheckoutRow {
 }
 
 /**
+ * The order a borrower's or an item's loan history comes back in — still-open loans first, then
+ * newest first — written once so the paged reads and the batched
+ * {@link CheckoutRepository.listForItems} cannot come to disagree about it. The batched read only
+ * prefixes `k.item_id` to group its rows; everything deciding the order *within* one item is this.
+ *
+ * The `k.id` tiebreak makes the order **total**, for the reason {@link CheckoutRepository.listOpen}
+ * already carries one (issue #132): loans routinely share a `checked_out_at`, or have no due date
+ * at all, and an order that leaves ties undetermined lets a paged walk return one loan twice while
+ * dropping another. It costs nothing and it is what makes an exported file reproducible.
+ */
+const CHECKOUT_ITEM_ORDER = 'k.returned_at IS NULL DESC, k.checked_out_at DESC, k.id ASC';
+
+/**
  * The projection + joins behind every read that returns a {@link CheckoutWithNames} — the paged
  * {@link CheckoutRepository.listForItem} family and the batched
  * {@link CheckoutRepository.listForItems}. One definition so the two cannot return different
@@ -427,12 +440,7 @@ export class CheckoutRepository extends BaseRepository {
 
   /** A single item's checkout history (open first, then newest), bounded. */
   async listForItem(itemId: string, params: PageParams = {}): Promise<Page<CheckoutWithNames>> {
-    return this.listJoined(
-      'WHERE k.item_id = ?',
-      [itemId],
-      params,
-      'k.returned_at IS NULL DESC, k.checked_out_at DESC',
-    );
+    return this.listJoined('WHERE k.item_id = ?', [itemId], params, CHECKOUT_ITEM_ORDER);
   }
 
   /**
@@ -445,8 +453,8 @@ export class CheckoutRepository extends BaseRepository {
    * export previously asked for one page of 100 per item, which silently dropped the rest of a
    * frequently-lent item's history from the file.
    *
-   * Ordered by item, then open loans first and newest first within each — so the rows for one
-   * item arrive in the same order {@link listForItem} returns them. An empty input queries nothing.
+   * Grouped by item and ordered within each by {@link CHECKOUT_ITEM_ORDER}, the one order every
+   * loan-history read here shares. An empty input queries nothing.
    */
   async listForItems(itemIds: readonly string[]): Promise<CheckoutWithNames[]> {
     const unique = [...new Set(itemIds)];
@@ -455,7 +463,7 @@ export class CheckoutRepository extends BaseRepository {
     const rows = await this.driver.query<CheckoutJoinRow>(
       `${CHECKOUT_JOIN_SELECT}
        WHERE k.item_id IN (${placeholders})
-       ORDER BY k.item_id, k.returned_at IS NULL DESC, k.checked_out_at DESC, k.id ASC;`,
+       ORDER BY k.item_id, ${CHECKOUT_ITEM_ORDER};`,
       unique as SqlValue[],
     );
     const now = nowMs();
@@ -485,12 +493,7 @@ export class CheckoutRepository extends BaseRepository {
     id: string,
     params: PageParams,
   ): Promise<Page<CheckoutWithNames>> {
-    return this.listJoined(
-      `WHERE k.${borrowerColumn(type)} = ?`,
-      [id],
-      params,
-      'k.returned_at IS NULL DESC, k.checked_out_at DESC',
-    );
+    return this.listJoined(`WHERE k.${borrowerColumn(type)} = ?`, [id], params, CHECKOUT_ITEM_ORDER);
   }
 
   /**

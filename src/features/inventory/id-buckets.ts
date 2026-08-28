@@ -28,16 +28,18 @@ import { DEFAULT_PAGE_SIZE } from '@/db/repositories/constants';
 export const ID_BUCKET_SIZE = DEFAULT_PAGE_SIZE;
 
 /**
- * Slice `ids` into consecutive buckets of at most `size`. Order is preserved, so bucket *n*
- * holds the same ids however far the window has since grown.
+ * Slice `rows` into consecutive buckets of at most `size`. Order is preserved, so bucket *n*
+ * holds the same entries however far the window has since grown.
+ *
+ * Generic over the element rather than fixed to `string`, because a caller that has the rows in
+ * hand (the export's vault pass, which needs each bucket's items and not only their ids) would
+ * otherwise have to re-derive the same slicing beside this one — and two slicings of the same
+ * window is exactly what this seam exists to avoid.
  */
-export function bucketIds(
-  ids: readonly string[],
-  size: number = ID_BUCKET_SIZE,
-): readonly (readonly string[])[] {
+export function bucketIds<T>(rows: readonly T[], size: number = ID_BUCKET_SIZE): readonly (readonly T[])[] {
   if (size < 1) throw new RangeError(`bucketIds: size must be >= 1, got ${size}`);
-  const buckets: (readonly string[])[] = [];
-  for (let i = 0; i < ids.length; i += size) buckets.push(ids.slice(i, i + size));
+  const buckets: (readonly T[])[] = [];
+  for (let i = 0; i < rows.length; i += size) buckets.push(rows.slice(i, i + size));
   return buckets;
 }
 

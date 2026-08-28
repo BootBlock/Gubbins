@@ -81,7 +81,13 @@ const categoryRepo = {
   ),
 };
 
-const checkoutRepo = { listForItems: vi.fn(async (_ids: readonly string[]) => []) };
+// One loan per item, handed back in an order that is deliberately *not* the export's item order,
+// so a payload that simply concatenated what the read returned would show it.
+const checkoutRepo = {
+  listForItems: vi.fn(async (ids: readonly string[]) =>
+    [...ids].reverse().map((itemId) => ({ id: `loan-${itemId}`, itemId })),
+  ),
+};
 const imageRepo = { listForItems: vi.fn(async (_ids: readonly string[]) => new Map()) };
 const attachmentRepo = { listForItems: vi.fn(async (_ids: readonly string[]) => new Map()) };
 const tagRepo = { listForItems: vi.fn(async (_ids: readonly string[]) => []) };
@@ -185,6 +191,15 @@ describe('per-item extras are read a bucket at a time', () => {
     await runExport('JSON', { includeInactive: false, scope: 'ALL' });
     expect(checkoutRepo.listForItems).toHaveBeenCalledTimes(EXPECTED_BUCKETS);
     expect(idsAskedAbout(checkoutRepo.listForItems)).toEqual(ALL_ITEMS.map((i) => i.id));
+  });
+
+  it('keeps the JSON payload’s loans in the order the items are exported in', async () => {
+    await runExport('JSON', { includeInactive: false, scope: 'ALL' });
+    const [blob] = downloadSpy.mock.calls[0]! as [Blob, string];
+    const payload = JSON.parse(await blob.text()) as { checkouts: { itemId: string }[] };
+    // Batching changed which query the loans arrive from, and must not change where they land in
+    // the file — the array follows the items, as the per-item loop it replaced made it.
+    expect(payload.checkouts.map((c) => c.itemId)).toEqual(ALL_ITEMS.map((i) => i.id));
   });
 
   it('reads history, images and attachments per bucket, covering every item once (vault)', async () => {

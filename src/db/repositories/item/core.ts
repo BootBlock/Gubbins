@@ -827,8 +827,11 @@ export class ItemCoreRepository extends BaseRepository {
    * function, rather than by trimming a whole-set read afterwards: an item's log is unbounded,
    * so a read that fetched every entry for every exported item and then threw most of them away
    * would trade one problem for a larger one. The ranking orders exactly as {@link getHistory}
-   * does — `created_at DESC` with `rowid DESC` as the insertion-order tiebreak — so an item's
-   * entries arrive in the same order and are the same entries either read returns.
+   * does — `created_at DESC` with `rowid DESC` as the insertion-order tiebreak. The two orderings
+   * are written out separately because one is a window function and the other an `ORDER BY`, so
+   * what holds the claim up is a drift test that drives both reads over one log and compares:
+   * `batched-item-reads.test.ts`, "returns the same newest entries, in the same order, as the
+   * single-item read".
    *
    * An item with no history is simply absent from the map; an empty input queries nothing.
    */
