@@ -3,6 +3,7 @@
  * Blank free-text collapses to NULL; numeric fields are range-checked here so the
  * repository contract rejects bad input the same way regardless of the entry point.
  */
+import { canonicaliseBarcode } from '@/features/scanner/gtin';
 import { toStoredMoney } from '@/lib/money';
 import { TEXT_LIMITS } from '@/lib/text-limits';
 import { DbError } from '../../errors';
@@ -27,6 +28,30 @@ export function normaliseText(
   if (trimmed.length === 0) return null;
   assertTextLimit(trimmed, limit, subject);
   return trimmed;
+}
+
+/**
+ * Normalise a barcode for storage: {@link normaliseText}, then the UPC-E canonicalisation
+ * (issue #508).
+ *
+ * A UPC-E is a compressed UPC-A, so the eight digits printed on a small pack and the twelve a
+ * UPC-A scan of the same article yields are the *same* barcode. Storing whichever form happened
+ * to arrive would make them two, and only one of them would ever be found again by scanning.
+ * Normalising here rather than at each entry point means a typed code, a scan and an imported
+ * spreadsheet column all land on the same value. Every other code — a Code 128 part label, a
+ * shelf code, an EAN-8 that is not also a valid UPC-E — is stored exactly as given.
+ *
+ * Pass `current` on an update: a value that matches what is already stored is left untouched.
+ * Re-saving an item must not migrate a barcode nobody edited — that would rewrite a record on an
+ * unrelated change and log it in the Activity Log as a barcode the user never touched.
+ */
+export function normaliseBarcode(
+  value: string | null | undefined,
+  current: string | null = null,
+): string | null {
+  const text = normaliseText(value, TEXT_LIMITS.line, 'A barcode');
+  if (text === null || text === current) return text;
+  return canonicaliseBarcode(text);
 }
 
 /**

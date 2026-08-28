@@ -31,7 +31,10 @@ export interface ItemRow {
   /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress, v4). */
   readonly mpn: string | null;
   readonly manufacturer: string | null;
-  /** Retail barcode (GTIN — EAN/UPC), stored verbatim as printed; null if none. */
+  /**
+   * Retail barcode (GTIN — EAN/UPC), stored as printed — bar a UPC-E, which is stored as the
+   * UPC-A it compresses (issue #508). Null if none.
+   */
   readonly barcode: string | null;
   /**
    * Intrinsic serial number — the maker's unique per-unit identifier printed on the article
@@ -162,9 +165,10 @@ export interface Item {
   readonly mpn: string | null;
   readonly manufacturer: string | null;
   /**
-   * Retail barcode (GTIN — EAN/UPC/EAN-8/GTIN-14) as printed on the article; null if
-   * none. Recognised by the scanner (see `scanner/gtin.ts`) and used for exact
-   * lookup-by-barcode and product enrichment. Distinct from `mpn` (the maker's code).
+   * Retail barcode (GTIN — EAN/UPC/EAN-8/GTIN-14) as printed on the article, bar a UPC-E,
+   * which is stored as the UPC-A it compresses (issue #508); null if none. Recognised by the
+   * scanner (see `scanner/gtin.ts`) and used for exact lookup-by-barcode and product
+   * enrichment. Distinct from `mpn` (the maker's code).
    */
   readonly barcode: string | null;
   /**
@@ -332,7 +336,7 @@ export interface CreateItemInput {
   /** Manufacturer Part Number — a BOM auto-match key (spec §4 BOM Ingress). */
   readonly mpn?: string | null;
   readonly manufacturer?: string | null;
-  /** Retail barcode (GTIN — EAN/UPC); stored verbatim as printed. */
+  /** Retail barcode (GTIN — EAN/UPC); stored as printed, bar the UPC-E expansion (issue #508). */
   readonly barcode?: string | null;
   /** Intrinsic serial number — the maker's unique per-unit identifier (issue #90). */
   readonly serialNumber?: string | null;

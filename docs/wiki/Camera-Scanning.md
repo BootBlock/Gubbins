@@ -77,14 +77,23 @@ camera actually offers it, so you'll never see a switch that does nothing.
 > Typing a barcode by hand instead? Gubbins checks it as you move on. Retail barcodes carry a
 > built-in check digit, so a mistyped or swapped digit is spotted and flagged under the field —
 > which matters, because a barcode that's a digit out will never be found by a future scan. It's
-> only a warning: you can still save whatever you typed, and codes that aren't retail barcodes
-> (an internal shelf code, say) are left alone.
+> only a warning: your entry still saves, and codes that aren't retail barcodes (an internal shelf
+> code, say) are left alone.
 
 > **💡 Tip**
 > If the code you enter is already recorded against another item, the field says which one — and
 > how many, when it's more than one. It's only a warning, because sharing a barcode is often
 > deliberate; it saves normally. It's there so you know in advance why a later scan of that code
 > will stop and ask which item you meant.
+
+> **ℹ️ Note**
+> Small packaging — batteries, fasteners, cosmetics — often carries a short **UPC‑E** barcode of
+> eight digits. It's a squeezed-down version of the full twelve-digit UPC‑A, and Gubbins records
+> the full form, so the short code on the pack and the long one on the outer box are one barcode
+> rather than two — which is also the form a
+> [[product lookup|Scraping-Supplier-Data]] is indexed by. Type the eight digits and you'll see
+> them become twelve when you leave the field. Anything recorded before Gubbins knew this still
+> scans: the printed eight digits are checked as well.
 
 > **ℹ️ Note**
 > Some packaging carries a **marketing QR code** (a website link) next to the real barcode. If

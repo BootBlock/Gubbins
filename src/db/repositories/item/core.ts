@@ -43,7 +43,9 @@ import {
   reverseOrder,
   type Cursor,
 } from './list-order';
+import { barcodeMatchForms } from '@/features/scanner/gtin';
 import {
+  normaliseBarcode,
   normaliseCurrentValue,
   normaliseExpiry,
   normaliseIsoDate,
@@ -177,8 +179,11 @@ export class ItemCoreRepository extends BaseRepository {
    * The **active** items carrying a given barcode — a retail GTIN, or any other symbology an
    * item records verbatim (issue #506). The scanner uses this to resolve a scanned code to an
    * existing item before offering to create one (recommendation point 1). The match is
-   * case-insensitive and exact (barcodes are stored verbatim as printed). A blank barcode
-   * matches nothing.
+   * case-insensitive and exact: a barcode is stored as printed, bar the UPC-E canonicalisation
+   * in {@link normaliseBarcode}. That one exception is why the match is made against every stored
+   * form of the code ({@link barcodeMatchForms}) rather than the one string asked for — an item
+   * recorded before UPC-E codes were expanded still holds the compressed eight digits, and a scan
+   * of that same pack now resolves to the twelve. A blank barcode matches nothing.
    *
    * It returns the matches rather than a winner, for the same reason {@link findByShortCode}
    * does (issue #513). Nothing stops two items sharing a barcode, and the ways in are ordinary
@@ -194,11 +199,12 @@ export class ItemCoreRepository extends BaseRepository {
   async findByBarcode(barcode: string): Promise<Item[]> {
     const value = barcode.trim();
     if (value.length === 0) return [];
+    const forms = barcodeMatchForms(value);
     const rows = await this.driver.query<ItemRow>(
       `SELECT ${ITEM_READ_COLUMNS} FROM items
-       WHERE barcode = ? COLLATE NOCASE AND is_active = 1
+       WHERE barcode COLLATE NOCASE IN (${forms.map(() => '?').join(', ')}) AND is_active = 1
        ORDER BY created_at DESC, id ASC LIMIT ${BARCODE_MATCH_LIMIT};`,
-      [value],
+      [...forms],
     );
     return rows.map(rowToItem);
   }
@@ -543,7 +549,7 @@ export class ItemCoreRepository extends BaseRepository {
       track('manufacturer', 'manufacturer', existing.manufacturer, manufacturer);
     }
     if (input.barcode !== undefined) {
-      const barcode = normaliseText(input.barcode, TEXT_LIMITS.line, 'A barcode');
+      const barcode = normaliseBarcode(input.barcode, existing.barcode);
       sets.push('barcode = ?');
       params.push(barcode);
       track('barcode', 'barcode', existing.barcode, barcode);

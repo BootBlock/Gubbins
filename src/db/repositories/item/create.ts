@@ -15,6 +15,7 @@ import { setStockStatement } from '../stock';
 import type { CreateItemInput } from '../types';
 import { historyStatement } from './history';
 import {
+  normaliseBarcode,
   normaliseCurrentValue,
   normaliseExpiry,
   normaliseCostPerUnitOfMeasure,
@@ -156,7 +157,7 @@ export function resolveCreate(input: CreateItemInput): ResolvedCreate {
     categoryId: input.categoryId ?? null,
     mpn: normaliseText(input.mpn, TEXT_LIMITS.line, 'An MPN'),
     manufacturer: normaliseText(input.manufacturer, TEXT_LIMITS.line, 'A manufacturer'),
-    barcode: normaliseText(input.barcode, TEXT_LIMITS.line, 'A barcode'),
+    barcode: normaliseBarcode(input.barcode),
     serialNumber: normaliseText(input.serialNumber, TEXT_LIMITS.line, 'A serial number'),
     unitCost: normaliseUnitCost(input.unitCost),
     expiryDate: normaliseExpiry(input.expiryDate),

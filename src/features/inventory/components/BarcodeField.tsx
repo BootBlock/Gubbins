@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Button, FormField, Input } from '@/components/foundry';
+import { Button, FormField, Input, LiveRegion } from '@/components/foundry';
 import { ScanIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useFeature } from '@/features/modules/useFeature';
-import { describeGtinConcern } from '@/features/scanner/gtin';
+import { canonicaliseBarcode, describeGtinConcern } from '@/features/scanner/gtin';
 import { useBarcodeCarriers } from '../queries';
 
 export interface BarcodeFieldProps {
@@ -40,6 +40,10 @@ export interface BarcodeFieldProps {
  * advance why a later scan of that code will stop and ask which item was meant, instead of
  * meeting the question with no idea where the duplicate came from.
  *
+ * Leaving the field is also where a typed **UPC-E** — the squeezed 8-digit code on small
+ * packaging — is replaced by the 12-digit UPC-A it compresses (issue #508), so a code typed off
+ * the pack and the same code scanned from it store the same value.
+ *
  * The warning waits for **blur**, because a half-typed GTIN is transiently wrong at almost
  * every keystroke (`400638133393` is a valid UPC-A *width* on the way to a 13-digit EAN) and
  * a message that flickers per keystroke is noise, not help. Editing again clears it until the
@@ -63,6 +67,11 @@ export function BarcodeField({
   // anywhere else — an item's stored barcode, a switch to another item, a camera capture — is
   // judged the moment it lands, with no interaction needed to reveal it.
   const [editing, setEditing] = useState(false);
+  // What the field last replaced a typed UPC-E with, announced so the rewrite is not a silent
+  // change for a screen-reader user, who has no way to see the digit count go up. The
+  // announcement is shown only while it still describes the value on screen, so a switch to
+  // another item — which replaces the value without a keystroke — cannot leave it standing.
+  const [expanded, setExpanded] = useState('');
 
   const concern = editing ? null : describeGtinConcern(value);
   // Judged on the same beat as the check-digit concern — a blank value mid-keystroke disables the
@@ -105,12 +114,28 @@ export function BarcodeField({
             onChange(e.target.value);
           }}
           onBlur={() => {
+            // A typed UPC-E is replaced by the UPC-A it compresses, so the stored value is the
+            // one a camera scan of that pack produces (issue #508). Only on a value the user
+            // actually typed: an item's existing barcode must never change just because the
+            // field was focused and left.
+            if (editing) {
+              const canonical = canonicaliseBarcode(value);
+              if (canonical !== value) {
+                onChange(canonical);
+                setExpanded(canonical);
+              }
+            }
             setEditing(false);
             onBlur?.();
           }}
           data-testid={inputTestId}
         />
       </FormField>
+      <LiveRegion visuallyHidden>
+        {expanded && expanded === value ? (
+          <p>{t('inventory.barcode.expanded', { vars: { barcode: expanded } })}</p>
+        ) : null}
+      </LiveRegion>
       {scannerEnabled ? (
         <div className="flex flex-col">
           <span className="mb-field-gap block text-sm font-medium" aria-hidden>

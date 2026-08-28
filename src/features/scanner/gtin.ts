@@ -15,10 +15,22 @@
  * The barcode is stored on the item **verbatim as printed** (no zero-padding to a
  * canonical width): that is the value a human reads off the packaging, the value the
  * Open Food Facts API is keyed by, and the value a re-scan reproduces — so an exact
- * match is the right lookup. All logic here is pure and unit-tested.
+ * match is the right lookup.
+ *
+ * The **one** exception is UPC-E, which is not a width but a compressed UPC-A (issue
+ * #508). Its printed eight digits carry the check digit of the *expanded* code, so the
+ * mod-10 rule below cannot judge them as they stand, and the compressed form is neither
+ * what a UPC-A scan of the same article yields nor how the product databases are keyed.
+ * An 8-digit code is therefore expanded to its UPC-A when that is what it turns out to
+ * be — see {@link parseGtin}. All logic here is pure and unit-tested.
  */
+import { compressUpcA, expandUpcE } from './upce';
 
-/** The GTIN symbologies Gubbins recognises, by digit count (EAN-8, UPC-A, EAN-13, GTIN-14). */
+/**
+ * The GTIN symbologies Gubbins recognises, by digit count (EAN-8, UPC-A, EAN-13, GTIN-14). Eight
+ * digits also covers a printed UPC-E, which is a compressed UPC-A rather than a width of its own
+ * — see {@link parseGtin}.
+ */
 export const GTIN_LENGTHS: readonly number[] = [8, 12, 13, 14];
 
 /** True when `raw` (after trimming) is only ASCII digits. */
@@ -31,6 +43,9 @@ function isAllDigits(value: string): boolean {
  * every GTIN width). Weights alternate 3,1 anchored at the check digit — the data digit
  * immediately to its left is weighted 3 — which makes the rule length-agnostic across
  * GTIN-8/12/13/14. Returns false for anything that is not a run of digits.
+ *
+ * Note this is **not** the rule for a printed UPC-E: those eight digits end in the check
+ * digit of the 12-digit code they compress, so they are expanded first ({@link parseGtin}).
  *
  * @internal Exported for unit tests only.
  */
@@ -48,15 +63,61 @@ export function hasValidGtinCheckDigit(digits: string): boolean {
 }
 
 /**
- * True when `raw` is a syntactically valid GTIN: a run of digits of a recognised length
- * ({@link GTIN_LENGTHS}) whose mod-10 check digit is correct. Surrounding whitespace is
- * ignored; any other character (letters, dashes, dots) makes it not a GTIN.
+ * Resolve an 8-digit run of digits, which may be an EAN-8 *or* a compressed UPC-E, to its
+ * canonical GTIN — the EAN-8 verbatim, or the UPC-E's 12-digit expansion — or `null` when it
+ * is neither.
+ *
+ * Both readings can hold for the same eight digits (`01234565` validates either way), so the
+ * order matters. GS1 reserves the GTIN-8 prefix `0` for exactly this compressed
+ * representation, so a leading `0` is read as a UPC-E first and only falls back to EAN-8;
+ * any other leading digit is read as an EAN-8 first, and as a UPC-E (number system `1`) only
+ * if that fails.
+ *
+ * The UPC-E reading must also **round-trip**: the expansion has to compress back to the same
+ * eight digits ({@link compressUpcA}). Expansion is not injective — `00000030` and `00000040`
+ * both expand to `000000000000` — so accepting every eight digits that expand would store two
+ * distinct printed codes as one value, losing whichever was written second. The codes that fail
+ * the round-trip are exactly those no encoder produces: `compressUpcA` is the GS1 encoder, so a
+ * code it does not emit is not a code any symbol carries. `upce.test.ts` enumerates the whole
+ * space to hold that claim up.
+ */
+function resolveEightDigits(digits: string): string | null {
+  const expanded = expandUpcE(digits);
+  const upcA =
+    expanded !== null && hasValidGtinCheckDigit(expanded) && compressUpcA(expanded) === digits
+      ? expanded
+      : null;
+  if (upcA !== null && digits.startsWith('0')) return upcA;
+  if (hasValidGtinCheckDigit(digits)) return digits;
+  return upcA;
+}
+
+/**
+ * Normalise a scanned/typed string to a canonical GTIN, or `null` when it is not one: a run
+ * of digits of a recognised length ({@link GTIN_LENGTHS}) whose mod-10 check digit is correct.
+ * Surrounding whitespace is ignored; any other character (letters, dashes, dots) makes it not
+ * a GTIN.
+ *
+ * The result is the trimmed digit string as printed — no zero-padding — so it round-trips a
+ * re-scan and keys the Open Food Facts lookup directly. A **UPC-E** is the exception: it is
+ * returned as its expanded 12-digit UPC-A, which is the form a UPC-A scan of the same article
+ * produces and the form the product databases index (see {@link resolveEightDigits}).
+ */
+export function parseGtin(raw: string): string | null {
+  const digits = raw.trim();
+  if (!isAllDigits(digits) || !GTIN_LENGTHS.includes(digits.length)) return null;
+  if (digits.length === 8) return resolveEightDigits(digits);
+  return hasValidGtinCheckDigit(digits) ? digits : null;
+}
+
+/**
+ * True when `raw` is a syntactically valid GTIN — including a compressed UPC-E, which is
+ * valid but normalises to a different string ({@link parseGtin}).
  *
  * @internal Exported for unit tests only.
  */
 export function isValidGtin(raw: string): boolean {
-  const digits = raw.trim();
-  return GTIN_LENGTHS.includes(digits.length) && hasValidGtinCheckDigit(digits);
+  return parseGtin(raw) !== null;
 }
 
 /**
@@ -77,20 +138,59 @@ export type GtinConcern = 'check-digit' | 'length';
  * nothing to say. Blank, and anything containing a non-digit character, return `null` —
  * see {@link GtinConcern} for why this deliberately stays quiet rather than policing the
  * field. Pure: the caller decides how (and how loudly) to surface the result.
+ *
+ * It shares {@link parseGtin}'s verdict rather than re-testing the check digit, so a
+ * correctly transcribed UPC-E is never reported as mistyped.
  */
 export function describeGtinConcern(raw: string): GtinConcern | null {
   const digits = raw.trim();
   if (!isAllDigits(digits)) return null;
   if (!GTIN_LENGTHS.includes(digits.length)) return 'length';
-  return hasValidGtinCheckDigit(digits) ? null : 'check-digit';
+  return parseGtin(digits) === null ? 'check-digit' : null;
 }
 
 /**
- * Normalise a scanned/typed string to a canonical GTIN, or `null` when it is not one.
- * The canonical form is simply the trimmed digit string as printed on the article — no
- * zero-padding — so it round-trips a re-scan and keys the Open Food Facts lookup directly.
+ * Canonicalise a barcode **on its way into storage**, returning `raw` unchanged unless it is a
+ * printed UPC-E — in which case the expanded 12-digit UPC-A replaces it (issue #508).
+ *
+ * Deliberately narrow. The field legitimately holds any code at all, and rewriting what someone
+ * typed or imported is only justified where the two forms name the *same* article and only one of
+ * them matches a scan: a UPC-E read off the pack would otherwise be stored as eight digits that no
+ * camera scan of that product ever reproduces. Anything that is not an 8-digit code {@link
+ * parseGtin} resolves to a 12-digit UPC-A is returned exactly as given — which includes an EAN-8
+ * that is not also a valid UPC-E, and every non-GTIN code.
+ *
+ * Note the one case where an EAN-8 *is* rewritten: eight digits led by `0` that read validly both
+ * ways are taken as the UPC-E, per the precedence in {@link resolveEightDigits}, so that a typed
+ * code and a scan of the same pack agree.
  */
-export function parseGtin(raw: string): string | null {
+export function canonicaliseBarcode(raw: string): string {
   const digits = raw.trim();
-  return isValidGtin(digits) ? digits : null;
+  if (digits.length !== 8) return raw;
+  const parsed = parseGtin(digits);
+  return parsed !== null && parsed.length === 12 ? parsed : raw;
+}
+
+/**
+ * Every stored form of one barcode, for a lookup that has to match them all: the value itself,
+ * plus its other UPC-E/UPC-A form when it has one (issue #508).
+ *
+ * A barcode recorded before Gubbins expanded UPC-E codes still holds the eight digits printed on
+ * the pack, while one recorded since holds the twelve. Lookup is an exact match, so a caller that
+ * asked for only the form it happened to hold would miss the other — the scanner would stop
+ * finding an older item, and the Barcode field's duplicate advisory would stop warning about a
+ * newer one. Both directions are covered, so it does not matter which form the caller has.
+ *
+ * Only a genuine GTIN gains a second form: a 12-digit code that is not a valid GTIN is left
+ * alone rather than being asked for under a UPC-E it never stood for. Never more than two.
+ */
+export function barcodeMatchForms(barcode: string): readonly string[] {
+  const value = barcode.trim();
+  const canonical = parseGtin(value);
+  if (canonical === null) return [value];
+  // An 8-digit UPC-E resolves to its expansion, which is the form a code recorded since the
+  // expansion landed is stored in.
+  if (canonical !== value) return [value, canonical];
+  const compressed = compressUpcA(value);
+  return compressed === null ? [value] : [value, compressed];
 }
