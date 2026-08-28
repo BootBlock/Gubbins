@@ -17,6 +17,9 @@
  */
 import { useEffect, useMemo, useRef } from 'react';
 
+/** How many rows a picker offers at once, for every entity it picks. */
+export const PICKER_OPTION_LIMIT = 20;
+
 /** One row's identity and display name, as a picker needs them. */
 export interface PickerRowAccess<T> {
   readonly labelFor: (row: T) => string;
@@ -55,11 +58,16 @@ export interface PickerSelectionParams<T> extends PickerRowAccess<T> {
   /** The rows on offer, in the order to offer them. */
   readonly rows: readonly T[];
   /**
-   * Writes the box's text. The picker owns that state, because the text is also what its search
-   * read is asked for; the controller only writes it when the *caller* moves the value — filling
-   * in a name for a value set from outside, or clearing the box when one is taken away.
+   * Writes the box's text, and says whether that text is a **committed label** — one this control
+   * put there because a row was chosen, rather than something the user typed.
+   *
+   * The picker owns the state because the text is also what its search read is asked for, and that
+   * is exactly why the flag matters: searching for a committed label finds nothing the moment the
+   * label carries anything outside the row's indexed text — an appended serial number, an MPN, a
+   * tracking-mode note, the id fragment a repeated name takes — so the picker would answer a
+   * successful choice by announcing that nothing matches it.
    */
-  readonly setText: (next: string) => void;
+  readonly setText: (next: string, committed: boolean) => void;
   /**
    * The row `value` identifies, once the caller has read it. Only consulted when the value came
    * from *outside* the box — that is what the picker needs a name for.
@@ -112,22 +120,25 @@ export function usePickerSelection<T>({
     if (valueId === emittedRef.current) return;
     if (valueId === null) {
       emittedRef.current = null;
-      setText('');
+      setText('', false);
       return;
     }
     // Set from outside: wait for the row, so the box shows its name rather than an id.
     if (resolved !== undefined && accessRef.current.idFor(resolved) === valueId) {
       emittedRef.current = valueId;
-      setText(accessRef.current.labelFor(resolved));
+      setText(accessRef.current.labelFor(resolved), true);
     }
-    // `setText` is a `useState` setter and therefore stable; the access functions are read from
-    // the ref above, so this effect runs on a genuine value change and nothing else.
+    // `setText` is stable by contract (both pickers pass a `useCallback` over a state setter), and
+    // the access functions are read from the ref above — so this effect runs on a genuine value
+    // change and nothing else.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valueId, resolved]);
 
   const onText = (next: string) => {
-    setText(next);
     const match = byLabel.get(next.trim());
+    // Text that names a row is a committed label: the user accepted a suggestion, so the box now
+    // holds what this control offered rather than what they typed.
+    setText(next, match !== undefined);
     const nextId = match === undefined ? null : idFor(match);
     emittedRef.current = nextId;
     if (nextId !== valueId) onChange(nextId, match);

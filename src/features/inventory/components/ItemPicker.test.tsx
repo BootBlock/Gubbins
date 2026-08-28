@@ -8,7 +8,7 @@
  */
 import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
 
 const h = vi.hoisted(() => ({
@@ -139,6 +139,26 @@ describe('ItemPicker — what it reports', () => {
     expect(box().value).toBe('');
   });
 
+  it('does not search for the label it just wrote in the box', async () => {
+    // The box's text doubles as the search box, and a decorated label ("· Serialised — no stock
+    // movement") matches nothing — so searching for it would answer a successful choice by
+    // announcing that nothing matches it, and empty the list.
+    const decorated = (i: Item) => `${i.name} · Serialised — no stock movement`;
+    h.browse = { rows: [item('b', 'Nut')], hasMore: false };
+    h.byId.set('b', item('b', 'Nut'));
+    const { rerender } = render(
+      <ItemPicker label="Item" value={null} onChange={vi.fn()} labelFor={decorated} />,
+    );
+    fireEvent.click(box());
+    fireEvent.mouseDown(screen.getByRole('option', { name: /Nut/ }));
+    rerender(<ItemPicker label="Item" value="b" onChange={vi.fn()} labelFor={decorated} />);
+
+    expect(box().value).toBe('Nut · Serialised — no stock movement');
+    await waitFor(() => expect(status()).toBeNull());
+    // No query was ever run for that text — the relevance read stayed disabled throughout.
+    expect(h.searches.filter((q) => q.enabled)).toEqual([]);
+  });
+
   it('names an item the caller chose elsewhere — a remembered export target', () => {
     h.byId.set('r', item('r', 'Remembered part'));
     render(<ItemPicker label="Item" value="r" onChange={vi.fn()} />);
@@ -147,33 +167,44 @@ describe('ItemPicker — what it reports', () => {
 });
 
 describe('ItemPicker — saying what it is not showing', () => {
-  it('says how many matches are beyond the ones offered', () => {
+  it('says how many matches are beyond the ones offered', async () => {
     h.relevance = { rows: [item('a', 'Bolt')], total: 143 };
     render(<Harness />);
     fireEvent.change(box(), { target: { value: 'bo' } });
-    expect(status()?.textContent).toContain('143');
+    await waitFor(() => expect(status()?.textContent).toContain('143'));
   });
 
-  it('says the browse is only the first page of the catalogue', () => {
+  it('says the browse is only the first page of the catalogue', async () => {
     h.browse = { rows: [item('a', 'Bolt')], hasMore: true };
     render(<Harness />);
-    expect(status()?.textContent).toMatch(/first 1 items/);
+    await waitFor(() => expect(status()?.textContent).toMatch(/first 1 items/));
   });
 
-  it('says so when a query matches nothing', () => {
+  it('counts what the search returned, not what survived the exclusions', async () => {
+    // Hiding the item being edited must not be reported as matches left unshown: no amount of
+    // further typing would ever reveal them.
+    h.relevance = { rows: [item('a', 'Bolt'), item('b', 'Bolt clip')], total: 2 };
+    render(<Harness exclude={new Set(['a'])} />);
+    fireEvent.change(box(), { target: { value: 'bolt' } });
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Bolt clip' })).toBeInTheDocument());
+    expect(status()).toBeNull();
+  });
+
+  it('says so when a query matches nothing', async () => {
     h.relevance = { rows: [], total: 0 };
     render(<Harness />);
     fireEvent.change(box(), { target: { value: 'nothing like this' } });
-    expect(status()?.textContent).toContain('nothing like this');
+    await waitFor(() => expect(status()?.textContent).toContain('nothing like this'));
   });
 
-  it('stays quiet when everything that matches is on offer', () => {
+  it('stays quiet when everything that matches is on offer', async () => {
     h.browse = { rows: [item('a', 'Bolt')], hasMore: false };
     render(<Harness />);
     expect(status()).toBeNull();
 
     h.relevance = { rows: [item('a', 'Bolt')], total: 1 };
     fireEvent.change(box(), { target: { value: 'bolt' } });
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Bolt' })).toBeInTheDocument());
     expect(status()).toBeNull();
   });
 });

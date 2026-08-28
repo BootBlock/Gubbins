@@ -50,6 +50,7 @@ export {
 } from './autocomplete';
 export { filterSuggestions } from './autocomplete-filter';
 export {
+  PICKER_OPTION_LIMIT,
   buildPickerLabelMap,
   usePickerSelection,
   type PickerRowAccess,

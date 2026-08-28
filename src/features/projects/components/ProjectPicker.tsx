@@ -10,15 +10,20 @@
  * `list({ search })` resolves the filter in the database, so typing reaches projects that sort
  * past the offered page; {@link useProjectCount} over the same filter is what lets the control
  * say how many matches it is *not* showing rather than presenting a capped read as the whole set.
+ * The offered page stays in name order — the project list has no relevance ranking to sort by, so
+ * this picker says "the first" where the item picker says "the closest".
  */
-import { useMemo, useState, type ReactNode, type Ref } from 'react';
-import { Autocomplete, AutocompleteField, LiveRegion, usePickerSelection } from '@/components/foundry';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import {
+  Autocomplete,
+  AutocompleteField,
+  LiveRegion,
+  PICKER_OPTION_LIMIT,
+  usePickerSelection,
+} from '@/components/foundry';
 import type { Project } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useProject, useProjectCount, useProjects } from '../projects';
-
-/** How many projects the picker offers at once — the same short list the item picker offers. */
-export const PROJECT_PICKER_LIMIT = 20;
 
 const projectLabel = (project: Project): string => project.name;
 const projectId = (project: Project): string => project.id;
@@ -32,12 +37,6 @@ export interface ProjectPickerProps {
   readonly label?: ReactNode;
   /** Accessible name for the unlabelled case; ignored when `label` is given. */
   readonly 'aria-label'?: string;
-  readonly hint?: string;
-  readonly placeholder?: string;
-  readonly disabled?: boolean;
-  readonly id?: string;
-  readonly className?: string;
-  readonly inputRef?: Ref<HTMLInputElement>;
   readonly 'data-testid'?: string;
 }
 
@@ -46,24 +45,22 @@ export function ProjectPicker({
   onChange,
   label,
   'aria-label': ariaLabel,
-  hint,
-  placeholder,
-  disabled,
-  id,
-  className,
-  inputRef,
   'data-testid': testId,
 }: ProjectPickerProps) {
   const t = useT();
-  const [text, setText] = useState('');
-  const query = text.trim();
+  const valueId = value === null || value === '' ? null : value;
+  const [box, setBox] = useState({ text: '', committed: false });
+  const setText = useCallback((text: string, committed: boolean) => setBox({ text, committed }), []);
+
+  const chosen = useProject(valueId ?? undefined);
+
+  // A committed label is not a query — see {@link ItemPicker}.
+  const query = box.committed ? '' : box.text.trim();
   const browse = useMemo(() => (query.length > 0 ? { search: query } : {}), [query]);
 
-  const page = useProjects(1, PROJECT_PICKER_LIMIT, browse);
+  const page = useProjects(1, PICKER_OPTION_LIMIT, browse);
   const total = useProjectCount(browse);
   const rows = useMemo<readonly Project[]>(() => page.data?.rows ?? [], [page.data]);
-
-  const chosen = useProject(value === null || value === '' ? undefined : value);
 
   const { suggestions, onText } = usePickerSelection<Project>({
     value,
@@ -84,24 +81,22 @@ export function ProjectPicker({
   }
 
   const shared = {
-    value: text,
+    value: box.text,
     onChange: onText,
     suggestions,
     // Narrowed by the database against what was typed — see {@link ItemPicker}.
     prefiltered: true,
-    maxOptions: PROJECT_PICKER_LIMIT,
-    placeholder: placeholder ?? t('projectPicker.placeholder'),
-    disabled,
-    id,
+    maxOptions: PICKER_OPTION_LIMIT,
+    placeholder: t('projectPicker.placeholder'),
     'data-testid': testId,
   } as const;
 
   return (
-    <div className={className}>
+    <div>
       {label !== undefined ? (
-        <AutocompleteField {...shared} label={label} hint={hint} inputRef={inputRef} />
+        <AutocompleteField {...shared} label={label} />
       ) : (
-        <Autocomplete {...shared} aria-label={ariaLabel} ref={inputRef} />
+        <Autocomplete {...shared} aria-label={ariaLabel} />
       )}
       {/* Always mounted, so the message is announced when it appears rather than inserted with it. */}
       <LiveRegion className="text-xs text-muted-foreground">

@@ -1593,9 +1593,10 @@ try {
       const dialog = page.getByRole('dialog', { name: 'Add BOM line' });
       // Match the line to a real inventory item so the project has a component note for the
       // §4.5 Project-scope vault export (the only combobox in this dialog is item-match).
-      await chooseOption(dialog.getByRole('combobox', { name: 'Inventory item (optional)' }), screwName, {
-        exact: false,
-      });
+      await choosePickerOption(
+        dialog.getByRole('combobox', { name: 'Inventory item (optional)' }),
+        screwName,
+      );
       await dialog.getByLabel('Description').fill(partName);
       await dialog.getByLabel('Quantity').fill('5');
       await dialog.getByRole('button', { name: 'Add line' }).click();
@@ -1617,7 +1618,7 @@ try {
       async () => {
         await page.getByRole('button', { name: 'Add line' }).click();
         const dialog = page.getByRole('dialog', { name: 'Add BOM line' });
-        await chooseOption(
+        await choosePickerOption(
           dialog.getByRole('combobox', { name: 'Inventory item (optional)' }),
           unlimitedName,
           { exact: false },
@@ -3062,7 +3063,7 @@ try {
         .waitFor({ state: 'visible', timeout: 8000 });
       await page.getByRole('button', { name: 'Add line' }).click();
       const lineDialog = page.getByRole('dialog', { name: 'Add BOM line' });
-      await chooseOption(
+      await choosePickerOption(
         lineDialog.getByRole('combobox', { name: 'Inventory item (optional)' }),
         batchItemName,
         {

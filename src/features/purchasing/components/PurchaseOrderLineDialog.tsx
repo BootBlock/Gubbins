@@ -117,8 +117,8 @@ export function PurchaseOrderLineDialog({
   }, [open]);
 
   // The linked item and its supplier pricing, read only once a line is actually linked to one.
-  // Both reads are the same queries the picker itself makes of the chosen item, so they come from
-  // the cache rather than costing a second round-trip.
+  // The item read is the same query the picker makes of the chosen item, so it comes from the
+  // cache; the supplier parts are one further read, for the single item being priced.
   const chosenItem = useItem(itemId.length === 0 ? undefined : itemId);
   const { data: supplierParts } = useItemSupplierParts(itemId.length === 0 ? undefined : itemId);
   const chosen = useMemo<LinePricing | undefined>(() => {

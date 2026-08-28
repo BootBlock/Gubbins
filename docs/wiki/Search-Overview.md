@@ -64,7 +64,8 @@ alphabet it sits, and however many items you hold.
   you typed.
 
 > **ℹ️ Note**
-> Projects are picked the same way, on the [[export|Export-and-Import]] screen.
+> The project picker on the [[export|Export-and-Import]] screen searches your whole list of
+> projects the same way, though it offers them in name order rather than closest-first.
 
 ## Filtering alongside search
 
