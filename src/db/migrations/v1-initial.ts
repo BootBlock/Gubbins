@@ -1180,7 +1180,8 @@ const baselineStatements: SqlStatement[] = [
   { sql: `ALTER TABLE items ADD COLUMN unit_cost INTEGER CHECK (unit_cost IS NULL OR unit_cost >= 0);` },
   { sql: `CREATE INDEX idx_items_mpn ON items(mpn COLLATE NOCASE);` },
   // Retail barcode (GTIN — EAN/UPC): an item's own scannable article code, distinct
-  // from the MPN and stored verbatim as printed. Indexed for the scanner's exact
+  // from the MPN and stored as printed — bar a UPC-E, which the repository stores as the
+  // UPC-A it compresses (issue #508). Indexed for the scanner's exact
   // lookup-by-barcode, and (below) FTS-indexed like the MPN so a barcode typed into
   // the main search finds its item.
   { sql: `ALTER TABLE items ADD COLUMN barcode TEXT ${lengthCheck('barcode', TEXT_LIMITS.line)};` },

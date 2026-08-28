@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, FormField, Input } from '@/components/foundry';
+import { Button, FormField, Input, LiveRegion } from '@/components/foundry';
 import { ScanIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useFeature } from '@/features/modules/useFeature';
@@ -67,6 +67,9 @@ export function BarcodeField({
   // anywhere else — an item's stored barcode, a switch to another item, a camera capture — is
   // judged the moment it lands, with no interaction needed to reveal it.
   const [editing, setEditing] = useState(false);
+  // What the field last replaced a typed UPC-E with, announced once so the rewrite is not a
+  // silent change for a screen-reader user, who has no way to see the digits count go up.
+  const [expanded, setExpanded] = useState('');
 
   const concern = editing ? null : describeGtinConcern(value);
   // Judged on the same beat as the check-digit concern — a blank value mid-keystroke disables the
@@ -106,6 +109,7 @@ export function BarcodeField({
           value={value}
           onChange={(e) => {
             setEditing(true);
+            setExpanded('');
             onChange(e.target.value);
           }}
           onBlur={() => {
@@ -115,7 +119,10 @@ export function BarcodeField({
             // field was focused and left.
             if (editing) {
               const canonical = canonicaliseBarcode(value);
-              if (canonical !== value) onChange(canonical);
+              if (canonical !== value) {
+                onChange(canonical);
+                setExpanded(canonical);
+              }
             }
             setEditing(false);
             onBlur?.();
@@ -123,6 +130,9 @@ export function BarcodeField({
           data-testid={inputTestId}
         />
       </FormField>
+      <LiveRegion visuallyHidden>
+        {expanded ? <p>{t('inventory.barcode.expanded', { vars: { barcode: expanded } })}</p> : null}
+      </LiveRegion>
       {scannerEnabled ? (
         <div className="flex flex-col">
           <span className="mb-field-gap block text-sm font-medium" aria-hidden>

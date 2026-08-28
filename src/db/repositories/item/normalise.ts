@@ -37,13 +37,21 @@ export function normaliseText(
  * A UPC-E is a compressed UPC-A, so the eight digits printed on a small pack and the twelve a
  * UPC-A scan of the same article yields are the *same* barcode. Storing whichever form happened
  * to arrive would make them two, and only one of them would ever be found again by scanning.
- * Normalising here rather than at each entry point means a typed code, an imported spreadsheet
- * column and a Bridge write all land on the same value the camera produces. Every other code —
- * an EAN-8, a Code 128 part label, a shelf code — is stored exactly as given.
+ * Normalising here rather than at each entry point means a typed code, a scan and an imported
+ * spreadsheet column all land on the same value. Every other code — an EAN-8, a Code 128 part
+ * label, a shelf code — is stored exactly as given.
+ *
+ * Pass `current` on an update: a value that matches what is already stored is left untouched.
+ * Re-saving an item must not migrate a barcode nobody edited — that would rewrite a record on an
+ * unrelated change and log it in the Activity Log as a barcode the user never touched.
  */
-export function normaliseBarcode(value: string | null | undefined): string | null {
+export function normaliseBarcode(
+  value: string | null | undefined,
+  current: string | null = null,
+): string | null {
   const text = normaliseText(value, TEXT_LIMITS.line, 'A barcode');
-  return text === null ? null : canonicaliseBarcode(text);
+  if (text === null || text === current) return text;
+  return canonicaliseBarcode(text);
 }
 
 /**

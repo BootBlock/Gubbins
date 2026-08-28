@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandUpcE, looksLikeUpcE } from './upce';
+import { compressUpcA, expandUpcE, looksLikeUpcE } from './upce';
 
 describe('looksLikeUpcE', () => {
   it('accepts eight digits led by number system 0 or 1', () => {
@@ -31,7 +31,7 @@ describe('expandUpcE — every branch of the zero-run table', () => {
   });
 
   it('expands last body digit 3 — d1 d2 d3 00000 d4 d5', () => {
-    expect(expandUpcE('08724132')).toBe('087200000412');
+    expect(expandUpcE('08734131')).toBe('087300000411');
   });
 
   it('expands last body digit 4 — d1 d2 d3 d4 00000 d5', () => {
@@ -48,7 +48,7 @@ describe('expandUpcE — every branch of the zero-run table', () => {
   });
 
   it('always yields twelve digits', () => {
-    for (const code of ['04252614', '08724132', '05987340', '00000154', '14252611']) {
+    for (const code of ['04252614', '08734131', '05987340', '00000154', '14252611']) {
       expect(expandUpcE(code)).toHaveLength(12);
     }
   });
@@ -62,5 +62,36 @@ describe('expandUpcE — every branch of the zero-run table', () => {
     expect(expandUpcE('042100005264')).toBeNull();
     // Shape only: a wrong check digit still expands — validation is the caller's job.
     expect(expandUpcE('04252619')).toBe('042100005269');
+  });
+});
+
+describe('compressUpcA — the inverse of expandUpcE', () => {
+  it('recovers the UPC-E a UPC-A was expanded from', () => {
+    expect(compressUpcA('042100005264')).toBe('04252614');
+    expect(compressUpcA('012000003455')).toBe('01234505');
+    expect(compressUpcA('087300000411')).toBe('08734131');
+    expect(compressUpcA('059870000030')).toBe('05987340');
+    expect(compressUpcA('011234000094')).toBe('01123494');
+    expect(compressUpcA('142100005261')).toBe('14252611');
+  });
+
+  it('returns null for a UPC-A no UPC-E compresses to', () => {
+    expect(compressUpcA('036000291452')).toBeNull(); // no zero run to squeeze out
+    expect(compressUpcA('242100005264')).toBeNull(); // number system 2 — not UPC-E territory
+    expect(compressUpcA('4006381333931')).toBeNull(); // not twelve digits
+    expect(compressUpcA('04252614')).toBeNull();
+  });
+
+  it('round-trips every genuine UPC-E, and refuses the degenerate codes that would collide', () => {
+    // The round-trip is what makes expansion safe to try on an arbitrary 8-digit code: without
+    // it, `00000030` and `00000040` both expand to `000000000000` and one would overwrite the
+    // other. Only one of them compresses back, so only one is ever treated as a UPC-E.
+    expect(expandUpcE('00000030')).toBe('000000000000');
+    expect(expandUpcE('00000040')).toBe('000000000000');
+    expect(compressUpcA('000000000000')).toBe('00000000');
+
+    for (const code of ['04252614', '14252611', '01234505', '08734131', '05987340', '01123494']) {
+      expect(compressUpcA(expandUpcE(code)!)).toBe(code);
+    }
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  barcodeMatchForms,
   canonicaliseBarcode,
   describeGtinConcern,
   hasValidGtinCheckDigit,
@@ -151,5 +152,31 @@ describe('canonicaliseBarcode — what is rewritten on the way into storage (iss
     // Untrimmed input is returned untouched rather than quietly trimmed.
     expect(canonicaliseBarcode('  RS-482-9021 ')).toBe('  RS-482-9021 ');
     expect(canonicaliseBarcode('')).toBe('');
+  });
+});
+
+describe('the UPC-E round-trip guard (issue #508)', () => {
+  it('refuses an expansion that compresses back to a different code', () => {
+    // `00000030` and `00000040` both expand to `000000000000`, so treating either as a UPC-E
+    // would store two distinct printed codes as one value and lose whichever was written second.
+    // Neither is a code any encoder produces, so both are left alone instead.
+    expect(parseGtin('00000030')).toBeNull();
+    expect(parseGtin('00000040')).toBeNull();
+    expect(canonicaliseBarcode('00000030')).toBe('00000030');
+    expect(canonicaliseBarcode('00000040')).toBe('00000040');
+  });
+});
+
+describe('barcodeMatchForms — every stored form of one barcode (issue #508)', () => {
+  it('adds the compressed UPC-E for a UPC-A that compresses', () => {
+    expect(barcodeMatchForms('042100005264')).toEqual(['042100005264', '04252614']);
+    expect(barcodeMatchForms('  042100005264 ')).toEqual(['042100005264', '04252614']);
+  });
+
+  it('is the value alone for everything else', () => {
+    expect(barcodeMatchForms('4006381333931')).toEqual(['4006381333931']);
+    expect(barcodeMatchForms('036000291452')).toEqual(['036000291452']); // no zero run to squeeze
+    expect(barcodeMatchForms('96385074')).toEqual(['96385074']);
+    expect(barcodeMatchForms('RS-482-9021')).toEqual(['RS-482-9021']);
   });
 });

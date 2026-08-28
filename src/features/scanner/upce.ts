@@ -61,3 +61,33 @@ export function expandUpcE(raw: string): string | null {
           : `${d1}${d2}${d3}${d4}${d5}0000${d6}`;
   return `${n}${middle}${check}`;
 }
+
+/**
+ * Compress a 12-digit UPC-A back to the UPC-E that expands to it, or `null` when no UPC-E does.
+ * The exact inverse of {@link expandUpcE}: the branches are tried in the same order, so a code
+ * that both produce agrees with itself.
+ *
+ * Two things need this. A round-trip through it is what makes {@link expandUpcE} safe to apply
+ * to an arbitrary 8-digit code — only a handful of degenerate zero-runs expand to a UPC-A that
+ * compresses back to something else, and those are the ones where two printed codes would
+ * otherwise collide on one stored value. And a barcode recorded before Gubbins expanded UPC-E
+ * codes still holds the compressed form, so a lookup has to be able to ask for it.
+ */
+export function compressUpcA(raw: string): string | null {
+  const digits = raw.trim();
+  if (!/^[01][0-9]{11}$/.test(digits)) return null;
+  const n = digits[0];
+  const m = digits.slice(1, 11); // the ten data digits between number system and check digit
+  const check = digits[11];
+  const body =
+    m[2]! <= '2' && m.slice(3, 7) === '0000'
+      ? `${m[0]}${m[1]}${m[7]}${m[8]}${m[9]}${m[2]}`
+      : m.slice(3, 8) === '00000'
+        ? `${m[0]}${m[1]}${m[2]}${m[8]}${m[9]}3`
+        : m.slice(4, 9) === '00000'
+          ? `${m[0]}${m[1]}${m[2]}${m[3]}${m[9]}4`
+          : m.slice(5, 9) === '0000' && m[9]! >= '5'
+            ? `${m[0]}${m[1]}${m[2]}${m[3]}${m[4]}${m[9]}`
+            : null;
+  return body === null ? null : `${n}${body}${check}`;
+}

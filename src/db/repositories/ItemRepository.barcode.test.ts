@@ -106,3 +106,46 @@ describe('ItemRepository — UPC-E barcodes', () => {
     expect((await items.create({ name: 'Odd', barcode: '07350053' })).barcode).toBe('07350053');
   });
 });
+
+/** Items recorded before UPC-E codes were expanded (issue #508). */
+describe('ItemRepository — barcodes recorded in the compressed form', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+
+  /** Create an item, then force its barcode to the compressed form the old code stored. */
+  const withStoredBarcode = async (name: string, barcode: string) => {
+    const item = await items.create({ name });
+    await driver.execute('UPDATE items SET barcode = ? WHERE id = ?;', [barcode, item.id]);
+    return item.id;
+  };
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  it('finds an item holding the eight printed digits when asked for the expanded code', async () => {
+    // A scan of that pack now resolves to the UPC-A, and the item would be unreachable if the
+    // lookup only ever asked for the one string it was given.
+    const id = await withStoredBarcode('AA cells', '04252614');
+    expect((await items.findByBarcode('042100005264')).map((i) => i.id)).toEqual([id]);
+    // The printed form still finds it too — that is what a re-typed code would be.
+    expect((await items.findByBarcode('04252614')).map((i) => i.id)).toEqual([id]);
+  });
+
+  it('leaves an untouched barcode alone when an unrelated field is saved', async () => {
+    // The item editor sends its whole draft on every save, so a rename must not silently migrate
+    // the barcode — that would rewrite a record nobody edited and log it as a change they made.
+    const id = await withStoredBarcode('AA cells', '04252614');
+    const renamed = await items.update(id, { name: 'AA batteries', barcode: '04252614' });
+    expect(renamed.barcode).toBe('04252614');
+    // Editing the field to a different value does canonicalise, as a fresh entry would.
+    const edited = await items.update(id, { barcode: '14252611' });
+    expect(edited.barcode).toBe('142100005261');
+  });
+});

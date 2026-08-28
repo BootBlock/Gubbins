@@ -24,9 +24,13 @@
  * An 8-digit code is therefore expanded to its UPC-A when that is what it turns out to
  * be — see {@link parseGtin}. All logic here is pure and unit-tested.
  */
-import { expandUpcE } from './upce';
+import { compressUpcA, expandUpcE } from './upce';
 
-/** The GTIN symbologies Gubbins recognises, by digit count (EAN-8, UPC-A, EAN-13, GTIN-14). */
+/**
+ * The GTIN symbologies Gubbins recognises, by digit count (EAN-8, UPC-A, EAN-13, GTIN-14). Eight
+ * digits also covers a printed UPC-E, which is a compressed UPC-A rather than a width of its own
+ * — see {@link parseGtin}.
+ */
 export const GTIN_LENGTHS: readonly number[] = [8, 12, 13, 14];
 
 /** True when `raw` (after trimming) is only ASCII digits. */
@@ -68,10 +72,19 @@ export function hasValidGtinCheckDigit(digits: string): boolean {
  * representation, so a leading `0` is read as a UPC-E first and only falls back to EAN-8;
  * any other leading digit is read as an EAN-8 first, and as a UPC-E (number system `1`) only
  * if that fails.
+ *
+ * The UPC-E reading must also **round-trip**: the expansion has to compress back to the same
+ * eight digits ({@link compressUpcA}). A handful of zero-heavy codes expand to a UPC-A that
+ * compresses to a *different* UPC-E — `00000030` and `00000040` both expand to
+ * `000000000000` — and accepting those would store two distinct printed codes as one value,
+ * losing whichever was written second. No real UPC-E fails the round-trip.
  */
 function resolveEightDigits(digits: string): string | null {
   const expanded = expandUpcE(digits);
-  const upcA = expanded !== null && hasValidGtinCheckDigit(expanded) ? expanded : null;
+  const upcA =
+    expanded !== null && hasValidGtinCheckDigit(expanded) && compressUpcA(expanded) === digits
+      ? expanded
+      : null;
   if (upcA !== null && digits.startsWith('0')) return upcA;
   if (hasValidGtinCheckDigit(digits)) return digits;
   return upcA;
@@ -154,4 +167,20 @@ export function canonicaliseBarcode(raw: string): string {
   if (digits.length !== 8) return raw;
   const parsed = parseGtin(digits);
   return parsed !== null && parsed.length === 12 ? parsed : raw;
+}
+
+/**
+ * Every stored form of one barcode, for a lookup that has to match them all: the value itself,
+ * plus the compressed UPC-E when it is a UPC-A that compresses (issue #508).
+ *
+ * A barcode recorded before Gubbins expanded UPC-E codes still holds the eight digits printed on
+ * the pack, while a scan of that pack now resolves to the twelve. Lookup is an exact match, so
+ * without the second form those items would quietly stop being found — by the scanner, by the
+ * Barcode field's duplicate advisory, by anything else that asks. Returned most-canonical first,
+ * and never more than two.
+ */
+export function barcodeMatchForms(barcode: string): readonly string[] {
+  const value = barcode.trim();
+  const compressed = compressUpcA(value);
+  return compressed === null || compressed === value ? [value] : [value, compressed];
 }
