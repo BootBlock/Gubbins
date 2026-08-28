@@ -20,14 +20,14 @@ interface ScanTone {
 }
 
 /** A scan that landed (§6.5). */
-export const CONFIRM_TONE: ScanTone = { durationMs: 90, frequencyHz: 880, vibrateMs: 200 };
+const CONFIRM_TONE: ScanTone = { durationMs: 90, frequencyHz: 880, vibrateMs: 200 };
 
 /**
  * A scan that was deliberately ignored (issue #512). Lower and shorter than
  * {@link CONFIRM_TONE} in all three dimensions, because the whole point is that a user
  * listening rather than looking can tell the two apart.
  */
-export const REPEAT_TONE: ScanTone = { durationMs: 50, frequencyHz: 440, vibrateMs: 60 };
+const REPEAT_TONE: ScanTone = { durationMs: 50, frequencyHz: 440, vibrateMs: 60 };
 
 function getAudioContextCtor(): AudioContextCtor | null {
   if (typeof window === 'undefined') return null;

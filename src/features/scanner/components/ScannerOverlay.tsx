@@ -355,9 +355,9 @@ function ScannerOverlayInner({
   };
 
   /**
-   * Return to the live viewfinder, re-arming every code on the way (issue #512). Going back to
-   * scanning is always a deliberate ask, so the label still in the user's hand must read
-   * immediately rather than stutter for the rest of its cooldown window. Every route back goes
+   * Return to the live viewfinder from a paused review, re-arming every code on the way (issue
+   * #512). Resuming is always a deliberate ask, so the label still in the user's hand must read
+   * immediately rather than stutter for the rest of its cooldown window. Every resume goes
    * through here, so a future one cannot forget.
    */
   const resumeScanning = () => {

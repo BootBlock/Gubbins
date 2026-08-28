@@ -70,9 +70,9 @@ export class ScanGate {
   }
 
   /**
-   * Forget every window, so the next read of any code is treated as fresh. Used when the user
-   * deliberately asks for another scan (Discrete "Scan again", or a finished batch), where
-   * re-presenting the label still in their hand is the point rather than a stutter.
+   * Forget every window, so the next read of any code is treated as fresh. Called on every
+   * return to the live viewfinder: going back to scanning is a deliberate ask, and re-presenting
+   * the label still in the user's hand is the point rather than a stutter to be swallowed.
    */
   clear(): void {
     this.seen.clear();
