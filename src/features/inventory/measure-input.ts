@@ -10,6 +10,7 @@
  * from reading dirty after a unit round-trip.
  */
 import { fromMm, toMm, type DimensionUnit } from '@/lib/dimensions';
+import { trimMeasureNoise } from '@/lib/measurement-format';
 import { fromMm3, PACKING_FACTOR_BOUNDS, toMm3, type VolumeUnit } from '@/lib/volume';
 import { resolveMeasureDraft, type MeasureDraft } from './components/measure-draft';
 
@@ -24,7 +25,7 @@ export const PACKING_PERCENT_MAX = Math.round(PACKING_FACTOR_BOUNDS.max * 100);
  */
 export function dimensionToInput(mm: number | null, unit: DimensionUnit): string {
   if (mm == null) return '';
-  return String(Number(fromMm(mm, unit).toFixed(6)));
+  return trimMeasureNoise(fromMm(mm, unit));
 }
 
 /** Derive one dimension field's draft state — {@link resolveMeasureDraft} bound to mm↔unit. */
@@ -44,7 +45,7 @@ export function resolveDimension(input: string, stored: number | null, unit: Dim
  */
 export function volumeToInput(mm3: number | null, unit: VolumeUnit): string {
   if (mm3 == null) return '';
-  return String(Number(fromMm3(mm3, unit).toFixed(6)));
+  return trimMeasureNoise(fromMm3(mm3, unit));
 }
 
 /** Derive the usable-volume field's draft state — {@link resolveMeasureDraft} bound to mm³↔unit. */

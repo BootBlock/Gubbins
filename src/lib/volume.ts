@@ -12,7 +12,7 @@
  * `./format` import so the reactive `Formatters` bundle can depend on these conversions without
  * a circular module reference — exactly the discipline `lib/dimensions.ts` follows.
  */
-import { type DimensionUnit } from './dimensions';
+import { DIMENSION_UNIT_SYSTEM, type DimensionUnit } from './dimensions';
 import { normaliseOneOf } from './persisted-state';
 
 /** The volume units the user may read volumes in. Canonical storage is always mm³. */
@@ -135,9 +135,13 @@ export function volumeFromDimensions(
   return width * height * depth;
 }
 
-/** Whether a length unit belongs to the metric or the imperial family (drives auto volume units). */
+/**
+ * Whether a length unit belongs to the metric or the imperial family (drives auto volume units).
+ * Reads the exhaustive {@link DIMENSION_UNIT_SYSTEM} map the length domain owns, so a length unit
+ * added there cannot reach this function unclassified.
+ */
 export function volumeSystemForDimensionUnit(unit: DimensionUnit): 'metric' | 'imperial' {
-  return unit === 'in' || unit === 'ft' ? 'imperial' : 'metric';
+  return DIMENSION_UNIT_SYSTEM[unit];
 }
 
 /**

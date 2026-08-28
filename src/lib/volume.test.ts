@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { DIMENSION_UNITS } from './dimensions';
 import {
   DEFAULT_VOLUME_UNIT,
   VOLUME_UNITS,
@@ -57,12 +58,19 @@ describe('volume units', () => {
     expect(normaliseVolumeUnit('')).toBe(DEFAULT_VOLUME_UNIT);
   });
 
-  it('maps length units onto the metric/imperial family', () => {
+  it('maps every length unit onto the metric/imperial family', () => {
+    expect(volumeSystemForDimensionUnit('um')).toBe('metric');
     expect(volumeSystemForDimensionUnit('mm')).toBe('metric');
     expect(volumeSystemForDimensionUnit('cm')).toBe('metric');
     expect(volumeSystemForDimensionUnit('m')).toBe('metric');
+    expect(volumeSystemForDimensionUnit('thou')).toBe('imperial');
     expect(volumeSystemForDimensionUnit('in')).toBe('imperial');
     expect(volumeSystemForDimensionUnit('ft')).toBe('imperial');
+    expect(volumeSystemForDimensionUnit('yd')).toBe('imperial');
+    // The classification itself is a compile error to omit (it is an exhaustive `Record`), so
+    // what this guards is the *coverage above*: a ninth length unit turns this red, which is
+    // what sends a reader back to add its case rather than leaving it silently unasserted.
+    expect(DIMENSION_UNITS).toHaveLength(8);
   });
 
   describe('autoVolumeUnit', () => {

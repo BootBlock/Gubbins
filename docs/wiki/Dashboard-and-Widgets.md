@@ -42,8 +42,36 @@ provides, including which **storage engine** holds the database — see
 > **ℹ️ Note**
 > A widget belonging to a [[module you've switched off|Modular-UI]] keeps its place on the board
 > while it's away, so switching the module back on brings the card home. That place stays
-> reserved, so a gap you can't drop into is a card waiting to return, not a fault. Nudging a card
-> into it simply trades places with the one that's away.
+> reserved, so a gap you can't drop into is a card waiting to return, not a fault. Nudge a
+> same-sized card into it and the two simply trade places.
+
+## Resize a card
+
+A card doesn't have to be one cell. While **Customise** is on, each card carries a set of four
+size buttons beside its ▲▼◀▶ cluster: **1×1**, **2×1** (wide), **1×2** (tall) and **2×2** (large).
+Select one and the card grows to that many whole cells, so cards line up with their neighbours
+without any pixel-perfect nudging. From a keyboard, hold **Shift** and press an arrow key on the
+selected card — towards the arrow to grow, away from it to shrink.
+
+**Bigger cards show more, not just bigger.** A taller card lists more rows — a 1×2 Recent activity
+shows around a dozen entries instead of four, and a taller Low stock lists far more of what's
+short. A wider card splits its rows into two columns, so the extra width buys twice the rows
+rather than twice-as-wide ones. Inventory totals pairs its figures into two columns when widened.
+The three system-status cards have a fixed set of readings and simply sit in a larger card.
+
+A size the card can't take is shown greyed out rather than hidden — that means it would overlap a
+neighbour. Move the card or shrink its neighbour first, and the size becomes available. Growing a
+card never shoves other cards out of the way, so the rest of your board stays exactly where you put
+it. Each resize is spoken aloud for screen-reader users ("Low stock resized to a 2 by 1 card").
+
+Widening a card that sits in the **last** column is the one case where the card itself moves: there
+is no room to its right, so it grows leftwards into the column beside it instead. If that column is
+occupied, the wider size is greyed out like any other blocked size.
+
+> **ℹ️ Note**
+> Sizes apply to the wide, multi-column board. On a phone the dashboard is a single column of
+> cards at their natural height, so a card you made large on a tablet won't stretch your phone's
+> board. Like the rest of the arrangement, sizes are remembered per device.
 
 > **ℹ️ Note**
 > Widgets are independent, so a problem in one stays in one. If a card can't read its data or
