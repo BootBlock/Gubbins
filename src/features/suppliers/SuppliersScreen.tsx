@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { MergeSuppliersDialog } from './components/MergeSuppliersDialog';
 import { SupplierFormDialog } from './components/SupplierFormDialog';
+import { SuppliersGettingStarted } from './components/SuppliersGettingStarted';
 import { useSupplierCount, useSupplierPage } from './queries';
 
 /**
@@ -81,6 +82,17 @@ export function SuppliersScreen() {
   // The unpaginated read can only show its one page; say how much of the list that is rather
   // than leaving the rest silently out of reach.
   const truncated = !paginated && total > suppliers.length;
+  // First run (#423): the dictionary is confirmed empty, not merely loading, failed or filtered.
+  // A failed read leaves the same empty list, and greeting a returning user as brand-new would
+  // hide the error behind a welcome. The whole-dictionary count is part of the test because an
+  // emptied *page* is not an empty list: deleting the last row of the final page leaves this
+  // read empty until the clamp effect above moves back into range.
+  const firstRun =
+    !searching &&
+    !suppliersQuery.isLoading &&
+    !suppliersQuery.isError &&
+    suppliers.length === 0 &&
+    (dictionaryCountQuery.data ?? 0) === 0;
 
   // Narrowing the filter (or shrinking the page size) can strand the user past the last page.
   useEffect(() => {
@@ -130,7 +142,11 @@ export function SuppliersScreen() {
         tabIndex={-1}
         className="flex flex-1 animate-rise flex-col gap-6 outline-none"
       >
-        <p className="max-w-2xl text-sm text-muted-foreground">{t('suppliers.intro')}</p>
+        {/*
+         * The one-line intro and the first-run guide say the same thing at two lengths, so the
+         * guide replaces it rather than repeating under it.
+         */}
+        {firstRun ? null : <p className="max-w-2xl text-sm text-muted-foreground">{t('suppliers.intro')}</p>}
 
         <section aria-labelledby="suppliers-list-heading" className="flex flex-1 flex-col gap-3">
           <h2 id="suppliers-list-heading" className="text-sm font-semibold text-foreground">
@@ -171,7 +187,7 @@ export function SuppliersScreen() {
               <p className="text-sm text-muted-foreground">{t('suppliers.list.loading')}</p>
             </Surface>
           ) : suppliersQuery.isError ? (
-            // Never fall through to the empty state on failure — "No suppliers yet" would be a
+            // Never fall through to the empty state on failure — the first-run guide would be a
             // lie, and it hides a real error behind copy that reads like success.
             <Surface className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
               <p role="alert" className="text-sm text-destructive">
@@ -182,16 +198,23 @@ export function SuppliersScreen() {
               </Button>
             </Surface>
           ) : suppliers.length === 0 ? (
-            // "No suppliers yet" would be wrong when a filter is what emptied the list, and it
-            // would send the user to add a supplier they may well already have.
-            <Surface className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-              <SupplierIcon aria-hidden className="size-8 text-muted-foreground/60" />
-              <p className="text-sm text-muted-foreground">
-                {searching
-                  ? t('suppliers.search.empty', { vars: { query: search.trim() } })
-                  : t('suppliers.list.empty')}
-              </p>
-            </Surface>
+            // An empty dictionary is the one moment the screen has nobody to show and a newcomer
+            // to explain itself to, so the empty state is the guide (issue #423). Driven by the
+            // same `firstRun` that hides the one-line intro, so the two can never disagree.
+            firstRun ? (
+              <SuppliersGettingStarted />
+            ) : searching ? (
+              // A filter emptying the list is not a first run: say nothing matched, rather than
+              // introducing the feature to someone who is already using it.
+              <Surface className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+                <SupplierIcon aria-hidden className="size-8 text-muted-foreground/60" />
+                <p className="text-sm text-muted-foreground">
+                  {t('suppliers.search.empty', { vars: { query: search.trim() } })}
+                </p>
+              </Surface>
+            ) : // An emptied page of a non-empty dictionary: the clamp effect is about to put the
+            // user back in range, so hold the space rather than claim the list is empty.
+            null
           ) : (
             <>
               <ul className="flex flex-col gap-1.5">
