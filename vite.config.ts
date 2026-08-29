@@ -11,6 +11,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import type { Plugin } from 'vite';
 import { buildContentSecurityPolicy } from './src/csp';
 import { resolveBasePath } from './src/base-path';
+import { DEFAULT_TEST_TIMEOUT_MS } from './vitest.timeouts';
 
 // Single-source the app version from package.json (read here so it never enters
 // the TS program / app bundle as a JSON import) and expose it via `define`.
@@ -348,16 +349,8 @@ export default defineConfig({
     // SQLite WASM / worker integration is validated via the :memory: driver and
     // mocked RPC bridge (spec §8.5), so no CSS or worker processing is needed here.
     css: false,
-    // Vitest's 5s default is too tight for this suite on a busy machine. Several tests are
-    // legitimately expensive — a snow drift simulated to saturation, a glyph catalogue
-    // re-filtered per keystroke, a 2001-row keyset scan — and a profile of the whole suite
-    // puts six bodies between 2.4s and 4.4s when the machine is idle. Concurrency multiplies
-    // that: running two full suites at once (several agents work this repo in parallel
-    // worktrees) was enough to push two of them past 5s and fail a run that was otherwise
-    // green. 15s restores the headroom without hiding a hang — the slowest test here is
-    // still under a third of it, so a test that genuinely stops still fails rather than
-    // passing slowly. The two heaviest files raise it further at their own call site.
-    testTimeout: 15_000,
+    // The shared per-test budget; see `vitest.timeouts.ts` for why it is not Vitest's 5s.
+    testTimeout: DEFAULT_TEST_TIMEOUT_MS,
     // Use the worker_threads pool rather than Vitest's default `forks` pool.
     // On Node 25 the forks pool (tinypool spawning `child_process.fork` workers)
     // hits a cold-start race that crashes the whole run once on a cold cache —

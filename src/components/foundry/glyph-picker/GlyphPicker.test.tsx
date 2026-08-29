@@ -14,11 +14,13 @@ function setup(props: Partial<React.ComponentProps<typeof GlyphPicker>> = {}) {
 
 const search = () => screen.getByRole('combobox', { name: 'Search icons' });
 
-// Every test here types into the search box a character at a time, and each keystroke
-// re-filters and re-renders the whole Lucide catalogue — real work the picker really does,
-// and the reason this file holds the suite's second- and third-slowest bodies (3.8s and 3.4s
-// idle). That is inside the 15s default until the machine is busy, at which point it is not,
-// so the file takes a budget of its own rather than each test carrying one.
+// Every test here types into the search box a character at a time, and each keystroke re-filters
+// and re-renders the whole Lucide catalogue — real work the picker really does, and the reason
+// several bodies in this file are among the slowest in the suite at over three seconds apiece.
+// That fits the shared budget until the machine is busy, at which point it does not, so the file
+// takes one of its own rather than each test carrying it. This has to stay at module scope: the
+// runner reads the timeout as it registers each `it`, during collection, so the same call inside
+// a `beforeAll` or `beforeEach` would silently do nothing.
 vi.setConfig({ testTimeout: 30_000 });
 
 describe('GlyphPicker', () => {
