@@ -72,6 +72,35 @@ describe('ValuationSparkline', () => {
     expect(summary.textContent).toContain('14 Jan 1970');
   });
 
+  it('puts a tick on the same horizontal scale as the line itself (issue #481)', () => {
+    // The ticks and the polyline share one `xAt` mapping. Drive both and compare rather than
+    // restating the formula: a mark on the window's first instant must land on the line's first
+    // point, and one on its last instant on the line's last point. Re-splitting the two mappings
+    // is exactly the regression this catches.
+    render(
+      <ValuationSparkline
+        report={report({
+          windowStart: DAY_MS * 10,
+          windowEnd: DAY_MS * 14,
+          revaluations: [
+            { at: DAY_MS * 10, count: 1 },
+            { at: DAY_MS * 14, count: 1 },
+          ],
+        })}
+        formatters={formatters}
+      />,
+    );
+    const polyline = screen
+      .getByTestId('valuation-sparkline')
+      .querySelector('polyline')!
+      .getAttribute('points')!
+      .split(' ');
+    const lineXs = [polyline[0]!.split(',')[0], polyline[polyline.length - 1]!.split(',')[0]];
+    const tickXs = screen.getAllByTestId('valuation-revaluation-mark').map((tick) => tick.getAttribute('x1'));
+
+    expect(tickXs).toEqual(lineXs);
+  });
+
   it('says an unmarked day is not a day nothing changed (issue #481)', () => {
     render(
       <ValuationSparkline report={report({ revaluations: [{ at: 1, count: 1 }] })} formatters={formatters} />,

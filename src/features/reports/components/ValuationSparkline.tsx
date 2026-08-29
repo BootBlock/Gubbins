@@ -51,9 +51,9 @@ export function ValuationSparkline({
 
   // Map each point into the padded viewBox. A flat line (range 0) sits on the vertical centre.
   const coords = report.points.map((p, i) => {
-    const x = n > 1 ? PAD + (i / (n - 1)) * (VIEW_W - 2 * PAD) : VIEW_W / 2;
+    const x = n > 1 ? xAt(i / (n - 1)) : VIEW_W / 2;
     const y = range > 0 ? VIEW_H - PAD - ((p.value - min) / range) * (VIEW_H - 2 * PAD) : VIEW_H / 2;
-    return `${Math.round(x * 100) / 100},${Math.round(y * 100) / 100}`;
+    return `${round2(x)},${round2(y)}`;
   });
 
   const rising = report.changeValue >= 0;
@@ -133,9 +133,23 @@ export function ValuationSparkline({
 }
 
 /**
- * The horizontal position of a mark, on the same padded scale the polyline uses — interpolated
- * from the mark's instant rather than from a point index, so a tick sits where the day fell
- * rather than on the nearest sample.
+ * The only horizontal scale in this component: `0..1` across the window → an x inside the padded
+ * viewBox. Both the polyline (by point index) and the revaluation ticks (by instant) go through
+ * it, so a tick cannot drift off the line's scale — there is one mapping, not two that have to be
+ * kept in step.
+ */
+function xAt(fraction: number): number {
+  return PAD + fraction * (VIEW_W - 2 * PAD);
+}
+
+/** Two decimal places — plenty for a 100-unit-wide viewBox, and it keeps the markup readable. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * The horizontal position of a mark, interpolated from the mark's instant rather than from a point
+ * index, so a tick sits where the day fell rather than on the nearest sample.
  *
  * The fraction is **clamped to `0..1`**: a mark is floored to midnight UTC, so a revaluation
  * recorded late on the window's first day (one written from the wall clock rather than the
@@ -145,8 +159,7 @@ export function ValuationSparkline({
 function markX(mark: RevaluationMark, windowStart: number, windowEnd: number): number {
   const span = windowEnd - windowStart;
   if (!(span > 0)) return VIEW_W / 2;
-  const fraction = Math.min(1, Math.max(0, (mark.at - windowStart) / span));
-  return Math.round((PAD + fraction * (VIEW_W - 2 * PAD)) * 100) / 100;
+  return round2(xAt(Math.min(1, Math.max(0, (mark.at - windowStart) / span))));
 }
 
 /**
