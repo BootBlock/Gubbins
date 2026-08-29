@@ -28,6 +28,7 @@ import {
 } from '@/components/foundry';
 import { CheckIcon, ChevronRightIcon, CycleCountIcon, SuccessIcon, WarningIcon } from '@/components/icons';
 import type { LocationTreeNode } from '@/db/repositories';
+import { useUnlockAchievement } from '@/features/achievements/useUnlockAchievement';
 import { useLocationTree } from '@/features/inventory/queries';
 import { useFormatters } from '@/lib/useFormatters';
 import { CycleCountProvider } from '../CycleCountContext';
@@ -105,15 +106,20 @@ export function AuditDayDialog({ open, onClose }: { open: boolean; onClose: () =
   // only reachable when the stock-take capability is on. The burst is a no-op under reduced motion;
   // the summary's static success glyph and live-region wording carry the achievement.
   const celebratedCompletionRef = useRef(false);
+  const unlockAchievement = useUnlockAchievement();
   useEffect(() => {
     const complete = !!(session && prog?.isComplete);
     if (complete && !celebratedCompletionRef.current) {
       celebratedCompletionRef.current = true;
       burst();
+      // Records the stock-take achievement (#412) the first time one is finished on this device;
+      // a no-op every time after. `burst: false` because the line above already fired one — this
+      // celebration is the walk's, not the achievement's.
+      unlockAchievement('stock-take', { burst: false });
     } else if (!complete) {
       celebratedCompletionRef.current = false;
     }
-  }, [session, prog?.isComplete, burst]);
+  }, [session, prog?.isComplete, burst, unlockAchievement]);
 
   const stage: 'scope' | 'stepper' | 'summary' = !session
     ? 'scope'

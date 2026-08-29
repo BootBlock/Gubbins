@@ -3,6 +3,7 @@ import type { FeatureId } from '@/features/modules/feature-registry';
 import type { MessageKey } from '@/features/i18n';
 import type { PermissionKey } from '@/features/users/permission-registry';
 import {
+  AchievementIcon,
   AlertIcon,
   BookingIcon,
   CatalogueIcon,
@@ -43,6 +44,7 @@ import {
  * the command palette via {@link PALETTE_EXTRA_DESTINATIONS}:
  * - `/catalogue` and `/insurance-schedule` are Reports sub-screens, reached from the Reports page
  *   and gated by the same `reports` feature.
+ * - `/achievements` is the Achievements screen (issue #412), reached from About and the palette.
  * - `/modules` is the Modules manager, reached from Settings, the first-run chooser and the
  *   "module hidden" interstitial. It carries no *module* gate — it is how hidden features are
  *   brought back — but it does answer to `modules:read` (issue #429), since it is the screen that
@@ -50,6 +52,7 @@ import {
  */
 export type AppRoutePath =
   | '/'
+  | '/achievements'
   | '/inventory'
   | '/projects'
   | '/purchase-orders'
@@ -303,6 +306,9 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
  *   this device, and it is reached while signed *out*, where no permission applies. A forgotten
  *   password and a role that cannot open this screen have the same, still-open way back.
  *
+ * - **Achievements** (issue #412) is the record of milestones this device has watched you reach.
+ *   It reads no vault data at all, so neither gate applies to it.
+ *
  * These deliberately omit `messageKey`/`group`: they are not nav rows and the palette renders the
  * English {@link PaletteDestination.label} directly, matching how it already lists nav screens.
  */
@@ -326,6 +332,10 @@ export const PALETTE_EXTRA_DESTINATIONS: readonly PaletteDestination[] = [
   // palette. No module gate — tags are a core inventory concept — but a role that cannot read
   // tags has no business in the dictionary that defines them.
   { to: '/tags', label: 'Manage tags', Icon: TagIcon, permission: 'tags:read' },
+  // The Achievements screen (issue #412), reached from About and the palette. No module gate and
+  // no permission gate: what it shows is this device's own record of milestones it watched, not
+  // anything read out of the vault, so there is nothing here a role could be withheld.
+  { to: '/achievements', label: 'Achievements', Icon: AchievementIcon },
 ];
 
 /**

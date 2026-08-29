@@ -28,7 +28,7 @@ import { useLayoutStore } from '@/state/stores/useLayoutStore';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { useModulesStore } from '@/state/stores/useModulesStore';
-import { useMilestonesStore } from '@/state/stores/useMilestonesStore';
+import { useAchievementsStore } from '@/state/stores/useAchievementsStore';
 import { useClockSkewStore } from '@/state/stores/useClockSkewStore';
 import { useSavedSearchesStore } from '@/features/search/useSavedSearchesStore';
 import { useDismissedAlertsStore } from '@/features/alerts/useDismissedAlertsStore';
@@ -85,7 +85,7 @@ export const LOCAL_STORE_RESETS: Readonly<Record<string, (() => void) | null>> =
   // React state and would save it straight back on the next keystroke, so the live store has to
   // be emptied too — otherwise the erase would appear to undo itself mid-count.
   'gubbins:count-drafts': toDefaults(useCountDraftStore),
-  'gubbins:milestones': toDefaults(useMilestonesStore),
+  'gubbins:milestones': toDefaults(useAchievementsStore),
   // Resetting the store also un-corrects the evaluation clock: `startClockSkew` subscribes to
   // `skewMs`, so clearing it here pushes 0 straight through to `setClockSkewMs`. The next boot
   // re-measures and re-applies a correction if the device clock really is wrong.

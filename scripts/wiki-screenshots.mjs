@@ -945,6 +945,10 @@ try {
   console.warn(`  ✗ modules.png — ${err instanceof Error ? err.message : String(err)}`);
 }
 
+// The Achievements screen (issue #412). Captured after the seeding above, so the item-count
+// achievements the run has crossed show as unlocked beside the ones still to earn.
+await screenShot('achievements', 'achievements');
+
 // Settings → Appearance (light, then dark).
 await page.goto(`${BASE}settings`, { waitUntil: 'domcontentloaded' });
 await page.getByRole('heading', { name: 'Settings' }).waitFor({ state: 'visible', timeout: 8000 });
