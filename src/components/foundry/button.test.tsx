@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 import { Button } from './button';
-import { MenuAction } from './menu';
+import { MenuAction } from './menu-action';
 
 afterEach(cleanup);
 

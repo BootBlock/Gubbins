@@ -9,7 +9,11 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 
-import { Menu, MenuLink, MenuAction, MenuSeparator, MenuSub } from './menu';
+import { Menu } from './menu';
+import { MenuAction } from './menu-action';
+import { MenuLink } from './menu-link';
+import { MenuSeparator } from './menu-separator';
+import { MenuSub } from './menu-sub';
 
 afterEach(cleanup);
 
