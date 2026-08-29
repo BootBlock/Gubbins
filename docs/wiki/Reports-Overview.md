@@ -28,9 +28,9 @@ and the **[[parts catalogue|Parts-Catalogue]]**.
 
 The time-based reports — **Advanced analytics** (turnover and valuation over time), **Stock
 movement**, **Spend analytics**, and **Sales & disposals** — each carry a small period selector:
-**7d**, **14d**, **30d**, **60d**, **90d** and **365d**, running shortest on the left to longest
-on the right. Pick the window that suits the question — a fortnight for a quick pulse, a year for
-the long view.
+**7d**, **14d**, **30d**, **60d**, **90d**, **180d** and **365d**, running shortest on the left to
+longest on the right. Pick the window that suits the question — a fortnight for a quick pulse, a
+year for the long view.
 
 Each report **remembers its own choice** independently, and the choice sticks between visits — so
 you can leave Spend on a year while Sales stays on the last month, and they'll be just as you left
