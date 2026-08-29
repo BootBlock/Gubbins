@@ -108,13 +108,16 @@ async function write(res: ServerResponse, chunk: string): Promise<boolean> {
   if (res.destroyed) return false;
   if (res.write(chunk)) return true;
   try {
-    await once(res, 'drain');
+    // `'close'` as well as `'drain'`, because a client that vanishes *while* the response is
+    // backpressured produces neither a `'drain'` nor an `'error'` — waiting on `'drain'` alone
+    // would suspend the walk on a socket that is never coming back.
+    await Promise.race([once(res, 'drain'), once(res, 'close')]);
   } catch {
     // The socket failed while we waited (the client went away mid-download). There is nothing
     // left to write to and nothing to report to — stop the walk quietly.
     return false;
   }
-  return !res.destroyed;
+  return !res.destroyed && res.writable;
 }
 
 /**

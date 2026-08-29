@@ -9,8 +9,8 @@
  *
  *   - **No offset walking.** The statements the route runs are recorded, and only the first page
  *     may carry an `OFFSET` (the unfiltered path's first read has nowhere to seek from yet).
- *   - **Streamed.** A buffered response knows its length and sets `Content-Length`; a streamed one
- *     cannot, and is framed `chunked` instead.
+ *   - **Streamed.** The first bytes reach the client before the walk has finished reading, which a
+ *     response assembled in memory and handed to `res.end()` in one call cannot do.
  *   - **Conditional.** A spreadsheet set to refresh on open re-fetches this constantly, so the
  *     second identical fetch must cost a `304` rather than a second walk.
  */
@@ -39,6 +39,8 @@ let baseUrl: string;
 let fixtureItems = 0;
 /** Every SQL statement the driver has been asked to run since {@link recorded} last reset it. */
 let statements: string[] = [];
+/** Milliseconds to stall each driver read by; 0 for every test bar the streaming one. */
+let readDelayMs = 0;
 
 beforeAll(async () => {
   hydrated = await hydrateFromJson(await readFile(fileURLToPath(FIXTURE_URL), 'utf8'));
@@ -56,12 +58,15 @@ beforeAll(async () => {
   }
 
   // The driver the server reads through, with every statement recorded. Only `query` is wrapped —
-  // it is the one the item walk uses, and the point is to see how the walk pages.
+  // it is the one the item walk uses, and the point is to see how the walk pages. `readDelayMs`
+  // slows each read on demand, which is what lets the streaming test below observe the response
+  // arriving *while* the walk is still running rather than only after it.
   const driver = new Proxy(hydrated.driver, {
     get(target, prop, receiver) {
       if (prop !== 'query') return Reflect.get(target, prop, receiver);
-      return (sql: string, params?: SqlParams) => {
+      return async (sql: string, params?: SqlParams) => {
         statements.push(sql);
+        if (readDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, readDelayMs));
         return target.query(sql, params);
       };
     },
@@ -128,12 +133,38 @@ describe('GET /api/v1/items.csv over a multi-page catalogue', () => {
     expect(itemReads.filter((text) => text.includes('OFFSET')).length).toBeLessThanOrEqual(1);
   });
 
-  it('streams the body instead of buffering the whole document', async () => {
-    const { res, body } = await recorded('/api/v1/items.csv');
-    // A response built as one string reports its length; a streamed one cannot know it in
-    // advance, so Node frames it chunked. This is the observable difference between the two.
-    expect(res.headers.get('content-length')).toBeNull();
-    expect(body.length).toBeGreaterThan(0);
+  /**
+   * The claim under test is that the export writes as it reads. Both a streamed and a buffered
+   * response produce identical bytes and identical headers, so the only thing that separates them
+   * is *when* the client can see the first of those bytes: a buffered export finishes every read
+   * before it writes anything, a streamed one writes page 1 while page 2 is still being fetched.
+   *
+   * So the reads are stalled (`readDelayMs`) to make the walk slow enough to observe, and the
+   * body is consumed a chunk at a time rather than with `res.text()`. Counting the reads issued at
+   * the moment the first chunk lands against the total is the discriminator — buffering makes the
+   * two equal by construction.
+   */
+  it('writes the first rows before the walk has finished reading', async () => {
+    readDelayMs = 20;
+    try {
+      statements = [];
+      const res = await get('/api/v1/items.csv');
+      const reader = res.body!.getReader();
+
+      const first = await reader.read();
+      expect(first.done).toBe(false);
+      const readsWhenFirstChunkLanded = statements.filter((text) => text.includes('FROM items')).length;
+
+      while (!(await reader.read()).done) {
+        // Drain the rest so the walk runs to completion and the socket closes cleanly.
+      }
+      const totalReads = statements.filter((text) => text.includes('FROM items')).length;
+
+      expect(totalReads).toBeGreaterThan(1);
+      expect(readsWhenFirstChunkLanded).toBeLessThan(totalReads);
+    } finally {
+      readDelayMs = 0;
+    }
   });
 
   it('walks a $filter-ed export past its first page too', async () => {
@@ -185,6 +216,18 @@ describe('GET /api/v1/items.csv conditional requests', () => {
     });
     expect(crossed.status).toBe(200);
     await Promise.all([filtered.text(), crossed.text()]);
+  });
+
+  it('splits the tag on a scope parameter that is not the $filter', async () => {
+    // The tag is cut over the *parsed* scope — the AST, the list filters and the sort — so every
+    // parameter that can move a row into or out of the export is in the key by construction, not
+    // because a list of parameter names was kept up to date beside it.
+    const plain = (await get('/api/v1/items.csv')).headers.get('etag');
+    for (const query of ['?includeInactive=true', '?$orderby=quantity desc', '?$search=Generated']) {
+      const scoped = await get(`/api/v1/items.csv${query}`);
+      expect(scoped.headers.get('etag'), query).not.toBe(plain);
+      await scoped.text();
+    }
   });
 
   it('ignores a parameter the export does not read, rather than splitting the tag on it', async () => {

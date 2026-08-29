@@ -66,6 +66,8 @@ import {
 } from '../events/webhook-log.ts';
 import { handleOData } from './odata-service.ts';
 import { streamItemsCsv } from './items-csv.ts';
+import type { SearchAST } from '@/db/search/ast.ts';
+import type { ItemSort } from '@/db/repositories/item/sql.ts';
 import { hasSelection } from './field-select.ts';
 import { createItemViewContext, projectItem, SEARCH_DEFAULT_FIELDS } from './item-view.ts';
 import { SearchAstError } from '@/db/search/parseASTtoSQL.ts';
@@ -83,6 +85,7 @@ import {
   readItemListFilters,
   readSelection,
   type EntityResult,
+  type ItemQueryFilters,
   type ListResult,
 } from './reads.ts';
 import { toCapabilityKey, type ListEnvelope, type PaginationMeta } from './dto.ts';
@@ -999,7 +1002,7 @@ async function handleItemsCsv(
   if (ast === null) return;
 
   const filters = readItemListFilters(url);
-  const validators = itemsCsvValidators(state, url);
+  const validators = itemsCsvValidators(state, ast, filters, sort);
   if (validators !== undefined && isNotModified(conditional, validators)) {
     return void sendNotModified(res, validators);
   }
@@ -1014,38 +1017,31 @@ async function handleItemsCsv(
 }
 
 /**
- * Every query parameter that decides which rows the CSV contains and in what order — the variant
- * key its entity-tag is cut over.
- *
- * Listed rather than taken from `url.search` wholesale, so that two refreshes differing only in a
- * parameter the export never reads (a cache-buster a spreadsheet appends, say) revalidate against
- * each other instead of each earning a fresh full export. Every name here is one
- * {@link parseOrderByOr400}, {@link parseItemFilterOr400} or {@link readItemListFilters} actually
- * reads — add a parameter to those and it belongs here too, or a client that changes it will be
- * told nothing changed.
- */
-const CSV_VARIANT_PARAMS = [
-  '$filter',
-  '$search',
-  '$orderby',
-  'location',
-  'category',
-  'includeInactive',
-] as const;
-
-/**
  * The validators for one CSV representation, or `undefined` when the snapshot carries no usable
  * generation instant (nothing honest to validate against, so the response stays uncached).
  *
  * The export is a pure projection of the snapshot, exactly as the feeds are, so its bytes can only
- * change when the snapshot re-hydrates. The variant is the scope that selected this representation
- * ({@link CSV_VARIANT_PARAMS}), so a filtered export and the whole catalogue never share a tag.
+ * change when the snapshot re-hydrates. The variant is the scope that selected this representation,
+ * so a filtered export and the whole catalogue never share a tag.
+ *
+ * That scope is the **parsed** filter, filters and sort — the very three values handed to the walk
+ * a line later — rather than a list of the query-parameter names they came from. A name list would
+ * be a second definition of "what decides these rows", and the day a scope parameter was added to
+ * {@link readItemListFilters} and not to the list, a client that changed it would be told nothing
+ * had changed. Reading the parsed values instead makes that impossible: anything that can move a
+ * row into or out of the export is, by construction, already in the key. It also means two
+ * spellings of one filter share a tag (they parse to the same AST) while a parameter the export
+ * never reads — a cache-buster a spreadsheet appends — cannot split it.
  */
-function itemsCsvValidators(state: BridgeServerState, url: URL): CacheValidators | undefined {
+function itemsCsvValidators(
+  state: BridgeServerState,
+  ast: SearchAST | undefined,
+  filters: ItemQueryFilters,
+  sort: readonly ItemSort[] | undefined,
+): CacheValidators | undefined {
   const snapshotMs = snapshotInstant(state.snapshotGeneratedAt);
   if (snapshotMs === null) return undefined;
-  const variant = CSV_VARIANT_PARAMS.map((name) => `${name}=${url.searchParams.get(name) ?? ''}`).join('&');
-  return cacheValidators(snapshotMs, `items.csv ${variant}`);
+  return cacheValidators(snapshotMs, `items.csv ${JSON.stringify({ ast, filters, sort })}`);
 }
 
 // --- calendar (read-only iCalendar subscription feed) -----------------------------
