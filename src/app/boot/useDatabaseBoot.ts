@@ -139,6 +139,12 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
     if (!isMounted()) return;
     const choiceIsOpen = layout === 'none';
 
+    // A waiver stops the boot asking again, diagnosis and all. That goes further than the
+    // `sahpool` skip below, which still runs the diagnosis so a non-isolation cause can stop
+    // the boot — and it is deliberate: this user was shown the screen and chose to carry on,
+    // and re-deriving a verdict they have already answered would cost them the service-worker
+    // probe's few seconds on every reload of the tab. Blocked site data cannot reach here in
+    // any case, since it is what makes `isolationWaived()` false.
     if (!(choiceIsOpen && isolationWaived())) {
       let diagnosis = await diagnoseCriticalSupport(isolation.missing);
 
