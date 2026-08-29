@@ -2410,6 +2410,11 @@ describe('ReportRepository', () => {
       expect(summary.grandTotal).toBe(150);
     });
 
+    // Budget: the 2001 rows are the point — one full chunk plus one is what makes the keyset
+    // loop's boundary observable — and writing them one at a time through the repository is the
+    // suite's slowest body outside the two files that raise their own budget. It fits the shared
+    // one until the machine is busy, so it takes 30s of its own rather than timing out on a
+    // loaded run while testing nothing to do with time.
     it('totals a fixture larger than one scan chunk without dropping or double-counting', async () => {
       // The keyset loop's boundary: 2001 assets is one full chunk plus one.
       const room = await locations.create({ name: 'Warehouse' });
@@ -2421,7 +2426,7 @@ describe('ReportRepository', () => {
       expect(summary.itemCount).toBe(2001);
       expect(summary.grandTotal).toBe(2001);
       expect(summary.groups.find((g) => g.locationId === room.id)!.itemCount).toBe(2001);
-    });
+    }, 30_000);
 
     it('is empty for an empty database', async () => {
       const summary = await reports.insuranceScheduleSummary();

@@ -377,8 +377,11 @@ Markdown, and leaving it blank simply hides the badge.
 
 Rather than adding fields one at a time, the category manager's **Add from a preset** picker
 creates a ready-made category with a curated set of custom fields already attached — covering
-maker and hobbyist staples like `Battery`, `Cable`, `Electronic component`, `Fastener`,
-`3D Filament`, `Fabric`, `Paint`, `Adhesive` and `Model kit`, plus a large library of collector
+everyday household things like `Appliance`, `Medication`, `Filters & consumables`,
+`Cleaning & household chemicals`, `Computer`, `Network equipment` and `Smart home device`, the
+car and the garden (`Vehicle`, `Vehicle part`, `Seeds`, `Plant`), maker and hobbyist staples like
+`Battery`, `Cable`, `Electronic component`, `Fastener`,
+`3D Filament`, `Fabric`, `Paint`, `Yarn`, `Adhesive` and `Model kit`, plus a large library of collector
 staples spanning cards and coins (`Trading card`, `Baseball cards`, `Magic: The Gathering cards`,
 `Coin`, `Banknote`), media (`Movie`, `Book`, `Vinyl record`, `DVDs`, `Blu-rays`, `Video games (physical)`,
 `Vintage movie posters`), timepieces and jewellery (`Luxury watches`, `Mechanical wrist watches`,
@@ -390,10 +393,28 @@ curios (`Antique furniture`, `Porcelain & fine ceramics`, `Vintage cameras`, `Fo
 match your own inventory.
 
 The picker is organised for browsing: sections down the left-hand side — **Workshop**,
-**Electronics**, **Household**, **Storage & containers**, **Crafts & hobbies**, **Media** and
+**Electronics**, **Household**, **Home & garden**, **Vehicles**, **Storage & containers**,
+**Crafts & hobbies**, **Media** and
 **Collectibles**, plus **All presets** for the whole library at once — and, on the right, the presets of the chosen
 section. Each preset shows its name, a one-line description and a sample of the custom fields
 it creates, so you can see what you're getting before you add it.
+
+Some presets arrive with more than fields. `Appliance`, `Vehicle`, `Filters & consumables` and
+`Plant` each set a **default servicing schedule** on the category, so every item you file under
+one is already on a sensible rhythm — a year for an appliance, 90 days for a filter and a week for
+a plant's watering. `Vehicle` is the exception: it counts **usage**, not days, and starts at 10,000
+per service. The preset can't say what those 10,000 are, so the item reads *every 10000 units*
+until you name the unit — miles, kilometres or hours — on the schedule itself (see
+[[Maintenance and Servicing|Maintenance-and-Servicing]]). Several presets also set a
+[[due-date reminder|#turning-a-date-into-a-deadline]] on the dates that matter: a vehicle's
+service, roadworthiness test and insurance renewal give 30 days' notice, a filter's change date
+gives 14, and a seed packet's best-before gives 60.
+
+> **ℹ️ Note**
+> The `Medication` preset gives **Expiry date** 30 days' notice. A field's name is its identity
+> across your whole inventory, so every other category using that same **Expiry date** field —
+> `Food`, `Adhesive` and `Cleaning & household chemicals` — starts giving you 30 days' notice too.
+> You can change or remove the notice on the field at any time, and it changes everywhere at once.
 
 A **search box** above the sections filters the library as you type, matching preset names,
 descriptions and field names alike — so `isbn` finds the `Book` preset and `expiry` finds

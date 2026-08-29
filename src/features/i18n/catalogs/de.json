@@ -535,6 +535,8 @@
   "inventory.presets.section.workshop": "Werkstatt",
   "inventory.presets.section.electronics": "Elektronik",
   "inventory.presets.section.household": "Haushalt",
+  "inventory.presets.section.homeGarden": "Haus & Garten",
+  "inventory.presets.section.vehicle": "Fahrzeuge",
   "inventory.presets.section.containers": "Aufbewahrung & Behälter",
   "inventory.presets.section.crafts": "Basteln & Hobby",
   "inventory.presets.section.media": "Medien",
