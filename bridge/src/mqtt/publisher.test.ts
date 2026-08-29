@@ -29,7 +29,7 @@ interface Published {
 }
 
 /** A fake MQTT client that records publishes and exposes the captured onConnect hook. */
-function fakeClientFactory() {
+function fakeClientFactory({ connected = true }: { connected?: boolean } = {}) {
   const published: Published[] = [];
   let onConnect: (() => void) | undefined;
   let stopped = false;
@@ -37,11 +37,12 @@ function fakeClientFactory() {
     onConnect = options.onConnect;
     return {
       start: () => {},
+      // `false` mirrors the real client offline: the packet is buffered, not on the wire yet.
       publish: (topic, payload, retain = false) => {
         published.push({ topic, payload: String(payload), retain });
-        return true;
+        return connected;
       },
-      isConnected: () => true,
+      isConnected: () => connected,
       stop: () => {
         stopped = true;
       },
@@ -174,12 +175,15 @@ describe('publishState', () => {
  */
 function fakeStore(initial?: RetainedLocationsRecord): RetainedLocationsStore & {
   saved: RetainedLocationsRecord | undefined;
+  saves: number;
 } {
   const store = {
     saved: undefined as RetainedLocationsRecord | undefined,
+    saves: 0,
     load: () => initial,
     save: (record: RetainedLocationsRecord) => {
       store.saved = record;
+      store.saves += 1;
     },
   };
   return store;
@@ -264,15 +268,47 @@ describe('retained topics remembered across restarts (issue #565)', () => {
     expect(blanked.map((p) => p.topic)).toContain('homeassistant/sensor/gubbins/location_loc-store/config');
     // Nothing is published under the CURRENT prefix by the sweep itself.
     expect(fake.published.some((p) => p.topic.startsWith('gubbins/'))).toBe(false);
-    // The record is rewritten immediately, so a crash before the first state publish cannot make
-    // the next start blank the same topics all over again.
+    // The blanks went out on the wire, so the record may drop them: a second start does not repeat
+    // a sweep that has already reached the broker. `discoveryPublished` stays true because the
+    // device-level configs, shared with any co-located bridge, were deliberately left standing.
     expect(store.saved).toEqual({
       version: RETAINED_LOCATIONS_VERSION,
       prefix: 'gubbins',
       discoveryPrefix: 'homeassistant',
       locationIds: [],
-      discoveryPublished: false,
+      discoveryPublished: true,
     });
+  });
+
+  /**
+   * The broker is unreachable, so every blank sits in the client's buffer rather than on the wire.
+   * Persisting "that tree is dealt with" then would strand it for good if this process died before
+   * connecting — the very failure #565 is about. The record waits for the flush.
+   */
+  it('holds the record back until the connection flushes a buffered retraction', () => {
+    const store = fakeStore(RECORD({ prefix: 'old-prefix' }));
+    const offline = fakeClientFactory({ connected: false });
+    const { publisher } = makePublisher({
+      discovery: true,
+      retainedStore: store,
+      createClient: offline.create,
+    });
+    publisher.start();
+    expect(store.saved).toBeUndefined();
+
+    offline.triggerConnect(); // the client flushes its buffer before calling this
+    expect(store.saved?.prefix).toBe('gubbins');
+    expect(store.saved?.locationIds).toEqual([]);
+  });
+
+  it('does not rewrite an identical record on every reconnect', async () => {
+    const store = fakeStore();
+    const { publisher, fake } = makePublisher({ discovery: true, retainedStore: store });
+    await publisher.publishState(hydrated.driver, GENERATED_AT);
+    const afterFirst = store.saves;
+    fake.triggerConnect(); // re-announces the whole snapshot
+    fake.triggerConnect();
+    expect(store.saves).toBe(afterFirst);
   });
 
   it('blanks nothing at start when the prefixes are unchanged', () => {

@@ -113,8 +113,10 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   // What a previous run of this bridge left retained on the broker, under which prefixes (issue
   // #565). The publish-only client cannot subscribe, so the broker can never be asked — without
   // this the "before" side of the removal diff would start empty on every start.
+  // `topics.base`, not `options.prefix`: the topics were published under the resolved prefix, and
+  // that is what a later run has to compare against.
   const restored = planRetainedRestore(options.retainedStore?.load(), {
-    prefix: options.prefix,
+    prefix: topics.base,
     discoveryPrefix: options.discoveryPrefix,
   });
   // The location ids we currently have RETAINED topics for, so a removed location's retained state
@@ -130,6 +132,11 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   let staleTopics: readonly string[] = restored.staleTopics;
   // The record last handed to the store, so a reconnect's re-publish doesn't rewrite an identical file.
   let rememberedSignature: string | null = null;
+  // A retraction that the client only BUFFERED, because the broker was not reachable when it was
+  // made. Until it is genuinely on the wire the record must keep naming the topic: persisting
+  // "that is retracted now" and then dying before the connect would lose the only memory of a dead
+  // topic, which is the very failure this file exists to prevent.
+  let retractionsPending = false;
 
   const client = createClient({
     endpoint: options.endpoint,
@@ -147,6 +154,10 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   /** On each (re)connect: announce online and re-publish the last-known retained state. */
   function handleConnect(): void {
     client.publish(topics.status, AVAILABILITY_ONLINE, true);
+    // The client flushes its offline buffer before calling this, so any retraction that was merely
+    // enqueued has just been written to the socket. The record may finally say it happened.
+    const retractionsSettled = retractionsPending;
+    retractionsPending = false;
     if (lastState !== null) {
       // Force discovery re-emission on a fresh connection (the broker may have lost retained state).
       discoverySignature = null;
@@ -155,6 +166,8 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     // Re-announce staleness after the state: a broker that lost retained topics needs the current
     // verdict back even when no reload has happened since the disconnect (issue #394).
     if (lastHealth !== null) client.publish(topics.snapshotState, snapshotHealthPayload(lastHealth), true);
+    // Reached with no state to re-publish when the first connect happened before the first reload.
+    if (retractionsSettled) rememberPublished();
   }
 
   /** Publish the retained state topics for a projected state, plus discovery when the layout changed. */
@@ -184,28 +197,38 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
       // Home Assistant an empty payload to run `json_attributes_template` over — an avoidable
       // parse warning in the log for an entity that is about to disappear anyway.
       if (options.discovery || discoveryPublished) {
-        client.publish(
-          discoveryConfigTopic(options.discoveryPrefix, 'sensor', locationSensorObjectId(id)),
-          '',
-          true,
-        );
+        retract(discoveryConfigTopic(options.discoveryPrefix, 'sensor', locationSensorObjectId(id)));
       }
-      client.publish(topics.locationState(id), '', true);
+      retract(topics.locationState(id));
     }
     publishedLocationIds = state.locations.map((l) => l.id);
+  }
+
+  /**
+   * Blank one retained topic — the MQTT idiom for "forget this". A publish made while the broker is
+   * unreachable is only buffered, so it is noted as pending until a connect flushes it.
+   */
+  function retract(topic: string): void {
+    if (!client.publish(topic, '', true)) retractionsPending = true;
   }
 
   /**
    * Persist what is now retained, so the next process can pick the diff up where this one left off.
    * Best-effort by contract — the store swallows its own failures, because a bridge that cannot
    * write this file must still publish.
+   *
+   * Held back entirely while a retraction is still buffered. The record would otherwise drop a dead
+   * topic from its "before" side before the blanking publish had left the process — and a restart
+   * in that window (a broker that is down at boot is ordinary) would strand the topic on the broker
+   * with nothing left that remembers it. A record that is one generation behind only costs a
+   * repeated, idempotent blanking publish.
    */
   function rememberPublished(): void {
-    if (options.retainedStore === undefined) return;
+    if (options.retainedStore === undefined || retractionsPending) return;
     // Reconnects re-publish the whole snapshot, so skip the write when nothing actually moved.
     const record = {
       version: RETAINED_LOCATIONS_VERSION,
-      prefix: options.prefix,
+      prefix: topics.base,
       discoveryPrefix: options.discoveryPrefix,
       locationIds: publishedLocationIds,
       discoveryPublished,
@@ -218,13 +241,13 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
 
   /**
    * Blank whatever an earlier run left under a prefix this one has stopped using, once, at start.
-   * Publishes made before the connection is up are buffered by the client and flushed on connect,
-   * so this needs no wait — and the record is rewritten immediately, so a crash before the first
-   * state publish cannot make the next start retract the same topics again.
+   * The publishes need no wait: made before the connection is up they are buffered and flushed on
+   * connect, and {@link rememberPublished} holds the record at its old contents until that happens,
+   * so a start that never reaches the broker leaves the sweep to be repeated rather than forgotten.
    */
   function clearStaleScope(): void {
     if (staleTopics.length === 0) return;
-    for (const topic of staleTopics) client.publish(topic, '', true);
+    for (const topic of staleTopics) retract(topic);
     staleTopics = [];
     rememberPublished();
   }

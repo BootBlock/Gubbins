@@ -66,17 +66,12 @@ describe('planRetainedRestore', () => {
     expect(planRetainedRestore(record({ discoveryPublished: false }), SCOPE).discoveryPublished).toBe(false);
   });
 
-  it('blanks the whole abandoned tree when the topic prefix changes', () => {
+  it('blanks the abandoned state tree, and the location configs, when the topic prefix changes', () => {
     const plan = planRetainedRestore(record(), { ...SCOPE, prefix: 'shed' });
     expect(plan.seedLocationIds).toEqual([]);
-    expect(plan.discoveryPublished).toBe(false);
+    // The configs are still under the discovery prefix this run publishes to.
+    expect(plan.discoveryPublished).toBe(true);
     expect(plan.staleTopics).toEqual([
-      'homeassistant/sensor/gubbins/items_total/config',
-      'homeassistant/sensor/gubbins/low_stock_items/config',
-      'homeassistant/sensor/gubbins/out_of_stock_items/config',
-      'homeassistant/sensor/gubbins/locations_total/config',
-      'homeassistant/binary_sensor/gubbins/low_stock/config',
-      'homeassistant/binary_sensor/gubbins/snapshot_stale/config',
       'homeassistant/sensor/gubbins/location_loc-store/config',
       'homeassistant/sensor/gubbins/location_loc-bench/config',
       'gubbins/location/loc-store/state',
@@ -85,6 +80,16 @@ describe('planRetainedRestore', () => {
       'gubbins/snapshot/state',
       'gubbins/status',
     ]);
+  });
+
+  // The device-level entities sit at fixed object ids under the discovery prefix alone, so they are
+  // the topics a second bridge on the same broker publishes to as well. Blanking them because THIS
+  // bridge changed its topic prefix would take that bridge's live entities down; the first
+  // publishState rewrites ours moments later anyway.
+  it('leaves the shared device configs alone when only the topic prefix changes', () => {
+    const plan = planRetainedRestore(record(), { ...SCOPE, prefix: 'shed' });
+    expect(plan.staleTopics).not.toContain('homeassistant/sensor/gubbins/items_total/config');
+    expect(plan.staleTopics).not.toContain('homeassistant/binary_sensor/gubbins/snapshot_stale/config');
   });
 
   it('blanks every config before the state topic its entity reads attributes from', () => {

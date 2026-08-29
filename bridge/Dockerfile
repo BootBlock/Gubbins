@@ -27,7 +27,9 @@
 # The `/state` volume keeps the bridge's stable identity (README.md -> "The bridge's stable
 # identity") across a **recreated** container, so consumers such as Home Assistant go on
 # recognising it as the same bridge. Leave the volume off and the identity lives only as long as
-# the container does: a fresh `docker run` then looks like a different bridge.
+# the container does: a fresh `docker run` then looks like a different bridge — and a location
+# deleted while the container was down keeps its retained MQTT topic (README.md -> "Deleting a
+# location clears its topic"), which is remembered in the same volume.
 #
 FROM node:24-slim
 

@@ -20,7 +20,7 @@
  *
  * Nothing here is a secret: location ids and topic prefixes, the same values already on the wire.
  */
-import { discoveryConfigTopics } from './discovery.ts';
+import { discoveryConfigTopic, discoveryConfigTopics, locationSensorObjectId } from './discovery.ts';
 import { topicsFor } from './topics.ts';
 
 /**
@@ -131,9 +131,11 @@ export function parseRetainedLocations(raw: string | undefined): RetainedLocatio
  *   - **The topic prefix moved** — nothing of ours is under the new prefix yet, so the baseline is
  *     empty and the old state tree is blanked, the fixed `status`, `summary` and `snapshot` topics
  *     included. No run will ever overwrite those again.
- *   - **Either prefix moved, with configs out there** — the whole old config tree is blanked. Home
- *     Assistant would otherwise re-create the entire device from the abandoned tree on every
- *     restart, its entities reading state topics nothing writes to.
+ *   - **The discovery prefix moved, with configs out there** — the whole old config tree is
+ *     blanked. Home Assistant would otherwise re-create the entire device from the abandoned tree
+ *     on every restart, its entities reading state topics nothing writes to. When only the topic
+ *     prefix moved, the per-location configs go and the shared device-level ones stay — see the
+ *     comment on that branch below.
  *
  * A location that survives the move is retracted here and re-published moments later by the first
  * `publishState`, which is the correct order: an entity must never be left pointing at a dead topic.
@@ -153,12 +155,29 @@ export function planRetainedRestore(
   // Configs first: a location sensor reads its attributes from the state topic blanked below, so
   // the other order hands Home Assistant an empty payload to run its attribute template over.
   //
-  // The whole config tree goes whenever *either* prefix moved, not just the discovery one — every
-  // config names the state topics it reads, so a config left under the old discovery prefix points
-  // at topics under the old topic prefix that nothing will write to again. When discovery is still
-  // on, the first `publishState` re-emits the lot under the current prefixes moments later.
-  if (record.discoveryPublished && !(prefixKept && discoveryPrefixKept)) {
-    staleTopics.push(...discoveryConfigTopics(record.discoveryPrefix, record.locationIds));
+  // How much of the config tree goes depends on WHICH prefix moved, because the two halves of that
+  // tree are not equally ours. The device-level entities sit at fixed object ids under the
+  // discovery prefix alone (`<discoveryPrefix>/sensor/gubbins/items_total/config` and friends), so
+  // a second bridge sharing that discovery prefix publishes to the very same topics:
+  //
+  //   - **The discovery prefix moved** — that whole tree is abandoned by us. Blank all of it,
+  //     device entities included: nothing will ever overwrite them again, and Home Assistant would
+  //     re-create the device from them on every restart.
+  //   - **Only the topic prefix moved** — the tree is still the one we publish to. Blank the
+  //     per-location configs, whose ids are ours, and leave the device-level ones alone: with
+  //     discovery on the first `publishState` rewrites them under the new topic prefix moments
+  //     later, and blanking them first would take a co-located bridge's live entities down with
+  //     them.
+  if (record.discoveryPublished) {
+    if (!discoveryPrefixKept) {
+      staleTopics.push(...discoveryConfigTopics(record.discoveryPrefix, record.locationIds));
+    } else if (!prefixKept) {
+      staleTopics.push(
+        ...record.locationIds.map((id) =>
+          discoveryConfigTopic(record.discoveryPrefix, 'sensor', locationSensorObjectId(id)),
+        ),
+      );
+    }
   }
   if (!prefixKept) {
     const old = topicsFor(record.prefix);
@@ -175,6 +194,6 @@ export function planRetainedRestore(
   return {
     seedLocationIds: prefixKept ? record.locationIds : [],
     staleTopics,
-    discoveryPublished: prefixKept && discoveryPrefixKept && record.discoveryPublished,
+    discoveryPublished: discoveryPrefixKept && record.discoveryPublished,
   };
 }

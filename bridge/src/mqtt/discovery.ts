@@ -228,7 +228,7 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
  * blanking publish needs. `discovery.test.ts` drives both sides and fails if the two ever diverge —
  * see `emits a config for exactly the entities discoveryConfigTopics names`.
  */
-export const DEVICE_ENTITY_IDS: readonly (readonly [component: string, objectId: string])[] = [
+const DEVICE_ENTITY_IDS: readonly (readonly [component: string, objectId: string])[] = [
   ['sensor', 'items_total'],
   ['sensor', 'low_stock_items'],
   ['sensor', 'out_of_stock_items'],

@@ -15,7 +15,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { isLanExposed, loadConfig, type BridgeConfig, type Env } from './config.ts';
 import {
@@ -568,6 +568,11 @@ function createMqttPublisherFromConfig(config: BridgeConfig, endpoint: MqttEndpo
  * deleted while the bridge was stopped is not retracted — announced once so the operator can point
  * `GUBBINS_BRIDGE_MQTT_STATE_FILE` somewhere writable.
  *
+ * The write goes to a sibling temp file and is renamed over the target, as the snapshot writes do
+ * (`snapshot-io.ts`). A record truncated by a crash or a full disk parses to nothing, and losing the
+ * whole memory is far worse than losing one generation of it — a rename keeps the previous record
+ * intact until a complete one is ready to replace it.
+ *
  * Mode `0o600` for tidiness rather than secrecy: the record holds location ids and topic prefixes,
  * both already on the wire.
  */
@@ -583,9 +588,17 @@ function createRetainedLocationsStore(config: BridgeConfig): RetainedLocationsSt
       }
     },
     save: (record) => {
+      const tempPath = `${filePath}.tmp`;
       try {
-        writeFileSync(filePath, serialiseRetainedLocations(record), { encoding: 'utf8', mode: 0o600 });
+        writeFileSync(tempPath, serialiseRetainedLocations(record), { encoding: 'utf8', mode: 0o600 });
+        renameSync(tempPath, filePath);
       } catch {
+        // A temp file left by a failed write would otherwise sit beside the record for good.
+        try {
+          rmSync(tempPath, { force: true });
+        } catch {
+          // Nothing further to try: the warning below already tells the operator the path is a problem.
+        }
         if (warned) return;
         warned = true;
         console.warn(

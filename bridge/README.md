@@ -1882,7 +1882,7 @@ next start, it is the *broker* that still holds the retained topic. The bridge c
 publishes, it never subscribes), so it keeps a small file of what it last published —
 `mqtt-retained.json` in the working directory, or wherever `GUBBINS_BRIDGE_MQTT_STATE_FILE` points —
 and clears the difference on its first publish. Changing `GUBBINS_BRIDGE_MQTT_PREFIX` or the
-discovery prefix abandons a whole tree under the old one, so that is blanked at start too.
+discovery prefix abandons a tree under the old one, so what it left there is blanked at start too.
 
 > **ℹ️ Note** The file holds location ids and topic prefixes: no secret, nothing that isn't already
 > on the wire. If it cannot be written (a read-only working directory) the bridge says so once and
