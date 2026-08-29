@@ -41,6 +41,28 @@ you can see the gap, but it can't be selected.
 When the item comes back, **check it in**. Gubbins returns the stock to its **original location
 and lot**, so a returned item lands exactly where it belongs rather than in a limbo pile.
 
+You can also record the item's **condition on return** and a short **return note** — both optional,
+and both kept separate from the note you wrote when you lent it out.
+
+### Returning part of a loan
+
+Kit lent to a job rarely all comes back in one go. If you lent more than one of something, the
+return asks **how many are coming back**, and it starts at everything still out — so returning the
+lot is still a single tap.
+
+Lower that number and Gubbins puts just those units back on the shelf and **leaves the loan open**
+with the rest still out. The loan keeps its identity: the same due date, the same original checkout
+date, and one continuous history rather than a new loan each time something trickles back. Lend six
+drill bits, get two back today and four next week, and your on-hand count is right on both days.
+
+The loan closes by itself when the last unit comes back — there is no separate "finish" step. Until
+then it still counts as **on loan** everywhere: the borrower's list, the overdue reminders and the
+item's on-loan badge all show it, because part of it genuinely is still out.
+
+> **💡 Tip**
+> The loan row shows what is **still with the borrower**, not what originally went out — so a loan
+> reading "2 of 6 still with Sam" is telling you exactly what to chase.
+
 ## Overdue tracking & audit trail
 
 - A loan with a due date that passes becomes **overdue** and surfaces in [[Alerts|Alerts]] and the
@@ -66,8 +88,9 @@ opened and closed from outside Gubbins — from
 [[Home Assistant|Home-Assistant-Integration]], a script, or an
 [[AI assistant|AI-Assistant-Query-MCP]]. It behaves exactly as it does in the app: stock leaves
 your available count while the item is out, and a return puts it back in its original location and
-lot. Every one of those is recorded in the [[activity log|Activity-Log]] the same way, so an
-automated return is as traceable as one you tapped yourself.
+lot. A return can name a **quantity** there too, so a rule can record part of a loan coming back
+without closing it. Every one of those is recorded in the [[activity log|Activity-Log]] the same
+way, so an automated return is as traceable as one you tapped yourself.
 
 Loan due-backs already appear in the [[calendar feed|Webhooks-MQTT-and-iCal]], so a rule can spot
 an overdue loan *and* close it once the item is back, rather than only telling you about it.

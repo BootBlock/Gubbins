@@ -25,6 +25,7 @@ const DICTIONARY = {
     'quantity',
     'checked_out_at',
     'returned_at',
+    'returned_quantity',
     'return_note',
     'updated_at',
   ],
@@ -52,6 +53,7 @@ function loan(overrides: Partial<SqlRow>): SqlRow {
     item_id: 'i1',
     contact_id: 'x',
     quantity: 1,
+    returned_quantity: 0,
     checked_out_at: 1,
     returned_at: null,
     return_note: null,
@@ -87,7 +89,9 @@ describe('issue #542 — preserving a return without undoing the merge', () => {
       { id: 'x', name: 'Ada', updated_at: 60 },
       { id: 'y', name: 'Yara', updated_at: 1 },
     ],
-    checkouts: [loan({ returned_at: 500, return_note: 'back on the shelf', updated_at: 500 })],
+    checkouts: [
+      loan({ returned_at: 500, returned_quantity: 1, return_note: 'back on the shelf', updated_at: 500 }),
+    ],
   });
 
   it('keeps the return and the re-pointed borrower together', () => {
@@ -124,5 +128,112 @@ describe('issue #542 — preserving a return without undoing the merge', () => {
     expect(plan.loanReturnsPreserved).toEqual([]);
     expect(checkoutUpsert(plan)?.contact_id).toBe('y');
     expect(checkoutUpsert(plan)?.returned_at).toBeNull();
+  });
+});
+
+/**
+ * Issue #662 — `checkouts.returned_quantity` is the same monotonic column one step earlier. A loan
+ * lent in quantity comes back in instalments, and each instalment has already put its units on the
+ * shelf by the time the counter records them. So a peer's newer copy winning the row outright must
+ * not rewind it: that would say units are still with the borrower while the stock ledger says they
+ * are back, which is the stranded-stock failure #542 exists to prevent, before the loan closes.
+ */
+describe('issue #662 — preserving a partial return', () => {
+  const ITEM6: SqlRow = { id: 'i1', name: 'Drill bit', tracking_mode: 'DISCRETE', updated_at: 1 };
+
+  function six(overrides: Partial<SqlRow>): SqlRow {
+    return loan({ contact_id: 'y', quantity: 6, ...overrides });
+  }
+
+  const contacts = [{ id: 'y', name: 'Ada', updated_at: 1 }];
+
+  it('takes the higher instalment count when neither copy has closed the loan', () => {
+    // This device recorded two of the six coming back. The peer's copy is untouched but NEWER, so
+    // plain last-write-wins would settle on a loan with nothing returned.
+    const local = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 2, updated_at: 100 })],
+    });
+    const remote = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 0, updated_at: 900 })],
+    });
+
+    const plan = reconcile(local, remote, opts);
+    const row = checkoutUpsert(plan);
+
+    expect(row?.returned_quantity).toBe(2);
+    expect(row?.returned_at).toBeNull(); // four are still out — the loan has not closed
+    expect(plan.loanReturnsPreserved).toEqual([{ itemId: 'i1', checkoutId: 'k1' }]);
+  });
+
+  it('leaves two copies that agree about the count untouched', () => {
+    const local = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 2, updated_at: 100 })],
+    });
+    const remote = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 2, updated_at: 900 })],
+    });
+
+    expect(reconcile(local, remote, opts).loanReturnsPreserved).toEqual([]);
+  });
+
+  it('carries the higher count across when the other copy closes the loan', () => {
+    // The peer closed the loan without ever seeing this device's instalment, so its counter reads
+    // the whole six; taking the max is what stops the closure repair rewinding either side.
+    const local = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 2, updated_at: 900 })],
+    });
+    const remote = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 6, returned_at: 500, updated_at: 500 })],
+    });
+
+    const row = checkoutUpsert(reconcile(local, remote, opts));
+    expect(row?.returned_at).toBe(500);
+    expect(row?.returned_quantity).toBe(6);
+  });
+
+  it('never writes a count above the units the loan lent out', () => {
+    // Half the pair is a downloaded row. A snapshot claiming more returned than was ever lent
+    // would build an upsert that fails the column's CHECK — and the apply is atomic, so one
+    // crafted row would abort every other change in the merge, on this and every later sync.
+    const local = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 0, updated_at: 900 })],
+    });
+    const remote = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 9999, updated_at: 100 })],
+    });
+
+    expect(checkoutUpsert(reconcile(local, remote, opts))?.returned_quantity).toBe(6);
+  });
+
+  it('does not report the preserved instalment as a lost edit', () => {
+    const local = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 2, updated_at: 100 })],
+    });
+    const remote = snapshot({
+      items: [ITEM6],
+      contacts,
+      checkouts: [six({ returned_quantity: 0, updated_at: 900 })],
+    });
+
+    const plan = reconcile(local, remote, { ...opts, conflictSince: 1, now: 5000 });
+    expect(plan.conflicts.filter((c) => c.tableName === 'checkouts')).toEqual([]);
   });
 });

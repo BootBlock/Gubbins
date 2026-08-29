@@ -1715,12 +1715,14 @@ export const openapiDocument: JsonValue = {
     '/api/v1/items/{id}/check-in': {
       post: {
         tags: ['writes'],
-        summary: 'Return a lent item, closing its loan',
+        summary: 'Return a lent item, in whole or in part',
         description:
           'Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Restores ' +
-          'the units to the placement (and lot) they were lent from and stamps the loan returned, ' +
-          'exactly as the app does. `checkoutId` is optional when the item has exactly one open ' +
-          'loan, and required (422) once it has more than one. Needs checkouts:write (not ' +
+          'the units to the placement (and lot) they were lent from, exactly as the app does, and ' +
+          'stamps the loan returned once nothing is left out. `quantity` is optional and hands ' +
+          'back everything still out when absent; a smaller value returns part of the loan and ' +
+          'leaves it open with the rest. `checkoutId` is optional when the item has exactly one ' +
+          'open loan, and required (422) once it has more than one. Needs checkouts:write (not ' +
           'stock:write).',
         parameters: [idParam('item'), idempotencyKeyParam],
         requestBody: {
@@ -1736,6 +1738,13 @@ export const openapiDocument: JsonValue = {
                       'Which loan to close. Only needed when the item has more than one open loan; ' +
                       'it must belong to this item and still be open.',
                   },
+                  quantity: {
+                    type: 'integer',
+                    minimum: 1,
+                    description:
+                      'How many units are coming back. Omit to return everything still out. A ' +
+                      'value above the outstanding quantity is a 422.',
+                  },
                   note: {
                     type: 'string',
                     nullable: true,
@@ -1750,7 +1759,7 @@ export const openapiDocument: JsonValue = {
         },
         responses: {
           200: writeResponse(
-            'The updated item and the loan that was closed.',
+            'The updated item and the loan the units came back from — still open when part of it is out.',
             '#/components/schemas/LoanResult',
           ),
           ...(errorResponses(400, 401, 404, 409, 415, 422, 429, 503) as Record<string, JsonValue>),

@@ -5,7 +5,14 @@
  * its on-hand quantity (the units have physically left the building — unlike a
  * Phase-4 reservation, which is only a ledger annotation), records a `checkouts`
  * row, and logs `CHECKED_OUT` to the Activity Ledger, all atomically. Checking it
- * back in stamps `returned_at`, restores the quantity, and logs `CHECKED_IN`.
+ * back in restores the units, logs `CHECKED_IN`, and stamps `returned_at`.
+ *
+ * A loan that went out in quantity can come back in instalments (issue #662): each
+ * return names how many units it is handing over, restores exactly those, and adds
+ * them to the loan's `returned_quantity`. `returned_at` is stamped only by the return
+ * that brings the counter up to `quantity`, so a partly-returned loan stays open with
+ * the remainder still out. Naming no quantity returns everything outstanding, which
+ * for an untouched loan is the whole of it — the one-tap return, unchanged.
  *
  * A checkout's OPEN/RETURNED status is *derived* from the nullable `returned_at`
  * column (no stored enum), keeping the §7.1 LWW model a simple last-write-wins.
@@ -18,7 +25,13 @@ import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
 import type { BorrowerType, CheckoutStatus, Condition } from './constants';
 import { ContactRepository } from './ContactRepository';
-import { borrowerColumn, planCheckIn, planCheckInAllForTarget } from './checkout-plan';
+import {
+  borrowerColumn,
+  isReturnedQuantityGuardViolation,
+  LOAN_RETURN_RACE_MESSAGE,
+  planCheckIn,
+  planCheckInAllForTarget,
+} from './checkout-plan';
 import { historyStatement } from './item/history';
 import { stockRowId } from './stock';
 import {
@@ -136,6 +149,14 @@ export function onLoanCheckoutExistsSql(): string {
 export interface CheckInOptions {
   /** Free-text return remark; stored in the checkout's own `return_note` column (B1). */
   readonly note?: string;
+  /**
+   * How many units are coming back this time (issue #662). Omitted returns everything still out —
+   * the whole loan, for a loan nothing has come back from — so `checkIn(id)` is still the one-tap
+   * return. A smaller value restores just those units and leaves the loan **open** with the rest
+   * out. Must be between 1 and the outstanding quantity; anything else is rejected rather than
+   * clamped, so a miscount is reported instead of quietly rounded away.
+   */
+  readonly quantity?: number;
   /**
    * The item's condition *on return* (B2). When supplied and different from the item's current
    * condition, updates `items.condition` and logs `CONDITION_CHANGED` in the same transaction.
@@ -352,7 +373,20 @@ export class CheckoutRepository extends BaseRepository {
     // The reads and the statement building live in `checkout-plan` so a borrower delete can
     // splice the very same return into its own transaction (issue #301).
     const statements = await planCheckIn(this.driver, checkoutId, this.actorId(), options);
-    if (statements.length > 0) await this.driver.transaction(statements);
+    if (statements.length > 0) {
+      try {
+        await this.driver.transaction(statements);
+      } catch (error) {
+        // Another partial return of this loan landed between the plan's read and its write, so
+        // the watermark compare-and-swap aborted the whole transaction (issue #662). Report the
+        // stale count in plain words rather than constraint text, exactly as the purchase-order
+        // receipt does for its own guard.
+        if (isReturnedQuantityGuardViolation(error)) {
+          throw new DbError('SQLITE_CONSTRAINT', LOAN_RETURN_RACE_MESSAGE, { cause: error });
+        }
+        throw error;
+      }
+    }
     return (await this.getById(checkoutId))!;
   }
 

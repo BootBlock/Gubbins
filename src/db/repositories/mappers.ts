@@ -829,6 +829,7 @@ export function rowToCheckout(row: CheckoutRow): Checkout {
     projectId: row.project_id,
     locationId: row.location_id,
     quantity: row.quantity,
+    returnedQuantity: row.returned_quantity,
     dueDate: row.due_date,
     checkedOutAt: row.checked_out_at,
     returnedAt: row.returned_at,

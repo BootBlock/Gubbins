@@ -785,7 +785,25 @@ function parseWriteBody(action: WriteAction, itemId: string, value: unknown): Pa
     case 'check-in': {
       const strings = readOptionalStrings(record, ['checkoutId', 'note']);
       if (!strings.ok) return strings;
-      return { ok: true, op: { kind: 'check-in', itemId, ...strings.value } };
+      // Optional (issue #662): absent returns everything still out, which is the whole loan for
+      // a loan nothing has come back from. Shape only here — whether the number is *within* the
+      // outstanding quantity is the repository's to decide, and surfaces as a 422.
+      if (
+        record.quantity !== undefined &&
+        record.quantity !== null &&
+        (typeof record.quantity !== 'number' || !Number.isFinite(record.quantity))
+      ) {
+        return { ok: false, message: '"quantity", when present, must be a finite number.' };
+      }
+      return {
+        ok: true,
+        op: {
+          kind: 'check-in',
+          itemId,
+          ...strings.value,
+          ...(typeof record.quantity === 'number' ? { quantity: record.quantity } : {}),
+        },
+      };
     }
     case 'transfer-stock': {
       if (typeof record.fromLocationId !== 'string' || record.fromLocationId.length === 0) {

@@ -4,8 +4,13 @@ import { DbError } from '@/db/errors';
 import { runMigrations } from '@/db/migrations';
 import { migrations } from '@/db/migrations/index';
 import { MS_PER_DAY, SYSTEM_USER_ID } from './constants';
-import { CheckoutRepository, overdueCheckoutExistsSql } from './CheckoutRepository';
-import { checkInId, planCheckIn } from './checkout-plan';
+import { CheckoutRepository, onLoanCheckoutExistsSql, overdueCheckoutExistsSql } from './CheckoutRepository';
+import {
+  checkInId,
+  isReturnedQuantityGuardViolation,
+  LOAN_RETURN_RACE_MESSAGE,
+  planCheckIn,
+} from './checkout-plan';
 import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
 import { ProjectRepository } from './ProjectRepository';
@@ -204,6 +209,160 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       const history = await items.getHistory(itemId);
       expect(history.rows.filter((h) => h.action === 'CHECKED_IN')).toHaveLength(1);
       expect((await checkouts.getById(checkout.id))?.returnedAt).not.toBeNull();
+    });
+
+    describe('partial returns (issue #662)', () => {
+      it('restores only the units returned and leaves the loan open with the rest out', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+        expect((await items.getById(itemId))?.quantity).toBe(4);
+
+        const after = await checkouts.checkIn(checkout.id, { quantity: 2 });
+
+        // The two are back on the shelf; the loan still holds the four that are not.
+        expect((await items.getById(itemId))?.quantity).toBe(6);
+        expect(after.returnedAt).toBeNull();
+        expect(after.returnedQuantity).toBe(2);
+        expect(after.quantity).toBe(6);
+      });
+
+      it('keeps the loan open in every derived reading until the last unit is back', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+        await checkouts.checkIn(checkout.id, { quantity: 2 });
+
+        // A partly-returned loan is OPEN, not a third state — the borrower still has four.
+        const open = await checkouts.listOpen();
+        expect(open.rows.map((r) => r.id)).toContain(checkout.id);
+        expect(open.rows.find((r) => r.id === checkout.id)?.status).toBe('OPEN');
+        expect((await checkouts.countOpen(Date.now())).open).toBe(1);
+        const onLoan = await driver.queryOne<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM items WHERE ${onLoanCheckoutExistsSql()} AND items.id = ?;`,
+          [itemId],
+        );
+        expect(onLoan?.n).toBe(1);
+      });
+
+      it('closes the loan on the instalment that brings the last unit back', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+        await checkouts.checkIn(checkout.id, { quantity: 2 });
+        await checkouts.checkIn(checkout.id, { quantity: 3 });
+        const closed = await checkouts.checkIn(checkout.id, { quantity: 1, note: 'all back now' });
+
+        expect(closed.returnedAt).not.toBeNull();
+        expect(closed.returnedQuantity).toBe(6);
+        expect(closed.returnNote).toBe('all back now');
+        expect((await items.getById(itemId))?.quantity).toBe(10);
+
+        // One ledger entry per instalment, each carrying its own units — not one lump of six.
+        const entries = (await items.getHistory(itemId)).rows.filter((h) => h.action === 'CHECKED_IN');
+        expect(entries.map((h) => h.quantityDelta).sort((a, b) => a! - b!)).toEqual([1, 2, 3]);
+      });
+
+      it('returns everything still out when no quantity is named', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+        await checkouts.checkIn(checkout.id, { quantity: 2 });
+
+        const closed = await checkouts.checkIn(checkout.id);
+
+        expect(closed.returnedAt).not.toBeNull();
+        expect((await items.getById(itemId))?.quantity).toBe(10);
+      });
+
+      it('gives each instalment its own derived ids so a loan returned in stages is not collapsed', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+        await checkouts.checkIn(checkout.id, { quantity: 2 });
+        await checkouts.checkIn(checkout.id, { quantity: 4 });
+
+        const entries = (await items.getHistory(itemId)).rows.filter((h) => h.action === 'CHECKED_IN');
+        expect(entries).toHaveLength(2);
+        // The first instalment starts at watermark 0, so it derives exactly what a whole-loan
+        // return has always derived; the second is qualified by the watermark it started from.
+        expect(entries.map((h) => h.id).sort()).toEqual(
+          [
+            await checkInId('hist:CHECKED_IN', checkout.id),
+            await checkInId('hist:CHECKED_IN', checkout.id, 2),
+          ].sort(),
+        );
+      });
+
+      it('rejects returning more than is still out rather than clamping', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+        await checkouts.checkIn(checkout.id, { quantity: 4 });
+
+        await expect(checkouts.checkIn(checkout.id, { quantity: 3 })).rejects.toBeInstanceOf(DbError);
+        await expect(checkouts.checkIn(checkout.id, { quantity: 0 })).rejects.toBeInstanceOf(DbError);
+        // Nothing moved on either refusal.
+        expect((await items.getById(itemId))?.quantity).toBe(8);
+        expect((await checkouts.getById(checkout.id))?.returnedQuantity).toBe(4);
+      });
+
+      it('aborts a return that raced another partial one, rather than restoring against a stale count', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+
+        // Both plans read the loan with nothing returned yet, exactly as the #296 race does —
+        // but neither closes the loan, so `returned_at IS NULL` alone cannot separate them.
+        const first = await planCheckIn(driver, checkout.id, SYSTEM_USER_ID, { quantity: 2 });
+        const second = await planCheckIn(driver, checkout.id, SYSTEM_USER_ID, { quantity: 3 });
+        await driver.transaction(first);
+        await expect(driver.transaction(second)).rejects.toBeInstanceOf(DbError);
+
+        // The loser landed nothing at all: no stock, no ledger entry, no counter movement.
+        expect((await items.getById(itemId))?.quantity).toBe(6);
+        expect((await checkouts.getById(checkout.id))?.returnedQuantity).toBe(2);
+        const entries = (await items.getHistory(itemId)).rows.filter((h) => h.action === 'CHECKED_IN');
+        expect(entries).toHaveLength(1);
+      });
+
+      it('reports a lost partial-return race in plain words', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+        const stale = await planCheckIn(driver, checkout.id, SYSTEM_USER_ID, { quantity: 2 });
+        await checkouts.checkIn(checkout.id, { quantity: 1 });
+
+        // The guard's abort is what `checkIn` translates, so assert both halves of that seam:
+        // the transaction fails, and the failure is the one the translation recognises.
+        const failure = await driver.transaction(stale).catch((error: unknown) => error);
+        expect(isReturnedQuantityGuardViolation(failure)).toBe(true);
+        expect(LOAN_RETURN_RACE_MESSAGE).toMatch(/still out/);
+      });
+
+      it('restores each instalment to the exact lot the units were lent from', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
+        const before = await driver.query<{ batch_key: string; quantity: number }>(
+          'SELECT batch_key, quantity FROM stock_batches WHERE item_id = ?;',
+          [itemId],
+        );
+        await checkouts.checkIn(checkout.id, { quantity: 2 });
+        const after = await driver.query<{ batch_key: string; quantity: number }>(
+          'SELECT batch_key, quantity FROM stock_batches WHERE item_id = ?;',
+          [itemId],
+        );
+        // The same lot rows, two units heavier — no anonymous lot is invented for the instalment.
+        expect(after.map((b) => b.batch_key).sort()).toEqual(before.map((b) => b.batch_key).sort());
+        expect(after.reduce((n, b) => n + b.quantity, 0)).toBe(
+          before.reduce((n, b) => n + b.quantity, 0) + 2,
+        );
+      });
+
+      it('returns everything outstanding when a borrower with a part-returned loan is deleted', async () => {
+        const itemId = await makeItem('Drill bit', 10);
+        const bob = await contacts.resolveOrCreate('Bob');
+        const checkout = await checkouts.checkout({ itemId, contactId: bob.id, quantity: 6 });
+        await checkouts.checkIn(checkout.id, { quantity: 2 });
+
+        await checkouts.checkInAllForContact(bob.id);
+
+        // The four still out come back — not the six the loan went out with.
+        expect((await items.getById(itemId))?.quantity).toBe(10);
+        expect((await checkouts.getById(checkout.id))?.returnedAt).not.toBeNull();
+      });
     });
 
     it('does not double-apply the condition change when two returns race (#296)', async () => {

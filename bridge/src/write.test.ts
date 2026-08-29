@@ -281,6 +281,36 @@ describe('applyOperation', () => {
     expect(checkout!.returnNote).toBe('All back');
   });
 
+  it('hands back part of a loan and leaves it open with the rest out (issue #662)', async () => {
+    const lent = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', quantity: 6 },
+      ACTOR,
+    );
+    expect(lent.item.quantity).toBe(36);
+
+    const { item, checkout } = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-in', itemId: 'item-m3-bolt', quantity: 2 },
+      ACTOR,
+    );
+
+    expect(item.quantity).toBe(38); // only the two came back
+    expect(checkout!.returnedAt).toBeNull(); // four are still with the borrower
+    expect(checkout!.returnedQuantity).toBe(2);
+  });
+
+  it('rejects returning more than a loan still has out with a 422', async () => {
+    await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', quantity: 2 },
+      ACTOR,
+    );
+    await expect(
+      applyOperation(hydrated.driver, { kind: 'check-in', itemId: 'item-m3-bolt', quantity: 5 }, ACTOR),
+    ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
+  });
+
   it('refuses to guess when the item has more than one open loan', async () => {
     for (const contactName of ['Sam Okafor', 'Ada Quinn']) {
       await applyOperation(
