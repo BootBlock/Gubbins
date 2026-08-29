@@ -118,6 +118,7 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   const restored = planRetainedRestore(options.retainedStore?.load(), {
     prefix: topics.base,
     discoveryPrefix: options.discoveryPrefix,
+    discovery: options.discovery,
   });
   // The location ids we currently have RETAINED topics for, so a removed location's retained state
   // (and its HA discovery entity) can be cleared rather than lingering on the broker as a ghost.
@@ -132,11 +133,13 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   let staleTopics: readonly string[] = restored.staleTopics;
   // The record last handed to the store, so a reconnect's re-publish doesn't rewrite an identical file.
   let rememberedSignature: string | null = null;
-  // A retraction that the client only BUFFERED, because the broker was not reachable when it was
-  // made. Until it is genuinely on the wire the record must keep naming the topic: persisting
-  // "that is retracted now" and then dying before the connect would lose the only memory of a dead
-  // topic, which is the very failure this file exists to prevent.
-  let retractionsPending = false;
+  // Retractions the client only BUFFERED, because the broker was not reachable when they were made.
+  // They are re-issued on the next connect and, until then, the record keeps naming the topics:
+  // persisting "those are retracted now" and dying before the connect would lose the only memory of
+  // a dead topic, which is the very failure this file exists to prevent. Re-issuing rather than
+  // trusting the buffer matters because that buffer is bounded and drops its OLDEST entries — which
+  // are exactly these, enqueued at start before any state publish.
+  let pendingRetractions: string[] = [];
 
   const client = createClient({
     endpoint: options.endpoint,
@@ -154,10 +157,13 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   /** On each (re)connect: announce online and re-publish the last-known retained state. */
   function handleConnect(): void {
     client.publish(topics.status, AVAILABILITY_ONLINE, true);
-    // The client flushes its offline buffer before calling this, so any retraction that was merely
-    // enqueued has just been written to the socket. The record may finally say it happened.
-    const retractionsSettled = retractionsPending;
-    retractionsPending = false;
+    // Re-issue anything that was only buffered while the broker was away. A blank publish to a
+    // topic that is already blank costs nothing, and this is the only way to be certain the
+    // retraction reached the broker rather than being evicted from a full buffer.
+    const retractionsSettled = pendingRetractions.length > 0;
+    const reissue = pendingRetractions;
+    pendingRetractions = [];
+    for (const topic of reissue) retract(topic);
     if (lastState !== null) {
       // Force discovery re-emission on a fresh connection (the broker may have lost retained state).
       discoverySignature = null;
@@ -209,7 +215,7 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
    * unreachable is only buffered, so it is noted as pending until a connect flushes it.
    */
   function retract(topic: string): void {
-    if (!client.publish(topic, '', true)) retractionsPending = true;
+    if (!client.publish(topic, '', true)) pendingRetractions.push(topic);
   }
 
   /**
@@ -224,7 +230,7 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
    * repeated, idempotent blanking publish.
    */
   function rememberPublished(): void {
-    if (options.retainedStore === undefined || retractionsPending) return;
+    if (options.retainedStore === undefined || pendingRetractions.length > 0) return;
     // Reconnects re-publish the whole snapshot, so skip the write when nothing actually moved.
     const record = {
       version: RETAINED_LOCATIONS_VERSION,

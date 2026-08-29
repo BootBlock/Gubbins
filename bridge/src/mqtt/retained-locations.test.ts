@@ -12,7 +12,7 @@ import {
   type RetainedLocationsRecord,
 } from './retained-locations.ts';
 
-const SCOPE = { prefix: 'gubbins', discoveryPrefix: 'homeassistant' };
+const SCOPE = { prefix: 'gubbins', discoveryPrefix: 'homeassistant', discovery: true };
 
 const record = (overrides: Partial<RetainedLocationsRecord> = {}): RetainedLocationsRecord => ({
   version: RETAINED_LOCATIONS_VERSION,
@@ -113,6 +113,15 @@ describe('planRetainedRestore', () => {
       'homeassistant/sensor/gubbins/location_loc-store/config',
       'homeassistant/sensor/gubbins/location_loc-bench/config',
     ]);
+  });
+
+  // Nothing re-emits the device entities when this run publishes no discovery configs, so leaving
+  // them would strand a half-removed device reading state topics this same sweep blanks.
+  it('blanks the device configs too when the topic prefix moves with discovery now off', () => {
+    const plan = planRetainedRestore(record(), { ...SCOPE, prefix: 'shed', discovery: false });
+    expect(plan.staleTopics).toContain('homeassistant/sensor/gubbins/items_total/config');
+    expect(plan.staleTopics).toContain('homeassistant/sensor/gubbins/location_loc-bench/config');
+    expect(plan.discoveryPublished).toBe(false);
   });
 
   it('blanks no config topic when the previous run had discovery off', () => {

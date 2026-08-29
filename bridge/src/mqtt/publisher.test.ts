@@ -29,8 +29,9 @@ interface Published {
 }
 
 /** A fake MQTT client that records publishes and exposes the captured onConnect hook. */
-function fakeClientFactory({ connected = true }: { connected?: boolean } = {}) {
+function fakeClientFactory({ connected: startConnected = true }: { connected?: boolean } = {}) {
   const published: Published[] = [];
+  let connected = startConnected;
   let onConnect: (() => void) | undefined;
   let stopped = false;
   const create = (options: MqttClientOptions): MqttClient => {
@@ -51,7 +52,11 @@ function fakeClientFactory({ connected = true }: { connected?: boolean } = {}) {
   return {
     create,
     published,
-    triggerConnect: () => onConnect?.(),
+    // As the real client does: the transport is up (and its buffer flushed) before the hook runs.
+    triggerConnect: () => {
+      connected = true;
+      onConnect?.();
+    },
     wasStopped: () => stopped,
   };
 }
@@ -285,7 +290,7 @@ describe('retained topics remembered across restarts (issue #565)', () => {
    * Persisting "that tree is dealt with" then would strand it for good if this process died before
    * connecting — the very failure #565 is about. The record waits for the flush.
    */
-  it('holds the record back until the connection flushes a buffered retraction', () => {
+  it('re-issues a retraction the broker never received, then saves the record', () => {
     const store = fakeStore(RECORD({ prefix: 'old-prefix' }));
     const offline = fakeClientFactory({ connected: false });
     const { publisher } = makePublisher({
@@ -295,8 +300,15 @@ describe('retained topics remembered across restarts (issue #565)', () => {
     });
     publisher.start();
     expect(store.saved).toBeUndefined();
+    offline.published.length = 0;
 
-    offline.triggerConnect(); // the client flushes its buffer before calling this
+    offline.triggerConnect();
+
+    // Published again rather than left to the client's buffer, which is bounded and drops its
+    // OLDEST entries — exactly these, enqueued at start before any state publish.
+    expect(offline.published.filter((p) => p.topic === 'old-prefix/status' && p.payload === '')).toHaveLength(
+      1,
+    );
     expect(store.saved?.prefix).toBe('gubbins');
     expect(store.saved?.locationIds).toEqual([]);
   });

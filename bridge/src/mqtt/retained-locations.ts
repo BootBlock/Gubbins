@@ -142,7 +142,10 @@ export function parseRetainedLocations(raw: string | undefined): RetainedLocatio
  */
 export function planRetainedRestore(
   record: RetainedLocationsRecord | undefined,
-  scope: RetainedScope,
+  scope: RetainedScope & {
+    /** Whether this run publishes discovery configs, which decides who repairs a moved config. */
+    readonly discovery: boolean;
+  },
 ): RetainedRestorePlan {
   if (record === undefined) {
     return { seedLocationIds: [], staleTopics: [], discoveryPublished: false };
@@ -163,13 +166,16 @@ export function planRetainedRestore(
   //   - **The discovery prefix moved** — that whole tree is abandoned by us. Blank all of it,
   //     device entities included: nothing will ever overwrite them again, and Home Assistant would
   //     re-create the device from them on every restart.
-  //   - **Only the topic prefix moved** — the tree is still the one we publish to. Blank the
-  //     per-location configs, whose ids are ours, and leave the device-level ones alone: with
-  //     discovery on the first `publishState` rewrites them under the new topic prefix moments
-  //     later, and blanking them first would take a co-located bridge's live entities down with
-  //     them.
+  //   - **Only the topic prefix moved, discovery still on** — the tree is still the one we publish
+  //     to, and the first `publishState` rewrites the device entities under the new topic prefix
+  //     moments later. Blank the per-location configs, whose ids are ours, and leave the
+  //     device-level ones standing rather than take a co-located bridge's live entities down with
+  //     them for a repair we are about to make anyway.
+  //   - **Only the topic prefix moved, discovery now off** — nothing will rewrite them, so the
+  //     device entities would sit for ever reading state topics this same sweep blanks. They go
+  //     too: a half-removed device is worse than the collision risk.
   if (record.discoveryPublished) {
-    if (!discoveryPrefixKept) {
+    if (!discoveryPrefixKept || (!prefixKept && !scope.discovery)) {
       staleTopics.push(...discoveryConfigTopics(record.discoveryPrefix, record.locationIds));
     } else if (!prefixKept) {
       staleTopics.push(
@@ -194,6 +200,6 @@ export function planRetainedRestore(
   return {
     seedLocationIds: prefixKept ? record.locationIds : [],
     staleTopics,
-    discoveryPublished: discoveryPrefixKept && record.discoveryPublished,
+    discoveryPublished: discoveryPrefixKept && record.discoveryPublished && (prefixKept || scope.discovery),
   };
 }

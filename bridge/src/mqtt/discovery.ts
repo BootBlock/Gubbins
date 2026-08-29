@@ -226,7 +226,7 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
  * It exists so a *retraction* can name every config topic a previous run published without having
  * that run's {@link InventoryState} to hand (issue #565): the ids are the only part of a config a
  * blanking publish needs. `discovery.test.ts` drives both sides and fails if the two ever diverge —
- * see `emits a config for exactly the entities discoveryConfigTopics names`.
+ * see `names exactly the topics buildDiscoveryConfigs emits, in the same order`.
  */
 const DEVICE_ENTITY_IDS: readonly (readonly [component: string, objectId: string])[] = [
   ['sensor', 'items_total'],
