@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { COUNT_UP_DURATION_MS, useCountUp } from './useCountUp';
+import { COUNT_UP_DURATION_MS, useCountUp, useHasRolled } from './useCountUp';
 import { type MediaQueryProvider } from './useReducedMotion';
 import { useDecorationMotionReduced } from './decoration-motion';
 
@@ -16,7 +16,8 @@ import { useDecorationMotionReduced } from './decoration-motion';
  *    read the real figure, and synchronous tests see it without waiting on a frame loop.
  *  - **A change while mounted animates** from the previous value to the new one, then
  *    settles with a brief `animate-count-pop` scale bounce — the pop is delayed by the roll
- *    duration so it lands *as* the figure arrives, not while it is still climbing.
+ *    duration so it lands *as* the figure arrives, not while it is still climbing. A figure that
+ *    merely appeared at its value, with no roll behind it, does not pop at all.
  *  - **Reduced motion snaps.** When decorative motion is suppressed (OS reduced-motion OR the
  *    F9 "Reduce effects" switch, or the frame loop is unavailable) the value is set instantly
  *    with no roll and no pop — belt-and-braces alongside the global CSS catch-all.
@@ -66,6 +67,10 @@ export function AnimatedNumber({
 }: AnimatedNumberProps) {
   const reduced = useDecorationMotionReduced(motionProvider);
   const display = useCountUp(value, { durationMs, animateOnMount, reduced });
+  // The pop is a settle, so it belongs only to a roll that actually ran. The hook is called
+  // unconditionally — `reduced` gates the result, never the call.
+  const rolled = useHasRolled(animateOnMount);
+  const pop = !reduced && rolled;
 
   return (
     // `key={value}` remounts the span on each change so the one-shot `animate-count-pop`
@@ -74,8 +79,8 @@ export function AnimatedNumber({
     // fill mode, so nothing is applied while it waits).
     <span
       key={value}
-      className={cn('inline-block tabular-nums', !reduced && 'animate-count-pop', className)}
-      style={reduced ? undefined : { animationDelay: `${durationMs}ms` }}
+      className={cn('inline-block tabular-nums', pop && 'animate-count-pop', className)}
+      style={pop ? { animationDelay: `${durationMs}ms` } : undefined}
       data-testid={testId}
     >
       {format(display)}

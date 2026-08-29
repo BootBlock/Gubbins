@@ -61,6 +61,23 @@ export interface CountUpOptions {
  *    is unavailable, e.g. SSR/jsdom) the value is set instantly with no roll —
  *    belt-and-braces alongside the global CSS reduced-motion catch-all.
  */
+/**
+ * Whether the ticker has a roll for the settle-pop to land on, this render: always once the
+ * component has mounted, and on the very first render only when the figure counts in from zero.
+ *
+ * Without this the pop plays on a figure that simply *appeared* at its value — and since the pop
+ * is now held back by the roll duration (issue #448), that detached bounce lands most of a second
+ * after the number has been sitting still. `useRef` rather than state on purpose: the first render
+ * must read `false`, and nothing needs re-rendering when it flips.
+ */
+export function useHasRolled(animateOnMount: boolean): boolean {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+  }, []);
+  return animateOnMount || mounted.current;
+}
+
 export function useCountUp(
   value: number,
   { durationMs = COUNT_UP_DURATION_MS, animateOnMount = false, reduced }: CountUpOptions,

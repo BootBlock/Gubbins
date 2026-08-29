@@ -10,15 +10,15 @@ describe('barPercent', () => {
 
   it('floors a positive fraction so a rounding-error row still shows a stub', () => {
     expect(barPercent(0.0001)).toBe(2);
-    expect(barPercent(0.0001, 5)).toBe(5);
   });
 
   // The floor must not apply to nothing: "no value here" and "a sliver of value here" have to
   // look different, or an empty breakdown reads as a full one of tiny bars.
-  it('renders exactly zero as empty, whatever the floor', () => {
+  it('renders exactly zero as empty rather than as the floor', () => {
     expect(barPercent(0)).toBe(0);
     expect(barPercent(-1)).toBe(0);
     expect(barPercent(Number.NaN)).toBe(0);
+    expect(barPercent(Number.POSITIVE_INFINITY)).toBe(0);
   });
 
   it('clamps a fraction above one', () => {
@@ -36,19 +36,10 @@ describe('Bar', () => {
     expect(fill?.className).toContain('animate-bar-grow');
   });
 
-  it('is decorative by default, because the figure is already in text beside it', () => {
+  it('is decorative, because the figure is already in text beside it', () => {
     render(<Bar value={0.4} data-testid="bar" />);
     expect(screen.getByTestId('bar')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-  });
-
-  it('becomes a labelled progressbar reporting 0-100 when given a label', () => {
-    render(<Bar value={0.4} label="Budget spent" data-testid="bar" />);
-    const bar = screen.getByRole('progressbar', { name: 'Budget spent' });
-    expect(bar).toHaveAttribute('aria-valuenow', '40');
-    expect(bar).toHaveAttribute('aria-valuemin', '0');
-    expect(bar).toHaveAttribute('aria-valuemax', '100');
-    expect(bar).not.toHaveAttribute('aria-hidden');
   });
 
   it('tints the fill with the given token class', () => {

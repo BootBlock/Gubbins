@@ -2,7 +2,7 @@ import { Fragment, type CSSProperties } from 'react';
 import { cn } from '@/lib/utils';
 import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
-import { COUNT_UP_DURATION_MS, useCountUp } from './useCountUp';
+import { COUNT_UP_DURATION_MS, useCountUp, useHasRolled } from './useCountUp';
 import { type MediaQueryProvider } from './useReducedMotion';
 import { useDecorationMotionReduced } from './decoration-motion';
 
@@ -140,15 +140,19 @@ function AnimatedMoney({
 }) {
   const reduced = useDecorationMotionReduced(motionProvider);
   const display = useCountUp(value, { durationMs, animateOnMount, reduced });
+  // The pop is a settle, so it belongs only to a roll that actually ran. The hook is called
+  // unconditionally — `reduced` gates the result, never the call.
+  const rolled = useHasRolled(Boolean(animateOnMount));
+  const pop = !reduced && rolled;
 
   return (
     <MoneyParts
       key={value}
       parts={fmt.currencyParts(display, currency)}
-      className={cn('inline-block', !reduced && 'animate-count-pop', className)}
+      className={cn('inline-block', pop && 'animate-count-pop', className)}
       // Hold the settle-pop back by the roll duration so it fires as the figure lands rather than
       // while it is still climbing (`animate-count-pop` has no fill mode, so the wait paints nothing).
-      style={reduced ? undefined : { animationDelay: `${durationMs}ms` }}
+      style={pop ? { animationDelay: `${durationMs}ms` } : undefined}
       symbolClassName={symbolClassName}
       data-testid={testId}
     />

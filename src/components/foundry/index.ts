@@ -84,7 +84,7 @@ export {
   COUNT_UP_HEADLINE_DURATION_MS,
   type CountUpOptions,
 } from './useCountUp';
-export { Bar, barPercent, type BarProps } from './bar';
+export { Bar, type BarProps } from './bar';
 export { Reveal, type RevealProps } from './reveal';
 export {
   useRevealOnScroll,

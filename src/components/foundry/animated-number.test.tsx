@@ -1,10 +1,18 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { render, screen, cleanup, act } from '@testing-library/react';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { AnimatedNumber } from './animated-number';
 import type { MediaQueryLike, MediaQueryProvider } from './useReducedMotion';
 
 afterEach(cleanup);
+
+// `motionProvider` pins only the OS half of the decoration-motion gate; the animation level is the
+// other half, and it suppresses the roll at Calm or calmer. Pin it, or a test that means to watch
+// a roll can silently be watching a snap.
+beforeEach(() => {
+  usePreferencesStore.setState({ animationLevel: 'headache' });
+});
 
 /** A fake reduced-motion provider fixed at `matches`. */
 function motion(matches: boolean): MediaQueryProvider {
@@ -46,15 +54,41 @@ describe('AnimatedNumber (Foundry ticker; spec §3)', () => {
     expect(screen.getByText('25')).toBeInTheDocument();
   });
 
-  it('carries the pop class when motion is permitted', () => {
+  // A settle-pop belongs to a roll. A figure that merely appeared at its value has nothing to
+  // settle from, and — since the pop is held back by the roll duration — would bounce most of a
+  // second after the number had been sitting still.
+  it('does not pop on a plain mount, where no roll ran', () => {
     render(<AnimatedNumber value={3} motionProvider={motion(false)} data-testid="n" />);
+    const span = screen.getByTestId('n');
+    expect(span.className).not.toContain('animate-count-pop');
+    expect(span.style.animationDelay).toBe('');
+  });
+
+  it('carries the pop class when a count-in rolls and motion is permitted', () => {
+    render(<AnimatedNumber value={3} animateOnMount motionProvider={motion(false)} data-testid="n" />);
+    expect(screen.getByTestId('n').className).toContain('animate-count-pop');
+  });
+
+  it('pops once a value change has rolled', () => {
+    const { rerender } = render(<AnimatedNumber value={3} motionProvider={motion(false)} data-testid="n" />);
+    act(() => {
+      rerender(<AnimatedNumber value={9} motionProvider={motion(false)} data-testid="n" />);
+    });
     expect(screen.getByTestId('n').className).toContain('animate-count-pop');
   });
 
   // The pop is a *settle*, so it must not fire while the figure is still climbing. It is held
   // back by exactly the roll duration; without the delay a long headline roll pops on the way up.
   it('delays the settle-pop by the roll duration', () => {
-    render(<AnimatedNumber value={3} durationMs={1950} motionProvider={motion(false)} data-testid="n" />);
+    render(
+      <AnimatedNumber
+        value={3}
+        durationMs={1950}
+        animateOnMount
+        motionProvider={motion(false)}
+        data-testid="n"
+      />,
+    );
     expect(screen.getByTestId('n').style.animationDelay).toBe('1950ms');
   });
 
@@ -98,9 +132,9 @@ describe('AnimatedNumber (Foundry ticker; spec §3)', () => {
           />
         </StrictMode>,
       );
-      // No frame has run yet, so a working count-in is still at its zero start. A snap would
-      // already read 1,000 here.
-      expect(screen.getByTestId('n')).toHaveTextContent('0');
+      // No frame has run yet, so a working count-in is still at its zero start. Compared
+      // exactly, not with `toHaveTextContent`, whose substring match a snapped "1,000" passes.
+      expect(screen.getByTestId('n').textContent).toBe('0');
 
       frame(100);
       frame(350); // a quarter of the way through the roll

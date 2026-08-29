@@ -1,8 +1,15 @@
 import { cn } from '@/lib/utils';
 
 /**
+ * Floor, in percent, for a *positive* fill fraction, so a row worth a rounding error still shows a
+ * stub of a bar rather than nothing. A fraction of exactly `0` renders an empty track instead —
+ * "nothing here" must not look like "a little here".
+ */
+const MIN_PERCENT = 2;
+
+/**
  * Foundry Bar — the single, canonical horizontal proportional bar: a rounded track with a tinted
- * fill whose width is a fraction of the whole. It is what every report breakdown draws its rows
+ * fill whose width is a fraction of the whole. It is what the report breakdowns draw their rows
  * with (value by category/location, spend, sales, stock ageing, ABC tiers), so the track height,
  * radius, tokens, transition and grow-in entrance are defined once instead of being re-typed at
  * each call site.
@@ -15,77 +22,44 @@ import { cn } from '@/lib/utils';
  *    are both neutralised by the global `prefers-reduced-motion` / "Reduce effects" catch-alls,
  *    which clamp them to ~0.01ms — the bar is simply drawn at its value. No JS gate is needed
  *    because there is no static hold to undo; the true width is always the underlying style.
- *  - **It is decorative by default** (`aria-hidden`), because every call site already states the
- *    figure the bar depicts in adjacent text and a screen reader should not hear it twice. Pass
- *    `label` where the bar is the *only* expression of the value, and it becomes a labelled
- *    `role="progressbar"` reporting a 0–100 percentage instead.
+ *  - **It is decorative** (`aria-hidden`), because every call site states the figure the bar
+ *    depicts in adjacent text and a screen reader should not hear it twice.
  *
- * Bars that are **not** a fraction-of-a-whole row — the consumable `GaugeBar` (which must not
- * re-fire its entrance as the virtualised grid recycles rows) and the vertical column strips in
- * the spend/sales-over-time charts — deliberately stay on their own markup.
+ * Adopted so far by the five report breakdowns only. Several other bars around the app still carry
+ * their own markup (`BudgetMeter`, `PickingSection`, `AchievementsScreen`, `StepRail`,
+ * `AuditDayDialog`, `StorageTriageDialog`, `LocationFullnessBar`, `LocationTreeItem`) and are
+ * candidates to move across — though the ones that carry a `role="progressbar"` would need a
+ * labelled variant adding here first, which is deliberately not built until something needs it.
+ * Two will not move: the consumable `GaugeBar` must not re-fire an entrance as the virtualised
+ * grid recycles its rows, and the spend/sales-over-time strips are vertical columns rather than a
+ * fraction-of-a-whole row.
  */
 export interface BarProps {
   /**
-   * The fill fraction, `0`–`1` (a share of the largest row, of a budget, of a total). Values
-   * outside the range are clamped; a non-finite value is treated as `0`.
+   * The fill fraction, `0`–`1` (a share of the largest row, of a total). Values outside the range
+   * are clamped; a non-finite value is treated as `0`.
    */
   readonly value: number;
-  /**
-   * Floor, in percent, for a *positive* fraction, so a row worth a rounding error still shows a
-   * stub of a bar rather than nothing. A fraction of exactly `0` always renders an empty track —
-   * "nothing here" must not look like "a little here". Default `2`.
-   */
-  readonly minPercent?: number;
   /** Tailwind classes for the fill — a `bg-*` token. Default `bg-primary`. */
   readonly fillClassName?: string;
-  /** Classes merged onto the track (e.g. a taller `h-3`). */
-  readonly className?: string;
-  /**
-   * Accessible name. Given, the track becomes a `role="progressbar"` announcing the fill as a
-   * 0–100 percentage. Omit it for the usual decorative case, where the figure is already in text
-   * beside the bar.
-   */
-  readonly label?: string;
   readonly 'data-testid'?: string;
 }
 
-/** The fill width as a whole-number percentage, clamped and floored per {@link BarProps}. */
-export function barPercent(value: number, minPercent = 2): number {
+/** The fill width as a whole-number percentage: clamped to 0–100, floored per {@link MIN_PERCENT}. */
+export function barPercent(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
-  return Math.max(minPercent, Math.round(Math.min(1, value) * 100));
+  return Math.max(MIN_PERCENT, Math.round(Math.min(1, value) * 100));
 }
 
-export function Bar({
-  value,
-  minPercent = 2,
-  fillClassName = 'bg-primary',
-  className,
-  label,
-  'data-testid': testId,
-}: BarProps) {
-  const percent = barPercent(value, minPercent);
-  const semantics = label
-    ? ({
-        role: 'progressbar' as const,
-        'aria-label': label,
-        'aria-valuenow': percent,
-        'aria-valuemin': 0,
-        'aria-valuemax': 100,
-      } as const)
-    : ({ 'aria-hidden': true } as const);
-
+export function Bar({ value, fillClassName = 'bg-primary', 'data-testid': testId }: BarProps) {
   return (
-    <div
-      className={cn('h-2 overflow-hidden rounded-full bg-secondary', className)}
-      data-testid={testId}
-      {...semantics}
-    >
+    <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true" data-testid={testId}>
       <div
         className={cn(
           'h-full rounded-full animate-bar-grow transition-[width] duration-500 ease-emphasized',
           fillClassName,
         )}
-        style={{ width: `${percent}%` }}
+        style={{ width: `${barPercent(value)}%` }}
       />
     </div>
   );
