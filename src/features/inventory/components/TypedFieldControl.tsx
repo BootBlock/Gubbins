@@ -7,7 +7,7 @@ import {
   Select,
   Spinner,
   Textarea,
-  useRovingRadioGroup,
+  SegmentedRadioGroup,
 } from '@/components/foundry';
 import { CloseIcon, UploadIcon } from '@/components/icons';
 import { encodeFieldImage } from '@/features/images/compression';
@@ -15,7 +15,6 @@ import { useErrorMessage } from '@/features/errors';
 import { useT } from '@/features/i18n';
 import { assertExhaustive } from '@/lib/exhaustive';
 import { isImageDataUrl } from '@/lib/image-data-url';
-import { cn } from '@/lib/utils';
 import type { FieldType } from '@/db/repositories';
 
 /** ARIA validation wiring (aria-invalid/describedby) to spread onto the primary control. */
@@ -329,9 +328,10 @@ const YES_NO_OPTIONS = [
 ] as const;
 
 /**
- * A 2-option segmented radiogroup for a BOOLEAN field — copies the shape of
- * {@link LowStockPolicyPicker} (roving-tabindex `radiogroup`, single tab stop, arrow
- * keys move+select). A value that matches neither option (blank — no default set yet)
+ * A 2-option segmented radiogroup for a BOOLEAN field — the shared
+ * {@link SegmentedRadioGroup} primitive bound to Yes/No, so this control gets the same
+ * roving-tabindex keyboard model and the same sliding selection as every other segmented
+ * control in the app. A value that matches neither option (blank — no default set yet)
  * falls back to showing "No" selected without committing it: only an actual click/key
  * selection calls `onChange`, so an untouched default still submits as unset.
  */
@@ -346,51 +346,13 @@ function YesNoToggle({
   ariaLabel?: string;
   labelId?: string;
 }) {
-  const selectedIndex = Math.max(
-    0,
-    YES_NO_OPTIONS.findIndex((o) => o.value === value),
-  );
-  const { refs, selectAt, onKeyDown } = useRovingRadioGroup<HTMLButtonElement>({
-    count: YES_NO_OPTIONS.length,
-    onSelect: (index) => onChange(YES_NO_OPTIONS[index]!.value),
-  });
-
   return (
-    <div
-      role="radiogroup"
-      aria-label={ariaLabel}
-      aria-labelledby={labelId}
-      className="inline-flex rounded-lg border border-border bg-secondary/40 p-0.5"
-    >
-      {YES_NO_OPTIONS.map((option, index) => {
-        const checked = index === selectedIndex;
-        return (
-          <button
-            key={option.value}
-            ref={(el) => {
-              refs.current[index] = el;
-            }}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            // `role="radio"` isn't named from its content per the ARIA accessible-name
-            // spec (unlike a plain button) — it needs its own explicit label.
-            aria-label={option.label}
-            tabIndex={checked ? 0 : -1}
-            onClick={() => selectAt(index)}
-            onKeyDown={(e) => onKeyDown(e, index)}
-            className={cn(
-              'rounded-md px-3 py-1 text-sm font-medium outline-none transition-colors',
-              'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
-              checked
-                ? 'bg-card-elevated text-foreground shadow-sm ring-1 ring-border'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedRadioGroup
+      options={YES_NO_OPTIONS}
+      value={value}
+      onChange={onChange}
+      labelledBy={labelId}
+      label={ariaLabel}
+    />
   );
 }

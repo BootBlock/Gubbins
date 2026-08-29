@@ -219,6 +219,7 @@ export {
 } from './pointer-tilt';
 export { useRovingRadioGroup } from './useRovingRadioGroup';
 export { SegmentedRadioGroup, type SegmentedOption } from './segmented-radio-group';
+export { useSlidingIndicator, type IndicatorGeometry } from './use-sliding-indicator';
 export {
   useInstallPrompt,
   browserInstallPromptApi,

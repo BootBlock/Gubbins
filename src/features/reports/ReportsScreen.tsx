@@ -25,7 +25,6 @@ import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { useT } from '@/features/i18n';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { ExportWizard } from '@/features/export/ExportWizard';
-import type { Formatters } from '@/lib/format';
 import { plural } from '@/lib/plural';
 import { useFormatters } from '@/lib/useFormatters';
 import { ValueBreakdown } from './components/ValueBreakdown';
@@ -33,6 +32,7 @@ import { DeadStockList } from './components/DeadStockList';
 import { ConsumptionBreakdown } from './components/ConsumptionBreakdown';
 import { formatConsumed } from './components/consumption-format';
 import { MovementChart } from './components/MovementChart';
+import { WindowToggle } from './components/WindowToggle';
 import { AbcBreakdown } from './components/AbcBreakdown';
 import { TurnoverTable } from './components/TurnoverTable';
 import { StockAgingChart } from './components/StockAgingChart';
@@ -42,7 +42,6 @@ import { SpendBreakdown } from './components/SpendBreakdown';
 import { SalesBreakdown } from './components/SalesBreakdown';
 import {
   ABC_WINDOW_DAYS,
-  ANALYTICS_WINDOWS,
   DATA_HYGIENE_STALE_DAYS,
   normaliseAnalyticsWindow,
   REPORT_MOVEMENT_BUCKETS,
@@ -686,47 +685,6 @@ export function ReportsScreen() {
         </>
       ) : null}
     </PageContainer>
-  );
-}
-
-/**
- * A small segmented control selecting the trailing window (days) for the turnover + valuation
- * analytics. Tokens only; the active option uses the `primary` surface, the rest are muted.
- */
-function WindowToggle({
-  value,
-  onChange,
-  formatters,
-  label = 'Analytics window',
-}: {
-  value: number;
-  onChange: (days: number) => void;
-  formatters: Formatters;
-  label?: string;
-}) {
-  return (
-    <div
-      className="inline-flex items-center gap-1 rounded-lg bg-secondary/60 p-0.5"
-      role="group"
-      aria-label={label}
-    >
-      {ANALYTICS_WINDOWS.map((days) => {
-        const active = days === value;
-        return (
-          <button
-            key={days}
-            type="button"
-            onClick={() => onChange(days)}
-            aria-pressed={active}
-            className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors ${
-              active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {formatters.quantity(days)}d
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
