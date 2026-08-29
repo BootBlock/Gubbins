@@ -2792,6 +2792,53 @@
 }
 
 /*
+ * A segmented control's selection pill, moved rather than repainted (issue #449).
+ *
+ * The pill is one absolutely-positioned element per control, placed with the `left`/`width` a
+ * `useSlidingIndicator` measured off the selected option. Animating the *position* rather than
+ * cross-fading two backgrounds is what makes the change legible: the eye follows the selection
+ * from the option it left to the option it landed on.
+ *
+ * `transform` rather than `left` for the travel, so the horizontal movement is a transform the
+ * compositor can carry; the width still animates on the same element, since segments differ in
+ * width, and that part costs a relayout of the pill each frame. The 1s emphasized ease is
+ * deliberate and longer than the app's usual 0.2-0.3s control feedback — the pill is the
+ * *subject* of the interaction here, not a hover response, so it is given time to be watched.
+ * `.is-settled` is added a frame after the first measurement (and again after a re-measure the
+ * layout forced), so the pill is painted where it belongs rather than travelling to it.
+ *
+ * Reduced motion needs nothing here: the global catch-all below clamps the transition, so the
+ * pill jumps straight to the new option.
+ */
+.gubbins-sliding-indicator {
+  transition: none;
+}
+
+.gubbins-sliding-indicator.is-settled {
+  transition:
+    transform 1s var(--ease-emphasized),
+    width 1s var(--ease-emphasized);
+}
+
+/*
+ * The label of the option the pill is *on* recolours on the pill's own timing.
+ *
+ * Where a control inverts its selected label (the Reports window toggle paints it
+ * `primary-foreground`, legible only against the pill), a stock `transition-colors` would land
+ * that colour in ~150ms while the pill is still 850ms away — near-white text on the track, which
+ * is unreadable for most of the travel. Sharing the pill's duration and easing keeps the two in
+ * step: `--ease-emphasized` is front-loaded, so the colour arrives as the pill does.
+ *
+ * Applied to both ends of the journey — the option being left keeps its light label while the
+ * pill is still over it (a move between neighbours overlaps the old option for most of the
+ * second), and the option being landed on does not go light before the pill arrives. Every other
+ * option keeps the stock brisk `transition-colors`, so hover still answers immediately.
+ */
+.gubbins-sliding-indicator-label {
+  transition: color 1s var(--ease-emphasized);
+}
+
+/*
  * Reduced-motion safety net (spec §3 accessible UI; WCAG 2.3.3 Animation from
  * Interactions). The app is deliberately animation-rich, but a user who asks their OS
  * to minimise motion must have decorative transitions and animations neutralised. This
