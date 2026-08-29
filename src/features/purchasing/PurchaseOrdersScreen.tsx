@@ -36,7 +36,7 @@ import { useFormatters } from '@/lib/useFormatters';
 import { moneyDecimals } from '@/lib/money';
 import { useItem, useItemsById, useLocations } from '@/features/inventory/queries';
 import type { LocationOption } from '@/features/inventory/components/LocationSelect';
-import type { PurchaseOrderLine, PurchaseOrderWithLines } from '@/db/repositories';
+import type { PurchaseOrderLine, PurchaseOrderWithLines, TrackingMode } from '@/db/repositories';
 import { estimatedValue, poStatusPresentation, totalOrdered, totalReceived } from './po-presentation';
 import { TabularExportMenu } from '@/features/export/TabularExportMenu';
 import { exportEveryPage } from '@/features/export/export-every-page';
@@ -49,6 +49,7 @@ import {
   usePurchaseOrder,
   usePurchaseOrderCount,
   usePurchaseOrders,
+  useReceivePurchaseOrderDelivery,
   useReceivePurchaseOrderLine,
   useReturnPurchaseOrderLine,
   useRemovePurchaseOrderLine,
@@ -56,6 +57,7 @@ import {
 } from './queries';
 import { CreatePurchaseOrderDialog } from './components/CreatePurchaseOrderDialog';
 import { PurchaseOrderLineDialog } from './components/PurchaseOrderLineDialog';
+import { ReceiveDeliveryDialog, type DeliveryLine } from './components/ReceiveDeliveryDialog';
 import { ReceiveLineDialog } from './components/ReceiveLineDialog';
 import { ReturnLineDialog } from './components/ReturnLineDialog';
 import { ImportPurchaseListDialog } from './components/ImportPurchaseListDialog';
@@ -460,6 +462,7 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   const addLine = useAddPurchaseOrderLine();
   const removeLine = useRemovePurchaseOrderLine();
   const receiveLine = useReceivePurchaseOrderLine();
+  const receiveDelivery = useReceivePurchaseOrderDelivery();
   const returnLine = useReturnPurchaseOrderLine();
   const setStatus = useSetPurchaseOrderStatus();
   const deletePo = useDeletePurchaseOrder();
@@ -474,6 +477,9 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
   // stock-landing.
   const receivingItemQuery = useItem(receiving?.itemId ?? undefined);
   const [returning, setReturning] = useState<PurchaseOrderLine | null>(null);
+  // Receiving the whole delivery at once (issue #589) — the common case the per-line dialog made
+  // one modal round-trip per line.
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
   // Deleting an order — and removing one of its lines — is a hard delete that reaches every
   // synced device and has no restore path, so each is confirmed in its own dialog rather than
   // happening on the click that opened it (issue #588).
@@ -518,6 +524,14 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
     for (const [id, item] of linkedItemsQuery.data ?? []) map.set(id, item.name);
     return map;
   }, [linkedItemsQuery.data]);
+  // The same read's tracking modes, which decide whether a line's receipt can land stock at all —
+  // so the delivery dialog says what each line will actually do rather than promising units into
+  // inventory for all of them (issue #608).
+  const itemTrackingModeById = useMemo(() => {
+    const map = new Map<string, TrackingMode>();
+    for (const [id, item] of linkedItemsQuery.data ?? []) map.set(id, item.trackingMode);
+    return map;
+  }, [linkedItemsQuery.data]);
 
   /**
    * How a line is named on screen — the matched item's name, else the typed description. Shared
@@ -530,6 +544,23 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
         ? (itemNameById.get(line.itemId) ?? line.description ?? 'Linked item')
         : (line.description ?? 'Unnamed line'),
     [itemNameById],
+  );
+
+  /**
+   * Every line of this order with something still to arrive — what the order-level "Receive
+   * delivery" offers, in the order the list shows them (issue #589). A fully-received line is left
+   * out rather than shown ticked at zero: there is nothing to receive on it.
+   */
+  const deliveryLines = useMemo<DeliveryLine[]>(
+    () =>
+      (poQuery.data?.lines ?? [])
+        .filter((line) => line.orderedQty - line.receivedQty > 0)
+        .map((line) => ({
+          line,
+          label: describeLine(line),
+          trackingMode: line.itemId ? itemTrackingModeById.get(line.itemId) : undefined,
+        })),
+    [poQuery.data?.lines, describeLine, itemTrackingModeById],
   );
 
   // Announce receipt-progress changes (e.g. after "Receive" dialog completes).
@@ -700,6 +731,19 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
             Lines · {f.quantity(received)} of {f.quantity(ordered)} received
           </h2>
           <div className="flex items-center gap-2">
+            {/* The order-level receipt (issue #589): a delivery normally arrives whole, so the
+                first offer is "all of it", and the per-line Receive below stays for the
+                exception. Only shown while there is something outstanding to receive. */}
+            {isActive && deliveryLines.length > 0 && (
+              <Button
+                variant="primary"
+                onClick={() => setDeliveryOpen(true)}
+                data-testid="po-receive-delivery"
+              >
+                <TruckIcon />
+                {t('purchasing.orders.receive.trigger')}
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setImportOpen(true)} data-testid="po-detail-import">
               <UploadIcon />
               {t('purchasing.import.open')}
@@ -890,6 +934,34 @@ function PurchaseOrderDetail({ poId, onDeleted }: { poId: string; onDeleted: () 
           addLine.mutate({ poId: po.id, input }, { onSuccess: () => setLineOpen(false) });
         }}
       />
+
+      {deliveryOpen && (
+        <ReceiveDeliveryDialog
+          open={deliveryOpen}
+          lines={deliveryLines}
+          locationOptions={locationOptions}
+          isSaving={receiveDelivery.isPending}
+          onClose={() => setDeliveryOpen(false)}
+          onSubmit={(receipts) => {
+            receiveDelivery.mutate(
+              { poId: po.id, receipts },
+              {
+                onSuccess: () => {
+                  setDeliveryOpen(false);
+                  show({
+                    tone: 'success',
+                    icon: <TruckIcon />,
+                    heading: t('purchasing.orders.receive.toast.heading'),
+                    message: t('purchasing.orders.receive.toast.body', {
+                      vars: { count: receipts.length, order: orderLabel },
+                    }),
+                  });
+                },
+              },
+            );
+          }}
+        />
+      )}
 
       {receiving && (
         <ReceiveLineDialog

@@ -15,6 +15,7 @@ import {
   type CreatePurchaseOrderLineInput,
   type LowStockThresholds,
   type PurchaseOrderCountFilter,
+  type PurchaseOrderLineReceipt,
   type UpdatePurchaseOrderLineInput,
 } from '@/db/repositories';
 import { agendaKeys } from '@/features/calendar/keys';
@@ -289,6 +290,36 @@ export function useReceivePurchaseOrderLine() {
       // (they all hang off it), so a per-item key is unnecessary.
       invalidateItems(client);
       // Receiving reduces the outstanding quantity (and may fully clear it).
+      invalidateOnOrder(client);
+    },
+  });
+}
+
+export interface ReceiveDeliveryVars {
+  readonly poId: string;
+  readonly receipts: readonly PurchaseOrderLineReceipt[];
+}
+
+/**
+ * Receive several lines of one order in a single transaction — "the box arrived and everything in
+ * it is here" (issue #589). It invalidates exactly what a single-line receipt does, because it is
+ * the same write applied to more lines; one call also means one round of invalidation rather than
+ * one per line, so a twenty-line delivery refetches the order once.
+ */
+export function useReceivePurchaseOrderDelivery() {
+  const client = useQueryClient();
+  const reportFailure = useReportWriteFailure(
+    'purchasing.writeError.heading.orderLineReceive',
+    'common.writeFailed',
+  );
+  return useMutation({
+    mutationFn: ({ receipts }: ReceiveDeliveryVars) => getPurchaseOrderRepository().receiveLines(receipts),
+    // A rejected write would otherwise fail silently, so surface it to the user (#389).
+    onError: reportFailure,
+    onSuccess: (_data, { poId }) => {
+      void client.invalidateQueries({ queryKey: purchaseOrderKeys.detail(poId) });
+      void client.invalidateQueries({ queryKey: purchaseOrderKeys.list() });
+      invalidateItems(client);
       invalidateOnOrder(client);
     },
   });

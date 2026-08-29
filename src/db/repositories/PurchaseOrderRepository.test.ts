@@ -143,6 +143,150 @@ describe('PurchaseOrderRepository (spec §4 Formal Purchase Orders)', () => {
     expect(history.rows.some((h) => h.action === 'RECEIVED')).toBe(true);
   });
 
+  // --- receiving a whole delivery (issue #589) ------------------------------------
+
+  describe('receiveLines — a whole delivery in one transaction', () => {
+    it('receives every outstanding line at one destination and derives RECEIVED', async () => {
+      const bolt = await items.create({ name: 'M3 bolt', quantity: 0 });
+      const nut = await items.create({ name: 'M3 nut', quantity: 0 });
+      const bay = await locations.create({ name: 'Goods-in bay' });
+      const po = await pos.create({ supplier: { supplierName: 'Fastenings Direct' } });
+      const boltLine = await pos.addLine(po.id, { itemId: bolt.id, orderedQty: 50 });
+      const nutLine = await pos.addLine(po.id, { itemId: nut.id, orderedQty: 50 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      const updated = await pos.receiveLines([
+        { lineId: boltLine.id, locationId: bay.id },
+        { lineId: nutLine.id, locationId: bay.id },
+      ]);
+
+      expect(updated.map((l) => l.receivedQty)).toEqual([50, 50]);
+      expect((await items.getById(bolt.id))?.quantity).toBe(50);
+      expect((await items.getById(nut.id))?.quantity).toBe(50);
+      expect((await items.listStock(bolt.id)).find((s) => s.locationId === bay.id)?.quantity).toBe(50);
+      // One status snapshot, written from every line this transaction moved — a snapshot that saw
+      // only the last line would still read PARTIAL.
+      const after = await pos.getWithLines(po.id);
+      expect(after?.status).toBe('RECEIVED');
+      expect(after?.effectiveStatus).toBe('RECEIVED');
+    });
+
+    it('accepts a short line beside a full one, leaving the order PARTIAL', async () => {
+      const bolt = await items.create({ name: 'M3 bolt', quantity: 0 });
+      const nut = await items.create({ name: 'M3 nut', quantity: 0 });
+      const po = await pos.create({ supplier: { supplierName: 'Fastenings Direct' } });
+      const boltLine = await pos.addLine(po.id, { itemId: bolt.id, orderedQty: 50 });
+      const nutLine = await pos.addLine(po.id, { itemId: nut.id, orderedQty: 50 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      await pos.receiveLines([{ lineId: boltLine.id }, { lineId: nutLine.id, quantity: 20 }]);
+
+      expect((await pos.getLine(boltLine.id))?.receivedQty).toBe(50);
+      expect((await pos.getLine(nutLine.id))?.receivedQty).toBe(20);
+      expect((await pos.getWithLines(po.id))?.effectiveStatus).toBe('PARTIAL');
+    });
+
+    it('carries an item on-hand total across two lines naming it, so the notes do not repeat', async () => {
+      const bolt = await items.create({ name: 'M3 bolt', quantity: 0 });
+      const po = await pos.create({ supplier: { supplierName: 'Fastenings Direct' } });
+      const first = await pos.addLine(po.id, { itemId: bolt.id, orderedQty: 10 });
+      const second = await pos.addLine(po.id, { itemId: bolt.id, orderedQty: 5 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      await pos.receiveLines([{ lineId: first.id }, { lineId: second.id }]);
+
+      expect((await items.getById(bolt.id))?.quantity).toBe(15);
+      const notes = (await items.getHistory(bolt.id)).rows
+        .filter((h) => h.action === 'RECEIVED')
+        .map((h) => h.note ?? '');
+      expect(notes.some((n) => n.includes('(now 10)'))).toBe(true);
+      expect(notes.some((n) => n.includes('(now 15)'))).toBe(true);
+    });
+
+    it('sends a record-only line through without moving stock', async () => {
+      const bolt = await items.create({ name: 'M3 bolt', quantity: 0 });
+      const jig = await items.create({ name: 'Drilling jig', quantity: 3 });
+      await items.update(jig.id, { trackingMode: 'UNTRACKED' });
+      const bay = await locations.create({ name: 'Goods-in bay' });
+      const po = await pos.create({ supplier: { supplierName: 'Fastenings Direct' } });
+      const boltLine = await pos.addLine(po.id, { itemId: bolt.id, orderedQty: 4 });
+      const jigLine = await pos.addLine(po.id, { itemId: jig.id, orderedQty: 1 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      await pos.receiveLines([{ lineId: boltLine.id, locationId: bay.id }, { lineId: jigLine.id }]);
+
+      expect((await items.getById(bolt.id))?.quantity).toBe(4);
+      expect((await items.getById(jig.id))?.quantity).toBe(3);
+      expect((await items.getHistory(jig.id)).rows.find((h) => h.action === 'RECEIVED')?.note).toContain(
+        'never counted',
+      );
+      expect((await pos.getWithLines(po.id))?.effectiveStatus).toBe('RECEIVED');
+    });
+
+    it('tags every line of the delivery with one shared batch', async () => {
+      const bolt = await items.create({ name: 'M3 bolt', quantity: 0 });
+      const nut = await items.create({ name: 'M3 nut', quantity: 0 });
+      const bay = await locations.create({ name: 'Goods-in bay' });
+      const po = await pos.create({ supplier: { supplierName: 'Fastenings Direct' } });
+      const boltLine = await pos.addLine(po.id, { itemId: bolt.id, orderedQty: 6 });
+      const nutLine = await pos.addLine(po.id, { itemId: nut.id, orderedQty: 6 });
+      await pos.setStatus(po.id, 'ORDERED');
+      const batch = { batchNumber: 'B-2026-04', lotNumber: null, expiryDate: null };
+
+      await pos.receiveLines([
+        { lineId: boltLine.id, locationId: bay.id, batch },
+        { lineId: nutLine.id, locationId: bay.id, batch },
+      ]);
+
+      for (const id of [bolt.id, nut.id]) {
+        const batches = await items.listItemBatches(id);
+        expect(batches.find((b) => b.batchNumber === 'B-2026-04')?.quantity).toBe(6);
+      }
+    });
+
+    it('refuses a delivery naming one line twice, rather than tripping the receipt guard', async () => {
+      const bolt = await items.create({ name: 'M3 bolt', quantity: 0 });
+      const po = await pos.create({ supplier: { supplierName: 'Fastenings Direct' } });
+      const line = await pos.addLine(po.id, { itemId: bolt.id, orderedQty: 10 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      await expect(
+        pos.receiveLines([
+          { lineId: line.id, quantity: 4 },
+          { lineId: line.id, quantity: 6 },
+        ]),
+      ).rejects.toBeInstanceOf(DbError);
+      expect((await pos.getLine(line.id))?.receivedQty).toBe(0);
+      expect((await items.getById(bolt.id))?.quantity).toBe(0);
+    });
+
+    it('rolls the whole delivery back when one line cannot be written', async () => {
+      const bolt = await items.create({ name: 'M3 bolt', quantity: 0 });
+      const nut = await items.create({ name: 'M3 nut', quantity: 0 });
+      const bay = await locations.create({ name: 'Goods-in bay' });
+      const po = await pos.create({ supplier: { supplierName: 'Fastenings Direct' } });
+      const boltLine = await pos.addLine(po.id, { itemId: bolt.id, orderedQty: 10 });
+      const nutLine = await pos.addLine(po.id, { itemId: nut.id, orderedQty: 10 });
+      await pos.setStatus(po.id, 'ORDERED');
+
+      // The second line names a destination that no longer exists — a location deleted on another
+      // device while the delivery was being described. The first line's own write is perfectly
+      // valid; the point is that it must not land alone and leave a half-received order behind,
+      // which is what a per-line loop would have done.
+      await expect(
+        pos.receiveLines([
+          { lineId: boltLine.id, locationId: bay.id },
+          { lineId: nutLine.id, locationId: 'no-such-location' },
+        ]),
+      ).rejects.toThrow();
+
+      expect((await pos.getLine(boltLine.id))?.receivedQty).toBe(0);
+      expect((await pos.getLine(nutLine.id))?.receivedQty).toBe(0);
+      expect((await items.getById(bolt.id))?.quantity).toBe(0);
+      expect((await pos.getWithLines(po.id))?.effectiveStatus).toBe('ORDERED');
+    });
+  });
+
   // --- returns to supplier (inverse of receive) ----------------------------------
 
   it('returns received stock to the supplier, dropping stock and re-deriving PARTIAL', async () => {
