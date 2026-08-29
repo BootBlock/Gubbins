@@ -90,7 +90,8 @@
     "checkouts": [
       { "id": "checkout-open-due", "item_id": "item-multimeter", "contact_id": "contact-alex", "quantity": 1, "due_date": 1754006400000, "checked_out_at": 1750000000000, "returned_at": null, "note": "Bench calibration loan", "source_location_id": "loc-shelf-a", "source_batch_key": null, "updated_at": 1751000000000 },
       { "id": "checkout-open-nodue", "item_id": "item-multimeter", "contact_id": "contact-sam", "quantity": 1, "due_date": null, "checked_out_at": 1750000000000, "returned_at": null, "note": null, "source_location_id": "loc-shelf-a", "source_batch_key": null, "updated_at": 1751000000000 },
-      { "id": "checkout-returned", "item_id": "item-multimeter", "contact_id": "contact-alex", "quantity": 1, "due_date": 1753000000000, "checked_out_at": 1749000000000, "returned_at": 1750500000000, "note": null, "source_location_id": "loc-shelf-a", "source_batch_key": null, "updated_at": 1751000000000 }
+      { "id": "checkout-returned", "item_id": "item-multimeter", "contact_id": "contact-alex", "quantity": 1, "due_date": 1753000000000, "checked_out_at": 1749000000000, "returned_at": 1750500000000, "note": null, "source_location_id": "loc-shelf-a", "source_batch_key": null, "updated_at": 1751000000000 },
+      { "id": "checkout-part-returned", "item_id": "item-multimeter", "contact_id": "contact-sam", "quantity": 3, "returned_quantity": 1, "due_date": 1754006400000, "checked_out_at": 1750000000000, "returned_at": null, "note": null, "source_location_id": "loc-shelf-a", "source_batch_key": null, "updated_at": 1751000000000 }
     ],
     "asset_bookings": [
       { "id": "booking-active", "item_id": "item-drill", "contact_id": "contact-sam", "start_date": 2064268800000, "end_date": 2064441600000, "note": "Site visit", "cancelled_at": null, "converted_checkout_id": null, "created_at": 1751000000000, "updated_at": 1751000000000 },

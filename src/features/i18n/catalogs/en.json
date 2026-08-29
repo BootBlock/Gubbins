@@ -2452,5 +2452,12 @@
   "achievements.stockTake.title": "Stock-take complete",
   "achievements.stockTake.description": "Finish a stock-take across your locations.",
   "achievements.locationCount.title": "Location counted",
-  "achievements.locationCount.description": "Count a location and authorise the result."
+  "achievements.locationCount.description": "Count a location and authorise the result.",
+  "contacts.checkin.quantityLabel": "How many are coming back?",
+  "contacts.checkin.quantityHint": "Return **part** of a loan by lowering this. Those units go back to the shelf, and the loan stays open with the rest still out — it keeps its due date, its history and its original checkout date.",
+  "contacts.checkin.stillOut": "{outstanding} still out",
+  "contacts.checkin.stillOutOfLoan": "{outstanding} of {quantity} still out",
+  "contacts.checkin.submit": "Return",
+  "contacts.checkin.submitPartial": "Return {quantity}",
+  "contacts.loan.outstanding": "{outstanding} of {quantity} still with {borrower}"
 }

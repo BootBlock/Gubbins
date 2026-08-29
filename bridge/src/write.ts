@@ -77,7 +77,8 @@ export const MAX_BORROWER_NAME_LENGTH = MAX_NOTE_LENGTH;
  * - `adjust-gauge` — a signed delta on a CONSUMABLE_GAUGE item's net value.
  * - `check-out` / `check-in` — lend an item to a borrower and take it back (issue #142). The
  *   read side already publishes open loans and their due-backs through the iCalendar feed, so
- *   an automation could be told a loan was overdue but had no way to close it.
+ *   an automation could be told a loan was overdue but had no way to close it. A check-in may
+ *   name a quantity and hand back part of a loan (issue #662).
  * - `transfer-stock` — move units between two placements. `adjust-quantity` only ever touches
  *   the *home* location, which left the per-location ledger (`item_stock`, the source of truth
  *   for where things are) unreachable from outside the app.
@@ -127,6 +128,14 @@ export type WriteOperation =
        * (as a 422) once there is more than one.
        */
       readonly checkoutId?: string;
+      /**
+       * How many units are coming back (issue #662). Omitted returns everything still out, which
+       * for a loan nothing has come back from is the whole loan — the behaviour every caller had
+       * before instalments existed. A smaller value restores just those units and leaves the loan
+       * open with the rest out, so an automation can record "two of the six are back" without
+       * closing the loan or splitting it into a new one.
+       */
+      readonly quantity?: number;
       readonly note?: string;
     }
   | {
@@ -265,6 +274,10 @@ async function applyCheckOut(
  * exactly one open loan — the common case, and the one an automation reaching for "that's back
  * now" actually has to hand. More than one open loan is genuinely ambiguous, so it asks rather
  * than guessing which borrower just returned something.
+ *
+ * A quantity is optional and returns everything still out when absent (issue #662), so a caller
+ * that knows only "it's back" keeps working unchanged. Out-of-range values are the repository's
+ * to reject, and surface as a 422 like any other domain refusal.
  */
 async function applyCheckIn(
   driver: IDatabaseDriver,
@@ -274,7 +287,10 @@ async function applyCheckIn(
 ): Promise<WriteOutcome> {
   const checkouts = new CheckoutRepository(driver, repositoryOptions);
   const checkoutId = await resolveOpenCheckoutId(checkouts, op);
-  const checkout = await checkouts.checkIn(checkoutId, op.note !== undefined ? { note: op.note } : {});
+  const checkout = await checkouts.checkIn(checkoutId, {
+    ...(op.note !== undefined ? { note: op.note } : {}),
+    ...(op.quantity !== undefined ? { quantity: op.quantity } : {}),
+  });
   return { item: (await items.getById(op.itemId))!, checkout };
 }
 

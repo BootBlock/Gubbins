@@ -2452,5 +2452,12 @@
   "achievements.stockTake.title": "Inventur abgeschlossen",
   "achievements.stockTake.description": "Schließen Sie eine Inventur über Ihre Lagerorte ab.",
   "achievements.locationCount.title": "Lagerort gezählt",
-  "achievements.locationCount.description": "Zählen Sie einen Lagerort und bestätigen Sie das Ergebnis."
+  "achievements.locationCount.description": "Zählen Sie einen Lagerort und bestätigen Sie das Ergebnis.",
+  "contacts.checkin.quantityLabel": "Wie viele kommen zurück?",
+  "contacts.checkin.quantityHint": "Geben Sie einen **Teil** der Ausleihe zurück, indem Sie diesen Wert verringern. Diese Einheiten kommen zurück ins Lager, und die Ausleihe bleibt mit dem Rest offen — sie behält ihr Fälligkeitsdatum, ihren Verlauf und ihr ursprüngliches Ausleihdatum.",
+  "contacts.checkin.stillOut": "{outstanding} noch ausgeliehen",
+  "contacts.checkin.stillOutOfLoan": "{outstanding} von {quantity} noch ausgeliehen",
+  "contacts.checkin.submit": "Zurückgeben",
+  "contacts.checkin.submitPartial": "{quantity} zurückgeben",
+  "contacts.loan.outstanding": "{outstanding} von {quantity} noch bei {borrower}"
 }

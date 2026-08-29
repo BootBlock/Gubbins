@@ -127,6 +127,8 @@ export interface SnapshotMergeResult {
   /** Issue #539: kit component links removed because the merge closed a containment loop. */
   readonly kitLinksBroken: number;
   readonly loanReturnsPreserved: number;
+  /** Loans whose instalment count was kept from being rewound (issue #662). */
+  readonly loanInstalmentsPreserved: number;
   readonly historyInserted: number;
   readonly tagEdgesAdded: number;
   readonly tagEdgesRemoved: number;
@@ -203,6 +205,7 @@ async function reconcileAndApply(
     bookingsCancelled: plan.bookingsCancelled.length,
     kitLinksBroken: plan.kitLinksBroken.length,
     loanReturnsPreserved: plan.loanReturnsPreserved.length,
+    loanInstalmentsPreserved: plan.loanInstalmentsPreserved.length,
     historyInserted: plan.historyInserts.length,
     tagEdgesAdded: plan.itemTagUpserts.length + plan.locationTagUpserts.length,
     tagEdgesRemoved: plan.itemTagDeletes.length + plan.locationTagDeletes.length,
@@ -337,6 +340,7 @@ function emptyResult(merged: SyncSnapshot): SnapshotMergeResult {
     bookingsCancelled: 0,
     kitLinksBroken: 0,
     loanReturnsPreserved: 0,
+    loanInstalmentsPreserved: 0,
     historyInserted: 0,
     tagEdgesAdded: 0,
     tagEdgesRemoved: 0,

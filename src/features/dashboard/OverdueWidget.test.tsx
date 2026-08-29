@@ -38,6 +38,7 @@ const baseCheckout: CheckoutWithNames = {
   projectId: null,
   locationId: null,
   quantity: 1,
+  returnedQuantity: 0,
   dueDate: null,
   note: null,
   checkedOutAt: NOW - 10 * MS_PER_DAY,

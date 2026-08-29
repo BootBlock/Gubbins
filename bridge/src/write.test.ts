@@ -20,6 +20,7 @@ import { ADMIN_USER_ID, SYSTEM_USER_ID } from '@/db/repositories/constants';
 import { UserRepository } from '@/db/repositories/UserRepository.ts';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
+import { toCheckout } from './api/dto.ts';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { CheckoutRepository } from '@/db/repositories/CheckoutRepository.ts';
 import { reconcile } from '@/features/sync/reconcile';
@@ -279,6 +280,44 @@ describe('applyOperation', () => {
     expect(item.quantity).toBe(42); // restored
     expect(checkout!.returnedAt).not.toBeNull(); // RETURNED is derived from this
     expect(checkout!.returnNote).toBe('All back');
+  });
+
+  it('hands back part of a loan and leaves it open with the rest out (issue #662)', async () => {
+    const lent = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', quantity: 6 },
+      ACTOR,
+    );
+    expect(lent.item.quantity).toBe(36);
+
+    const { item, checkout } = await applyOperation(
+      hydrated.driver,
+      { kind: 'check-in', itemId: 'item-m3-bolt', quantity: 2 },
+      ACTOR,
+    );
+
+    expect(item.quantity).toBe(38); // only the two came back
+    expect(checkout!.returnedAt).toBeNull(); // four are still with the borrower
+    expect(checkout!.returnedQuantity).toBe(2);
+
+    // …and the public DTO can say so. Without `returnedQuantity` an API consumer sees
+    // `{ quantity: 6, status: 'OPEN', returnedAt: null }` — indistinguishable from a loan
+    // nothing has come back from, with no field expressing that four are still out.
+    const dto = toCheckout(checkout!);
+    expect(dto.status).toBe('OPEN');
+    expect(dto.quantity).toBe(6);
+    expect(dto.returnedQuantity).toBe(2);
+  });
+
+  it('rejects returning more than a loan still has out with a 422', async () => {
+    await applyOperation(
+      hydrated.driver,
+      { kind: 'check-out', itemId: 'item-m3-bolt', contactName: 'Sam Okafor', quantity: 2 },
+      ACTOR,
+    );
+    await expect(
+      applyOperation(hydrated.driver, { kind: 'check-in', itemId: 'item-m3-bolt', quantity: 5 }, ACTOR),
+    ).rejects.toMatchObject({ status: 422, code: 'unprocessable' });
   });
 
   it('refuses to guess when the item has more than one open loan', async () => {

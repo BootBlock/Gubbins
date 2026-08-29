@@ -44,8 +44,8 @@ function byUid(list: readonly VEvent[], uid: string): VEvent | undefined {
 describe('loan due-backs', () => {
   it('emits an all-day event only for an open checkout WITH a due date', async () => {
     const loans = await events(['loans']);
-    expect(loans).toHaveLength(1);
-    const loan = loans[0]!;
+    expect(loans).toHaveLength(2); // the whole loan, and the part-returned one below
+    const loan = byUid(loans, 'loan-checkout-open-due@gubbins.invalid')!;
     expect(loan.uid).toBe('loan-checkout-open-due@gubbins.invalid');
     expect(loan.summary).toBe('Loan due: Multimeter');
     // A loan due date is stored at local end-of-day, so it reads as its LOCAL calendar day (#321).
@@ -53,7 +53,17 @@ describe('loan due-backs', () => {
     // All-day → exclusive next-day end (a calendar-day step on the DATE value, DST-safe).
     expect(loan.end).toEqual(addDays(icalLocalDate(1754006400000), 1));
     expect(loan.description).toContain('Alex Rivera');
+    // Nothing has come back, so the wording is the plain one it has always had.
+    expect(loan.description).toContain('Quantity 1.');
     expect(loan.categories).toEqual(['Gubbins', 'Loan']);
+  });
+
+  it('names what is still out on a loan that came back in part (issue #662)', async () => {
+    // Chasing a due-back on a loan of three with one already returned: the event must send
+    // someone after the two that are out, not the three the loan started with.
+    const loan = byUid(await events(['loans']), 'loan-checkout-part-returned@gubbins.invalid')!;
+    expect(loan.description).toContain('Quantity 2 of 3 still out.');
+    expect(loan.description).not.toContain('Quantity 3.');
   });
 
   it('excludes returned loans and open loans with no due date', async () => {

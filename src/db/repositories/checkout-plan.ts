@@ -47,12 +47,39 @@ const CHECKOUT_RETURN_NAMESPACE = '9b7c1f0a-1950-4e00-8b00-000000005420';
  * {@link CHECKOUT_RETURN_NAMESPACE}). A pure function of its inputs, which is the convergence
  * property: two devices returning the same loan offline derive the same ids.
  *
+ * `fromReturned` is the loan's return watermark *before* this instalment (issue #662), which is
+ * what makes a loan returned in stages derive a distinct id per stage rather than collapsing them
+ * all into one. It is deliberately absent from the key at 0 rather than appended as `@0`: a loan
+ * handed back in a single movement — every loan there was before instalments, and every loan a
+ * booking conversion produces — therefore derives byte-identically to what it always derived, so
+ * no existing ledger row moves and the issue #711 pass named below still finds it.
+ *
  * Also read by the merge engine (`features/sync/merge.ts`), which precomputes a returned loan's
  * key so the issue #711 split-stock pass can find that return's ledger rows without hashing inside
- * its own synchronous pass. This is the one derivation of the value; nothing recomputes it.
+ * its own synchronous pass. It derives at watermark 0, which is exact for the loans that pass can
+ * apply to: it is scoped to loans carrying a `stock_operation_key`, and only a booking conversion
+ * sets one — a single unit of a serialised asset, which has no instalments to return in.
  */
-export function checkInId(kind: string, checkoutId: string): Promise<string> {
-  return uuidv5(`${kind}:${checkoutId}`, CHECKOUT_RETURN_NAMESPACE);
+export function checkInId(kind: string, checkoutId: string, fromReturned = 0): Promise<string> {
+  const key = fromReturned === 0 ? `${kind}:${checkoutId}` : `${kind}:${checkoutId}@${fromReturned}`;
+  return uuidv5(key, CHECKOUT_RETURN_NAMESPACE);
+}
+
+/**
+ * The default `CHECKED_IN` ledger note for a return of `returned` out of a loan of `quantity`.
+ *
+ * A return that hands the whole loan back in one movement keeps the sentence it has always had,
+ * so nothing that reads the ledger sees a loan's wording change because instalments became
+ * possible. An instalment says how much of the loan it was, because "Returned 2 from loan" over a
+ * loan of six is the number without the fact that four are still out.
+ */
+function returnNote(returned: number, quantity: number, closesLoan: boolean): string {
+  // Handing the whole loan over in one movement necessarily closes it, so this is the
+  // pre-instalment sentence and the pre-instalment case, unchanged.
+  if (returned === quantity) return `Returned ${returned} from loan.`;
+  return closesLoan
+    ? `Returned the last ${returned} of ${quantity} from loan.`
+    : `Returned ${returned} of ${quantity} from loan.`;
 }
 
 /** The `checkouts` column holding the borrower id for a target type (the XOR triple). */
@@ -61,7 +88,17 @@ export function borrowerColumn(type: BorrowerType): 'contact_id' | 'project_id' 
 }
 
 /**
- * The optional extras a return can carry — structurally identical to `CheckInOptions`.
+ * The optional facets a return can carry (§4 Borrowing) — the **one** definition, which
+ * `CheckoutRepository` re-exports as its public `CheckInOptions` rather than restating.
+ *
+ * The two were separate structural twins until issue #662 added a third field to both: because
+ * `checkIn` passes its options straight into {@link planCheckIn} and TypeScript matches
+ * structurally, a field added to only one side compiles and is then silently dropped on the way
+ * to the plan. One declaration makes that impossible instead of merely unlikely.
+ *
+ * An options object rather than positional args so the return flow can grow more captured state
+ * without churning the signature at every call site. Every field is optional — a return with no
+ * options at all is the fast one-tap return of the whole loan.
  *
  * `condition` is deliberately **not** widened to include `null`: an omitted condition
  * (`undefined`) leaves the item untouched, whereas a `null` would read as "changed to no
@@ -69,8 +106,45 @@ export function borrowerColumn(type: BorrowerType): 'contact_id' | 'project_id' 
  * naming a condition that does not exist. Only `undefined` means "don't touch".
  */
 export interface CheckInPlanOptions {
+  /** Free-text return remark; stored in the checkout's own `return_note` column (B1). */
   readonly note?: string;
+  /**
+   * The item's condition *on return* (B2). When supplied and different from the item's current
+   * condition, updates `items.condition` and logs `CONDITION_CHANGED` in the same transaction.
+   * Omitted leaves the condition untouched.
+   */
   readonly condition?: Condition;
+  /**
+   * How many units are coming back **this time** (issue #662). Omitted returns everything still
+   * out, which is the whole loan for a loan nothing has come back from — so an unqualified
+   * `planCheckIn` behaves exactly as it always did.
+   *
+   * A value below the outstanding quantity is a *partial* return: those units are restored to the
+   * source lot, `returned_quantity` accumulates, and the loan stays **open** with the rest still
+   * out. Must be at least 1 and at most the outstanding quantity; anything else throws rather
+   * than silently clamping, because a caller asking to return more than is out has miscounted and
+   * clamping would hide it.
+   */
+  readonly quantity?: number;
+}
+
+/**
+ * The user-facing sentence for a return that lost a race against another partial return of the
+ * same loan (see {@link OPEN_LOAN_AT_WATERMARK}). An authored sentence under a constraint code is
+ * kept verbatim by the error-copy seam (issue #311), exactly as `PO_RECEIPT_RACE_MESSAGE` is.
+ */
+export const LOAN_RETURN_RACE_MESSAGE =
+  'This loan changed while the return was being saved. Check how many are still out and try again.';
+
+/**
+ * True when the compare-and-swap sentinel {@link planCheckIn}'s closing `UPDATE` writes tripped
+ * the `returned_quantity >= 0` CHECK. Keyed on the message rather than the code for the reason
+ * `isReceivedQtyGuardViolation` documents: the three drivers report the same failure under
+ * different codes, so a code set would silently miss in the browser.
+ */
+export function isReturnedQuantityGuardViolation(error: unknown): boolean {
+  if (!(error instanceof DbError)) return false;
+  return /CHECK constraint failed:\s*returned_quantity >= 0/i.test(error.message);
 }
 
 /**
@@ -82,28 +156,37 @@ export interface CheckInPlanOptions {
  * returns for the same loan therefore both observe `returned_at === null` and, without this, both
  * restore stock and both log `CHECKED_IN` for one physical return. Carrying this guard on every
  * write statement — and stamping `returned_at` **last** so the guards still see it NULL — collapses
- * the loser to a pure no-op at the database, not merely in JavaScript. Binds the checkout id once.
+ * the loser to a pure no-op at the database, not merely in JavaScript.
+ *
+ * Since issue #662 the loan is no longer closed by every return, so "still open" is no longer the
+ * whole story: two overlapping *partial* returns both leave the loan open, and a guard that only
+ * asked `returned_at IS NULL` would let both restore their units against one outstanding figure.
+ * So the predicate is a compare-and-swap on the return watermark as well — the loan is open **and**
+ * `returned_quantity` still holds the value this plan was built from. Binds the checkout id and
+ * that watermark, in that order.
  */
-const OPEN_LOAN_EXISTS = 'EXISTS (SELECT 1 FROM checkouts WHERE id = ? AND returned_at IS NULL)';
+const OPEN_LOAN_AT_WATERMARK =
+  'EXISTS (SELECT 1 FROM checkouts WHERE id = ? AND returned_at IS NULL AND returned_quantity = ?)';
 
 /**
- * Rewrite a builder's `INSERT … VALUES (…)` into `INSERT … SELECT … WHERE {@link OPEN_LOAN_EXISTS}`,
- * so the row is inserted only while the loan is still open (issue #296). A `SELECT` that matches no
- * rows inserts nothing — and never reaches any trailing `ON CONFLICT` upsert — so a raced return's
- * stock restore and ledger entry both vanish.
+ * Rewrite a builder's `INSERT … VALUES (…)` into
+ * `INSERT … SELECT … WHERE {@link OPEN_LOAN_AT_WATERMARK}`, so the row is inserted only while the
+ * loan is still open *and* has returned no more than this plan read (issues #296, #662). A `SELECT`
+ * that matches no rows inserts nothing — and never reaches any trailing `ON CONFLICT` upsert — so a
+ * raced return's stock restore and ledger entry both vanish.
  *
  * Relies on the builder emitting a single `VALUES (…)` tuple whose bound values contain no `)` —
  * true of {@link historyStatement} and {@link addBatchStatement}, whose bindings are all `?`
  * placeholders. Throws if that shape ever changes rather than silently emitting an unguarded write
  * that would re-open the race.
  */
-function onlyWhileOpen(base: SqlStatement, checkoutId: string): SqlStatement {
-  const sql = base.sql.replace(/VALUES\s*\(([^)]*)\)/, `SELECT $1 WHERE ${OPEN_LOAN_EXISTS}`);
+function onlyWhileOpen(base: SqlStatement, checkoutId: string, fromReturned: number): SqlStatement {
+  const sql = base.sql.replace(/VALUES\s*\(([^)]*)\)/, `SELECT $1 WHERE ${OPEN_LOAN_AT_WATERMARK}`);
   if (sql === base.sql) {
     throw new DbError('UNKNOWN', 'Cannot guard a check-in write: expected a VALUES clause to rewrite.');
   }
   const params = Array.isArray(base.params) ? base.params : [];
-  return { sql, params: [...params, checkoutId] };
+  return { sql, params: [...params, checkoutId, fromReturned] };
 }
 
 /**
@@ -111,9 +194,12 @@ function onlyWhileOpen(base: SqlStatement, checkoutId: string): SqlStatement {
  * restore the stock, close the loan and log it. Returns an **empty** list when the loan has
  * already been returned (the idempotent no-op {@link CheckoutRepository.checkIn} relies on).
  *
- * Every write is guarded by {@link OPEN_LOAN_EXISTS} and the `returned_at` stamp is emitted last,
- * so two returns that race past the JS guard (both reading `returned_at IS NULL`) still restore
- * stock and log `CHECKED_IN` exactly once — the loser's whole transaction no-ops (issue #296).
+ * Every write is guarded by {@link OPEN_LOAN_AT_WATERMARK} and the watermark is advanced last, so
+ * two returns that race past the JS guard still restore stock and log `CHECKED_IN` exactly once.
+ * How the loser ends depends on what it raced: a return that lost to another **whole-loan** return
+ * finds the loan closed and no-ops entirely, as it always did (issue #296); one that lost to a
+ * **partial** return finds the loan still open at a moved watermark, and aborts its own
+ * transaction rather than restore against a count that no longer holds (issue #662).
  *
  * Throws when the checkout does not exist — the caller asked to return something that isn't there.
  */
@@ -130,6 +216,23 @@ export async function planCheckIn(
   }
   if (existing.returned_at !== null) return []; // already returned — idempotent
 
+  // How much of the loan is still out, and how much of *that* is coming back now (issue #662).
+  // An omitted quantity returns everything outstanding, so an unqualified return of an untouched
+  // loan is the whole loan in one movement — the only shape that existed before partial returns.
+  const fromReturned = existing.returned_quantity;
+  const outstanding = existing.quantity - fromReturned;
+  const returnQuantity = options.quantity ?? outstanding;
+  if (!Number.isInteger(returnQuantity) || returnQuantity < 1 || returnQuantity > outstanding) {
+    throw new DbError(
+      'SQLITE_CONSTRAINT',
+      `Cannot return ${returnQuantity} — this loan has ${outstanding} still out.`,
+    );
+  }
+  // The loan closes only when the last outstanding unit comes back. Until then `returned_at`
+  // stays NULL, so the derived OPEN status, the overdue predicates and the sync model all keep
+  // reading a partially-returned loan as exactly what it is: still out.
+  const closesLoan = returnQuantity === outstanding;
+
   const item = await driver.queryOne<{
     location_id: string;
     tracking_mode: string;
@@ -143,7 +246,7 @@ export async function planCheckIn(
   // via `batchIdentityFromKey`, so a tracked lot is rebuilt rather than anonymised into the
   // untracked default (NULL/'' → the default batch — the pre-Phase-29 behaviour). `addBatch`
   // upserts, so the lot is recreated even if it was emptied/consolidated while the unit was out.
-  const restoreDelta = item?.tracking_mode === 'SERIALISED' ? 0 : existing.quantity;
+  const restoreDelta = item?.tracking_mode === 'SERIALISED' ? 0 : returnQuantity;
   const restoreLocationId = existing.source_location_id ?? item?.location_id;
   const restoreIdentity = existing.source_batch_key
     ? batchIdentityFromKey(existing.source_batch_key)
@@ -163,6 +266,7 @@ export async function planCheckIn(
           onlyWhileOpen(
             addBatchStatement(existing.item_id, restoreLocationId, restoreIdentity, restoreDelta),
             checkoutId,
+            fromReturned,
           ),
         ]
       : []),
@@ -171,12 +275,16 @@ export async function planCheckIn(
       historyStatement(existing.item_id, 'CHECKED_IN', actorId, {
         // Derived like the stock it restores (see {@link CHECKOUT_RETURN_NAMESPACE}), so two
         // devices returning the same loan leave one entry in the union-by-id ledger, not two.
-        id: await checkInId('hist:CHECKED_IN', checkoutId),
+        // The watermark qualifies the derivation from the second instalment on, so a loan
+        // returned in stages does not collapse its stages into one entry — while a loan
+        // returned in one movement keeps the very id it derived before issue #662.
+        id: await checkInId('hist:CHECKED_IN', checkoutId, fromReturned),
         quantityDelta: restoreDelta === 0 ? null : restoreDelta,
-        note: note?.trim() || `Returned ${existing.quantity} from loan.`,
+        note: note?.trim() || returnNote(returnQuantity, existing.quantity, closesLoan),
         metadata: { checkoutId },
       }),
       checkoutId,
+      fromReturned,
     ),
     // The condition change rides in the same transaction as the return + stock restore, so a
     // returned tool's new state is atomic with its check-in. `updated_at` self-stamps via the
@@ -186,8 +294,8 @@ export async function planCheckIn(
     ...(conditionChanged
       ? [
           {
-            sql: `UPDATE items SET condition = ? WHERE id = ? AND ${OPEN_LOAN_EXISTS};`,
-            params: [condition, existing.item_id, checkoutId] as SqlValue[],
+            sql: `UPDATE items SET condition = ? WHERE id = ? AND ${OPEN_LOAN_AT_WATERMARK};`,
+            params: [condition, existing.item_id, checkoutId, fromReturned] as SqlValue[],
           },
           onlyWhileOpen(
             historyStatement(existing.item_id, 'CONDITION_CHANGED', actorId, {
@@ -195,19 +303,40 @@ export async function planCheckIn(
               metadata: { from: currentCondition, to: condition, checkoutId },
             }),
             checkoutId,
+            fromReturned,
           ),
         ]
       : []),
+    // Advance the return watermark LAST, so every guard above still sees the loan open at the
+    // value this plan read. Two things happen in one statement because they are one fact: the
+    // units are accounted for, and the loan closes if that was the last of them.
+    //
+    // `WHERE … returned_at IS NULL` is the structural backstop from issue #296: once another
+    // return has *closed* the loan this UPDATE — like the guarded writes before it — matches no
+    // row and modifies nothing, so an overlapping full return still collapses to a silent no-op.
+    //
+    // A return that lost the race to another **partial** one is different, and must not be
+    // silent: the loan is still open, so the row still matches, and writing the plan's units
+    // onto a watermark that has moved would restore against an outstanding figure that no longer
+    // exists. The compare-and-swap writes the sentinel -1 instead, tripping the column's
+    // `returned_quantity >= 0` CHECK and rolling the whole return back — the stock, the ledger
+    // entry and any condition change with it. `CheckoutRepository.checkIn` turns that abort into
+    // {@link LOAN_RETURN_RACE_MESSAGE}. This is `receivedQtyDeltaStatement`'s guard (issue #298),
+    // which solves the same problem for a purchase-order line's cumulative `received_qty`.
+    //
+    // The return note lands in its OWN column — never `note`, which holds the reason the
+    // item was lent out. Writing it here (not `note = COALESCE(?, note)`) means a return
+    // remark no longer clobbers the loan note; both survive independently. An instalment's
+    // remark is kept only by the return that closes the loan, which is the one the column
+    // describes; a partial return's remark lives in its `CHECKED_IN` ledger entry.
     {
-      // Close the loan LAST, so every guard above still sees `returned_at IS NULL`. The
-      // `AND returned_at IS NULL` predicate is the structural backstop: once another return has
-      // closed the loan this UPDATE — like the guarded writes before it — modifies nothing.
-      //
-      // The return note lands in its OWN column — never `note`, which holds the reason the
-      // item was lent out. Writing it here (not `note = COALESCE(?, note)`) means a return
-      // remark no longer clobbers the loan note; both survive independently.
-      sql: `UPDATE checkouts SET returned_at = (${SQL_NOW_MS}), return_note = ? WHERE id = ? AND returned_at IS NULL;`,
-      params: [note?.trim() || null, checkoutId],
+      sql: `UPDATE checkouts
+               SET returned_quantity = CASE WHEN returned_quantity = ? THEN returned_quantity + ? ELSE -1 END
+                   ${closesLoan ? `, returned_at = (${SQL_NOW_MS}), return_note = ?` : ''}
+             WHERE id = ? AND returned_at IS NULL;`,
+      params: closesLoan
+        ? [fromReturned, returnQuantity, note?.trim() || null, checkoutId]
+        : [fromReturned, returnQuantity, checkoutId],
     },
   ];
 
@@ -215,12 +344,14 @@ export async function planCheckIn(
   // the loan rather than at random — without it, two devices returning the same loan offline give
   // the units back twice (see {@link CHECKOUT_RETURN_NAMESPACE}). Each loan gets its own key, so a
   // borrower-wide return concatenates one bracket per loan rather than sharing one across all of
-  // them, and no loan's id depends on how many others happened to be returned beside it.
+  // them, and no loan's id depends on how many others happened to be returned beside it. Each
+  // *instalment* gets its own key too, via the watermark it started from, so a loan handed back in
+  // stages does not give the union one key for several distinct movements.
   //
   // `CONDITION_CHANGED` above is deliberately left random: unlike the return itself, two devices
   // can record genuinely *different* conditions on the way back, and one derived id would keep
   // only whichever arrived first while the item's own `condition` settles by last-write-wins.
-  return withOperationKey(await checkInId('stock', checkoutId), statements);
+  return withOperationKey(await checkInId('stock', checkoutId, fromReturned), statements);
 }
 
 /**
@@ -232,7 +363,9 @@ export async function planCheckIn(
  * Each loan is planned against the pre-transaction state, which is safe because the plans only
  * ever *add* stock back: `addBatchStatement` upserts with `quantity = quantity + excluded`, so
  * two loans of the same lot accumulate rather than clobber, and each loan's `returned_at`
- * UPDATE targets its own row.
+ * UPDATE targets its own row. The same holds for the issue #662 watermark each plan
+ * compare-and-swaps: no two loans in this batch share a `checkouts` row, so no plan's read of
+ * `returned_quantity` can be invalidated by another plan beside it.
  */
 export async function planCheckInAllForTarget(
   driver: IDatabaseDriver,

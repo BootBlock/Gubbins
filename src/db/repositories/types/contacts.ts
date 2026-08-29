@@ -58,6 +58,8 @@ export interface CheckoutRow {
   readonly project_id: string | null;
   readonly location_id: string | null;
   readonly quantity: number;
+  /** Units returned so far (issue #662); the loan closes when it reaches {@link quantity}. */
+  readonly returned_quantity: number;
   readonly due_date: number | null;
   readonly checked_out_at: number;
   readonly returned_at: number | null;
@@ -91,6 +93,21 @@ export interface Checkout {
   readonly locationId: string | null;
   /** Units lent out on this checkout (DISCRETE on-hand is decremented while open). */
   readonly quantity: number;
+  /**
+   * How many of {@link quantity} have been returned so far (issue #662). A loan can come back
+   * in instalments — lend six drill bits, get two back — so each return adds its units here and
+   * restores exactly that many to the source lot, leaving the loan open with the rest still out.
+   * The return that brings this up to {@link quantity} is the one that stamps {@link returnedAt}
+   * and closes the loan. The reverse does not hold: the sync engine force-closes a loan without
+   * restoring anything (`resolveSerialisedLoanConflicts` collapses a serialised asset's duplicate
+   * loans), so a **closed** loan may carry a counter below its quantity. Read this to find out
+   * what is still out, and {@link returnedAt} to find out whether the loan is open.
+   *
+   * `quantity - returnedQuantity` is what is **still out**, which is the figure a return dialog
+   * defaults to and a loan row states. A loan returned in one movement goes straight from 0 to
+   * {@link quantity}, so an ordinary one-tap return reads exactly as it always did.
+   */
+  readonly returnedQuantity: number;
   /** Optional due date (UNIX-ms) for overdue tracking (§4 Due Dates). */
   readonly dueDate: number | null;
   readonly checkedOutAt: number;

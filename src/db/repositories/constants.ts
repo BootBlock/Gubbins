@@ -614,6 +614,11 @@ export const LOCATION_QR_PARAM = 'location';
  * NULL is `OPEN` (the item is still out), otherwise `RETURNED`. Exposed as a union
  * for the UI; the database stores only the nullable `returned_at` timestamp so the
  * §7.1 LWW model stays a simple last-write-wins on one column.
+ *
+ * A partly-returned loan (issue #662) is `OPEN`, not a third state: some of its units are still
+ * with the borrower, which is exactly what OPEN means everywhere it is read — the on-loan badge,
+ * the overdue predicates and the borrower's outstanding list. How much is still out is the
+ * quantities' business (`quantity - returned_quantity`), not the status's.
  */
 export const CHECKOUT_STATUSES = ['OPEN', 'RETURNED'] as const;
 export type CheckoutStatus = (typeof CHECKOUT_STATUSES)[number];

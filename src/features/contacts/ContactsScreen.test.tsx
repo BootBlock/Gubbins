@@ -142,6 +142,7 @@ function makeCheckout(id: string, overdue: boolean): CheckoutWithNames {
     locationId: null,
     borrowerName: 'Alice',
     quantity: 1,
+    returnedQuantity: 0,
     checkedOutAt: 0,
     dueDate: null,
     returnedAt: null,

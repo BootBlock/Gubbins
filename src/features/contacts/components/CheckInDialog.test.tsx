@@ -5,9 +5,9 @@ import type { CheckoutWithNames } from '@/db/repositories';
 /**
  * Behaviour tests for {@link CheckInDialog} (spec §4 Borrowing, B2 "condition on return"). This
  * pins the dialog's contract: the fast one-tap path (an empty submit returns with no condition
- * and no note — behaving exactly like the pre-dialog return); capturing a condition on return
- * (driven through the Foundry Select); capturing a return note; and a failed check-in surfacing
- * the error without closing. Per the component-test conventions the check-in mutation hook is
+ * and no note — behaving exactly like the pre-dialog return); returning part of a multi-unit loan
+ * (issue #662); capturing a condition on return (driven through the Foundry Select); capturing a
+ * return note; and a failed check-in surfacing the error without closing. Per the component-test conventions the check-in mutation hook is
  * mocked; the pure `conditionSelectOptions` seam runs for real.
  */
 
@@ -32,6 +32,7 @@ function makeCheckout(overrides: Partial<CheckoutWithNames> = {}): CheckoutWithN
     locationId: null,
     borrowerName: 'Ada Lovelace',
     quantity: 1,
+    returnedQuantity: 0,
     dueDate: null,
     checkedOutAt: 0,
     returnedAt: null,
@@ -65,11 +66,57 @@ describe('CheckInDialog — the fast one-tap path', () => {
 
     await waitFor(() =>
       expect(h.mutate).toHaveBeenCalledWith(
-        { checkoutId: 'checkout-1', note: undefined, condition: undefined },
+        { checkoutId: 'checkout-1', note: undefined, condition: undefined, quantity: undefined },
         expect.anything(),
       ),
     );
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('CheckInDialog — returning part of a loan (issue #662)', () => {
+  const quantityField = () => screen.getByTestId('checkin-quantity');
+
+  it('offers no quantity field when there is only one unit to hand back', () => {
+    renderDialog();
+    expect(screen.queryByTestId('checkin-quantity')).toBeNull();
+  });
+
+  it('defaults to everything still out and sends no quantity for a whole-loan return', async () => {
+    renderDialog(makeCheckout({ quantity: 6, returnedQuantity: 2 }));
+    expect(quantityField()).toHaveValue(4);
+
+    fireEvent.click(returnButton());
+
+    // Returning everything outstanding is exactly what an omitted quantity means, so the fast
+    // path stays byte-identical to the one-tap return rather than growing a redundant argument.
+    await waitFor(() =>
+      expect(h.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ quantity: undefined }),
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('sends the chosen quantity when the user hands back only part of the loan', async () => {
+    renderDialog(makeCheckout({ quantity: 6 }));
+    fireEvent.change(quantityField(), { target: { value: '2' } });
+    fireEvent.click(returnButton());
+
+    await waitFor(() =>
+      expect(h.mutate).toHaveBeenCalledWith(expect.objectContaining({ quantity: 2 }), expect.anything()),
+    );
+  });
+
+  it('clamps a quantity above what is still out rather than letting it be submitted', () => {
+    renderDialog(makeCheckout({ quantity: 6, returnedQuantity: 2 }));
+    fireEvent.change(quantityField(), { target: { value: '99' } });
+    expect(quantityField()).toHaveValue(4);
+  });
+
+  it('states how much of the loan is still out', () => {
+    renderDialog(makeCheckout({ quantity: 6, returnedQuantity: 2 }));
+    expect(screen.getByText('4 of 6 still out')).toBeInTheDocument();
   });
 });
 

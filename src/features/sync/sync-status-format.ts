@@ -110,6 +110,14 @@ export function describeSyncOutcome(result: SyncResult): string {
       `${count(result.loanReturnsPreserved, 'returned loan')} kept closed (it was still checked out elsewhere).`,
     );
   }
+  // Issue #662: part of a loan was handed back here, and another device had not seen it yet.
+  // Deliberately not folded into the sentence above: nothing was closed, so saying so would
+  // report a loan as returned when it is still out.
+  if (result.loanInstalmentsPreserved > 0) {
+    sentences.push(
+      `${count(result.loanInstalmentsPreserved, 'part-returned loan kept its', 'part-returned loans kept their')} returned count (another device had fewer back).`,
+    );
+  }
   // Issue #72: a concurrent edit of yours was overwritten — flag it plainly so it can be reviewed.
   if (result.conflicts.length > 0) {
     sentences.push(
