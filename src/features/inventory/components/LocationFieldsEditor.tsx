@@ -160,15 +160,24 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
 
       {available.length > 0 ? (
         <div className="flex items-end gap-2">
-          <Select
-            value={adding}
-            onChange={setAdding}
-            options={[
-              { value: '', label: t('inventory.location.fields.addPlaceholder') },
-              ...available.map((d) => ({ value: d.id, label: d.name })),
-            ]}
-            aria-label={t('inventory.location.fields.addLabel')}
-          />
+          {/* A width of its own, rather than the shrink-to-fit this flex row would otherwise
+              give the box (issue #435). The listbox popover is anchored to the trigger, so a box
+              sized to whichever field happens to be selected sets the *menu's* width from it too
+              — and the field names inside it then truncate, which is the one list a user is
+              reading in order to choose from it. The box still shrinks below this on a narrow
+              screen: the trigger's label is `min-w-0 truncate`, so nothing here holds the row
+              wider than the dialog. */}
+          <div className="w-72">
+            <Select
+              value={adding}
+              onChange={setAdding}
+              options={[
+                { value: '', label: t('inventory.location.fields.addPlaceholder') },
+                ...available.map((d) => ({ value: d.id, label: d.name })),
+              ]}
+              aria-label={t('inventory.location.fields.addLabel')}
+            />
+          </div>
           <Button
             disabled={adding === '' || isSaving(adding)}
             onClick={() => {
