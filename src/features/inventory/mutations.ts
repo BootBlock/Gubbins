@@ -37,6 +37,7 @@ import {
   type AddRelationInput,
   type GaugeAdjustment,
   type Item,
+  type MergeItemsInput,
   type Page,
   type RecordRevaluationInput,
   type RecordTestResultInput,
@@ -578,6 +579,31 @@ export function useSoftDeleteItem() {
     onSettled: () => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+    },
+  });
+}
+
+/**
+ * Merge one item into another (issue #99) — the Deduplicate-items tool's only write.
+ *
+ * Deliberately **no optimistic patch**, unlike the delete beside it. A merge moves rows across
+ * several tables and can drop some of them, so the figures it returns are the outcome rather
+ * than a prediction, and there is nothing honest to paint on the screen before the transaction
+ * says what actually happened. The tool shows the result; the caches are swept afterwards.
+ *
+ * The sweep is wide on purpose: checkouts, bookings, maintenance, projects, purchase orders and
+ * supplier parts can all have moved, and every one of those is read on a screen of its own.
+ */
+export function useMergeItems() {
+  const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.delete');
+  return useMutation({
+    mutationFn: (input: MergeItemsInput) => getItemRepository().mergeItems(input),
+    onError: reportFailure,
+    onSettled: () => {
+      invalidateItems(client);
+      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+      void client.invalidateQueries({ queryKey: activityKeys.all });
     },
   });
 }

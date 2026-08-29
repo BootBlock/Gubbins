@@ -123,5 +123,6 @@ Archiving takes one click and asks nothing first, so the message that confirms i
 - **[[Counting by weight|Counting-by-Weight]]** — count small parts on a scale from their unit weight.
 - **[[Units of measure|Units-of-Measure]]** — the weight and dimension units an item is shown in.
 - **[[Bulk edit & clone|Bulk-Edit-and-Clone]]** — change or duplicate many items at once.
+- **[[Deduplicating items|Deduplicating-Items]]** — the same thing recorded twice, found and merged.
 - **[[Inventory views|Inventory-Views]]** — card, list and table layouts.
 - **[[How long a text field can be|Text-Field-Limits]]** — the ceiling on a name, a description or a note.

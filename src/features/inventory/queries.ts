@@ -35,6 +35,7 @@ import {
 // Type-only: the AST search's keys live in the factory below with the rest of the inventory
 // domain's, but nothing here executes any of the search machinery.
 import type { SearchAST } from '@/db/search/ast';
+import type { DuplicateScanOptions } from './dedupe/duplicate-groups';
 import { useEnabledFeatures } from '@/features/modules/useFeature';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { PRESET_SUGGESTIONS, mergeSuggestions } from './field-suggestions';
@@ -118,6 +119,22 @@ export const inventoryKeys = {
   item: (id: string) => [...inventoryKeys.items(), 'detail', id] as const,
   /** Items already carrying a barcode — the Barcode field's duplicate advisory (issue #513). */
   barcodeCarriers: (barcode: string) => [...inventoryKeys.items(), 'barcode', barcode] as const,
+  /** Items already named this, or nearly — the Name field's duplicate advisory (issue #99). */
+  nameMatches: (name: string) => [...inventoryKeys.items(), 'name-matches', name] as const,
+  /**
+   * One run of the Deduplicate-items scan, keyed by the signals it was asked for (issue #99).
+   *
+   * A **sibling** of {@link inventoryKeys.items}, not a child, and deliberately so: the tool's own
+   * merges call {@link invalidateItems}, and a scan under that prefix would refetch itself after
+   * every merge — throwing away the keep/remove choices the user has made across the rest of the
+   * result. The scan is a point-in-time reading the user asked for; the dialog reports what each
+   * merge did rather than silently re-deriving the list underneath them.
+   */
+  duplicateScan: (options: DuplicateScanOptions) =>
+    [...inventoryKeys.all, 'duplicate-scan', options] as const,
+  /** How many rows elsewhere name each of these items — the merge preview's tally (issue #99). */
+  itemReferences: (ids: readonly string[]) =>
+    [...inventoryKeys.items(), 'references', [...ids].sort()] as const,
   itemHistory: (id: string) => [...inventoryKeys.item(id), 'history'] as const,
   locations: () => [...inventoryKeys.all, 'locations'] as const,
   locationTree: () => [...inventoryKeys.locations(), 'tree'] as const,
@@ -776,6 +793,55 @@ export function useBarcodeCarriers(barcode: string) {
     queryKey: inventoryKeys.barcodeCarriers(value),
     queryFn: () => getItemRepository().findByBarcode(value),
     enabled: value.length > 0,
+  });
+}
+
+/**
+ * Active items already named what the user has typed, or near enough (issue #99) — what the Add
+ * and Edit dialogs' duplicate-name advisory is judged from.
+ *
+ * A blank or one-character value disables the query rather than asking for a prefix that matches
+ * most of the inventory. The caller decides *when* to ask: both fields pass `''` mid-keystroke,
+ * exactly as the Barcode field does, so a half-typed name costs no round-trip and the advisory
+ * appears when the user leaves the field rather than flickering as they type.
+ */
+export function useNameMatches(name: string) {
+  const value = name.trim();
+  return useQuery({
+    queryKey: inventoryKeys.nameMatches(value),
+    queryFn: () => getItemRepository().findSimilarlyNamed(value),
+    enabled: value.length > 1,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * One run of the duplicate scan (issue #99). Deliberately **manual**: `options` is `null` until
+ * the user presses Scan, because the read walks the active items and must never happen just
+ * because a dialog opened. Re-scanning is the query's own `refetch`.
+ */
+export function useDuplicateScan(options: DuplicateScanOptions | null) {
+  return useQuery({
+    queryKey: inventoryKeys.duplicateScan(options ?? { signals: [] }),
+    queryFn: () => getItemRepository().findDuplicates(options!),
+    enabled: options !== null,
+    // A scan is a point-in-time answer the user asked for; refetching it behind their back would
+    // silently reshape the list they are working through.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    gcTime: 0,
+  });
+}
+
+/**
+ * How many rows elsewhere name each of `ids` (issue #99) — the tally the merge preview shows, so
+ * a user can see what a removal would strand before they commit to it.
+ */
+export function useItemReferenceCounts(ids: readonly string[]) {
+  return useQuery({
+    queryKey: inventoryKeys.itemReferences(ids),
+    queryFn: () => getItemRepository().countItemReferences(ids),
+    enabled: ids.length > 0,
   });
 }
 

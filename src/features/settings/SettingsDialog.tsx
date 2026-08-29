@@ -63,6 +63,7 @@ import { CARD_BADGE_OPTIONS } from '@/features/inventory/card-badge';
 import { DangerZone } from '@/features/danger-zone/DangerZone';
 import { HotkeySettings } from '@/features/hotkeys/HotkeySettings';
 import { DatabaseMaintenance } from '@/features/maintenance';
+import { DeduplicateItems } from '@/features/inventory/dedupe/DeduplicateItems';
 import { StorageTriageDialog } from '@/features/storage/StorageTriageDialog';
 import { monthsLabel } from '@/features/storage/triage';
 import {
@@ -1171,6 +1172,8 @@ export default function SettingsDialog({
               />
             </SettingRow>
           </SettingsSection>
+
+          <DeduplicateItems />
         </>
       ),
     },

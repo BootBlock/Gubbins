@@ -71,6 +71,9 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   // A sync merge overwrote this device's field values (issue #487) — the same record-keeping
   // change `ATTRIBUTES_CHANGED` covers, arrived at by last-write-wins rather than by an edit.
   MERGE_OVERWRITTEN: 'lifecycle',
+  // Two duplicate records folded into one (issue #99) — a change to which record exists, which is
+  // what `lifecycle` covers.
+  MERGED: 'lifecycle',
   // Outbound / commercial stock movements.
   SOLD: 'stock',
   // Supplier / external data.

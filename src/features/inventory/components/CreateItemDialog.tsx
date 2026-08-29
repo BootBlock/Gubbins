@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useId, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type ReactNode } from 'react';
 import { TEXT_LIMITS, withinTextLimit } from '@/lib/text-limits';
 import { Controller, useForm, type Control, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,6 +28,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { OcrPrefillDialog, type OcrPrefill } from '@/features/inventory/ocr/OcrPrefillDialog';
 import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
 import { BarcodeField } from './BarcodeField';
+import { useDuplicateNameWarning } from './useDuplicateNameWarning';
 import {
   IN_TRANSIT_LOCATION_ID,
   TRACKING_MODES,
@@ -509,6 +510,8 @@ export function CreateItemDialog({
   });
 
   const trackingMode = watch('trackingMode');
+  // Advisory only — a second item may legitimately share a name (issue #99).
+  const duplicateName = useDuplicateNameWarning(watch('name') ?? '');
   // Watched (not read via getValues) so the picker appears/disappears as the unit is typed,
   // and so the pre-fill it offers tracks whatever is currently in the tare box.
   const tareWeightDraft = watch('tareWeight') ?? '';
@@ -987,13 +990,29 @@ export function CreateItemDialog({
         </div>
       ) : null}
 
-      <FormField label="Name" error={errors.name?.message} hintSize="md" hint={ITEM_NAME_HINT}>
+      <FormField
+        label="Name"
+        error={errors.name?.message}
+        warning={duplicateName.warning}
+        hintSize="md"
+        hint={ITEM_NAME_HINT}
+      >
         <Input
           placeholder="e.g. M3 × 10 socket screws"
           {...(() => {
-            const { ref, ...rest } = register('name');
+            const { ref, onChange, onBlur, ...rest } = register('name');
             return {
               ...rest,
+              // The advisory's gate wraps the form library's own handlers rather than replacing
+              // them, so registration keeps working exactly as it did (issue #99).
+              onChange: (event: ChangeEvent<HTMLInputElement>) => {
+                duplicateName.onEdit();
+                void onChange(event);
+              },
+              onBlur: (event: FocusEvent<HTMLInputElement>) => {
+                duplicateName.onSettle();
+                void onBlur(event);
+              },
               ref: (el: HTMLInputElement | null) => {
                 ref(el);
                 nameRef.current = el;

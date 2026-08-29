@@ -203,6 +203,12 @@ export const HISTORY_ACTIONS = [
   // would otherwise have vanished with nothing in the ledger saying so. Attributed to the System
   // user, because no person asked for it.
   'MERGE_OVERWRITTEN',
+  // Two records of one thing were folded together by the Deduplicate-items tool (issue #99).
+  // Recorded on *both* items: on the one that was removed, naming what it became part of, and on
+  // the one that survived, naming what it absorbed and what moved across. The removal itself is
+  // an ordinary soft delete, so `restore` still brings the removed item back — this entry is what
+  // says where its references went, which restoring does not undo.
+  'MERGED',
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

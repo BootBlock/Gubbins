@@ -84,8 +84,14 @@ const PLACEHOLDERS = ['NULL', "''"] as const;
  * Ratchet on the statements this cannot reach — pinned to the current population, with no slack.
  * Lower it when a site becomes verifiable; raising it means a new query has been written in a shape
  * no automated check can see, which should be a deliberate decision rather than a drive-by.
+ *
+ * Raised to 29 for `countItemReferences` (issue #99), whose table and column both come from
+ * `ITEM_REFERENCE_SPECS` — the one list saying what counts as a reference to an item. Writing the
+ * thirteen statements out literally would duplicate that list into a second place a merge could
+ * then disagree with, which is the drift the spec exists to prevent; the row shape it returns is
+ * two fixed aliases, and `ItemRepository.dedupe.test.ts` exercises every one of the statements.
  */
-const MAX_UNVERIFIED = 28;
+const MAX_UNVERIFIED = 29;
 
 /** Floor on the sweep, so a walk that finds nothing reports a failure rather than "all clear". */
 const MIN_SITES = 250;
