@@ -203,6 +203,18 @@ export const HISTORY_ACTIONS = [
   // would otherwise have vanished with nothing in the ledger saying so. Attributed to the System
   // user, because no person asked for it.
   'MERGE_OVERWRITTEN',
+  // Two records of one thing were folded together by the Deduplicate-items tool (issue #99).
+  // Recorded on *both* items: on the one that was removed, naming what it became part of, and on
+  // the one that survived, naming what it absorbed and what moved across. The removal itself is
+  // an ordinary soft delete, so `restore` still brings the removed item back — this entry is what
+  // says where its references went, which restoring does not undo.
+  'MERGED',
+  // A **variant**'s parent item changed (issue #99) — the deduplication merge re-parents the
+  // removed item's variants onto the kept one. Deliberately *not* `RE_PARENTED`, which on an item
+  // means "its location was removed under it" and publishes as `item.moved`: a variant's parent is
+  // another item, nothing physically moved, and a subscriber watching for a relocation must not be
+  // told one happened.
+  'VARIANT_RE_PARENTED',
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

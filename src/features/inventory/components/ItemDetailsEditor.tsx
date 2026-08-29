@@ -19,6 +19,7 @@ import { fromGrams, toGrams, type WeightUnit } from '@/lib/weight';
 import { BarcodeScanDialog } from '@/features/scanner/components/BarcodeScanDialog';
 import { useT } from '@/features/i18n';
 import { BarcodeField } from './BarcodeField';
+import { useDuplicateNameWarning } from './useDuplicateNameWarning';
 import { dimensionToInput, resolveDimension } from '../measure-input';
 import {
   measureIssueText,
@@ -261,6 +262,10 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
     heightState.issue === null &&
     depthState.issue === null;
 
+  // Advisory only — a second item may legitimately share a name (issue #99). The item's own
+  // name is excluded, so simply opening the editor never warns about the item being edited.
+  const duplicateName = useDuplicateNameWarning(name, item.id);
+
   const save = () => update.mutate({ id: item.id, input: draft });
 
   return (
@@ -268,10 +273,19 @@ export function ItemDetailsEditor({ item }: { item: Item }) {
       <FormField
         label="Name"
         error={draft.name.length > 0 ? undefined : 'Please enter a name.'}
+        warning={duplicateName.warning}
         hintSize="md"
         hint={ITEM_NAME_EDIT_HINT}
       >
-        <Input value={name} onChange={(e) => setName(e.target.value)} data-testid="item-details-name" />
+        <Input
+          value={name}
+          onChange={(e) => {
+            duplicateName.onEdit();
+            setName(e.target.value);
+          }}
+          onBlur={duplicateName.onSettle}
+          data-testid="item-details-name"
+        />
       </FormField>
 
       <FormField

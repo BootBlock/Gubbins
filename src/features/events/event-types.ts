@@ -83,6 +83,14 @@ export const ACTION_EVENT_TYPE: Record<HistoryAction, string> = {
   // so it publishes as the same generic type rather than minting a sync-specific one: a subscriber
   // watching an item's attributes wants the change regardless of which device won it.
   MERGE_OVERWRITTEN: 'item.changed',
+  // A deduplication merge (issue #99). The surviving item genuinely changed — references moved
+  // onto it — and the removed one left active inventory, so both publish as the same generic
+  // `item.changed` a subscriber watching either record already receives.
+  MERGED: 'item.changed',
+  // A variant's parent item changed (issue #99). `item.changed`, not the `item.moved` that
+  // `RE_PARENTED` publishes: the item's location is untouched, so a subscriber filtering on a
+  // physical move must not receive it.
+  VARIANT_RE_PARENTED: 'item.changed',
 };
 
 /**

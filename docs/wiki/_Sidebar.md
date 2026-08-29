@@ -23,6 +23,7 @@
 - [[Counting by weight|Counting-by-Weight]]
 - [[Container weights|Container-Weights]]
 - [[Bulk edit & clone|Bulk-Edit-and-Clone]]
+- [[Deduplicating items|Deduplicating-Items]]
 - [[Inventory views|Inventory-Views]]
 
 **Asset lifecycle**

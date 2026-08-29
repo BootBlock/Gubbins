@@ -37,6 +37,7 @@ import {
   type AddRelationInput,
   type GaugeAdjustment,
   type Item,
+  type MergeItemsInput,
   type Page,
   type RecordRevaluationInput,
   type RecordTestResultInput,
@@ -51,6 +52,8 @@ import { currentGrossWeight, percentageRemaining, type GaugeConfigChange } from 
 import { emptyAst } from '@/db/search/ast';
 import { activityKeys } from '@/features/activity/queries';
 import { checkoutKeys } from '@/features/contacts/keys';
+import { bookingKeys } from '@/features/bookings/bookings';
+import { purchaseOrderKeys } from '@/features/purchasing/queries';
 import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
@@ -578,6 +581,43 @@ export function useSoftDeleteItem() {
     onSettled: () => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+    },
+  });
+}
+
+/**
+ * Merge one item into another (issue #99) — the Deduplicate-items tool's only write.
+ *
+ * Deliberately **no optimistic patch**, unlike the delete beside it. A merge moves rows across
+ * several tables and can drop some of them, so the figures it returns are the outcome rather
+ * than a prediction, and there is nothing honest to paint on the screen before the transaction
+ * says what actually happened. The tool shows the result; the caches are swept afterwards.
+ *
+ * The sweep is wide on purpose. A merge is the one write that re-points rows across a dozen
+ * tables at once, and several of them are read under key roots `invalidateItems` never reaches:
+ * loans, bookings, purchase orders and the maintenance feed each sit outside `items()`. The rest
+ * — an item's own supplier parts, its BOM lines, its relations — are already under `item(id)`,
+ * so the ordinary sweep covers them.
+ */
+export function useMergeItems() {
+  const client = useQueryClient();
+  const reportFailure = useReportWriteFailure('inventory.writeError.heading.delete');
+  return useMutation({
+    mutationFn: (input: MergeItemsInput) => getItemRepository().mergeItems(input),
+    onError: reportFailure,
+    onSettled: () => {
+      invalidateItems(client);
+      void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
+      void client.invalidateQueries({ queryKey: activityKeys.all });
+      // Each of these sits outside the `items()` prefix, so `invalidateItems` cannot reach it.
+      // Without the sweep, an open Loans, Bookings or Purchase-orders screen — and the
+      // maintenance-due badge in the always-mounted nav — keeps naming an item that no longer
+      // holds the row. `maintenance()` is a *sibling* of `items()`, not a child, which is
+      // exactly why it has to be named (issue #623 made the same point for the alert feeds).
+      void client.invalidateQueries({ queryKey: checkoutKeys.all });
+      void client.invalidateQueries({ queryKey: bookingKeys.all });
+      void client.invalidateQueries({ queryKey: purchaseOrderKeys.all });
+      void client.invalidateQueries({ queryKey: inventoryKeys.maintenance() });
     },
   });
 }

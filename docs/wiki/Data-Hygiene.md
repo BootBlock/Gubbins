@@ -18,7 +18,8 @@ Data hygiene flags records with gaps that undermine other features, such as item
 - A **category** or a **photo**.
 - Stock that's **never been counted**, or a record that's gone **stale** (untouched for a long time).
 - **Possible duplicates** — two items sharing the same manufacturer part number (MPN), the usual
-  sign of the same part entered twice.
+  sign of the same part entered twice. To go further — matching on names, barcodes and serial
+  numbers too, and merging what you find — use [[Deduplicating items|Deduplicating-Items]].
 
 Each check reads as a green tick when everything's healthy, or lists the items that need attention.
 **Click a flagged item** to jump straight to it — Gubbins opens its card in the
@@ -47,3 +48,4 @@ gaps close.
 - **[[Bulk edit & clone|Bulk-Edit-and-Clone]]** — fixing many records at once.
 - **[[Export & import|Export-and-Import]]** — where gaps often come from.
 - **[[Cycle counts & audit day|Cycle-Counts-and-Audit-Day]]** — clearing the never-counted check.
+- **[[Deduplicating items|Deduplicating-Items]]** — finding and merging duplicate records.

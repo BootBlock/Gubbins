@@ -1,0 +1,288 @@
+/**
+ * Pure duplicate detection for items (issue #99) — the grouping half of the deduplication
+ * tool, with no database and no React in it.
+ *
+ * The tool is **manually invoked and never runs on its own**: nothing here is wired to a
+ * write path, and finding a group is only ever a proposal for the user to accept, reject or
+ * re-point. That is the whole reason the judgement lives in a pure seam — it can be read,
+ * tested and argued with before anything is deleted.
+ *
+ * Four **exact** signals and one **fuzzy** one, all opt-in per scan:
+ *
+ * - `name` — two items whose names fold to one key (`lib/name-fold`), so they differ only by
+ *   case, spacing or Unicode composition. The same fold the rest of the app enforces natural-key
+ *   uniqueness with, so a name pair this reports is one the user genuinely cannot tell apart.
+ * - `barcode` — the same GTIN, canonicalised first (`features/scanner/gtin`) so a UPC-E typed off
+ *   a small pack meets the UPC-A a camera scan of that pack produces.
+ * - `serial` — the same serial number. Two records of one physical unit.
+ * - `mpn` — the same manufacturer part number *from the same manufacturer*. The manufacturer is
+ *   part of the key because an MPN is only unique within its maker: `RC0805` means different
+ *   parts to different vendors, and pairing them would be a confident wrong answer.
+ * - `similar-name` — names that are merely *close* (normalised edit-distance similarity above a
+ *   threshold, `lib/fuzzy`). This is the one signal that guesses, which is why it is off unless
+ *   asked for and why its threshold is the caller's to choose.
+ *
+ * Grouping is transitive by union-find, not pairwise: A shares a barcode with B and B's name
+ * folds onto C's, so all three are one group. That is deliberate — a user resolving duplicates
+ * wants the whole cluster in front of them, not three overlapping pairs to reconcile in some
+ * order.
+ *
+ * **Cost.** The exact signals are one hash bucket each — linear. The fuzzy signal is inherently
+ * pairwise, so it is *blocked*: a name only meets names that share its first three characters or
+ * one of its longer words, and a block that grows past {@link MAX_BLOCK_SIZE} is skipped rather
+ * than compared. The honest cost of that is recall — two names alike in neither their opening
+ * nor any whole word are not compared at all — and the honest alternative is an all-pairs scan
+ * that stops being usable somewhere in the low thousands of items.
+ */
+import { canonicaliseBarcode } from '@/features/scanner/gtin';
+import { similarity } from '@/lib/fuzzy';
+import { foldName } from '@/lib/name-fold';
+
+/** The signals a scan can be asked to look for. Order is the order the UI offers them in. */
+export const DUPLICATE_SIGNALS = ['name', 'barcode', 'serial', 'mpn', 'similar-name'] as const;
+
+export type DuplicateSignal = (typeof DUPLICATE_SIGNALS)[number];
+
+/** The signals enabled by default — every exact one, and nothing that guesses. */
+export const DEFAULT_DUPLICATE_SIGNALS: readonly DuplicateSignal[] = ['name', 'barcode', 'serial', 'mpn'];
+
+/**
+ * How alike two names must be for `similar-name` to pair them, as a normalised edit-distance
+ * similarity in `[0, 1]` (see `lib/fuzzy`'s `similarity`).
+ *
+ * `0.85` is roughly "one slip in seven characters". Lower, and ordinary sibling products
+ * (`M3 x 10` against `M3 x 12`) start pairing; higher, and it catches little the exact `name`
+ * signal has not already found.
+ */
+export const DEFAULT_SIMILARITY_THRESHOLD = 0.85;
+
+/**
+ * The largest fuzzy block that is compared at all. A block of `n` names costs `n²/2`
+ * comparisons, so one very common word ("screw", "cable") would otherwise dominate the scan.
+ * Skipping them is a real loss of recall, and the one the wiki page names.
+ */
+export const MAX_BLOCK_SIZE = 200;
+
+/** The fields duplicate detection reads. Any richer row shape is accepted and passed through. */
+export interface DuplicateCandidate {
+  readonly id: string;
+  readonly name: string;
+  readonly barcode: string | null;
+  readonly serialNumber: string | null;
+  readonly mpn: string | null;
+  readonly manufacturer: string | null;
+  readonly quantity: number;
+  readonly createdAt: number;
+}
+
+/** A cluster of items believed to be the same thing, and why. */
+export interface DuplicateGroup<T extends DuplicateCandidate = DuplicateCandidate> {
+  /**
+   * Stable identity for the group: its lowest member id. Two scans of an unchanged database
+   * produce the same group ids, so a React key — and a user's expanded/collapsed state —
+   * survives a re-scan.
+   */
+  readonly id: string;
+  /** Every signal that contributed to this cluster, in {@link DUPLICATE_SIGNALS} order. */
+  readonly signals: readonly DuplicateSignal[];
+  /** The members, by name then id, so the list does not reorder between scans. */
+  readonly members: readonly T[];
+}
+
+export interface DuplicateScanOptions {
+  readonly signals: readonly DuplicateSignal[];
+  /** Only consulted when `signals` includes `similar-name`. */
+  readonly similarityThreshold?: number;
+}
+
+/** The exact-match key for one signal, or `null` when this item cannot carry that signal. */
+function exactKey(item: DuplicateCandidate, signal: DuplicateSignal): string | null {
+  switch (signal) {
+    case 'name': {
+      const key = foldName(item.name);
+      return key.length > 0 ? key : null;
+    }
+    case 'barcode': {
+      const raw = item.barcode?.trim() ?? '';
+      return raw.length > 0 ? canonicaliseBarcode(raw) : null;
+    }
+    case 'serial': {
+      const raw = item.serialNumber ?? '';
+      const key = foldName(raw);
+      return key.length > 0 ? key : null;
+    }
+    case 'mpn': {
+      const key = foldName(item.mpn ?? '');
+      if (key.length === 0) return null;
+      // The maker is part of the key: an MPN is only unique within the manufacturer that issued
+      // it. A blank manufacturer keys as blank, so two unattributed parts sharing an MPN still
+      // pair — they are far likelier to be one part than two.
+      // The separator is a NUL because no folded name can contain one, so `TE` + `Connectivity 1`
+      // cannot collide with `TE Connectivity` + `1`. It is written as the **escape**, never the
+      // raw byte: a NUL in the source makes git treat the whole file as binary — no textual diff,
+      // no line-level review, no three-way merge.
+      return `${foldName(item.manufacturer ?? '')}\u0000${key}`;
+    }
+    case 'similar-name':
+      return null; // not an exact signal — handled by the blocked pass below
+  }
+}
+
+/**
+ * The blocks a name belongs to for the fuzzy pass: its first three characters (ignoring
+ * spacing), plus every word of four characters or more. Sharing *either* is enough to be
+ * compared, so a trailing plural, a swapped separator or an extra qualifier all still meet.
+ */
+function blockKeys(folded: string): readonly string[] {
+  const keys = new Set<string>();
+  const compact = folded.replace(/\s+/gu, '');
+  if (compact.length >= 3) keys.add(`p:${compact.slice(0, 3)}`);
+  for (const token of folded.split(/[^\p{L}\p{N}]+/u)) {
+    if (token.length >= 4) keys.add(`w:${token}`);
+  }
+  return [...keys];
+}
+
+/** Union-find over member indices, with path compression. */
+class DisjointSet {
+  private readonly parent: number[];
+
+  constructor(size: number) {
+    this.parent = Array.from({ length: size }, (_, i) => i);
+  }
+
+  find(i: number): number {
+    let root = i;
+    while (this.parent[root] !== root) root = this.parent[root]!;
+    let walk = i;
+    while (this.parent[walk] !== root) {
+      const next = this.parent[walk]!;
+      this.parent[walk] = root;
+      walk = next;
+    }
+    return root;
+  }
+
+  union(a: number, b: number): void {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra !== rb) this.parent[rb] = ra;
+  }
+}
+
+/**
+ * Cluster `candidates` into duplicate groups under `options`. Items matched by nothing are
+ * absent from the result; a group always has at least two members.
+ *
+ * Groups come back ordered by size (largest first) and then by the first member's name, so the
+ * clusters most worth the user's attention are at the top of the list.
+ */
+export function findDuplicateGroups<T extends DuplicateCandidate>(
+  candidates: readonly T[],
+  options: DuplicateScanOptions,
+): readonly DuplicateGroup<T>[] {
+  const enabled = new Set(options.signals);
+  if (enabled.size === 0 || candidates.length < 2) return [];
+
+  const sets = new DisjointSet(candidates.length);
+  // Which signals put each member into a cluster; unioned per group at the end.
+  const memberSignals = candidates.map(() => new Set<DuplicateSignal>());
+
+  const link = (a: number, b: number, signal: DuplicateSignal) => {
+    memberSignals[a]!.add(signal);
+    memberSignals[b]!.add(signal);
+    sets.union(a, b);
+  };
+
+  for (const signal of DUPLICATE_SIGNALS) {
+    if (signal === 'similar-name' || !enabled.has(signal)) continue;
+    const seen = new Map<string, number>();
+    candidates.forEach((item, index) => {
+      const key = exactKey(item, signal);
+      if (key === null) return;
+      const first = seen.get(key);
+      if (first === undefined) seen.set(key, index);
+      else link(first, index, signal);
+    });
+  }
+
+  if (enabled.has('similar-name')) {
+    const threshold = options.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD;
+    const folded = candidates.map((item) => foldName(item.name));
+    const blocks = new Map<string, number[]>();
+    folded.forEach((name, index) => {
+      if (name.length === 0) return;
+      for (const key of blockKeys(name)) {
+        const block = blocks.get(key);
+        if (block) block.push(index);
+        else blocks.set(key, [index]);
+      }
+    });
+    for (const block of blocks.values()) {
+      // A block this large is a common word, not a duplicate cluster; comparing it would cost
+      // more than the whole rest of the scan and find almost nothing.
+      if (block.length < 2 || block.length > MAX_BLOCK_SIZE) continue;
+      for (let i = 0; i < block.length; i++) {
+        for (let j = i + 1; j < block.length; j++) {
+          const a = block[i]!;
+          const b = block[j]!;
+          // Already one cluster (often via an exact signal, or another block) — nothing to add.
+          if (sets.find(a) === sets.find(b)) continue;
+          if (similarity(folded[a]!, folded[b]!) >= threshold) link(a, b, 'similar-name');
+        }
+      }
+    }
+  }
+
+  const byRoot = new Map<number, number[]>();
+  candidates.forEach((_, index) => {
+    const root = sets.find(index);
+    const members = byRoot.get(root);
+    if (members) members.push(index);
+    else byRoot.set(root, [index]);
+  });
+
+  const groups: DuplicateGroup<T>[] = [];
+  for (const indices of byRoot.values()) {
+    if (indices.length < 2) continue;
+    const members = indices
+      .map((i) => candidates[i]!)
+      .sort((a, b) => a.name.localeCompare(b.name) || compareIds(a.id, b.id));
+    const signals = new Set<DuplicateSignal>();
+    for (const i of indices) for (const s of memberSignals[i]!) signals.add(s);
+    groups.push({
+      id: indices.map((i) => candidates[i]!.id).sort()[0]!,
+      signals: DUPLICATE_SIGNALS.filter((s) => signals.has(s)),
+      members,
+    });
+  }
+
+  return groups.sort(
+    (a, b) =>
+      b.members.length - a.members.length ||
+      a.members[0]!.name.localeCompare(b.members[0]!.name) ||
+      compareIds(a.id, b.id),
+  );
+}
+
+/** Total order over ids, so every sort above is stable rather than merely usually stable. */
+function compareIds(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Which member of a group the tool proposes keeping.
+ *
+ * The one holding the most stock, because that is the record the rest of the database has most
+ * invested in and the one whose loss would cost most to reconstruct; ties go to the oldest,
+ * which is the record other things have had longest to point at. Only ever a default — the user
+ * chooses, and every other member remains selectable.
+ */
+export function suggestKeeper<T extends DuplicateCandidate>(members: readonly T[]): T | undefined {
+  return members.reduce<T | undefined>((best, member) => {
+    if (!best) return member;
+    if (member.quantity !== best.quantity) return member.quantity > best.quantity ? member : best;
+    if (member.createdAt !== best.createdAt) return member.createdAt < best.createdAt ? member : best;
+    return member.id < best.id ? member : best;
+  }, undefined);
+}

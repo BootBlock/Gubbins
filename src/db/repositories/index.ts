@@ -111,8 +111,18 @@ export type {
   KitComponent,
   ItemStatusCount,
   ItemSectionPresence,
+  DuplicateScanItem,
+  NameMatch,
+  DuplicateScanResult,
+  ItemReferenceCounts,
+  ItemReferenceKind,
+  MergeItemsInput,
+  MergeItemsResult,
 } from './ItemRepository';
 export {
+  ITEM_REFERENCE_SPECS,
+  emptyItemReferenceCounts,
+  totalItemReferences,
   ITEM_SORT_FIELDS,
   ITEM_STATUS_FILTERS,
   STATUS_FILTER_FEATURE,

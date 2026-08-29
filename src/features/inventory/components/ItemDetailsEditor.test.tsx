@@ -18,6 +18,9 @@ vi.mock('../queries', () => ({
   useFieldSuggestions: () => ({ data: [] }),
   // The Barcode field's duplicate advisory (issue #513) — nothing else carries the code here.
   useBarcodeCarriers: () => ({ data: [] }),
+  // The Name field's duplicate advisory (issue #99), stubbed for the same reason as the
+  // barcode one beside it.
+  useNameMatches: () => ({ data: [] }),
 }));
 
 // The camera barcode-capture dialog (issue #8) owns the real getUserMedia/decoder plumbing,

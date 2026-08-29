@@ -28,6 +28,7 @@ import { withRelations } from './item/relations';
 import { withTestRecords } from './item/test-records';
 import { withSectionPresence } from './item/section-presence';
 import { withAvailability } from './item/availability';
+import { withDedupe } from './item/dedupe';
 
 export type { ItemListFilters, ItemSeek } from './item/core';
 export type { ItemSort, ItemSortField } from './item/sql';
@@ -51,23 +52,39 @@ export type {
 export type { KitComponent, AssembleOptions } from './item/kits';
 export type { ItemStatusCount } from './item/feeds';
 export { NO_SECTION_PRESENCE, type ItemSectionPresence } from './item/section-presence';
+export {
+  ITEM_REFERENCE_SPECS,
+  emptyItemReferenceCounts,
+  totalItemReferences,
+  type DuplicateScanItem,
+  type NameMatch,
+  type DuplicateScanResult,
+  type ItemReferenceCounts,
+  type ItemReferenceKind,
+  type MergeItemsInput,
+  type MergeItemsResult,
+} from './item/dedupe';
 
 /**
  * The complete item repository: the CRUD core with every concern mixin layered on.
  * Each mixin only *adds* methods (none override another), so the composition order is
  * immaterial. The constructor `(driver, options)` is inherited from `BaseRepository`.
  */
-export class ItemRepository extends withStock(
-  withGauge(
-    withAliases(
-      withCapabilities(
-        withSearch(
-          withVariants(
-            withKits(
-              withDashboardFeeds(
-                withCycleCount(
-                  withRevaluations(
-                    withRelations(withTestRecords(withSectionPresence(withAvailability(ItemCoreRepository)))),
+export class ItemRepository extends withDedupe(
+  withStock(
+    withGauge(
+      withAliases(
+        withCapabilities(
+          withSearch(
+            withVariants(
+              withKits(
+                withDashboardFeeds(
+                  withCycleCount(
+                    withRevaluations(
+                      withRelations(
+                        withTestRecords(withSectionPresence(withAvailability(ItemCoreRepository))),
+                      ),
+                    ),
                   ),
                 ),
               ),
