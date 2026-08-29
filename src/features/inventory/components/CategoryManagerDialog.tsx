@@ -101,7 +101,7 @@ export function CategoryManagerDialog({ open, onClose }: { open: boolean; onClos
       onClose={onClose}
       title="Categories & schemas"
       description="Group items into categories, and give each one a custom schema of extra fields."
-      className="max-w-3xl"
+      className="max-w-4xl"
     >
       <p className="mb-4 text-xs text-muted-foreground">
         A category is a label you assign to items (e.g. "Cables", "Fasteners"). Its
