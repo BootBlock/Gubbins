@@ -1908,7 +1908,7 @@ paths:
       tags:
       - "items"
       summary: "Export matching items as a CSV (refreshable spreadsheet pull)"
-      description: "A spreadsheet-friendly CSV download of the matching items (columns: id, name, description, notes, trackingMode, quantity, isUnlimited, mpn, manufacturer, unitCost — the same shape as the app's own export; the quantity cell is blank for an unlimited-supply row). Honours the same $filter/$search/$orderby/location/category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows (up to a hard cap), not a single page. Point Excel/Power BI \"From Web\" at it for a refreshable pull."
+      description: "A spreadsheet-friendly CSV download of the matching items (columns: id, name, description, notes, trackingMode, quantity, isUnlimited, mpn, manufacturer, unitCost — the same shape as the app's own export; the quantity cell is blank for an unlimited-supply row). Honours the same $filter/$search/$orderby/location/category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows, not a single page — the response is streamed, so there is no row cap. Point Excel/Power BI \"From Web\" at it for a refreshable pull; the response carries an ETag and Last-Modified, so a refresh against an unchanged snapshot is answered 304."
       parameters:
       -
         name: "$filter"
@@ -1934,14 +1934,58 @@ paths:
         schema:
           type: "string"
         example: "quantity desc,name"
+      -
+        name: "If-None-Match"
+        in: "header"
+        required: false
+        description: "The weak ETag from a previous response. Matches ⇒ 304 Not Modified. Takes precedence over If-Modified-Since."
+        schema:
+          type: "string"
+        example: "W/\"3Qk1s0Zk9pQmVzdEV0YWc\""
+      -
+        name: "If-Modified-Since"
+        in: "header"
+        required: false
+        description: "The Last-Modified value from a previous response, for a client that keeps no ETag. Only consulted when If-None-Match is absent."
+        schema:
+          type: "string"
+        example: "Fri, 27 Jun 2025 04:53:20 GMT"
       responses:
         "200":
           description: "The CSV file (RFC-4180, CRLF rows)."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
           content:
             text/csv:
               schema:
                 type: "string"
               example: "id,name,description,notes,trackingMode,quantity,isUnlimited,mpn,manufacturer,unitCost\r\nitem-esp32,ESP32 Dev Board,,,DISCRETE,7,false,DEV-ESP32,Synthetic Silicon Co,"
+        "304":
+          description: "The cached copy is still current — nothing has changed since the snapshot (or, for the calendar, the day) the validators name. No body."
+          headers:
+            ETag:
+              schema:
+                type: "string"
+              description: "The weak entity-tag of this representation."
+            Last-Modified:
+              schema:
+                type: "string"
+              description: "When this representation last changed."
+            Cache-Control:
+              schema:
+                type: "string"
+              description: "private, no-cache — store it, but revalidate every time. Private because a feed carries personal inventory behind a bearer token, so no shared cache may hold a copy."
         "400":
           description: "Bad request — missing or invalid parameter."
           content:

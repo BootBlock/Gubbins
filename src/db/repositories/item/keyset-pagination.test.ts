@@ -13,6 +13,18 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { ItemRepository } from '../ItemRepository';
 import type { ItemListFilters, ItemSort } from '../ItemRepository';
+import type { SearchAST } from '@/db/search/ast';
+
+/** Every ordering the walks below are proved against, offset and keyset alike. */
+const SORTS: { label: string; sort?: readonly ItemSort[] }[] = [
+  { label: 'default (favourites, name, serial_no, created_at)' },
+  { label: 'name asc', sort: [{ field: 'name', direction: 'asc' }] },
+  { label: 'name desc', sort: [{ field: 'name', direction: 'desc' }] },
+  { label: 'quantity asc', sort: [{ field: 'quantity', direction: 'asc' }] },
+  { label: 'unitCost asc (NULLs last)', sort: [{ field: 'unitCost', direction: 'asc' }] },
+  { label: 'unitCost desc (NULLs last)', sort: [{ field: 'unitCost', direction: 'desc' }] },
+  { label: 'createdAt desc', sort: [{ field: 'createdAt', direction: 'desc' }] },
+];
 
 describe('item keyset pagination', () => {
   let driver: MemoryDriver;
@@ -71,16 +83,6 @@ describe('item keyset pagination', () => {
     return ids;
   }
 
-  const SORTS: { label: string; sort?: readonly ItemSort[] }[] = [
-    { label: 'default (favourites, name, serial_no, created_at)' },
-    { label: 'name asc', sort: [{ field: 'name', direction: 'asc' }] },
-    { label: 'name desc', sort: [{ field: 'name', direction: 'desc' }] },
-    { label: 'quantity asc', sort: [{ field: 'quantity', direction: 'asc' }] },
-    { label: 'unitCost asc (NULLs last)', sort: [{ field: 'unitCost', direction: 'asc' }] },
-    { label: 'unitCost desc (NULLs last)', sort: [{ field: 'unitCost', direction: 'desc' }] },
-    { label: 'createdAt desc', sort: [{ field: 'createdAt', direction: 'desc' }] },
-  ];
-
   for (const { label, sort } of SORTS) {
     for (const pageSize of [1, 2, 3, 5]) {
       it(`keyset matches offset for ${label} at pageSize ${pageSize}`, async () => {
@@ -129,5 +131,126 @@ describe('item keyset pagination', () => {
     const viaKeyset = await keysetIds({}, 3);
     expect(viaKeyset).toEqual(viaOffset);
     expect(viaKeyset).not.toContain(gone.id); // inactive filtered out on both paths
+  });
+});
+
+/**
+ * The same proof for the `$filter` path (issue #533): `searchByAst` grew a forward keyset walk so
+ * the bridge's CSV export stops paging a filtered catalogue by `OFFSET`.
+ *
+ * Two claims, and the walk is only correct if both hold:
+ *
+ * 1. **It visits every matching row exactly once.** Compared against the offset walk of the same
+ *    AST as a multiset — a seek predicate that is even one row out of step with its `ORDER BY`
+ *    repeats a row at a page boundary or steps over one.
+ * 2. **It visits them in the list's own total order.** Compared against `list`'s walk of the same
+ *    set, which is where the cursor's ordering spec comes from. This is the half prose cannot
+ *    hold: the seek predicate and the `ORDER BY` are built from one spec, and the day they are
+ *    not, this fails.
+ */
+describe('item keyset pagination over a $filter (AST) search', () => {
+  let driver: MemoryDriver;
+  let items: ItemRepository;
+  /** Matches every seeded item bar the one created with quantity 0 below. */
+  const MATCH_ALL_STOCKED: SearchAST = {
+    type: 'GROUP',
+    logicalOperator: 'AND',
+    conditions: [{ field: 'quantity', operator: 'GREATER_THAN', value: 0 }],
+  };
+
+  beforeEach(async () => {
+    driver = createMemoryDriver();
+    await runMigrations(driver, migrations);
+    items = new ItemRepository(driver);
+
+    // The same adversarial spread as above: ties on the lead key, duplicate names, serialised
+    // clones separated only by the id tiebreak, and NULL sort values.
+    await items.create({ name: 'Bolt', quantity: 10, unitCost: 5 });
+    await items.create({ name: 'bolt', quantity: 3, unitCost: 5 });
+    await items.create({ name: 'Anchor', quantity: 7 });
+    await items.create({ name: 'Anchor', quantity: 7, unitCost: 12 });
+    const fav = await items.create({ name: 'Zzz last-alphabetically', quantity: 1, unitCost: 99 });
+    await items.update(fav.id, { isFavourite: true });
+    await items.createSerialised({ name: 'Drill', count: 4 });
+    await items.create({ name: 'Widget', quantity: 50 });
+    await items.create({ name: 'Gadget', quantity: 2, unitCost: 100 });
+    const fav2 = await items.create({ name: 'Aaa first-but-favourite', quantity: 4 });
+    await items.update(fav2.id, { isFavourite: true });
+    // Excluded by the filter — proof the seek predicate ANDs with the AST rather than replacing it.
+    await items.create({ name: 'Out of stock', quantity: 0 });
+  });
+
+  afterEach(async () => {
+    await driver.close();
+  });
+
+  /** Walk the whole AST result set by forward keyset seek, returning the ids in visited order. */
+  async function astSeekIds(sort: readonly ItemSort[] | undefined, pageSize: number): Promise<string[]> {
+    const ids: string[] = [];
+    let page = await items.searchByAst(MATCH_ALL_STOCKED, { limit: pageSize, sort, seek: {} });
+    ids.push(...page.rows.map((r) => r.id));
+    while (page.hasMore && page.endCursor) {
+      page = await items.searchByAst(MATCH_ALL_STOCKED, {
+        limit: pageSize,
+        sort,
+        seek: { after: page.endCursor },
+        offset: ids.length,
+      });
+      ids.push(...page.rows.map((r) => r.id));
+    }
+    return ids;
+  }
+
+  /** Walk the *unfiltered* catalogue by `list`'s own keyset seek — the order to compare against. */
+  async function listSeekIds(filters: ItemListFilters, pageSize: number): Promise<string[]> {
+    const ids: string[] = [];
+    let page = await items.list({ ...filters, limit: pageSize });
+    ids.push(...page.rows.map((r) => r.id));
+    while (page.hasMore && page.endCursor) {
+      page = await items.list({
+        ...filters,
+        limit: pageSize,
+        seek: { cursor: page.endCursor, direction: 'forward', startIndex: ids.length },
+      });
+      ids.push(...page.rows.map((r) => r.id));
+    }
+    return ids;
+  }
+
+  /** Walk the same AST result set by classic offset, returning the ids in visited order. */
+  async function astOffsetIds(sort: readonly ItemSort[] | undefined, pageSize: number): Promise<string[]> {
+    const ids: string[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const page = await items.searchByAst(MATCH_ALL_STOCKED, { limit: pageSize, offset, sort });
+      ids.push(...page.rows.map((r) => r.id));
+      if (!page.hasMore) break;
+    }
+    return ids;
+  }
+
+  for (const { label, sort } of SORTS) {
+    for (const pageSize of [1, 2, 3, 5]) {
+      it(`walks the filtered set once, in list order, for ${label} at pageSize ${pageSize}`, async () => {
+        const filters: ItemListFilters = sort ? { sort } : {};
+        const seekIds = await astSeekIds(sort, pageSize);
+        // (1) the same rows as the offset walk, each exactly once.
+        expect([...seekIds].sort()).toEqual([...(await astOffsetIds(sort, pageSize))].sort());
+        expect(new Set(seekIds).size).toBe(seekIds.length);
+        expect(seekIds).toHaveLength(12); // 8 singletons + 4 'Drill' clones; the 0-quantity row is out
+
+        // (2) in the order `list` puts them in — the spec the cursors are cut from.
+        const listOrder = await listSeekIds(filters, pageSize);
+        expect(seekIds).toEqual(listOrder.filter((id) => seekIds.includes(id)));
+      });
+    }
+  }
+
+  it('reports no cursor on the offset path, so a walk cannot start from one', async () => {
+    // `Page.endCursor` is defined against the seek ordering; an offset read runs the relevance
+    // ordering instead, and minting a cursor from it would produce a seek nobody can honour.
+    const offsetPage = await items.searchByAst(MATCH_ALL_STOCKED, { limit: 3 });
+    expect(offsetPage.endCursor).toBeUndefined();
+    const seekPage = await items.searchByAst(MATCH_ALL_STOCKED, { limit: 3, seek: {} });
+    expect(seekPage.endCursor).toBeDefined();
   });
 });

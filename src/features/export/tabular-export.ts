@@ -62,8 +62,31 @@ function delimitedCell(value: TabularCell, delimiter: string): string {
 }
 
 /**
+ * The row separator every delimited export writes between rows — CRLF, per RFC-4180 §2.1.
+ *
+ * Named rather than inlined because a *streamed* delimited export (the bridge's `items.csv`)
+ * writes it between the chunks it emits, and a second literal there would be a second
+ * definition of the file's framing.
+ */
+export const DELIMITED_ROW_SEPARATOR = '\r\n';
+
+/** The header row of a delimited table, serialised but **not** terminated. */
+export function delimitedHeaderRow<T>(columns: readonly TabularColumn<T>[], delimiter: string): string {
+  return columns.map((c) => delimitedCell(c.header, delimiter)).join(delimiter);
+}
+
+/** One body row of a delimited table, serialised but **not** terminated. */
+export function delimitedBodyRow<T>(columns: readonly TabularColumn<T>[], row: T, delimiter: string): string {
+  return columns.map((c) => delimitedCell(c.value(row), delimiter)).join(delimiter);
+}
+
+/**
  * Serialise rows to a delimited table with CRLF row separators. `delimiter` is `,` for
  * CSV or a tab for TSV; both share the RFC-4180 quoting above.
+ *
+ * Assembled from {@link delimitedHeaderRow} / {@link delimitedBodyRow} rather than restating
+ * what they do, so the whole-string form and the streamed form cannot serialise a row
+ * differently — there is one definition of a row, not two that have to agree.
  *
  * @internal Exported for unit tests only.
  */
@@ -72,14 +95,17 @@ export function toDelimited<T>(
   rows: readonly T[],
   delimiter: string,
 ): string {
-  const header = columns.map((c) => delimitedCell(c.header, delimiter)).join(delimiter);
-  const body = rows.map((row) => columns.map((c) => delimitedCell(c.value(row), delimiter)).join(delimiter));
-  return [header, ...body].join('\r\n');
+  const header = delimitedHeaderRow(columns, delimiter);
+  const body = rows.map((row) => delimitedBodyRow(columns, row, delimiter));
+  return [header, ...body].join(DELIMITED_ROW_SEPARATOR);
 }
+
+/** The CSV field delimiter, named so a streamed CSV asks for the same one this module writes. */
+export const CSV_DELIMITER = ',';
 
 /** Spreadsheet-friendly CSV (RFC-4180 quoting, CRLF rows). */
 export function toCsv<T>(columns: readonly TabularColumn<T>[], rows: readonly T[]): string {
-  return toDelimited(columns, rows, ',');
+  return toDelimited(columns, rows, CSV_DELIMITER);
 }
 
 /**
