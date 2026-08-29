@@ -243,8 +243,8 @@ let movementWindowArg: number | undefined;
 
 // The selectable windows are re-exported by `./queries` from the dependency-free
 // `./analytics-windows` module, so the mock takes them from the real module rather than
-// restating the list. A window added there is offered by these tests too, with nothing to
-// keep in step by hand.
+// restating the list, which would drift the moment a window is added or the normaliser
+// changes.
 vi.mock('./queries', async () => ({
   REPORT_WINDOW_DAYS: 30,
   DEAD_STOCK_SINCE_DAYS: 90,
@@ -302,7 +302,7 @@ vi.mock('./queries', async () => ({
 import { ReportsScreen } from './ReportsScreen';
 import { useModulesStore } from '@/state/stores/useModulesStore';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
-import { ANALYTICS_WINDOWS, DEFAULT_ANALYTICS_WINDOW } from './analytics-windows';
+import { DEFAULT_ANALYTICS_WINDOW } from './analytics-windows';
 
 // --------------------------------------------------------------------------
 // Tests
@@ -462,13 +462,14 @@ describe('ReportsScreen — advanced analytics (Phase 74)', () => {
     // The default 90-day window is pressed.
     const active = group.querySelector('[aria-pressed="true"]');
     expect(active?.textContent).toContain('90');
-    // The windows issue #116 asks for, shortest-first, and the control offers exactly the
-    // SSOT list — so a window added to `ANALYTICS_WINDOWS` reaches the user.
+    // The windows issue #116 asks for, shortest-first. Spelled out rather than compared to
+    // `ANALYTICS_WINDOWS`, so the control is pinned to what the user was promised and not
+    // merely to whatever the constant happens to say — a window added to the constant but
+    // dropped, reordered or relabelled on the way to the DOM fails here.
     const offered = [...group.querySelectorAll('button')].map((b) =>
       Number((b.textContent ?? '').replace(/[^0-9]/g, '')),
     );
     expect(offered).toEqual([7, 14, 30, 60, 90, 180, 365]);
-    expect(offered).toEqual([...ANALYTICS_WINDOWS]);
   });
 
   it('announces a failure once the analytics queries error', () => {
