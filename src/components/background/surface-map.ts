@@ -630,10 +630,11 @@ export function trackSurfaces(): SurfaceTracker {
    *
    * A scroll of an inner container is not a page scroll — it moves only the surfaces inside that
    * container — so the two are cached separately (issue #716). The first event on a container
-   * adopts it and sets its baseline, which is why the step that event reports cannot itself be
-   * followed. Only the most recently scrolled container is followed; where a second one scrolls
-   * before the rebuild lands, the first reverts to unshifted until that rebuild, which knocks
-   * its snow off as a layout change exactly as it did before #716.
+   * adopts it and sets its baseline from the offset it has *already* reached, so the step that
+   * event reports cannot be followed and the next rebuild knocks that column's snow off. Only
+   * the most recently scrolled container is followed, and re-adopting one after another has
+   * scrolled costs that first step again; in between, the container that lost the follow reverts
+   * to unshifted until the rebuild, exactly as everything did before #716.
    */
   function onScroll(e: Event): void {
     const t = e.target;
