@@ -13,9 +13,11 @@ import {
   snowUnderCatchChance,
   snowMoundCapacity,
   snowSettleChance,
+  snowBlowFalloff,
+  snowBlowFlakeCount,
 } from './precip-engine';
 import { blizzard } from './flow-field';
-import { NO_SURFACE, type HoverFollow, type SurfaceTracker } from './surface-map';
+import { COLUMN_WIDTH, NO_SURFACE, type HoverFollow, type SurfaceTracker } from './surface-map';
 
 interface DrawCall {
   args: unknown[];
@@ -931,4 +933,259 @@ describe('snow drift saturation (issue #437)', () => {
     expect(TOP - high).toBeGreaterThan(2); // a real drift built up
     expect(low - high).toBeGreaterThan(1.5); // …and its top rolls rather than shelving flat
   }, 30_000); // see the budget note above the test
+});
+
+describe('snow blow-away seams (issue #418)', () => {
+  it('takes all of the snow under the tap and none of it at the rim', () => {
+    expect(snowBlowFalloff(0, 40)).toBe(1);
+    expect(snowBlowFalloff(40, 40)).toBe(0);
+    expect(snowBlowFalloff(80, 40)).toBe(0);
+    // Symmetric: a column the same distance either side of the tap loses the same share.
+    expect(snowBlowFalloff(-13, 40)).toBeCloseTo(snowBlowFalloff(13, 40), 12);
+    // Monotonic — a column nearer the tap is never taken less.
+    for (let d = 1; d <= 40; d++) {
+      expect(snowBlowFalloff(d, 40)).toBeLessThanOrEqual(snowBlowFalloff(d - 1, 40));
+    }
+  });
+
+  it('eases in and out, so the bite leaves no hard edge to catch the eye', () => {
+    // The claim the whole "soft edges" requirement rests on: the curve is flat at *both* ends, so
+    // the depth — and with it the mound's opacity, which rides depth — blends into the untouched
+    // drift with no step. A linear falloff passes the monotonic test above and fails this one.
+    const slope = (d: number) => Math.abs(snowBlowFalloff(d + 1, 40) - snowBlowFalloff(d, 40));
+    const middle = slope(19);
+    expect(slope(0)).toBeLessThan(middle / 4); // flat under the pointer…
+    expect(slope(38)).toBeLessThan(middle / 4); // …and flat where the bite meets the rest of the drift
+  });
+
+  it('sizes the plume from the snow actually removed, and caps it at the pool', () => {
+    expect(snowBlowFlakeCount(0)).toBe(0);
+    expect(snowBlowFlakeCount(-3)).toBe(0);
+    // A trace of snow still throws something rather than nothing.
+    expect(snowBlowFlakeCount(0.05)).toBe(1);
+    expect(snowBlowFlakeCount(4)).toBeGreaterThan(snowBlowFlakeCount(1));
+    // A deep drift saturates the fixed pool instead of allocating past it.
+    expect(snowBlowFlakeCount(10_000)).toBe(snowBlowFlakeCount(1_000_000));
+  });
+});
+
+/**
+ * A seeded PRNG standing in for `Math.random`. The other interaction tests pin the generator to a
+ * single constant, which also pins every flake's spawn x — the whole field then falls as one
+ * column and settles as a spike. These tests need a drift spread along the control to have
+ * somewhere to aim at, so they need varied-but-reproducible values (mulberry32).
+ */
+function seededRandom(seed: number): () => number {
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Dispatch a primary pointer press at viewport (x, y), as a tap or click on the page would. */
+function tapAt(x: number, y: number): void {
+  document.dispatchEvent(
+    new PointerEvent('pointerdown', { clientX: x, clientY: y, bubbles: true, isPrimary: true }),
+  );
+}
+
+describe('startPrecip blowing snow off a control (issue #418)', () => {
+  /** The control top every test here settles snow on. */
+  const TOP = 400;
+  /**
+   * The blast's reach in css px, read back from the falloff curve rather than restated as a
+   * literal — the tuning is free to change and these tests follow it.
+   */
+  const RADIUS = (() => {
+    let d = 1;
+    while (d < 1000 && snowBlowFalloff(d) > 0) d++;
+    return d;
+  })();
+
+  /**
+   * Run a snow layer over a full-width control top at y=400 until drifts have built along it,
+   * and hand back a counter for "how many blits did the overlay make over the next few frames".
+   * A quiet overlay still shows the odd repaint as a late flake lands, so every assertion here
+   * compares a tapped window against an untapped one rather than against zero.
+   *
+   * The pump is long because the drift has to be *deep* as well as present: flakes land where the
+   * wind takes them, so a short run leaves isolated single-column spikes with nothing to aim at.
+   */
+  function settledSnow(frames = 3000) {
+    vi.spyOn(Math, 'random').mockImplementation(seededRandom(12345));
+    const rec = makeCtx();
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(TOP);
+    const ctrl = startPrecip(makeCanvas(rec), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    let now = 0;
+    const run = (n: number): number => {
+      const mark = orec.drawImages.length;
+      for (let i = 0; i < n; i++) pump((now += 50));
+      return orec.drawImages.length - mark;
+    };
+    run(frames);
+    return { rec, orec, ctrl, surfaces, run };
+  }
+
+  it('throws a plume of flakes when the drift is tapped, then goes quiet again', () => {
+    const { ctrl, run } = settledSnow();
+    const idle = run(7);
+    tapAt(600, 398); // on the drift sitting on the control top at y=400
+    const burst = run(7);
+    // Far more than the single blit that repaints the bitten mound: every flung flake is its own.
+    expect(burst).toBeGreaterThan(idle + 50);
+    // The plume is a burst, not a state — once it has flown, the overlay settles back down.
+    run(40);
+    expect(run(7)).toBeLessThan(idle + 20);
+    ctrl.stop();
+  });
+
+  it('sweeps the drift bare under the tap and leaves its edges soft', () => {
+    // The requirement in one test: the bite takes the tapped *part* of the mound, not the mound,
+    // and what is left of it has no cut edge. Both are claims about the drift's painted profile,
+    // so this reads the profile itself rather than counting blits — `traceCrest` passes each
+    // column's crest point as a quadratic control point, so the control points *are* the profile.
+    // The offscreen mound cache is identified by its full-viewport backing store (no sprite
+    // canvas comes close), and each `clearRect` starts the next render.
+    const renders: Array<Array<[number, number]>> = [];
+    let current: Array<[number, number]> = [];
+    const moundCtx = new Proxy(
+      {
+        createLinearGradient: () => ({ addColorStop: () => {} }),
+        clearRect: () => {
+          current = [];
+          renders.push(current);
+        },
+        quadraticCurveTo: (cx: number, cy: number) => {
+          current.push([cx, cy]);
+        },
+      } as Record<string, unknown>,
+      {
+        get: (t, k) => (k in t ? t[k as string] : () => {}),
+        set: (t, k, v) => {
+          t[k as string] = v;
+          return true;
+        },
+      },
+    );
+    const proto = Object.getPrototypeOf(document.createElement('canvas')) as HTMLCanvasElement;
+    const realGetContext = proto.getContext;
+    vi.spyOn(proto, 'getContext').mockImplementation(function (this: HTMLCanvasElement, ...args: unknown[]) {
+      if (args[0] === '2d' && this.width >= 1000 && this.height >= 600) {
+        return moundCtx as unknown as CanvasRenderingContext2D;
+      }
+      return Reflect.apply(realGetContext, this, args) as unknown;
+    } as typeof proto.getContext);
+
+    const { ctrl, run } = settledSnow();
+    /** Depth per crest x from the most recent render (a plaster strip's control point sits below
+     *  the control top, so the filter keeps crests only). */
+    const profile = (): Map<number, number> => {
+      const out = new Map<number, number>();
+      for (const [x, y] of renders[renders.length - 1] ?? []) {
+        if (y > TOP) continue;
+        out.set(x, Math.max(out.get(x) ?? 0, TOP - y));
+      }
+      return out;
+    };
+    /**
+     * The steepest column-to-column change in *how much of a column's snow the blast took*,
+     * across the bite. This is the bite's own edge, isolated from the drift's natural shape:
+     * every column's share is `after / before`, so an untouched column reads 1 and a swept one
+     * reads 0 whatever the drift under it looked like. Clearing a span outright reads as a step
+     * of 1 at its edge; easing it out cannot exceed the falloff's own slope.
+     */
+    const biteEdge = (
+      before: Map<number, number>,
+      after: Map<number, number>,
+      centre: number,
+      reach: number,
+    ): number => {
+      const cols = Math.ceil(reach / COLUMN_WIDTH) + 2;
+      // Only columns holding enough snow to measure a share of. Below ~1.5px the ratio is noise:
+      // a column left under the minimum visible depth stops being painted at all, so its share
+      // reads as 0 rather than as the sliver it really is.
+      const share = (x: number): number | null => {
+        const had = before.get(x) ?? 0;
+        if (had < 1.5) return null;
+        return Math.min(1, (after.get(x) ?? 0) / had);
+      };
+      let worst = 0;
+      for (let k = -cols; k < cols; k++) {
+        const here = share(centre + k * COLUMN_WIDTH);
+        const next = share(centre + (k + 1) * COLUMN_WIDTH);
+        if (here === null || next === null) continue;
+        worst = Math.max(worst, Math.abs(next - here));
+      }
+      return worst;
+    };
+
+    const before = profile();
+    expect(before.size).toBeGreaterThan(10); // a drift really did build
+    // Aim at the deepest snow on the control — the flakes land where the wind takes them, so the
+    // drift is a set of banks rather than an even blanket.
+    let peak = 0;
+    let peakDepth = 0;
+    for (const [x, d] of before) {
+      if (d > peakDepth) {
+        peakDepth = d;
+        peak = x;
+      }
+    }
+
+    tapAt(peak, TOP - 2);
+    run(5); // past the mound-render throttle, so the bite is painted
+    const after = profile();
+    const depthAt = (x: number) => after.get(x) ?? 0;
+    // Bare under the pointer…
+    expect(depthAt(peak)).toBeLessThan(peakDepth * 0.15);
+    // …untouched beyond the blast…
+    for (const [x, d] of before) {
+      if (Math.abs(x - peak) <= RADIUS) continue;
+      expect(depthAt(x)).toBeGreaterThan(d - 0.01);
+    }
+    // …and no cliff anywhere across the bite. The falloff spans the blast's whole radius, so no
+    // column can lose much more of its snow than the one beside it; clear a span outright
+    // instead of easing it out — at any width — and this is the assertion that goes red.
+    expect(biteEdge(before, after, peak, RADIUS)).toBeLessThan(0.3);
+    ctrl.stop();
+  });
+
+  it('ignores a tap that misses the snow', () => {
+    const { ctrl, run } = settledSnow();
+    const idle = run(7);
+    tapAt(600, 120); // open space well above the control…
+    tapAt(600, 700); // …and well below it
+    expect(run(7)).toBeLessThan(idle + 20);
+    ctrl.stop();
+  });
+
+  it('takes its tap listener off the document when the layer stops', () => {
+    // A document-level listener that outlives the layer is a leak the frame loop can't show, and
+    // the way it usually happens is a `removeEventListener` whose capture flag does not match the
+    // `addEventListener` that made it — which the DOM ignores in silence. So this checks the pair.
+    const added = vi.spyOn(document, 'addEventListener');
+    const removed = vi.spyOn(document, 'removeEventListener');
+    const { ctrl } = settledSnow(1);
+    const registration = added.mock.calls.find(([type]) => type === 'pointerdown');
+    expect(registration).toBeDefined();
+    ctrl.stop();
+    const [, handler, options] = registration!;
+    const match = removed.mock.calls.find(
+      ([type, fn, opts]) =>
+        type === 'pointerdown' &&
+        fn === handler &&
+        Boolean((opts as AddEventListenerOptions | undefined)?.capture) ===
+          Boolean((options as AddEventListenerOptions | undefined)?.capture),
+    );
+    expect(match).toBeDefined();
+  });
 });
