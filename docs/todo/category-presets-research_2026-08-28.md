@@ -660,7 +660,7 @@ has exactly two repeated glyphs and *both* are within one section — 🔥 on `M
 and `Zippo lighters`, both `collectibles`; 🎬 on `Movie` and `Blu-rays`, both `media`. There is no
 cross-section repeat anywhere in the 84. So a shared 🛞 inside `vehicle` would match the only
 precedent there is, and the case for changing anything is weaker than "the library does not do this".
-What survives is a presentational judgement: `collectibles` has 47 entries and `media` eight, so a
+What survives is a presentational judgement: `collectibles` has 47 entries and `media` seven, so a
 repeat there is diluted, whereas `vehicle` would hold four and the pair would sit side by side. On
 that reading the tidier answer is still to give `Tyres & wheels` 🛞 and move `Vehicle part` to 🔧,
 which is unused — but it is a preference, not a rule. A glyph is presentation only, since the id and
@@ -905,8 +905,8 @@ valuable thing on the list even where the individual preset is sound.
 
 ## 12. The two thinnest sections, worked up — `media` and `household`
 
-The two thinnest sections were thin in different ways. **`media`** is disc-shaped, as §1 says: seven
-of its eight entries are a disc, a book or a poster, and §6's four additions extend it sideways into
+The two thinnest sections were thin in different ways. **`media`** is disc-shaped, as §1 says: all seven
+of its entries are a disc, a book, a record or a poster, and §6's four additions extend it sideways into
 music, games and print without touching the two things a household actually accumulates — paper
 (magazines, maps, manuals, photographs) and magnetic tape. Nothing in the section covers a document
 that is *read* rather than *collected*. **`household`** was thin because it was never really a
