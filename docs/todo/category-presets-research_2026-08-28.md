@@ -473,8 +473,10 @@ already covers them. The `household` bucket and the `media` gaps are deliberatel
 
 **Checked, not eyeballed.** All 223 proposed fields were run against the 308 distinct field names in
 the shipped library **and** against the thirteen unshipped tier 2 field sets in §6, for both §3 failure
-modes. **Zero type clashes and zero silent option captures**, with the avoidances recorded in the table
-at the end. Nothing here introduces a new instance of the §3 defect.
+modes. **Zero type clashes and zero silent option captures against that scope**, with the avoidances
+recorded in the table at the end. That scope did **not** include §12, which was written in parallel;
+the cross-check between the two sections came later and found two collisions, both since resolved —
+see the box at the end of §11.7. Nothing here introduces a new instance of the §3 defect.
 
 **Not settled, and left for a human.** One glyph swap on a shipped preset (§11.4) and one section
 question that will come back when the outdoor set grows (§11.3).
@@ -487,7 +489,7 @@ which is what the section is for.
 
 | Preset | id | Glyph | Fields |
 | --- | --- | --- | --- |
-| Welding consumables | `welding-consumable` | 🔥 | Welding process (SELECT: MIG/MAG, TIG, Stick / MMA, Flux-cored, Gas, Brazing), Consumable form (SELECT: Wire spool, Electrode / rod, Filler rod, Gas cylinder, Contact tip, Nozzle, Flux), Rod diameter (mm) (NUMBER), Alloy / grade (TEXT), Shielding gas (TEXT), Suits thickness (TEXT), Batch / lot (TEXT), Opened on (DATE, reuses) |
+| Welding consumables | `welding-consumable` | 🎇 | Welding process (SELECT: MIG/MAG, TIG, Stick / MMA, Flux-cored, Gas, Brazing), Consumable form (SELECT: Wire spool, Electrode / rod, Filler rod, Gas cylinder, Contact tip, Nozzle, Flux), Rod diameter (mm) (NUMBER), Alloy / grade (TEXT), Shielding gas (TEXT), Suits thickness (TEXT), Batch / lot (TEXT), Opened on (DATE, reuses) |
 | Plumbing fittings | `plumbing-fitting` | 🚿 | Fitting kind (SELECT: Elbow, Tee, Coupler, Reducer, Valve, Tap connector, Trap, Pipe, End cap), Joint type (SELECT: Compression, Push-fit, Solvent weld, Solder / end feed, Threaded, Push-on hose), Nominal bore (TEXT), Thread size (TEXT, reuses), Fitting material (SELECT: Copper, Brass, Stainless steel, Cast iron, PVC, PEX, Polybutylene), Pressure rating (TEXT), Potable water (ON_OFF), Compliance standard (TEXT, reuses) |
 | Electrical wire | `electrical-wire` | ⚡ | Cross-section (mm²) (NUMBER), Conductor gauge (AWG) (NUMBER), Cores (NUMBER), Conductor (SELECT: Solid copper, Stranded copper, Tinned copper, Copper-clad aluminium, Aluminium), Insulation (SELECT: PVC, Silicone, PTFE, XLPE, Rubber, LSZH), Colour (COLOUR, reuses), Voltage rating (V) (NUMBER), Current rating (A) (NUMBER), Length (m) (NUMBER, reuses), Sheathed (ON_OFF) |
 | Bearings & seals | `bearing-seal` | 🌀 | Bearing kind (SELECT: Deep groove ball, Angular contact, Taper roller, Needle roller, Thrust, Plain bush, Linear, Oil seal, O-ring), Bore (mm) (NUMBER), Outside diameter (mm) (NUMBER), Width (mm) (NUMBER, reuses), Seal or shield (SELECT: Open, Shielded (Z), Double shielded (ZZ), Sealed (RS), Double sealed (2RS)), Seal material (SELECT: Nitrile, Viton-type fluoroelastomer, Silicone, PTFE, Polyacrylate), Fits machine (TEXT), Precision class (TEXT) |
@@ -572,7 +574,7 @@ stops looking provisional.
 | --- | --- | --- | --- |
 | Garden chemicals | `garden-chemical` | 🧪 | Garden product type (SELECT: Fertiliser, Weedkiller, Insecticide, Fungicide, Moss killer, Lawn treatment, Soil conditioner, Other), Active ingredient (TEXT, reuses), Application rate (TEXT), Dilution (TEXT, reuses), Treats (TEXT), Harvest interval (days) (NUMBER), Hazard class (TEXT, reuses), Safety data sheet (URL, reuses), Expiry date (DATE, reuses — already lead 30), Opened on (DATE, reuses) |
 | Garden machinery | `garden-machinery` | 🚜 | Manufacturer (TEXT, reuses), Model number (TEXT, reuses), Serial number (TEXT, reuses), Machine kind (SELECT: Lawn mower, Strimmer / brushcutter, Hedge trimmer, Chainsaw, Leaf blower, Tiller / rotavator, Pressure washer, Shredder, Other), Power type (SELECT: Petrol, Battery, Mains electric, Manual), Engine displacement (cc) (NUMBER), Fuel mix (TEXT), Running hours (NUMBER), Blade / chain spec (TEXT), Service due (DATE, reuses — already lead 30), Winterised on (DATE) |
-| Camping gear | `camping-gear` | ⛺ | Gear kind (SELECT: Tent, Sleeping bag, Sleeping mat, Stove, Cookset, Rucksack, Lantern, Chair / table, Other), Sleeps (NUMBER), Season rating (SELECT: 1 season, 2 season, 3 season, 4 season, Expedition), Comfort rating (°C) (NUMBER), Packed weight (g) (NUMBER), Packed size (TEXT), Waterproof rating (TEXT), Fuel type (SELECT: Gas canister, Liquid fuel, Solid fuel, Wood, None), Last aired (DATE), Complete (ON_OFF, reuses) |
+| Camping gear | `camping-gear` | ⛺ | Camping gear kind (SELECT: Tent, Sleeping bag, Sleeping mat, Stove, Cookset, Rucksack, Lantern, Chair / table, Other), Sleeps (NUMBER), Season rating (SELECT: 1 season, 2 season, 3 season, 4 season, Expedition), Comfort rating (°C) (NUMBER), Packed weight (g) (NUMBER), Packed size (TEXT), Waterproof rating (TEXT), Fuel type (SELECT: Gas canister, Liquid fuel, Solid fuel, Wood, None), Last aired (DATE), Complete (ON_OFF, reuses) |
 | Fishing tackle | `fishing-tackle` | 🎣 | Tackle kind (SELECT: Rod, Reel, Line, Hook, Lure, Float, Weight / lead, Net, Bait, Other), Water (SELECT: Freshwater, Saltwater, Both), Line class (TEXT), Hook size (TEXT), Rod length (m) (NUMBER), Reel gear ratio (TEXT), Lure weight (g) (NUMBER), Colour (COLOUR, reuses) |
 
 - **Garden chemicals** — *"Feeds, weedkillers and treatments — what they treat, the dilution and how
@@ -624,13 +626,13 @@ one entry pretending to be both.
 
 | Preset | id | Glyph | Fields |
 | --- | --- | --- | --- |
-| Tyres & wheels | `tyre-wheel` | 🛞 | Tyre size (TEXT), Load index (TEXT), Speed rating (TEXT), Season (SELECT: Summer, Winter, All-season, Off-road, Track), Tread depth (mm) (NUMBER), Date code (week/year) (TEXT), Wheel position (SELECT: Front left, Front right, Rear left, Rear right, Spare, In storage), Rim material (SELECT: Steel, Alloy, Forged alloy), Fits vehicle (TEXT, reuses), Replace by (DATE, `dueLeadDays: 60`) |
+| Tyres & wheels | `tyre-wheel` | 🛞 | Tyre size (TEXT), Load index (TEXT), Speed rating (TEXT), Season (SELECT: Summer, Winter, All-season, Off-road, Track), Tread depth (mm) (NUMBER), Date code (week/year) (TEXT), Wheel position (SELECT: Front left, Front right, Rear left, Rear right, Spare, In storage), Rim material (SELECT: Steel, Alloy, Forged alloy), Fits vehicle (TEXT, reuses), Age-out date (DATE, `dueLeadDays: 60`) |
 | Bicycle | `bicycle` | 🚲 | Make (TEXT, reuses), Model (TEXT, reuses), Frame number (TEXT), Bicycle kind (SELECT: Road, Gravel, Mountain, Hybrid, Touring, Folding, BMX, Electric, Child), Frame size (TEXT), Wheel size (SELECT: 16", 20", 24", 26", 27.5", 29", 650b, 700c), Groupset speeds (NUMBER), Brake type (SELECT: Rim, Disc (mechanical), Disc (hydraulic), Coaster, Drum), Odometer (NUMBER, reuses), Service due (DATE, reuses — already lead 30), Frame registered (ON_OFF) |
 
 - **Tyres & wheels** — *"Tyres on and off the car — size, load and speed rating, age code and tread
   left."* Defaults: `defaultCondition: 'GOOD'`. **The "thin on its own" caveat is settled by widening
   it to wheels and by making the age a deadline.** Renamed from `Tyres`, it carries ten fields, every
-  one of which somebody writes on the masking tape stuck to a stored winter set. `Replace by` is the
+  one of which somebody writes on the masking tape stuck to a stored winter set. `Age-out date` is the
   one **new** `dueLeadDays` this whole slice introduces: rubber ages out on the date code whether or
   not the tread is legal, and sixty days' notice is enough to buy at a sensible price rather than in a
   hurry.
@@ -653,11 +655,17 @@ preset and give it two fields when it ships so the driveway is served as well as
 the bottle). Both are free names.
 
 **One decision for a human: the 🛞 glyph.** `Vehicle part` (shipped, tier 1) holds it, and a tyre is
-its more literal owner — but two presets sharing a glyph *inside one section* reads worse than the
-cross-section repeats the library already tolerates (🔥, 🎬). The clean fix is to give `Tyres & wheels`
-🛞 and move `Vehicle part` to 🔧, which is unused. A glyph is presentation only — the id and name are
-the identity and idempotency keys — so changing it on a shipped preset is safe. It is still a change
-to something that has shipped, so it should be taken deliberately rather than assumed.
+its more literal owner. **The precedent is the opposite of what it first looks like.** The library
+has exactly two repeated glyphs and *both* are within one section — 🔥 on `Matchbooks & matchboxes`
+and `Zippo lighters`, both `collectibles`; 🎬 on `Movie` and `Blu-rays`, both `media`. There is no
+cross-section repeat anywhere in the 84. So a shared 🛞 inside `vehicle` would match the only
+precedent there is, and the case for changing anything is weaker than "the library does not do this".
+What survives is a presentational judgement: `collectibles` has 47 entries and `media` eight, so a
+repeat there is diluted, whereas `vehicle` would hold four and the pair would sit side by side. On
+that reading the tidier answer is still to give `Tyres & wheels` 🛞 and move `Vehicle part` to 🔧,
+which is unused — but it is a preference, not a rule. A glyph is presentation only, since the id and
+name are the identity and idempotency keys, so changing it on a shipped preset is safe. It is still a
+change to something that has shipped, so take it deliberately rather than by assumption.
 
 ### 11.5 `crafts` — nine proposals
 
@@ -670,7 +678,7 @@ in the working-up: `Art supplies` became `Drawing & art media` to settle the §6
 | Drawing & art media | `art-media` | 🖌️ | Art medium (SELECT: Graphite pencil, Coloured pencil, Charcoal, Soft pastel, Oil pastel, Marker, Ink, Watercolour pan, Gouache, Chalk crayon), Grade / hardness (TEXT), Tip / nib (TEXT), Colour (COLOUR, reuses), Colour name (TEXT, reuses), Lightfastness (TEXT), Set size (NUMBER), Brand (TEXT, reuses) |
 | Sewing patterns | `sewing-pattern` | ✂️ | Pattern number (TEXT), Garment type (SELECT: Top, Dress, Skirt, Trousers, Jacket / coat, Bag, Toy, Quilt, Accessory, Other), Size range (TEXT), Fabric required (TEXT), Suggested fabrics (TEXT), Pattern difficulty (SELECT: Beginner, Confident beginner, Intermediate, Advanced), Pattern format (SELECT: Paper, PDF download, Traced copy, Magazine insert), Cut out (ON_OFF), Made before (ON_OFF) |
 | Beads & findings | `bead-finding` | 📿 | Bead shape (SELECT: Round, Bicone, Seed, Rocaille, Tube, Faceted, Nugget, Chip, Spacer, Charm), Bead material (SELECT: Glass, Crystal, Acrylic, Wood, Metal, Stone, Ceramic, Shell, Resin, Pearl), Bead size (mm) (NUMBER), Hole size (mm) (NUMBER), Finding kind (SELECT: Clasp, Jump ring, Headpin, Earring wire, Crimp, Bail, Chain, Spacer bar, None), Plating (SELECT: Silver-plated, Gold-plated, Rose gold, Gunmetal, Antique brass, Stainless steel, None), Colour (COLOUR, reuses), Strand or packet count (NUMBER) |
-| Leather | `leather` | 🧳 | Leather cut (SELECT: Full hide, Side, Shoulder, Bend, Belly, Panel, Offcut), Tannage (SELECT: Vegetable, Chrome, Combination, Brain / oil, Unknown), Grain (SELECT: Full grain, Top grain, Split, Suede, Nubuck, Bonded), Thickness (oz) (NUMBER), Temper (SELECT: Soft, Medium, Firm), Area (sq ft) (NUMBER), Colour (COLOUR, reuses), Animal (TEXT) |
+| Leather | `leather` | 🧳 | Leather cut (SELECT: Full hide, Side, Shoulder, Bend, Belly, Panel, Offcut), Tannage (SELECT: Vegetable, Chrome, Combination, Brain / oil, Unknown), Grain (SELECT: Full grain, Top grain, Split, Suede, Nubuck, Bonded), Thickness (oz) (NUMBER), Temper (SELECT: Soft, Medium, Firm), Area (sq ft) (NUMBER), Colour (COLOUR, reuses), Hide animal (TEXT) |
 | Pottery clay & glaze | `pottery-clay-glaze` | 🫙 | Pottery product (SELECT: Clay body, Glaze, Underglaze, Slip, Engobe, Stain, Wax resist), Clay body type (SELECT: Earthenware, Stoneware, Porcelain, Raku, Paper clay, Air-dry, Polymer), Firing cone (TEXT), Firing temperature (°C) (NUMBER), Shrinkage (%) (NUMBER), Glaze finish (SELECT: Gloss, Satin, Matte, Crystalline, Crackle, Raw), Food safe (ON_OFF), Batch / lot (TEXT), Colour (COLOUR, reuses) |
 | Candle & soap making | `candle-soap` | 🕯️ | Making supply (SELECT: Wax, Wick, Soap base, Lye, Base oil, Fragrance oil, Essential oil, Colourant, Mould, Additive), Wax or base type (SELECT: Soy, Paraffin, Beeswax, Coconut, Rapeseed, Melt-and-pour glycerin, Cold-process, Not applicable), Melt point (°C) (NUMBER), Pour temperature (°C) (NUMBER), Fragrance load (%) (NUMBER), Wick size (TEXT), Batch / lot (TEXT), Skin safe (ON_OFF) |
 | Craft vinyl & heat transfer | `craft-vinyl` | 📜 | Vinyl kind (SELECT: Permanent adhesive, Removable adhesive, Heat transfer (HTV), Printable, Glitter, Holographic, Flock, Stencil, Transfer tape), Roll width (mm) (NUMBER), Roll length (m) (NUMBER), Colour (COLOUR, reuses), Vinyl finish (SELECT: Matte, Gloss, Glitter, Metallic, Holographic, Flock), Press temperature (°C) (NUMBER), Press time (s) (NUMBER), Cut settings (TEXT), Peel (SELECT: Warm peel, Cold peel, Not applicable) |
@@ -752,8 +760,10 @@ worked up, and both are ranked at the bottom of §11.9.
 **Demoted: `Signed books`.** It is `Book` plus `Autographs & signed memorabilia`, both shipped, and
 the union of their fields is the field set. Bar 5, with nothing left over.
 
-**Demoted: `Keys & keyrings`.** Bar 5 against `Fridge magnets`, which is Theme / origin, Material and
-Design — the same three fields a keyring preset would carry, for the same kind of souvenir.
+**Demoted: `Keys & keyrings`.** Bar 5 against the souvenir presets that already ship.
+`Fridge magnets` carries `Theme / subject`, `Origin / place`, `Material` and `Condition`, and
+`Shot glasses` carries `Theme / origin`, `Material`, `Design` and `Condition` — between them that is
+the whole field set a keyring preset would have, for the same kind of object.
 
 **Demoted: `Bottle caps & breweriana`.** Bar 1 in a saturated section. `Matchbooks & matchboxes`
 already covers the advertiser-on-a-small-object shape (Brand / advertiser, Origin, Type,
@@ -765,7 +775,8 @@ fields.
 Every avoidance below was **verified by running the check, not by reading**: the proposed set was
 indexed against all 308 shipped names and all thirteen tier 2 field sets, and each name in the left
 column was queried for its existing type and option-list count. The result for the set as proposed is
-**0 type clashes, 0 divergent `SELECT` option lists**.
+**0 type clashes, 0 divergent `SELECT` option lists** — against the shipped library and tier 2. The
+cross-check against §12 came later; see the box below the table.
 
 | Natural name | Why it could not be used | Used instead |
 | --- | --- | --- |
@@ -786,7 +797,7 @@ column was queried for its existing type and option-list count. The result for t
 | `Difficulty` | free in the library, but SELECT in tier 2's `Jigsaw puzzle` | `Pattern difficulty` |
 | `Interface` | free today; a name audio, storage and sensors would all want, with three different lists | `Sensor interface` |
 | `Mounting` | free, and claimed here by `Connectors` — the signage list would have captured its options | `Sign mounting` (signage keeps the specific name; the electronics preset keeps the general one) |
-| `Colour` | COLOUR in eleven presets, and the one name §3 flags as broken by `Magic: The Gathering cards` | reused as-is; **inherits the §9 prerequisite** that already gates `Yarn` and `Embroidery floss` |
+| `Colour` | COLOUR in eleven presets, and consistent — the `Magic: The Gathering cards` clash §3 flags was settled when tier 1 shipped, and that preset now declares `Card colour` (SELECT) | reused as-is. **The §9 prerequisite that gated `Yarn` no longer applies**; `Embroidery floss` and these proposals can take `Colour` freely |
 
 Two names are shared **only** between proposals in this slice, deliberately and with one type each:
 `Batch / lot` (TEXT — welding, pottery, candle) and `Current rating (A)` (NUMBER — electrical wire,
@@ -798,11 +809,32 @@ identical list to `Development board`), `Capacity (GB)` (NUMBER — `Storage med
 first they are the definitions tier 2 reuses. Either order works; changing one of them in only one
 place does not.
 
+> **The cross-check this section did not do, and what it found.** §11 and §12 were written in
+> parallel and each checked its names against the shipped library and against tier 2 — but not
+> against the other. Running that check afterwards turned up **two collisions, one of each §3 failure
+> mode**, which is a neat demonstration that the constraint bites hardest exactly where two people
+> work at once. Both are resolved above, and the renames are recorded here rather than quietly
+> applied:
+>
+> | Collision | Failure mode | Resolution |
+> | --- | --- | --- |
+> | `Animal` — §11.5 `Leather` (TEXT) against §12.4.5 `Pet supplies` (SELECT) | Type clash: the second import is rejected outright | `Leather` takes **`Hide animal`**. `Pet supplies` keeps `Animal`, whose SELECT §12.4.5 argues for at length |
+> | `Gear kind` — §11.3 `Camping gear` against §12.4.6 `Baby & child gear` | Divergent `SELECT` option lists: silent, first import wins | **`Camping gear kind`** and **`Child gear kind`**. The bare name was never right for either |
+>
+> A third divergence is not one of the two modes but is the same hazard, and §12.4.8 argues the case
+> itself: `Replace by` (DATE) was proposed at `dueLeadDays: 60` by §11.4 and at `30` by §12.4.9, and a
+> lead **is** applied on reuse, so import order would have decided. `Tyres & wheels` now takes
+> **`Age-out date`** (60) and `Home safety equipment` keeps `Replace by` (30).
+>
+> **The lesson for whoever ships these:** run the parity test in
+> `src/features/inventory/category-presets.test.ts` across *every* pending slice at once, not one
+> slice at a time. Two clean slices do not make a clean library.
+
 ### 11.8 Facets these presets would exercise
 
 - **Usage-based maintenance**, still used by exactly one shipped preset (`Vehicle`): `Garden machinery`
   (50 running hours) and `Bicycle` (500 km) would make it three.
-- **`dueLeadDays`**, introduced by tier 1: one genuinely new deadline here, `Replace by` on
+- **`dueLeadDays`**, introduced by tier 1: one genuinely new deadline here, `Age-out date` on
   `Tyres & wheels` at 60 days. Every other date either reuses a definition that already carries a lead
   (`Expiry date` 30, `Service due` 30, `Best before` 60) or is a plain fact (`Opened on`,
   `Last aired`, `Winterised on`).
@@ -889,7 +921,9 @@ candidates examined and dropped, four corrections to §6's media entries, and th
 Every field name was checked by running the library, not by eye: all 308 existing names for both
 failure modes (a name reused with a different `fieldType`, and a `SELECT` name reused with a
 different option list), and the 157 distinct names across these proposals against each other. The
-run reports **zero** type clashes and **zero** silent option captures. Where a name is reused, the
+run reports **zero** type clashes and **zero** silent option captures against that scope. It did not
+include §11, which was written in parallel; the later cross-check between the two sections found two
+collisions, both resolved — the box at the end of §11.7 records them. Where a name is reused, the
 type matches; where a `SELECT` name is reused (`Media condition`, `Rolled or folded`,
 `Storage requirement`, `Power source`), the option list is declared **byte-identical** to the
 library's, which is the only safe way to share a `SELECT` name at all.
@@ -971,6 +1005,10 @@ signature, the print method — which that preset has none of.
   `Sheet size` (TEXT), `Paper stock` (TEXT), `Year` (NUMBER, reuses), `Framed` (ON_OFF),
   `Rolled or folded` (SELECT, reuses `Vintage movie posters`' two-value list exactly),
   `Paper condition` (SELECT, shared).
+- 🖌️ is also claimed by §11.5's `Drawing & art media`, in `crafts`. The library has no cross-section
+  repeat to appeal to — its only two repeats, 🔥 and 🎬, are both *within* one section (§11.4) — so
+  there is no precedent either way. If both ship, one should move; the art-media one has the weaker
+  claim, since a brush is a painting tool and this preset is about the printed sheet.
 - `Edition` carries two types in the library already (§3) and is avoided twice over:
   `Edition number` and `Edition size` are the two facts a print actually records, and neither is the
   bare name.
@@ -987,7 +1025,8 @@ edition; nothing else in the library holds any of them.
   Aeronautical chart, Town plan, Globe), `Map scale` (TEXT), `Area covered` (TEXT),
   `Sheet number` (TEXT), `Map edition` (TEXT), `Publisher` (TEXT, reuses), `Year` (NUMBER, reuses),
   `Laminated` (ON_OFF), `Paper condition` (SELECT, shared).
-- `Scale` is a `SELECT` in the library with model-railway values and `Gauge / scale` is taken, so
+- `Scale` is a `SELECT` in three presets holding model-kit, die-cast and miniature ratios, and the
+  model-railway values live on `Gauge / scale` (`Model trains`) — both names are taken, so
   `Map scale` (TEXT — a map scale is a ratio, not an enumerable set). `Edition` avoided as above.
 
 #### 12.1.6 `documentation` — Manuals & documentation (`media`, 📘)
@@ -1038,9 +1077,10 @@ are genuinely different from both. It could equally sit in `collectibles`; it is
   (`Format: eBook`) and `Movie` (`Format: Digital` plus `Media file`) already record one as an
   attribute of the title. The *device* is a `Computer` — the one concrete change worth making is to
   add **`E-reader`** to that preset's `Chassis type` options, where Tablet and Mini PC already sit.
-- **Is `Comic books` filed correctly under `collectibles`?** Yes — leave it. Its field set is
-  `Grade`, `Graded / slabbed` and `Key issue`: three grading facts and nothing a reader would fill
-  in, which is a collector's schema, not a media one. A section is only a browse aid, so moving it
+- **Is `Comic books` filed correctly under `collectibles`?** Yes — leave it. Its six fields are `Title`,
+  `Publisher`, `Issue number`, `Grade`, `Graded / slabbed` and `Key issue` — the last three are
+  grading facts a reader would never fill in, and they are what give the preset a collector's shape
+  rather than a media one. A section is only a browse aid, so moving it
   would cost nothing at import — but it would put a slabbing checkbox in front of someone who came
   to the section for a reading list. The alternative, a separate `Graphic novel` media preset, fails
   bar 5 against `Book` (author, publisher, ISBN, genre, rating, read status — all of it already
@@ -1048,9 +1088,8 @@ are genuinely different from both. It could equally sit in `collectibles`; it is
 
 ### 12.3 Corrections to §6's four media presets
 
-Taken as given, sanity-checked against the collision rule. Three of the four are clean; two field
-names in the remaining pair should change before they ship, and one is a duplicate concept rather
-than a collision.
+Taken as given, sanity-checked against the collision rule. Three of the four are clean. The fourth, `Jigsaw puzzle`, needs two changes before it ships: one is
+a field name that would repeat §3's trap, and one is a duplicate concept rather than a collision.
 
 | §6 preset | Finding |
 | --- | --- |
@@ -1063,8 +1102,7 @@ than a collision.
 
 Ten come from §7's list; the eleventh (`Home safety equipment`) the list misses, and it is the best
 of the set. Field types are the real `FIELD_TYPES` values. Where a shared `DATE` definition already
-carries a `dueLeadDays`, these presets declare **the same** value — see the warning at the end of
-this section.
+carries a `dueLeadDays`, these presets declare **the same** value — see the warning under §12.4.8.
 
 #### 12.4.1 `furniture` — Furniture (`household`, 🛋️)
 
@@ -1093,9 +1131,9 @@ remembers whether the hall takes a GU10 or an E14 while standing in a shop.
   `Lamp technology` (SELECT — LED, Halogen, Incandescent, CFL, Fluorescent tube, Decorative
   filament), `Wattage (W)` (NUMBER), `Brightness (lm)` (NUMBER), `Colour temperature (K)` (NUMBER),
   `Dimmable` (ON_OFF), `Light fitting` (TEXT — which lamp or room it serves).
-- Overlaps `Filters & consumables`, which offers `Bulb` as a `Consumable kind`. It still clears bar 5:
-  that preset's fields are `Fits appliance` and `Change due`, and none of the six facts above is
-  expressible in it.
+- Overlaps `Filters & consumables`, which offers `Bulb` as a `Consumable kind`. It still clears bar 5: that
+  preset is built around `Fits appliance`, `Consumable size`, `Consumable kind` and a change
+  schedule, and none of the six electrical facts above is expressible in any of them.
 
 #### 12.4.3 `toiletries` — Toiletries & cosmetics (`household`, 💄)
 
@@ -1147,7 +1185,7 @@ manufacture date and a use-by, and both matter. The preset is the second-best ar
 document for `dueLeadDays`.
 
 - Category defaults: `defaultCondition: 'GOOD'`, `hiddenCapabilities: ['maintenance', 'kits']`.
-- Fields: `Gear kind` (SELECT — Pushchair, Car seat, Cot / bed, High chair, Carrier, Bath &
+- Fields: `Child gear kind` (SELECT — Pushchair, Car seat, Cot / bed, High chair, Carrier, Bath &
   changing, Monitor, Safety gate, Feeding), `Age range` (TEXT), `Weight limit (kg)` (NUMBER),
   `Compliance standard` (TEXT, reuses from `First aid kit`), `Manufactured on` (DATE),
   `Expiry date` (DATE, reuses, `dueLeadDays: 30`), `Recall notice` (URL), `Outgrown` (ON_OFF).
@@ -1194,7 +1232,8 @@ See §12.5 for whether this earns its place at all. If it ships, it ships as `UN
 extinguishers are near-universal, legally significant in rented property, and the only household
 items with a *routine test schedule* — which makes this the preset that uses
 `defaultMaintenanceBasis` for exactly what it was built for. `First aid kit` is the nearest existing
-preset (`containers`) and shares no fields with it.
+preset (`containers`), and the two share exactly one field — `Compliance standard`, which is the
+right outcome, since a standard number means the same thing on an extinguisher as on a first aid kit.
 
 - Category defaults: `defaultCondition: 'GOOD'`, `defaultMaintenanceBasis: 'TIME'`,
   `defaultMaintenanceIntervalDays: 30` (the monthly alarm test),
@@ -1345,7 +1384,7 @@ the third exactly where it was.
 | A `DATE` field's `dueLeadDays` | 6 field declarations across 4 presets | Medication (`Expiry date` 30), Filters & consumables (`Change due` 14), Seeds (`Best before` 60), Vehicle (`Service due`, `Roadworthiness test due`, `Insurance renewal`, all 30) |
 | A `NUMBER` field's `unit` | **0 of 84** | — |
 
-The library declares **541** custom fields under **308** distinct names (438 under 225 names before
+The library declares **541** custom fields under **308** distinct names (438 under 224 names before
 tier 1). **21** of those declarations are `DATE`; **15** carry no lead. **60** are `NUMBER`; not one
 carries a unit. So `unit` is still a facet the shipped library has never exercised, and the twelve
 tier 1 presets did not change that — they moved the maintenance and lead facets only.
@@ -1407,7 +1446,7 @@ does not survive contact:
   `defaultTarget`, and a unit test pins the provider's targets to the Movie preset's field names.
   Renaming it breaks the zero-configuration lookup binding unless both move together.
 - **Two are the app's own labels for built-in columns.** `Weight (g)` and `Width (mm)` appear
-  verbatim in `src/features/search/fields.ts`, `catalog-import.ts`, `text-import.ts` and
+  verbatim in `src/features/search/fields.ts` and `catalog-import.ts`; `text-import.ts` carries only `Weight (g)`. Both also appear in
   `docs/wiki/Units-of-Measure.md`. The preset field of that name is a *different* thing from the
   built-in column of that name (see below), so those references do not pin the preset — but any
   change here has to be checked against them rather than assumed independent.
@@ -1443,8 +1482,8 @@ they land in the same release.
 
 Two adjacent findings worth folding into the same change:
 
-- **`Gold & silver bullion`'s `Weight` is a `SELECT` of measurements** (`1 g`, `5 g`, `1 oz`, `1 kg`,
-  `Other`). A quantity of metal is the one thing a bullion owner wants to total, range-filter and
+- **`Gold & silver bullion`'s `Weight` is a `SELECT` of measurements** (`1 g`, `5 g`, `10 g`, `1 oz`, `10 oz`,
+  `100 g`, `1 kg`, `Other`). A quantity of metal is the one thing a bullion owner wants to total, range-filter and
   convert, and a dropdown of strings can do none of it. It should be a `NUMBER` — `Bullion weight`,
   unit `g` — which also retires one of the two names that block the `Weight` conversion above.
 - **`3D Filament`'s `Diameter (mm)` is the library's only all-numeric `SELECT`** (`1.75`, `2.85`).
@@ -1469,8 +1508,9 @@ Selected, not exhaustive. The library's median field count is 6; the range runs 
 | `Perfume & fragrance bottles` | 6 | Declares a field literally named `Name`, which is the item's own built-in attribute. An item shows "Name" twice, in two places, holding two values | Rename to `Fragrance name` |
 
 `Movie`'s 16 fields are the outlier in the other direction, and are **not** a finding: it is the one
-preset with a lookup provider, which fills nine of them with no configuration, and the one with a
-`fieldTabLabel` to hold them. Recorded so a later reader does not mistake it for bloat.
+preset with a lookup provider, which fills nine of them with no configuration, and one of the seven
+that set `fieldTabLabel` and `fieldProminence: 'own-tab'` — the whole `media` set does — so it has a
+tab of its own to hold them. Recorded so a later reader does not mistake it for bloat.
 
 ### `hiddenCapabilities`: the pattern is a section boundary
 
@@ -1482,7 +1522,7 @@ underneath them does not mean what §2 says it means.
 | --- | ---: | ---: |
 | `collectibles` in the base pattern | 20 | 6 |
 | `media` in the base pattern | 7 | **7** |
-| Everything else setting it | 4 | 1 |
+| Everything else setting it | 4 | 3 |
 
 Every one of the seven `media` presets sets the identical four-id list. Not one collectible has to.
 So "13 of 27 add `kits`" is really "all 7 media presets, plus 6 collectibles" — and those six
@@ -1645,9 +1685,10 @@ types and a poor model for its structure.
 
 ### 14.2 What home-inventory and insurance checklists actually name
 
-Eighteen sources were read: six US state insurance departments or regulators, six named insurers,
-two UK insurers or comparison services, the ABI, the NAIC, the Insurance Information Institute and
-FEMA. Full citations are in §14.9.
+Eighteen sources were read: seven US state insurance departments or regulators, five named
+insurers, two UK insurers or comparison services, the ABI, the NAIC, the Insurance Information
+Institute and FEMA. Full citations are in §14.9, where III and State Farm each take two rows, so the
+table runs to twenty rows over eighteen publishers.
 
 **The most useful structural finding is that prose guidance is nearly worthless as evidence and
 printed forms are not.** The NAIC, Illinois, South Dakota and California pages enumerate no item
@@ -1683,6 +1724,11 @@ separate room-and-category inventory aids.
 | Network equipment | **0 of 18** | 1 (shipped) |
 | Filters, consumables and spare parts | **0 of 18** | 1 (shipped) |
 | Seeds | **0 of 18** | 1 (shipped) |
+
+*The "Tier in this document" column records where §§5–7 placed each domain, not where §§11–12 later
+worked it up. Furniture, pet supplies, toiletries, garden machinery and bicycles all have full
+proposals in §11 or §12; the column says "3" because that is where the ranking under review put
+them.*
 
 Field-level the checklists are near-unanimous: **serial number** (9 ask for it by name), **model or
 brand**, **purchase date**, **purchase price**, **photographs** (all 18), **receipts** (7).
@@ -1731,8 +1777,8 @@ brand**, **purchase date**, **purchase price**, **photographs** (all 18), **rece
 
 ### 14.4 What comparable tools ship
 
-Sixteen products were checked against their own documentation, seeders or schema rather than review
-sites: ten self-hosted or open-source, six consumer or insurer-published. The headline result is
+Fifteen products were checked against their own documentation, seeders or schema rather than review
+sites: nine self-hosted or open-source, six consumer or insurer-published. The headline result is
 negative and worth stating plainly.
 
 > **Almost no comparable tool ships a home-inventory category taxonomy.** Homebox ships two entity
@@ -1768,7 +1814,7 @@ are self-selected, no download or usage counts are published, and a catalogue en
 person wanted it, not that many did. It is nonetheless the only source in this entire section that
 speaks to `Yarn`, `Seeds`, `Plant` and `Medication` at all, and it speaks in their favour.
 
-**The recurring per-item service interval is unoccupied ground.** Of sixteen tools, exactly two ship
+**The recurring per-item service interval is unoccupied ground.** Of fifteen tools, exactly two ship
 one: Grocy (chore `period_type` / `period_days`, including an *Adaptive* mode learned from past
 execution, plus battery `charge_interval_days`) and Tracktor (vehicle servicing). Binary Formations
 has a real repeating schedule but binds it to the *property* — "clean the gutters", not "this
@@ -1833,21 +1879,24 @@ vehicle maintenance logs. `Vehicle` is therefore well supported, but by app prec
 ownership data (78% of UK households have car access), not by the checklists the document cites.
 The conclusion stands; the argument for it needs replacing.
 
-**4. `Filters & consumables`, `Network equipment` and `Cleaning & household chemicals` have no
-external demand evidence of any kind.** No checklist names any of the three; no tool ships a type for
-any of them; no participation figure exists. §5.5's premise — "the thing a household runs out of and
-only discovers when it needs one" — is not something any source says. All three are defensible on
-§2's *other* bar: they exercise `dueLeadDays` and the maintenance facets, and §14.4 shows the
-recurring interval is a genuine gap in every comparable tool. That is a real argument, and it is an
-argument from the product's shape rather than from demand. The document should make it in those
-terms instead of implying a checklist backed it.
+**4. `Filters & consumables` and `Network equipment` have no external demand evidence of any kind.**
+Neither is named by any checklist; no tool ships a type for either; no participation figure exists
+for either. §5.5's premise — "the thing a household runs out of and only discovers when it needs
+one" — is not something any source says. `Cleaning & household chemicals` is a near-miss rather than
+a third case: two checklists name cleaning supplies, but as *value* to be replaced, never as
+something with a shelf life or a hazard class, so the preset's field set is still unevidenced even
+though its subject is not. All three are defensible on §2's *other* bar: they exercise `dueLeadDays`
+and the maintenance facets, and §14.4 shows the recurring interval is a genuine gap in every
+comparable tool. That is a real argument, and it is an argument from the product's shape rather than
+from demand. The document should make it in those terms instead of implying a checklist backed it.
 
 **5. `Medication`, `Yarn`, `Seeds` and `Plant` are thinly evidenced by the checklists and better
 evidenced by one tool.** Medication appears on two of eighteen checklists, living plants on one,
 seeds and yarn on none. Memento's community catalogue carries hand-written templates for all four
 ("Medication Tracker with Refill Management", "Yarn Stash", "Seeds & Plant Gardening Tracker",
-"Houseplant Inventory"), and the gardening participation figures (55% of US households, 36% of UK
-adults growing food) support the two garden presets independently. This is the clearest case in the
+"Houseplant Inventory"), and the gardening participation figures in §14.3 (31% of British adults
+growing their own herbs, fruit or vegetables; 58% of those with a private garden growing plants)
+support the two garden presets independently. This is the clearest case in the
 section where the *insurance* strand and the *user-authored* strand disagree, and the disagreement is
 informative: insurers do not care about a £3 seed packet, and the person who wants an inventory does.
 
@@ -1876,16 +1925,25 @@ revisions are to what comes next.
 | `Jewellery` (`household`) | **ship next, ahead of tier 2** | Eleven of eighteen checklists, most flagging it for separate cover; a dedicated State Farm inventory aid; FEMA's valuables guidance. No other unshipped candidate is named by more sources |
 | `Camera equipment` (`electronics`) | tier 2 | State Farm publishes a dedicated `Camera Equipment` aid and Missouri itemises cameras. The library's `Vintage cameras` covers the collectible only, and the fields differ (lens mount, body serial, shutter count against era and format) |
 
-**Promote from §7 to §6:**
+**Promote out of tier 3.** Five of the six below are worked up as full proposals in §11 and §12,
+which landed in the same change as this section and were written without sight of it; the section
+each names there is authoritative, and is used here. Where this table and §11.9's ranking disagree,
+they disagree for a stated reason: §11.9 ranks on thin-section-first, ownership and unused facets,
+this table ranks on documented demand, and neither is data. **`Bicycle` is the one candidate the two
+orderings genuinely split on** — §11.9 leaves it unranked pending the 🛞 glyph decision in §11.4,
+while the evidence here puts it in the promoted set. `Sports equipment` is the one promotion §11.3
+*demoted*, on the §8 "Spare parts" argument that the domain is too broad to carry a field set; the
+evidence says it is wanted, §11.3 says it cannot be built as one preset, and both can be true. Treat
+it as a per-sport question rather than as a promotion.
 
 | Candidate | Moved by |
 | --- | --- |
-| Garden machinery (`home-garden`) | Texas DOI ("lawn equipment"), Mercury, AXA, North Carolina, Missouri, Progressive, Triple-I — seven sources. Also the clearest remaining use for `defaultMaintenanceBasis: 'USAGE'` after `Vehicle` |
-| Sports equipment (`home-garden`) | North Carolina devotes a section to it and State Farm publishes two aids (`Sporting Good Equipment`, `Home Gym`); nine sources in total. Sport England's 64.6% is supporting, not decisive — activity is not equipment ownership |
-| Bicycle & parts (`home-garden`) | ABI and AXA both name bikes as a separately specified item; six sources. DfT's cycle-access figures are age-skewed and support ownership being common in households with children rather than generally |
-| Furniture (`household`) | Named by all eighteen, and the most granular part of every itemised form; seeded by Shelf.nu and by InvenTree's demo. The counter-argument is §2's bar 2 — furniture may need nothing beyond the built-in facets — and that should be tested before it ships, not assumed |
-| Pet supplies (`household`) | UK Pet Food: 62% of UK households, on an 8,951-respondent Kantar survey; Missouri names it and State Farm publishes a `Pet Care Items` aid |
-| Toiletries & cosmetics (`household`) | Missouri, North Carolina and MoneySuperMarket name it; Memento's catalogue carries makeup inventories with expiry dates. Period-after-opening exercises `dueLeadDays`, as §7 already notes |
+| Garden machinery (`home-garden`, §11.3) | Texas DOI ("lawn equipment"), Mercury, AXA, North Carolina, Missouri, Progressive, Triple-I — seven sources. Also the clearest remaining use for `defaultMaintenanceBasis: 'USAGE'` after `Vehicle`. Agrees with §11.9, which ranks it first |
+| Sports equipment (demoted by §11.3 — see above) | North Carolina devotes a section to it and State Farm publishes two aids (`Sporting Good Equipment`, `Home Gym`); nine sources in total. Sport England's 64.6% is supporting, not decisive — activity is not equipment ownership |
+| Bicycle (`vehicle`, §11.4) | ABI and AXA both name bikes as a separately specified item; six sources. DfT's cycle-access figures are age-skewed and support ownership being common in households with children rather than generally. **Filed under `vehicle`, not `home-garden`** — §11.4 settles that, and this section defers to it |
+| Furniture (`household`, §12.4.1) | Named by all eighteen, and the most granular part of every itemised form; seeded by Shelf.nu and by InvenTree's demo. The counter-argument is §2's bar 2 — furniture may need nothing beyond the built-in facets — and that should be tested before it ships, not assumed |
+| Pet supplies (`household`, §12.4.5) | UK Pet Food: 62% of UK households, on an 8,951-respondent Kantar survey; Missouri names it and State Farm publishes a `Pet Care Items` aid |
+| Toiletries & cosmetics (`household`, §12.4.3) | Missouri, North Carolina and MoneySuperMarket name it; Memento's catalogue carries makeup inventories with expiry dates. Period-after-opening exercises `dueLeadDays`, as §7 notes and §12.4.3 makes concrete |
 
 **Demote from §6 to §7:**
 
@@ -1911,7 +1969,7 @@ revisions are to what comes next.
 
 ### 14.7 Confidence, by tier
 
-**Tier 1 — mixed, and lower than the document implies.** Four of the twelve are strongly evidenced:
+**Tier 1 — mixed, and lower than the document implies.** Five of the twelve are strongly evidenced:
 `Appliance`, `Computer`, `Vehicle` (on ownership data and app precedent, not on checklists) and
 `Seeds` / `Plant` (on gardening participation, not on checklists). `Smart home device` is moderately
 evidenced. `Medication` and `Yarn` rest on two checklists and one and zero respectively, plus
