@@ -497,8 +497,8 @@ The rules:
   bridges by name, rather than being sent to whichever entry loaded first. A bridge counts from
   the moment you set it up, so one that is temporarily offline and reconnecting still counts —
   otherwise an untargeted call would quietly start going to the survivor for exactly as long as
-  the other bridge was down. What doesn't count is anything that never runs: a bridge you have
-  *disabled*, or a discovery you dismissed with **Ignore**.
+  the other bridge was down. Two things don't count, because neither ever runs: a bridge you have
+  *disabled*, and a discovery you dismissed with **Ignore**.
 - **A bridge that is named but not loaded** is an error too. It never falls back to another one:
   applying a workshop change to the household inventory succeeds, returns a perfectly valid item,
   and gives you nothing to notice it by.
