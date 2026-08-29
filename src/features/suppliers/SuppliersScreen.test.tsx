@@ -127,12 +127,13 @@ afterEach(cleanup);
 
 describe('SuppliersScreen (issue #384)', () => {
   it('reports a failed load instead of the empty state', () => {
-    // A failed read must never render "No suppliers yet" — that reads like success.
+    // A failed read must never render the first-run guide — it greets a returning user as
+    // brand-new and hides the error behind a welcome.
     loadState = { isLoading: false, isError: true };
     render(<SuppliersScreen />);
 
     expect(screen.getByRole('alert').textContent).toContain('couldn’t be loaded');
-    expect(screen.queryByText(/No suppliers yet/)).toBeNull();
+    expect(screen.queryByTestId('suppliers-getting-started')).toBeNull();
   });
 
   it('offers a retry that refetches', () => {
@@ -298,14 +299,38 @@ describe('SuppliersScreen reach (issue #386)', () => {
   });
 
   it('reports a filtered-to-nothing list as no match, not an empty dictionary', () => {
-    // "No suppliers yet" would be false, and would send the user to add one they already have.
+    // The first-run guide would be false here, and would introduce the feature to someone
+    // already using it.
     allSuppliers = [supplier('a', 'RS Components')];
     render(<SuppliersScreen />);
 
     fireEvent.change(screen.getByTestId('suppliers-search'), { target: { value: 'nope' } });
 
     expect(screen.getByText('No supplier matches “nope”.')).toBeTruthy();
-    expect(screen.queryByText(/No suppliers yet/)).toBeNull();
+    expect(screen.queryByTestId('suppliers-getting-started')).toBeNull();
+  });
+
+  it('explains what suppliers are for when the dictionary is empty (issue #423)', () => {
+    // The empty screen is the one place a first-time user meets the concept, so it has to
+    // teach it rather than only report that nothing is there.
+    allSuppliers = [];
+    render(<SuppliersScreen />);
+
+    const guide = screen.getByTestId('suppliers-getting-started');
+    expect(guide.textContent).toContain('the companies you buy from');
+    expect(guide.textContent).toContain('a distributor, a marketplace seller');
+    expect(guide.textContent).toContain('compare what a part costs from each supplier');
+    expect(guide.textContent).toContain('Nothing needs setting up first');
+    // The standing one-line intro says the same thing, so the guide replaces it.
+    expect(screen.queryByText(/Tidy the whole list here/)).toBeNull();
+  });
+
+  it('keeps the one-line intro once there is a supplier to show', () => {
+    allSuppliers = [supplier('a', 'RS Components')];
+    render(<SuppliersScreen />);
+
+    expect(screen.getByText(/Tidy the whole list here/)).toBeTruthy();
+    expect(screen.queryByTestId('suppliers-getting-started')).toBeNull();
   });
 
   it('catches a rename onto a supplier the screen has never shown', () => {

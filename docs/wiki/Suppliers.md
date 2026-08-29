@@ -21,6 +21,12 @@ Now each supplier is a single record. Every part and order points at it, so:
 > A supplier is its own record, not a [[contact|Contacts]]. Contacts are the people you lend to and
 > borrow from; suppliers are who you buy from.
 
+## Starting out
+
+With no suppliers on the list yet, the screen introduces itself instead of showing an empty
+list: what a supplier is, what the shared record buys you in prices, reordering and spend, and
+the two ways to create one. It disappears as soon as the first supplier exists.
+
 ## The list
 
 Each supplier shows its name, default currency, website and note, along with how much is filed
