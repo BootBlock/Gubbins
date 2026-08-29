@@ -532,6 +532,8 @@
   "inventory.presets.section.workshop": "Workshop",
   "inventory.presets.section.electronics": "Electronics",
   "inventory.presets.section.household": "Household",
+  "inventory.presets.section.homeGarden": "Home & garden",
+  "inventory.presets.section.vehicle": "Vehicles",
   "inventory.presets.section.containers": "Storage & containers",
   "inventory.presets.section.crafts": "Crafts & hobbies",
   "inventory.presets.section.media": "Media",

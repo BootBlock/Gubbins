@@ -1,8 +1,10 @@
 # Category presets — research into what the library is still missing
 
-> **Status:** 🟢 ACTIVE — research complete; no presets implemented yet. Tier 1 (12 presets) and
-> the two new picker sections are the next slice of work. The shared-field-name defect §3 reports
-> is a separate piece of work, filed and fixed on its own.
+> **Status:** 🟢 ACTIVE — **tier 1 has shipped**: the twelve presets in §5 and the two new
+> `home-garden` / `vehicle` picker sections in §4 are in the library, along with the parity test §3
+> asks for. Tier 2 (§6) and tier 3 (§7) are open and unstarted. Of the shared-field-name defect in
+> §3, only the `Colour` conflict was settled (the `Magic: The Gathering cards` field is now
+> `Card colour`), because it gated `Yarn`; the rest stays separate work, pinned by the parity test.
 
 Issue [#443](https://github.com/BootBlock/Gubbins/issues/443) asks two things: what *new*
 `Category` presets are worth adding to `CATEGORY_PRESETS`, and what custom fields each one should
@@ -17,6 +19,10 @@ turned up, and that any new preset has to be written around.
 
 `src/features/inventory/category-presets.ts` ships **72** presets across the seven sections
 declared in `PRESET_SECTION_IDS`. The distribution is heavily skewed:
+
+*(As surveyed on 2026-08-28. Tier 1 has since added twelve presets and the `home-garden` and
+`vehicle` sections, so the library now stands at 84 across nine. The table below is the "before"
+this document argued from, and is left as the record of it.)*
 
 | Section | Presets | What is covered |
 | --- | ---: | --- |
@@ -114,6 +120,16 @@ And the silent half is already happening too: **`Metal` is a `SELECT` in three p
 different option lists** (Coin; Copperware & brass ornaments; Gold & silver bullion), and **`Form`
 is a `SELECT` in two** (Gold & silver bullion; Wood stock). Whichever is imported first decides
 what the other's dropdown offers, permanently and with no error.
+
+> **Correction (tier 1, 2026-08-29).** The two names above were found by hand, and the sweep for
+> the silent half stopped there. The parity test written when tier 1 shipped runs it exhaustively,
+> and the real figure is **twelve** names with divergent `SELECT` option lists, not two: `Metal` and
+> `Form`, the four that also carry two types (`Material`, `Region`, `Scale`, `Type`), and six more
+> the table above misses entirely — `Condition`, `Rarity`, `Format`, `Finish`, `Completeness` and
+> `Movement`, the grading and edition vocabularies each collectibles preset spells slightly
+> differently. Counting both halves, **fifteen** names are affected rather than ten. The exact lists
+> are pinned in `src/features/inventory/category-presets.test.ts`; read them, not this section, when
+> picking the defect up.
 
 **This is a bug, not a wart, and it should be filed and fixed separately from adding presets.** The
 fix is per-name — either settle on one type and one option list, or make the losing name specific
@@ -376,6 +392,13 @@ settling first.
   copying the surrounding entries. A **new section label** has no such latitude:
   `SECTION_LABEL_KEY` values are catalog keys, so `en.json` *and* `de.json` both need one, in the
   same change.
+  **Decided when tier 1 shipped: new preset names and descriptions stay untranslated, like the
+  existing 72.** A preset's `name` is written straight into the database as the created category's
+  name, and is the case-insensitive key the picker's "Added" guard matches on. Translating it would
+  make the same preset import as a differently-named category per UI language, so a German user's
+  second import would create a duplicate rather than being blocked. The reason is recorded on the
+  `CategoryPreset` interface so the next author does not have to re-derive it. The two new section
+  labels went through `t()` in both catalogs, as this bullet already required.
 - **`category-presets.test.ts` already enforces part of the bar**: unique ids and
   case-insensitive-unique names, `seed.category.name === preset.name`, contiguous 0-based
   positions, a `SELECT` carrying options and a non-`SELECT` carrying none, a non-empty glyph on
@@ -391,7 +414,9 @@ settling first.
   neither change blocks the other.
 - **No wiki change is needed for this document.** One is needed when presets actually ship — the
   categories page lists what the library offers, and a new section changes what the picker looks
-  like.
+  like. Done for tier 1: `docs/wiki/Custom-Fields-and-Capabilities.md` now names the new presets
+  and both new sections, and describes the seeded service schedules and due-date leads. No
+  screenshot needed regenerating — the wiki has never carried a shot of the preset picker.
 
 ## 10. Method, and what it does not cover
 
