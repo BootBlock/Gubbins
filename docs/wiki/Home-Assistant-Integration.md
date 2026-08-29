@@ -158,6 +158,9 @@ Every Gubbins action takes an optional **Bridge** field naming which one the cal
 single bridge you can leave it empty, and anything you built before this existed carries on
 working unchanged. With two or more, name the bridge you mean: an action that names none is
 refused, listing your bridges by name, rather than going to whichever one happened to start first.
+A bridge counts from the moment you set it up, so one that is briefly offline still counts — the
+alternative would be untargeted actions quietly going to the other vault for as long as it was
+down. A bridge you have disabled doesn't count, because it never runs.
 
 > **⚠️ Heads-up**
 > This matters most for the change actions below. Sending a workshop adjustment to the household

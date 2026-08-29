@@ -35,7 +35,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv, intent
 
 from .api import GubbinsClient
-from .const import DOMAIN, EVENT_ITEM_LOCATED, INTENT_WHERE_IS
+from .bridge_id import entry_display_name
+from .const import ATTR_CONFIG_ENTRY_ID, DOMAIN, EVENT_ITEM_LOCATED, INTENT_WHERE_IS
 from .events import build_located_event, normalise_matches
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +46,26 @@ _LOGGER = logging.getLogger(__name__)
 _REGISTERED_KEY = f"{DOMAIN}_intent_registered"
 
 
+# What a bridge is reported as saying when it answered with something unreadable. `where_answer`
+# already speaks for a bridge that is down or that rejects the token; this covers only what it
+# cannot — a reply that arrives and then fails to parse.
+_UNREADABLE = "Sorry, one of your Gubbins bridges didn't answer properly."
+
+
+async def _ask(client: GubbinsClient, item: str) -> tuple[str, Any]:
+    """Ask one bridge, turning an unexpected failure into a sentence rather than an exception.
+
+    Without this, one bridge answering with a malformed body would take the *other* bridge's
+    perfectly good answer down with it, because a single raise out of :func:`asyncio.gather`
+    abandons the whole lookup. A cancellation still propagates — it is not the bridge failing.
+    """
+    try:
+        return await client.where_answer(item)
+    except Exception:  # noqa: BLE001 - one bridge's failure must not lose another's answer
+        _LOGGER.exception("A Gubbins bridge could not answer the lookup")
+        return _UNREADABLE, None
+
+
 def _clients(hass: HomeAssistant) -> list[tuple[str, GubbinsClient]]:
     """Snapshot every loaded bridge as ``(entry_id, client)`` pairs.
 
@@ -52,12 +73,6 @@ def _clients(hass: HomeAssistant) -> list[tuple[str, GubbinsClient]]:
     unloading in between would otherwise change the mapping underneath the answers.
     """
     return list(hass.data.get(DOMAIN, {}).items())
-
-
-def _bridge_name(hass: HomeAssistant, entry_id: str) -> str:
-    """Name a bridge the way the user named it, falling back to its entry id."""
-    entry = hass.config_entries.async_get_entry(entry_id)
-    return entry.title if entry is not None else entry_id
 
 
 class GubbinsWhereIsIntent(intent.IntentHandler):
@@ -80,10 +95,10 @@ class GubbinsWhereIsIntent(intent.IntentHandler):
             )
             return response
 
-        # where_answer never raises — it returns a friendly fallback on any error — so a bridge
-        # that is down costs this lookup one sentence, not the answer the other one has.
+        # Every bridge is asked at once, and a bridge that fails costs this lookup one sentence
+        # rather than the answer another bridge has — see :func:`_ask`.
         answers = await asyncio.gather(
-            *(client.where_answer(item) for _entry_id, client in bridges)
+            *(_ask(client, item) for _entry_id, client in bridges)
         )
         results = [
             (entry_id, spoken, payload)
@@ -126,7 +141,8 @@ def _speech(hass: HomeAssistant, results: list[tuple[str, str, Any]]) -> str:
         return matched[0][1]
     if matched:
         return " ".join(
-            f"{_bridge_name(hass, entry_id)}: {spoken}" for entry_id, spoken in matched
+            f"{entry_display_name(hass, entry_id)}: {spoken}"
+            for entry_id, spoken in matched
         )
 
     answered = next(
@@ -146,14 +162,16 @@ def _async_fire_located_event(
 
     One event per *bridge* that matched, each naming its ``config_entry_id``. An automation that
     flashes the light on a bin has to know whose bin it is, and with two vaults set up the query
-    alone no longer says.
+    alone no longer says. The key is :data:`~.const.ATTR_CONFIG_ENTRY_ID`, the same constant the
+    services take as a field, so the two surfaces an automation sees carry one name by
+    construction rather than by agreement.
     """
     try:
         event_data = build_located_event(item, payload)
         if event_data is None:
             return
         hass.bus.async_fire(
-            EVENT_ITEM_LOCATED, {**event_data, "config_entry_id": entry_id}
+            EVENT_ITEM_LOCATED, {**event_data, ATTR_CONFIG_ENTRY_ID: entry_id}
         )
     except Exception:  # noqa: BLE001 - the spoken response must never fail because of this
         _LOGGER.exception("Could not fire the %s event", EVENT_ITEM_LOCATED)

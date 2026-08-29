@@ -30,6 +30,9 @@ EVENT_ITEM_LOCATED = "gubbins_item_located"
 # services are registered once for the domain and so have nothing to aim at on their own. Leaving
 # it empty stays correct, and stays the norm, while exactly one bridge is set up; with two, a call
 # that does not name one is refused rather than silently applied to whichever loaded first.
+#
+# The same constant names the key the voice lookup's event carries, so the field an automation
+# writes and the key it reads back are one name by construction.
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 
 # Service that exposes a raw search to automations/dashboards.

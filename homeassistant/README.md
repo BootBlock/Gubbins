@@ -494,13 +494,18 @@ The rules:
 - **One bridge set up** — leave it out. Nothing above needs it, and every automation written
   before the field existed keeps working exactly as it did.
 - **Two or more** — name one. A call that names none is **refused**, with an error listing your
-  bridges by name, rather than being sent to whichever entry loaded first.
+  bridges by name, rather than being sent to whichever entry loaded first. A bridge counts from
+  the moment you set it up, so one that is temporarily offline and reconnecting still counts —
+  otherwise an untargeted call would quietly start going to the survivor for exactly as long as
+  the other bridge was down. A bridge you have *disabled* doesn't count; it never runs.
 - **A bridge that is named but not loaded** is an error too. It never falls back to another one:
   applying a workshop change to the household inventory succeeds, returns a perfectly valid item,
   and gives you nothing to notice it by.
 
-Find an entry id under *Settings → Devices & services → Gubbins Inventory*: open the entry and it
-is the last path segment of the URL. In Developer Tools you can just pick the bridge by name.
+In *Developer Tools → Actions* you pick the bridge by name; switch that call to YAML and you can
+read off the id it filled in, ready to paste into an automation. (It also appears as the
+`config_entry=` parameter in the address bar when you open a bridge's devices from
+*Settings → Devices & services → Gubbins Inventory*.)
 
 **Voice lookups have no such field** — nobody says *"where are my drill bits, on the workshop
 bridge"* — so they ask **every** bridge at once and answer from wherever the item actually is:

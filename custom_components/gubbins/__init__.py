@@ -294,12 +294,6 @@ def _iso_day(value: date | None) -> str | None:
     return (value.date() if isinstance(value, datetime) else value).isoformat()
 
 
-def _entry_title(hass: HomeAssistant, entry_id: str) -> str:
-    """Name a loaded entry the way the user sees it, falling back to its id."""
-    entry = hass.config_entries.async_get_entry(entry_id)
-    return entry.title if entry is not None else entry_id
-
-
 def _async_resolve_client(hass: HomeAssistant, call: ServiceCall) -> GubbinsClient:
     """Return the bridge client this service call is aimed at, or explain why there is none.
 
@@ -314,11 +308,18 @@ def _async_resolve_client(hass: HomeAssistant, call: ServiceCall) -> GubbinsClie
       loaded Gubbins bridge is an error naming what went wrong, never a fallback to another one:
       the write services move stock, and applying a workshop change to the home vault is exactly
       the failure this field exists to prevent.
-    * **Empty, one bridge** — the single loaded bridge is used. This is the common setup, and
-      every automation written before the field existed keeps working unchanged.
+    * **Empty, one bridge** — that bridge is used. This is the common setup, and every automation
+      written before the field existed keeps working unchanged.
     * **Empty, several bridges** — the call is refused, listing the bridges by name. There is no
       right answer to guess at, and guessing wrong writes to the wrong inventory silently: the
       bridge accepts the change and returns a perfectly valid item, just the wrong one's.
+
+    "How many bridges" counts the entries the user has **set up**, not the ones currently loaded.
+    A bridge that is offline at startup has no client here until Home Assistant's retry reaches
+    it, and counting clients would make the second bridge blink out of existence for exactly as
+    long as it is unreachable — turning a refusal back into a silent write to the other vault, in
+    the very window this is meant to cover. A *disabled* entry is left out: it never loads at all,
+    so it can only ever refuse calls the user did not need refused.
     """
     clients: dict[str, GubbinsClient] = hass.data.get(DOMAIN, {})
     entry_id = call.data.get(ATTR_CONFIG_ENTRY_ID)
@@ -333,20 +334,38 @@ def _async_resolve_client(hass: HomeAssistant, call: ServiceCall) -> GubbinsClie
                 f"'{entry_id}' is not a Gubbins bridge. Pick one in the Bridge field, or leave "
                 "it empty when only one bridge is set up."
             )
-        raise HomeAssistantError(
-            f"The Gubbins bridge '{entry.title}' is not loaded, so nothing was sent to it. "
-            "Check it under Settings, Devices & services."
-        )
+        raise HomeAssistantError(_not_loaded(entry.title))
 
-    if not clients:
+    entries = [
+        entry
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.disabled_by is None
+    ]
+    if not entries:
         raise HomeAssistantError("No Gubbins bridge is configured")
-    if len(clients) > 1:
-        names = ", ".join(sorted(_entry_title(hass, known) for known in clients))
+    if len(entries) > 1:
+        names = ", ".join(sorted(entry.title for entry in entries))
         raise HomeAssistantError(
             f"More than one Gubbins bridge is set up ({names}), so this call has nowhere "
             "unambiguous to go. Name the one you mean in the Bridge field."
         )
-    return next(iter(clients.values()))
+
+    client = clients.get(entries[0].entry_id)
+    if client is None:
+        raise HomeAssistantError(_not_loaded(entries[0].title))
+    return client
+
+
+def _not_loaded(title: str) -> str:
+    """The one wording for "that bridge is set up, but it isn't running right now".
+
+    Both the named and the unnamed path can land on it, and they mean the same thing to the
+    operator, so they say the same thing.
+    """
+    return (
+        f"The Gubbins bridge '{title}' is not loaded, so nothing was sent to it. "
+        "Check it under Settings, Devices & services."
+    )
 
 
 def _async_register_search_service(hass: HomeAssistant) -> None:
