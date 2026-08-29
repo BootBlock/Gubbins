@@ -60,6 +60,10 @@ Two colour-shaped fields were deliberately **left alone**, because neither holds
 
 - **Magic: The Gathering cards** → `Colour` is a `SELECT` of the game's five mana colours plus
   `Multicolour`/`Colourless`. That is a game mechanic wearing a colour's name.
+  *(Since 2026-08-29 the field is named `Card colour`. Keeping the type was right; keeping the
+  **name** was not, because a field name is a library-wide identity and the `SELECT` made this
+  preset mutually exclusive with the ten that share the `COLOUR` definition. See §3 of
+  `category-presets-research_2026-08-28.md`.)*
 - **Shoes / trainers / sneakers** → `Colourway` is the name of a multi-colour scheme ("Bred"),
   not a single colour.
 

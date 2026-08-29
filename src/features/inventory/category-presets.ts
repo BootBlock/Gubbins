@@ -35,6 +35,8 @@ export const PRESET_SECTION_IDS = [
   'workshop',
   'electronics',
   'household',
+  'home-garden',
+  'vehicle',
   'containers',
   'crafts',
   'media',
@@ -48,6 +50,14 @@ export type PresetSectionId = (typeof PRESET_SECTION_IDS)[number];
  * A preset offered in the "Add from a preset" library: a {@link CategoryStarterSeed} plus
  * the presentation metadata the picker needs (a stable id, the section it browses under,
  * and a one-line description).
+ *
+ * **`name` and `description` are English registry data, not translated copy** — a deliberate
+ * exception to the project's i18n rule, and one that holds for new presets as much as for the
+ * original set. `name` is written straight into the database as the created category's name and
+ * is the case-insensitive key the picker's "Added" guard matches on, so it has to be one stable
+ * string rather than whatever the UI language happened to be at import time; translating it would
+ * make a German user's second import of the same preset create a duplicate category. The picker's
+ * own chrome — including every {@link PresetSectionId} label — *is* translated.
  */
 export interface CategoryPreset {
   /** Stable slug — the picker key and a durable identifier, never shown to the user. */
@@ -1198,7 +1208,13 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
           options: ['Common', 'Uncommon', 'Rare', 'Mythic rare', 'Special'],
         },
         {
-          name: 'Colour',
+          // Deliberately not "Colour": a field's *name* is its identity in the shared field
+          // dictionary, and ten other presets already own `Colour` as a `COLOUR` field. Declaring
+          // it here as a `SELECT` made the two mutually exclusive — importing this preset after
+          // any of them (or any of them after this one) threw part-way and left a half-populated
+          // category behind. "Card colour" is the more accurate name anyway: these are the game's
+          // mana colours, a mechanic wearing a colour's name, not a colour value.
+          name: 'Card colour',
           fieldType: 'SELECT',
           options: ['White', 'Blue', 'Black', 'Red', 'Green', 'Multicolour', 'Colourless'],
         },
@@ -1883,6 +1899,430 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
           fieldType: 'SELECT',
           options: ['Mint', 'Near mint', 'Excellent', 'Very good', 'Good', 'Fair', 'Poor'],
         },
+      ]),
+    },
+  },
+
+  // --- The house, the car and the garden (docs/todo/category-presets-research_2026-08-28.md §5) ---
+  //
+  // Two-thirds of the library above serves `collectibles`, so a user setting up a *house* found
+  // almost nothing. These twelve redress that, and between them they are the first presets to use
+  // two category facets nothing else had touched — a default maintenance schedule, and a `DATE`
+  // field's `dueLeadDays` deadline opt-in — and the first to file under `home-garden` / `vehicle`.
+  //
+  // Field *names* are chosen as carefully as the option lists are. A name is the identity of a
+  // shared dictionary definition, so a `SELECT` reusing a name already spoken for silently
+  // inherits the other list's options — which is why several read more specifically than they
+  // otherwise would (`Dose form` not `Form`, `Chassis type` not `Form factor`, `Link speed` not
+  // `Speed`, `Yarn weight` not `Weight`). Reuse is deliberate where the definition genuinely is
+  // the same one: `Manufacturer`, `Model`, `Serial number`, `Year`, `Species` and `Colour` all
+  // land on the definitions the existing presets already share.
+  {
+    id: 'appliance',
+    sectionId: 'household',
+    name: 'Appliance',
+    description: 'Domestic machines — model, serial, warranty, consumable part and a service record.',
+    seed: {
+      category: {
+        name: 'Appliance',
+        glyph: '🧺',
+        defaultTrackingMode: 'SERIALISED',
+        defaultCondition: 'GOOD',
+        defaultWarrantyMonths: 24,
+        // An annual service is the household default; the user retunes it per item.
+        defaultMaintenanceBasis: 'TIME',
+        defaultMaintenanceIntervalDays: 365,
+      },
+      fields: ordered([
+        { name: 'Manufacturer', fieldType: 'TEXT' },
+        { name: 'Model number', fieldType: 'TEXT' },
+        { name: 'Serial number', fieldType: 'TEXT' },
+        {
+          name: 'Appliance type',
+          fieldType: 'SELECT',
+          options: [
+            'Fridge/freezer',
+            'Washing machine',
+            'Dishwasher',
+            'Oven/hob',
+            'Microwave',
+            'Tumble dryer',
+            'Boiler',
+            'Air conditioner',
+            'Vacuum',
+            'Other',
+          ],
+        },
+        { name: 'Installed on', fieldType: 'DATE' },
+        { name: 'Consumable part', fieldType: 'TEXT' },
+        { name: 'Energy rating', fieldType: 'TEXT' },
+        { name: 'Manual', fieldType: 'URL' },
+        { name: 'Service record', fieldType: 'LONG_TEXT' },
+      ]),
+    },
+  },
+  {
+    id: 'medication',
+    sectionId: 'household',
+    name: 'Medication',
+    description: 'The medicine cabinet — dose form, strength, storage and an expiry that alerts.',
+    seed: {
+      category: {
+        name: 'Medication',
+        glyph: '💊',
+        hiddenCapabilities: ['maintenance', 'kits', 'variants'],
+      },
+      fields: ordered([
+        // The shared `Expiry date` definition, opted in as a deadline. `dueLeadDays` lives on the
+        // *definition*, so this also gives the existing `Food` and `Adhesive` presets 30 days'
+        // expiry notice — intended, and the documented "applied on reuse, never cleared" rule.
+        { name: 'Expiry date', fieldType: 'DATE', dueLeadDays: 30 },
+        {
+          // Not `Form`: `Gold & silver bullion` and `Wood stock` already own that name with
+          // entirely different option lists.
+          name: 'Dose form',
+          fieldType: 'SELECT',
+          options: [
+            'Tablet',
+            'Capsule',
+            'Liquid',
+            'Cream/ointment',
+            'Inhaler',
+            'Injection',
+            'Drops',
+            'Other',
+          ],
+        },
+        { name: 'Strength', fieldType: 'TEXT' },
+        { name: 'Active ingredient', fieldType: 'TEXT' },
+        { name: 'Prescription', fieldType: 'ON_OFF' },
+        { name: 'Opened on', fieldType: 'DATE' },
+        {
+          // Not `Storage`: `Food` owns that name with Pantry/Fridge/Freezer.
+          name: 'Storage requirement',
+          fieldType: 'SELECT',
+          options: ['Room temperature', 'Refrigerated', 'Away from light'],
+        },
+        { name: 'Notes', fieldType: 'LONG_TEXT' },
+      ]),
+    },
+  },
+  {
+    id: 'consumable-filter',
+    sectionId: 'household',
+    name: 'Filters & consumables',
+    description:
+      'The parts a house runs out of — what they fit, when they were changed and when they are due.',
+    seed: {
+      category: {
+        name: 'Filters & consumables',
+        glyph: '🧽',
+        defaultMaintenanceBasis: 'TIME',
+        defaultMaintenanceIntervalDays: 90,
+      },
+      fields: ordered([
+        { name: 'Fits appliance', fieldType: 'TEXT' },
+        { name: 'Consumable size', fieldType: 'TEXT' },
+        {
+          name: 'Consumable kind',
+          fieldType: 'SELECT',
+          options: ['Air filter', 'Water filter', 'Vacuum bag', 'Bulb', 'Cartridge', 'Belt', 'Other'],
+        },
+        { name: 'Last changed', fieldType: 'DATE' },
+        { name: 'Change due', fieldType: 'DATE', dueLeadDays: 14 },
+        { name: 'Reorder link', fieldType: 'URL' },
+      ]),
+    },
+  },
+  {
+    id: 'cleaning-chemical',
+    sectionId: 'household',
+    name: 'Cleaning & household chemicals',
+    description: 'Cleaners and solvents — type, hazard class, safety data sheet and dilution.',
+    seed: {
+      category: { name: 'Cleaning & household chemicals', glyph: '🧼' },
+      fields: ordered([
+        {
+          name: 'Cleaner type',
+          fieldType: 'SELECT',
+          options: [
+            'Detergent',
+            'Bleach',
+            'Degreaser',
+            'Descaler',
+            'Polish',
+            'Disinfectant',
+            'Solvent',
+            'Other',
+          ],
+        },
+        { name: 'Hazard class', fieldType: 'TEXT' },
+        { name: 'Safety data sheet', fieldType: 'URL' },
+        { name: 'Container volume', fieldType: 'TEXT' },
+        { name: 'Concentrate', fieldType: 'ON_OFF' },
+        { name: 'Opened on', fieldType: 'DATE' },
+        { name: 'Expiry date', fieldType: 'DATE' },
+        { name: 'Dilution', fieldType: 'TEXT' },
+      ]),
+    },
+  },
+  {
+    id: 'seed-packet',
+    sectionId: 'home-garden',
+    name: 'Seeds',
+    description: 'Seed packets — variety, sowing window, days to harvest and a best-before that alerts.',
+    seed: {
+      category: { name: 'Seeds', glyph: '🌱', hiddenCapabilities: ['maintenance', 'kits'] },
+      fields: ordered([
+        { name: 'Variety', fieldType: 'TEXT' },
+        {
+          name: 'Crop type',
+          fieldType: 'SELECT',
+          options: ['Vegetable', 'Herb', 'Flower', 'Fruit', 'Grass', 'Tree', 'Other'],
+        },
+        { name: 'Sow from', fieldType: 'DATE' },
+        { name: 'Sow until', fieldType: 'DATE' },
+        { name: 'Days to harvest', fieldType: 'NUMBER' },
+        { name: 'Packed for season', fieldType: 'NUMBER' },
+        { name: 'Best before', fieldType: 'DATE', dueLeadDays: 60 },
+        { name: 'Germination rate (%)', fieldType: 'NUMBER' },
+        { name: 'Sun', fieldType: 'SELECT', options: ['Full sun', 'Partial shade', 'Shade'] },
+        { name: 'Spacing', fieldType: 'TEXT' },
+      ]),
+    },
+  },
+  {
+    id: 'houseplant',
+    sectionId: 'home-garden',
+    name: 'Plant',
+    description: 'House and garden plants — species, light, pot size and a watering schedule.',
+    seed: {
+      category: {
+        name: 'Plant',
+        glyph: '🪴',
+        // Watering *is* the schedule, so the maintenance facet carries it rather than a field.
+        defaultMaintenanceBasis: 'TIME',
+        defaultMaintenanceIntervalDays: 7,
+        hiddenCapabilities: ['batches', 'kits'],
+      },
+      fields: ordered([
+        { name: 'Species', fieldType: 'TEXT' },
+        { name: 'Common name', fieldType: 'TEXT' },
+        { name: 'Acquired on', fieldType: 'DATE' },
+        { name: 'Pot size', fieldType: 'TEXT' },
+        {
+          name: 'Light',
+          fieldType: 'SELECT',
+          options: ['Bright direct', 'Bright indirect', 'Medium', 'Low'],
+        },
+        { name: 'Watering', fieldType: 'TEXT' },
+        { name: 'Last repotted', fieldType: 'DATE' },
+        { name: 'Hardiness', fieldType: 'TEXT' },
+        { name: 'Photo', fieldType: 'IMAGE' },
+      ]),
+    },
+  },
+  {
+    id: 'vehicle',
+    sectionId: 'vehicle',
+    name: 'Vehicle',
+    description: 'Cars, vans and bikes — registration, VIN, odometer and the renewals that fall due.',
+    seed: {
+      category: {
+        name: 'Vehicle',
+        glyph: '🚙',
+        defaultTrackingMode: 'SERIALISED',
+        // A service interval measured in distance, not days — the one facet only a vehicle
+        // naturally wants, and the reason `USAGE` exists.
+        defaultMaintenanceBasis: 'USAGE',
+        defaultMaintenanceIntervalUsage: 10000,
+      },
+      fields: ordered([
+        { name: 'Make', fieldType: 'TEXT' },
+        { name: 'Model', fieldType: 'TEXT' },
+        { name: 'Year', fieldType: 'NUMBER' },
+        { name: 'Registration', fieldType: 'TEXT' },
+        { name: 'VIN', fieldType: 'TEXT' },
+        {
+          name: 'Fuel',
+          fieldType: 'SELECT',
+          options: ['Petrol', 'Diesel', 'Hybrid', 'Plug-in hybrid', 'Electric', 'Other'],
+        },
+        { name: 'Odometer', fieldType: 'NUMBER' },
+        { name: 'Service due', fieldType: 'DATE', dueLeadDays: 30 },
+        // Deliberately not "MOT": the library is not UK-only, and the abbreviation means
+        // nothing outside Great Britain.
+        { name: 'Roadworthiness test due', fieldType: 'DATE', dueLeadDays: 30 },
+        { name: 'Insurance renewal', fieldType: 'DATE', dueLeadDays: 30 },
+      ]),
+    },
+  },
+  {
+    id: 'vehicle-part',
+    sectionId: 'vehicle',
+    name: 'Vehicle part',
+    description: 'Spares and service parts — part number, what they fit, and when they were fitted.',
+    seed: {
+      category: { name: 'Vehicle part', glyph: '🛞' },
+      fields: ordered([
+        { name: 'Part number', fieldType: 'TEXT' },
+        { name: 'Manufacturer', fieldType: 'TEXT' },
+        { name: 'Fits vehicle', fieldType: 'TEXT' },
+        {
+          // Not `Part type`: `Type` and its neighbours are the library's most overloaded names.
+          name: 'Part category',
+          fieldType: 'SELECT',
+          options: [
+            'Filter',
+            'Brake',
+            'Belt/hose',
+            'Electrical',
+            'Body',
+            'Engine',
+            'Suspension',
+            'Consumable',
+            'Other',
+          ],
+        },
+        {
+          name: 'OEM or aftermarket',
+          fieldType: 'SELECT',
+          options: ['OEM', 'Aftermarket', 'Reconditioned', 'Used'],
+        },
+        { name: 'Fitted on', fieldType: 'DATE' },
+        { name: 'Fitted at odometer', fieldType: 'NUMBER' },
+      ]),
+    },
+  },
+  {
+    id: 'computer',
+    sectionId: 'electronics',
+    name: 'Computer',
+    description: 'Desktops, laptops and servers — chassis, CPU, memory, drives and how to reach it.',
+    seed: {
+      category: {
+        name: 'Computer',
+        glyph: '💻',
+        defaultTrackingMode: 'SERIALISED',
+        defaultWarrantyMonths: 12,
+      },
+      fields: ordered([
+        { name: 'Manufacturer', fieldType: 'TEXT' },
+        { name: 'Model', fieldType: 'TEXT' },
+        { name: 'Serial number', fieldType: 'TEXT' },
+        {
+          // Not `Form factor`: `Battery` owns that name with AA/AAA/18650.
+          name: 'Chassis type',
+          fieldType: 'SELECT',
+          options: ['Desktop', 'Laptop', 'Server', 'Mini PC', 'Single-board computer', 'Tablet', 'Other'],
+        },
+        { name: 'CPU', fieldType: 'TEXT' },
+        { name: 'Memory (GB)', fieldType: 'NUMBER' },
+        { name: 'Drives', fieldType: 'TEXT' },
+        { name: 'Operating system', fieldType: 'TEXT' },
+        { name: 'Hostname', fieldType: 'TEXT' },
+        { name: 'MAC address', fieldType: 'TEXT' },
+      ]),
+    },
+  },
+  {
+    id: 'network-equipment',
+    sectionId: 'electronics',
+    name: 'Network equipment',
+    description: 'Routers, switches and access points — ports, link speed, PoE and firmware.',
+    seed: {
+      category: { name: 'Network equipment', glyph: '🌐', defaultTrackingMode: 'SERIALISED' },
+      fields: ordered([
+        { name: 'Manufacturer', fieldType: 'TEXT' },
+        { name: 'Model', fieldType: 'TEXT' },
+        {
+          name: 'Network device type',
+          fieldType: 'SELECT',
+          options: [
+            'Router',
+            'Switch',
+            'Access point',
+            'Modem',
+            'Firewall',
+            'NAS',
+            'PoE injector',
+            'Media converter',
+            'Other',
+          ],
+        },
+        { name: 'Ports', fieldType: 'NUMBER' },
+        {
+          // Not `Speed`: `Vinyl record` owns that name with 33⅓/45/78 RPM.
+          name: 'Link speed',
+          fieldType: 'SELECT',
+          options: ['100 Mb', '1 Gb', '2.5 Gb', '5 Gb', '10 Gb', '25 Gb+'],
+        },
+        { name: 'PoE', fieldType: 'ON_OFF' },
+        { name: 'Management address', fieldType: 'TEXT' },
+        { name: 'Firmware version', fieldType: 'TEXT' },
+        { name: 'MAC address', fieldType: 'TEXT' },
+      ]),
+    },
+  },
+  {
+    id: 'smart-home-device',
+    sectionId: 'electronics',
+    name: 'Smart home device',
+    description: 'Connected kit — protocol, power source, firmware and what it is paired to.',
+    seed: {
+      category: { name: 'Smart home device', glyph: '🏠' },
+      fields: ordered([
+        { name: 'Manufacturer', fieldType: 'TEXT' },
+        { name: 'Model', fieldType: 'TEXT' },
+        {
+          name: 'Protocol',
+          fieldType: 'SELECT',
+          options: ['Wi-Fi', 'Zigbee', 'Z-Wave', 'Thread/Matter', 'Bluetooth', '433 MHz', 'Wired'],
+        },
+        {
+          name: 'Smart device type',
+          fieldType: 'SELECT',
+          options: [
+            'Light',
+            'Switch/plug',
+            'Sensor',
+            'Camera',
+            'Lock',
+            'Thermostat',
+            'Hub',
+            'Speaker',
+            'Other',
+          ],
+        },
+        { name: 'Power source', fieldType: 'SELECT', options: ['Mains', 'Battery', 'PoE', 'USB'] },
+        { name: 'Firmware version', fieldType: 'TEXT' },
+        { name: 'Paired to hub', fieldType: 'TEXT' },
+        { name: 'Works without cloud', fieldType: 'ON_OFF' },
+      ]),
+    },
+  },
+  {
+    id: 'yarn',
+    sectionId: 'crafts',
+    name: 'Yarn',
+    description: 'Knitting and crochet yarn — fibre, weight, colourway and the dye lot that must match.',
+    seed: {
+      category: { name: 'Yarn', glyph: '🪢' },
+      fields: ordered([
+        { name: 'Fibre', fieldType: 'TEXT' },
+        {
+          // Not `Weight`: `Gold & silver bullion` owns that name with 1 g / 1 oz.
+          name: 'Yarn weight',
+          fieldType: 'SELECT',
+          options: ['Lace', '4-ply/Fingering', 'Sport', 'DK', 'Worsted/Aran', 'Chunky', 'Super chunky'],
+        },
+        { name: 'Colour', fieldType: 'COLOUR' },
+        { name: 'Colourway name', fieldType: 'TEXT' },
+        { name: 'Dye lot', fieldType: 'TEXT' },
+        { name: 'Length per ball (m)', fieldType: 'NUMBER' },
+        { name: 'Ball weight (g)', fieldType: 'NUMBER' },
+        { name: 'Needle / hook size', fieldType: 'TEXT' },
+        { name: 'Care', fieldType: 'TEXT' },
       ]),
     },
   },
