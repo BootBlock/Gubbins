@@ -7,7 +7,7 @@
  * repository so the query resolves to a known location with one discrete item.
  * The reconcile hooks are mocked at the `../hooks` boundary.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CycleCountDialog } from './CycleCountDialog';
@@ -33,18 +33,45 @@ const ONE_BATCH = {
 // The component builds the count-input testid from `${itemId}|${batchKey}`.
 const BATCH_LINE_KEY = `${ONE_BATCH.itemId}|${ONE_BATCH.batchKey}`;
 
+// What the location holds. Mutable so one test can render a location the database believes is
+// empty — where misplaced stock is most likely to turn up, and where the sheet used to offer
+// nothing at all (issue #640).
+const stock = vi.hoisted(() => ({ batches: [] as unknown[] }));
+
 vi.mock('@/db/repositories', () => ({
   getItemRepository: () => ({
-    listStockBatchesAtLocation: () => Promise.resolve([ONE_BATCH]),
+    listStockBatchesAtLocation: () => Promise.resolve(stock.batches),
     listSerialisedAtLocation: () => Promise.resolve([]),
   }),
 }));
 
 // Reconcile hooks — spies resolved with [] by default; individual tests override.
-const authoriseCountSpy = vi.hoisted(() => vi.fn().mockResolvedValue({ discrete: [], serialised: [] }));
+const authoriseCountSpy = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ discrete: [], serialised: [], relocated: [] }),
+);
 
 vi.mock('../hooks', () => ({
   useAuthoriseCount: () => ({ mutateAsync: authoriseCountSpy, isPending: false }),
+}));
+
+// The "found something that isn't listed?" control reads the item catalogue, which this file
+// stubs the repository for — so it is replaced with two buttons that add a known find of each
+// tracking mode. Its own picker behaviour is covered in `FoundHereField.test.tsx`; what these
+// tests need is a deterministic way to put a find on the sheet (issue #640).
+const FOUND_BULK = { itemId: 'found-bulk', name: 'Loose screws', serialNo: null, mode: 'DISCRETE' } as const;
+const FOUND_UNIT = { itemId: 'found-unit', name: 'Multimeter', serialNo: 3, mode: 'SERIALISED' } as const;
+
+vi.mock('./FoundHereField', () => ({
+  FoundHereField: ({ count }: { count: LocationCycleCount }) => (
+    <div>
+      <button type="button" onClick={() => count.addFound(FOUND_BULK)}>
+        add found bulk
+      </button>
+      <button type="button" onClick={() => count.addFound(FOUND_UNIT)}>
+        add found unit
+      </button>
+    </div>
+  ),
 }));
 
 // ---------------------------------------------------------------------------
@@ -65,9 +92,13 @@ function renderDialog(client = makeClient()) {
   );
 }
 
+beforeEach(() => {
+  stock.batches = [ONE_BATCH];
+});
+
 afterEach(() => {
   cleanup();
-  authoriseCountSpy.mockResolvedValue({ discrete: [], serialised: [] });
+  authoriseCountSpy.mockResolvedValue({ discrete: [], serialised: [], relocated: [] });
   // The count sheet is now saved to `localStorage` as it is typed (issue #587), so a count
   // entered by one test would be restored into the next one's dialog.
   useCountDraftStore.setState({ drafts: {} });
@@ -98,7 +129,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
   it('populates the live region with the completion message after authorise', async () => {
     // Spy resolves with 2 items so the message reads "2 adjustments".
     const fakeItem = { id: 'item-abc' };
-    authoriseCountSpy.mockResolvedValue({ discrete: [fakeItem, fakeItem], serialised: [] });
+    authoriseCountSpy.mockResolvedValue({ discrete: [fakeItem, fakeItem], serialised: [], relocated: [] });
 
     renderDialog();
 
@@ -122,7 +153,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
   });
 
   it('uses singular "adjustment" when exactly 1 item was reconciled', async () => {
-    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [] });
+    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [], relocated: [] });
 
     renderDialog();
 
@@ -142,7 +173,7 @@ describe('CycleCountDialog — aria-live reconciliation result (WCAG 4.1.3, Phas
   });
 
   it('keeps the same live-region DOM node before and after reconciliation (no remount trap)', async () => {
-    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [] });
+    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [], relocated: [] });
 
     renderDialog();
 
@@ -203,7 +234,12 @@ describe('CycleCountDialog — the count sheet survives being closed (issue #587
   it('reports an older sheet by age rather than as "just now"', async () => {
     useCountDraftStore.setState({
       drafts: {
-        [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], savedAt: Date.now() - 3 * 86_400_000 },
+        [LOC.id]: {
+          counts: { [BATCH_LINE_KEY]: '8' },
+          missing: [],
+          found: [],
+          savedAt: Date.now() - 3 * 86_400_000,
+        },
       },
     });
     renderDialog();
@@ -241,7 +277,9 @@ describe('CycleCountDialog — the count sheet survives being closed (issue #587
   it('does restamp once the auditor actually enters something', async () => {
     const threeDaysAgo = Date.now() - 3 * 86_400_000;
     useCountDraftStore.setState({
-      drafts: { [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], savedAt: threeDaysAgo } },
+      drafts: {
+        [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], found: [], savedAt: threeDaysAgo },
+      },
     });
 
     renderDialog();
@@ -256,7 +294,7 @@ describe('CycleCountDialog — the count sheet survives being closed (issue #587
 
   it('says "earlier" rather than inventing a date when the stored stamp was unusable', async () => {
     useCountDraftStore.setState({
-      drafts: { [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], savedAt: null } },
+      drafts: { [LOC.id]: { counts: { [BATCH_LINE_KEY]: '8' }, missing: [], found: [], savedAt: null } },
     });
     renderDialog();
     await waitFor(() => expect(screen.getByTestId('count-draft-notice')).toBeTruthy());
@@ -284,7 +322,7 @@ describe('CycleCountDialog — the count sheet survives being closed (issue #587
   });
 
   it('drops the saved sheet once the count is authorised, so it is never offered back', async () => {
-    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [] });
+    authoriseCountSpy.mockResolvedValue({ discrete: [{ id: 'item-abc' }], serialised: [], relocated: [] });
     await countInto('8');
     expect(useCountDraftStore.getState().drafts[LOC.id]).toBeDefined();
 
@@ -405,5 +443,144 @@ describe('CycleCountDialog — a sheet with lines left blank', () => {
     expect(screen.getByTestId('cycle-count-result').textContent).toContain(
       'No variances found — recorded as counted.',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Found here (issue #640)
+// ---------------------------------------------------------------------------
+
+describe('CycleCountDialog — recording stock found where it was not expected', () => {
+  const addFoundBulk = () => fireEvent.click(screen.getByRole('button', { name: 'add found bulk' }));
+  const addFoundUnit = () => fireEvent.click(screen.getByRole('button', { name: 'add found unit' }));
+
+  it('adds a count line expecting zero, so what is counted against it is a surplus here', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    act(addFoundBulk);
+
+    const found = await screen.findByTestId(`count-${FOUND_BULK.itemId}|`);
+    fireEvent.change(found, { target: { value: '12' } });
+    // Twelve counted against an expectation of none is a variance of +12, not a clean line.
+    expect(screen.getByLabelText(`Counted quantity for ${FOUND_BULK.name}`)).toBe(found);
+    const sheet = screen.getByTestId('cycle-count-lines').textContent ?? '';
+    expect(sheet).toContain('+12');
+    // And the row says why it is on a sheet that is otherwise everything the database expects.
+    expect(sheet).toContain('Found here');
+  });
+
+  it('authorises the find as an adjustment at this placement, leaving the shelf it left alone', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    act(addFoundBulk);
+    fireEvent.change(await screen.findByTestId(`count-${FOUND_BULK.itemId}|`), { target: { value: '12' } });
+    fireEvent.change(screen.getByTestId(`count-${BATCH_LINE_KEY}`), { target: { value: '10' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('authorise-reconciliation'));
+    });
+
+    // The adjustment names this location and the untracked lot, which is the branch that seeds a
+    // placement the item has never held — the whole point of the expected-zero line.
+    expect(authoriseCountSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        quantityAdjustments: expect.arrayContaining([
+          expect.objectContaining({
+            itemId: FOUND_BULK.itemId,
+            counted: 12,
+            locationId: LOC.id,
+            batch: { batchNumber: null, lotNumber: null, expiryDate: null },
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it('sends a found serialised unit as a relocation, never as a missing-instance retirement', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    act(addFoundUnit);
+    fireEvent.change(screen.getByTestId(`count-${BATCH_LINE_KEY}`), { target: { value: '10' } });
+
+    await waitFor(() => expect(screen.getByTestId('found-serialised-lines')).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('authorise-reconciliation'));
+    });
+
+    expect(authoriseCountSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relocations: [
+          {
+            itemId: FOUND_UNIT.itemId,
+            note: `Serialised audit of ${LOC.name}: ${FOUND_UNIT.name} #3 found here — moved from its recorded location.`,
+          },
+        ],
+        // Retiring it is the opposite correction: the unit is not missing, it is right here.
+        serialisedAdjustments: [],
+      }),
+    );
+  });
+
+  it('counts a find towards the sheet’s coverage, so an untouched addition blocks "Mark counted"', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    fireEvent.change(screen.getByTestId(`count-${BATCH_LINE_KEY}`), { target: { value: '10' } });
+    expect(screen.getByTestId('authorise-reconciliation').textContent).toContain('Mark counted');
+
+    act(addFoundBulk);
+
+    // The auditor added a line and has not answered it. That is exactly the part-counted sheet
+    // issue #637 refuses to record as a completed count.
+    await waitFor(() =>
+      expect(screen.getByTestId('cycle-count-coverage').textContent).toBe('1 of 2 lines counted'),
+    );
+    expect(screen.getByTestId('authorise-reconciliation').textContent).toContain('Record partial count');
+  });
+
+  it('takes a find back off the sheet, and the quantity typed against it with it', async () => {
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    act(addFoundBulk);
+    fireEvent.change(await screen.findByTestId(`count-${FOUND_BULK.itemId}|`), { target: { value: '12' } });
+
+    fireEvent.click(screen.getByTestId(`remove-found-${FOUND_BULK.itemId}`));
+
+    await waitFor(() => expect(screen.queryByTestId(`count-${FOUND_BULK.itemId}|`)).toBeNull());
+    // Adding it again must not resurrect a count the auditor has since taken back.
+    act(addFoundBulk);
+    expect((await screen.findByTestId(`count-${FOUND_BULK.itemId}|`)).getAttribute('value')).toBe('');
+  });
+
+  it('keeps a find across a close and reopen, like any other work on the sheet', async () => {
+    const client = makeClient();
+    const first = renderDialog(client);
+    await waitFor(() => expect(screen.getByTestId(`count-${BATCH_LINE_KEY}`)).toBeTruthy());
+    act(addFoundBulk);
+    fireEvent.change(await screen.findByTestId(`count-${FOUND_BULK.itemId}|`), { target: { value: '12' } });
+    await waitFor(() => expect(useCountDraftStore.getState().drafts[LOC.id]?.found).toHaveLength(1));
+
+    first.unmount();
+    renderDialog(client);
+
+    // Noticing the units is the work — a sheet that forgot the find would send the auditor back
+    // to the shelf with nothing on screen saying there was ever anything to find.
+    const restored = await screen.findByTestId(`count-${FOUND_BULK.itemId}|`);
+    expect(restored.getAttribute('value')).toBe('12');
+  });
+
+  it('offers the control in a location the database believes is empty', async () => {
+    stock.batches = [];
+    renderDialog();
+    await waitFor(() =>
+      expect(screen.getByText('No countable items in this location to audit.')).toBeTruthy(),
+    );
+
+    // An empty drawer is exactly where a misplaced box turns up, and the sheet that says there is
+    // nothing here is the one with no line to record it on.
+    act(addFoundBulk);
+    const found = await screen.findByTestId(`count-${FOUND_BULK.itemId}|`);
+    fireEvent.change(found, { target: { value: '12' } });
+    // Adding a line makes the location countable, so the ordinary counting footer takes over.
+    expect(screen.getByTestId('authorise-reconciliation').textContent).toContain('Authorise (1)');
   });
 });

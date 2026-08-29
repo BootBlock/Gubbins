@@ -33,6 +33,7 @@ import {
 // at module scope, and screen tests that mock the barrel wholesale do not provide them.
 import { SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID, type HistoryAction } from '@/db/repositories/constants';
 import { historyStatement } from '@/db/repositories/item/history';
+import { settleStockProjectionStatements } from '@/db/repositories/stock';
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
@@ -684,51 +685,6 @@ export function withCaptureDisabled(statements: readonly SqlStatement[]): SqlSta
     { sql: 'UPDATE stock_delta_capture SET enabled = 0 WHERE id = 1;' },
     ...statements,
     { sql: 'UPDATE stock_delta_capture SET enabled = 1 WHERE id = 1;' },
-  ];
-}
-
-/**
- * The set-based re-derivation of the stock projection, run once at the end of a batch whose
- * per-statement recompute was suppressed by {@link withRecomputeDeferred}.
- *
- * Each statement is the set-based twin of the recompute trigger it stands in for, carrying the
- * same `quantity <> (SELECT SUM(...))` guard — so a placement or an item whose stored total already
- * equals its ledger is not written at all, and its `updated_at` survives untouched. Where a total
- * genuinely differs the row is written, the auto-stamp trigger stamps it exactly as any local stock
- * change is stamped, and the correction propagates on the next sync.
- *
- * The `EXISTS` guards keep the sweep to placements and items the ledger actually speaks for, which
- * is what a trigger does implicitly by only firing on a write. Without them a snapshot that carries
- * `item_stock` but no `stock_batches` — a foreign or hand-edited file — would have every one of its
- * placements zeroed by a sweep that the triggers would never have run.
- */
-function settleStockProjectionStatements(): SqlStatement[] {
-  const batchSum = `(SELECT COALESCE(SUM(quantity), 0) FROM stock_batches
-                      WHERE item_id = item_stock.item_id AND location_id = item_stock.location_id)`;
-  const placementSum = `(SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = items.id)`;
-  return [
-    // A placement the snapshot carries batches for but no `item_stock` row: the insert arm of
-    // `trg_stock_batches_recompute_ins`. Matched on the natural key rather than the derived id,
-    // because a foreign snapshot's `item_stock.id` need not follow the `item|location` form.
-    {
-      sql: `INSERT INTO item_stock (id, item_id, location_id, quantity)
-            SELECT b.item_id || '|' || b.location_id, b.item_id, b.location_id, SUM(b.quantity)
-              FROM stock_batches b
-             WHERE NOT EXISTS (SELECT 1 FROM item_stock s
-                                WHERE s.item_id = b.item_id AND s.location_id = b.location_id)
-             GROUP BY b.item_id, b.location_id;`,
-    },
-    {
-      sql: `UPDATE item_stock SET quantity = ${batchSum}
-             WHERE EXISTS (SELECT 1 FROM stock_batches b
-                            WHERE b.item_id = item_stock.item_id AND b.location_id = item_stock.location_id)
-               AND quantity <> ${batchSum};`,
-    },
-    {
-      sql: `UPDATE items SET quantity = ${placementSum}
-             WHERE EXISTS (SELECT 1 FROM item_stock s WHERE s.item_id = items.id)
-               AND quantity <> ${placementSum};`,
-    },
   ];
 }
 

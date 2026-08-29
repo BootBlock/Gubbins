@@ -19,7 +19,7 @@ import {
   type TrackingMode,
 } from '../constants';
 import { BaseRepository } from '../base';
-import { consolidateStockStatements } from '../stock';
+import { moveWholeItemStatements } from '../stock';
 import { tombstoneStatement } from '../tombstone';
 import { rowToHistoryEntry, rowToItem } from '../mappers';
 import type {
@@ -779,8 +779,7 @@ export class ItemCoreRepository extends BaseRepository {
     }
 
     await this.driver.transaction([
-      ...consolidateStockStatements(id, locationId),
-      { sql: 'UPDATE items SET location_id = ? WHERE id = ?;', params: [locationId, id] },
+      ...moveWholeItemStatements(id, locationId),
       historyStatement(id, 'MOVED', this.actorId(), {
         note: 'Moved to a new location.',
         metadata: { fromLocationId: existing.locationId, toLocationId: locationId },

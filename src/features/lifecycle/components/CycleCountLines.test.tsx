@@ -10,10 +10,15 @@
  * the virtualiser sees a zero-height viewport, renders no rows at all, and a test asserting
  * "fewer rows than lines" would pass while proving nothing.
  */
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { CycleCountLines } from './CycleCountLines';
 import type { LocationCycleCount } from '../useLocationCycleCount';
+
+// The "found something that isn't listed?" control reads the item catalogue (issue #640), which
+// this file has no business standing up — it is about how many rows the sheet puts in the DOM.
+// Its own behaviour is covered in `FoundHereField.test.tsx`.
+vi.mock('./FoundHereField', () => ({ FoundHereField: () => null }));
 
 const VIEWPORT_HEIGHT = 300;
 
@@ -61,6 +66,10 @@ function sheet(n: number): LocationCycleCount {
     serialised: [],
     presence: {},
     setPresence: () => {},
+    foundSerialised: [],
+    found: [],
+    addFound: () => {},
+    removeFound: () => {},
   } as unknown as LocationCycleCount;
 }
 

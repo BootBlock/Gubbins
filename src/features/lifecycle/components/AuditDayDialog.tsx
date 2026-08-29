@@ -498,6 +498,13 @@ function AuditLocationPanel({
       ) : isEmpty ? (
         <div className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">Nothing to count in this location.</p>
+          {/*
+            Rendered even with nothing on the sheet, for the "found something that isn't listed?"
+            control it carries (issue #640) — a location the database believes is empty is exactly
+            where misplaced stock turns up. Adding an item makes the location non-empty, so the
+            ordinary counting branch takes over.
+          */}
+          <CycleCountLines count={count} />
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={onSkip} data-testid="audit-skip">
               Skip

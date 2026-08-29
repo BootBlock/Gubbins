@@ -5,7 +5,9 @@
  * per-location load (the DISCRETE `stock_batches` lines plus the SERIALISED presence
  * audit), seeds the ephemeral {@link CycleCountProvider} for the location, exposes the
  * derived variance state, and returns an `authorise()` that persists the adjustments and
- * reports back the totals. All variance arithmetic stays in the pure `cycle-count` module;
+ * reports back the totals. Both halves of that load say only what the database *expects* to be
+ * here, so the sheet also carries whatever the auditor added because they found it here
+ * (issue #640) — an expected-zero count line, or a relocation for a serialised unit. All variance arithmetic stays in the pure `cycle-count` module;
  * this hook is only the glue.
  *
  * Must be used inside a {@link CycleCountProvider} (it reads/writes the transient count).
@@ -16,12 +18,15 @@ import {
   getItemRepository,
   type ReconciliationAdjustment,
   type SerialisedReconciliation,
+  type SerialisedRelocation,
 } from '@/db/repositories';
 import { inventoryKeys } from '@/features/inventory/queries';
 import {
   countCoverage,
+  countLineKey,
   missingInstances,
   serialisedAuditNote,
+  serialisedFoundNote,
   variances,
   type CountCoverage,
   type CycleCountLine,
@@ -37,7 +42,7 @@ function batchLineLabel(name: string, batchNumber: string | null, lotNumber: str
 
 /** The totals reported back when a location's count is authorised. */
 export interface AuthoriseResult {
-  /** Variance lines found — discrete drift plus missing serialised instances. */
+  /** Variance lines found — discrete drift, missing instances, and instances found here. */
   readonly variancesFound: number;
   /** Reconciliation adjustments actually written to the ledger. */
   readonly adjustmentsMade: number;
@@ -60,6 +65,12 @@ export interface LocationCycleCount {
   readonly serialised: ReturnType<typeof useCycleCount>['serialised'];
   readonly presence: ReturnType<typeof useCycleCount>['presence'];
   readonly setPresence: ReturnType<typeof useCycleCount>['setPresence'];
+  /** SERIALISED instances the auditor found here that the records place elsewhere (#640). */
+  readonly foundSerialised: ReturnType<typeof useCycleCount>['foundSerialised'];
+  /** Every item added to the sheet because it was found here — both tracking modes (#640). */
+  readonly found: ReturnType<typeof useCycleCount>['found'];
+  readonly addFound: ReturnType<typeof useCycleCount>['addFound'];
+  readonly removeFound: ReturnType<typeof useCycleCount>['removeFound'];
   /** Set when this location opened onto a sheet saved earlier (issue #587), else null. */
   readonly restored: ReturnType<typeof useCycleCount>['restored'];
   /** Empty the sheet — live inputs and saved copy — and count this location from scratch. */
@@ -68,7 +79,7 @@ export interface LocationCycleCount {
   readonly drift: ReturnType<typeof variances>;
   /** Serialised instances flagged missing. */
   readonly missing: ReturnType<typeof missingInstances>;
-  /** Total adjustments awaiting authorisation (drift + missing). */
+  /** Total adjustments awaiting authorisation (drift + missing + found relocations). */
   readonly totalToApply: number;
   /** How much of the discrete sheet has an entered quantity (issue #637). */
   readonly coverage: CountCoverage;
@@ -79,8 +90,21 @@ export interface LocationCycleCount {
 }
 
 export function useLocationCycleCount(location: { id: string; name: string }): LocationCycleCount {
-  const { lines, counts, serialised, presence, restored, begin, setCount, setPresence, clearSheet } =
-    useCycleCount();
+  const {
+    lines,
+    counts,
+    serialised,
+    presence,
+    foundSerialised,
+    found,
+    restored,
+    begin,
+    setCount,
+    setPresence,
+    addFound,
+    removeFound,
+    clearSheet,
+  } = useCycleCount();
   const authoriseCount = useAuthoriseCount();
 
   // Load the items physically in this location (Phase 26 — per-location; Phase 28 — per-batch).
@@ -105,7 +129,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     begin(
       location,
       data.discrete.map((b) => ({
-        key: `${b.itemId}|${b.batchKey}`,
+        key: countLineKey(b.itemId, b.batchKey),
         itemId: b.itemId,
         name: batchLineLabel(b.name, b.batchNumber, b.lotNumber),
         expected: b.quantity,
@@ -130,7 +154,10 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
   );
   const drift = useMemo(() => variances(countedLines), [countedLines]);
   const missing = useMemo(() => missingInstances(serialised, presence), [serialised, presence]);
-  const totalToApply = drift.length + missing.length;
+  // A found serialised instance is an adjustment awaiting authorisation in its own right — it
+  // writes a relocation — whereas a found DISCRETE line only becomes one once a quantity is
+  // typed against it, at which point it is already in `drift` like any other line.
+  const totalToApply = drift.length + missing.length + foundSerialised.length;
   // Derived from the same line set the count inputs render, so what the footer reports and
   // what the sheet shows can never drift apart.
   const coverage = useMemo(
@@ -142,7 +169,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     [lines, counts],
   );
   const pending = authoriseCount.isPending;
-  const isEmpty = !isLoading && lines.length === 0 && serialised.length === 0;
+  const isEmpty = !isLoading && lines.length === 0 && serialised.length === 0 && foundSerialised.length === 0;
 
   const authorise = async (): Promise<AuthoriseResult> => {
     // One adjustment per *drifted batch line* (Phase 28): the variance is absorbed at that
@@ -165,6 +192,14 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
       itemId: m.itemId,
       note: serialisedAuditNote(m, location.name),
     }));
+    // The other half of the presence audit (issue #640): an instance the auditor found here is
+    // not missing anywhere, it is merely recorded in the wrong place, so it is relocated rather
+    // than retired. Sent in the same authorisation so the shelf that lost it and the shelf that
+    // has it are corrected together or not at all.
+    const relocations: SerialisedRelocation[] = foundSerialised.map((f) => ({
+      itemId: f.itemId,
+      note: serialisedFoundNote(f, location.name),
+    }));
     // One transaction for the whole authorisation (issue #301): the discrete reconciliation,
     // the serialised presence audit and the location's "counted" stamp commit together, so a
     // failure part-way can no longer leave stock adjusted but presence unreconciled. The stamp
@@ -175,10 +210,15 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     // as counted (issue #637). The lines that *were* counted are real evidence and worth
     // writing; the stamp is a claim about the whole location, and making it on a part-counted
     // shelf is what let a location nobody counted read as verified.
-    const { discrete, serialised: retired } = await authoriseCount.mutateAsync({
+    const {
+      discrete,
+      serialised: retired,
+      relocated,
+    } = await authoriseCount.mutateAsync({
       locationId: location.id,
       quantityAdjustments,
       serialisedAdjustments,
+      relocations,
       markCounted: coverage.isComplete,
     });
     // The sheet has been committed, so the saved copy that let a paused count resume (issue
@@ -191,7 +231,7 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     clearSheet();
     return {
       variancesFound: totalToApply,
-      adjustmentsMade: discrete.length + retired.length,
+      adjustmentsMade: discrete.length + retired.length + relocated.length,
       coverageComplete: coverage.isComplete,
     };
   };
@@ -205,6 +245,10 @@ export function useLocationCycleCount(location: { id: string; name: string }): L
     serialised,
     presence,
     setPresence,
+    foundSerialised,
+    found,
+    addFound,
+    removeFound,
     restored,
     clearSheet,
     drift,

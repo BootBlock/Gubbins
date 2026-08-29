@@ -168,6 +168,13 @@ function CycleCountBody({
         ) : isEmpty ? (
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
+            {/*
+              The sheet is rendered even with nothing on it, because it carries the "found
+              something that isn't listed?" control (issue #640) — and a location the database
+              believes is empty is exactly where misplaced stock turns up. Adding an item here
+              makes the location non-empty, so the ordinary counting branch takes over.
+            */}
+            <CycleCountLines count={count} />
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={onClose} disabled={pending}>
                 Close

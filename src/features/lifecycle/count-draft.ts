@@ -26,8 +26,13 @@
  * over — the auditor judges whether a count from last Tuesday is still worth trusting.
  */
 
-import { isPlainObject, normaliseArray, normaliseNullableInteger } from '@/lib/persisted-state';
-import type { SerialisedPresence } from './cycle-count';
+import {
+  isPlainObject,
+  normaliseArray,
+  normaliseNullableInteger,
+  normaliseString,
+} from '@/lib/persisted-state';
+import { foundLineKey, usableFound, type FoundHereEntry, type SerialisedPresence } from './cycle-count';
 
 /** How many location sheets are kept before the oldest are evicted. */
 export const MAX_COUNT_DRAFTS = 25;
@@ -38,6 +43,15 @@ export interface CountDraft {
   readonly counts: Readonly<Record<string, string>>;
   /** Serialised instances flagged MISSING, sorted. PRESENT is the default, so it isn't stored. */
   readonly missing: readonly string[];
+  /**
+   * Items the auditor added to the sheet themselves because they found them here (issue #640).
+   *
+   * Saved for the same reason a typed quantity is: the addition *is* the observation. An auditor
+   * who finds a box of screws in the wrong drawer and is then interrupted has done the work of
+   * noticing, and a sheet that forgot it would send them back to the shelf to notice it again —
+   * except that this time nothing on screen says there was ever anything to find.
+   */
+  readonly found: readonly FoundHereEntry[];
   /** When the sheet was last touched (epoch ms), or null if a stored draft carried no usable stamp. */
   readonly savedAt: number | null;
 }
@@ -60,6 +74,7 @@ interface InstanceLine {
 export function draftFrom(
   counts: Readonly<Record<string, string>>,
   presence: Readonly<Record<string, SerialisedPresence>>,
+  found: readonly FoundHereEntry[],
   savedAt: number,
 ): CountDraft | null {
   const kept = Object.entries(counts).filter(
@@ -70,8 +85,8 @@ export function draftFrom(
     .map(([itemId]) => itemId)
     // Sorted so two sheets holding the same work compare equal regardless of click order.
     .sort();
-  if (kept.length === 0 && missing.length === 0) return null;
-  return { counts: Object.fromEntries(kept), missing, savedAt };
+  if (kept.length === 0 && missing.length === 0 && found.length === 0) return null;
+  return { counts: Object.fromEntries(kept), missing, found: [...found], savedAt };
 }
 
 /**
@@ -85,6 +100,11 @@ export function sameCountDraft(a: CountDraft | null, b: CountDraft | null): bool
   if (a === null || b === null) return a === b;
   if (a.missing.length !== b.missing.length) return false;
   if (a.missing.some((id, i) => id !== b.missing[i])) return false;
+  // Found entries are compared in order, because that is the order they are added and shown in;
+  // two sheets that found the same items are the same sheet either way, but a reorder cannot
+  // happen without an add or a remove, both of which already differ somewhere else.
+  if (a.found.length !== b.found.length) return false;
+  if (a.found.some((entry, i) => entry.itemId !== b.found[i]?.itemId)) return false;
   const keys = Object.keys(a.counts);
   if (keys.length !== Object.keys(b.counts).length) return false;
   return keys.every((key) => a.counts[key] === b.counts[key]);
@@ -134,7 +154,9 @@ export function reconcilePresence(
 export interface RestoredCountSheet {
   readonly counts: Readonly<Record<string, string>>;
   readonly presence: Readonly<Record<string, SerialisedPresence>>;
-  /** Entries that came back from the draft (counts plus missing flags); 0 = a fresh sheet. */
+  /** Items the auditor had added to the sheet themselves (issue #640). */
+  readonly found: readonly FoundHereEntry[];
+  /** Entries that came back from the draft (counts, missing flags, found items); 0 = a fresh sheet. */
   readonly restoredEntries: number;
   /** When the restored sheet was saved; null when nothing was restored or the stamp was unusable. */
   readonly savedAt: number | null;
@@ -158,16 +180,24 @@ export function restoreCountSheet(
   const lineKeys = new Set(lines.map((line) => line.key));
   const instanceIds = new Set(serialised.map((line) => line.itemId));
 
-  const counts = Object.fromEntries(Object.entries(draft?.counts ?? {}).filter(([key]) => lineKeys.has(key)));
+  // Restored *before* the counts are filtered, because a found item brings its own count line
+  // with it — one the location's own read will never produce, since the whole point of the entry
+  // is that the database does not place the item here. Filtering the counts against the database
+  // lines alone would hand back the addition and throw away the quantity typed against it.
+  const found = usableFound(draft?.found ?? [], lineKeys, instanceIds);
+  const keptKeys = new Set([...lineKeys, ...found.map(foundLineKey)]);
+
+  const counts = Object.fromEntries(Object.entries(draft?.counts ?? {}).filter(([key]) => keptKeys.has(key)));
   const missing = new Set((draft?.missing ?? []).filter((itemId) => instanceIds.has(itemId)));
   const presence = Object.fromEntries(
     serialised.map((line) => [line.itemId, missing.has(line.itemId) ? 'MISSING' : 'PRESENT'] as const),
   );
 
-  const restoredEntries = Object.keys(counts).length + missing.size;
+  const restoredEntries = Object.keys(counts).length + missing.size + found.length;
   return {
     counts,
     presence,
+    found,
     restoredEntries,
     savedAt: restoredEntries > 0 ? (draft?.savedAt ?? null) : null,
   };
@@ -195,9 +225,35 @@ function normaliseCountDraft(value: unknown): CountDraft | null {
       ),
     ),
   ].sort();
+  const found = normaliseFoundEntries(value.found);
 
-  if (Object.keys(counts).length === 0 && missing.length === 0) return null;
-  return { counts, missing, savedAt: normaliseNullableInteger(value.savedAt) };
+  if (Object.keys(counts).length === 0 && missing.length === 0 && found.length === 0) return null;
+  return { counts, missing, found, savedAt: normaliseNullableInteger(value.savedAt) };
+}
+
+/**
+ * Reconcile the persisted found-here list. An entry is only usable if it names an item and says
+ * how that item is tracked — the mode decides whether authorising it adjusts a quantity or moves
+ * a unit, so an entry that has lost it is not a weaker record of a find, it is an instruction
+ * nothing can act on. Duplicates by item id collapse, as they do in {@link usableFound}.
+ */
+function normaliseFoundEntries(value: unknown): FoundHereEntry[] {
+  const seen = new Set<string>();
+  const entries: FoundHereEntry[] = [];
+  for (const candidate of Array.isArray(value) ? (value as unknown[]) : []) {
+    if (!isPlainObject(candidate)) continue;
+    const itemId = normaliseString(candidate.itemId);
+    if (itemId === '' || seen.has(itemId)) continue;
+    if (candidate.mode !== 'DISCRETE' && candidate.mode !== 'SERIALISED') continue;
+    seen.add(itemId);
+    entries.push({
+      itemId,
+      name: normaliseString(candidate.name),
+      serialNo: normaliseNullableInteger(candidate.serialNo),
+      mode: candidate.mode,
+    });
+  }
+  return entries;
 }
 
 /**

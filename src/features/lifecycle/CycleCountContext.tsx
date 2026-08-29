@@ -25,8 +25,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { BatchIdentity } from '@/features/inventory/batches';
-import type { SerialisedPresence } from './cycle-count';
+import { DEFAULT_BATCH_KEY, batchIdentityFromKey, type BatchIdentity } from '@/features/inventory/batches';
+import { foundLineKey, usableFound, type FoundHereEntry, type SerialisedPresence } from './cycle-count';
 import { reconcilePresence, restoreCountSheet } from './count-draft';
 import { useCountDraftStore } from './useCountDraftStore';
 
@@ -62,6 +62,12 @@ export interface RestoredCount {
 interface CycleCountValue {
   /** The location being counted, or null when no session is active. */
   readonly location: { id: string; name: string } | null;
+  /**
+   * The DISCRETE count sheet: the location's own lines, then the ones the auditor added because
+   * they found the stock here (issue #640). An added line carries an expected quantity of zero,
+   * so whatever is counted against it is a surplus at this placement and the ordinary variance
+   * and reconcile path handles it with no special case downstream.
+   */
   readonly lines: readonly CycleCountSessionLine[];
   /** Raw counted-quantity input per line (blind — never pre-filled with expected). */
   readonly counts: Readonly<Record<string, string>>;
@@ -69,6 +75,14 @@ interface CycleCountValue {
   readonly serialised: readonly SerialisedSessionLine[];
   /** Per-instance present/missing flag (defaults to PRESENT until flagged). */
   readonly presence: Readonly<Record<string, SerialisedPresence>>;
+  /**
+   * SERIALISED instances the auditor found here that the records place elsewhere (issue #640).
+   * Held apart from {@link serialised} because there is nothing to audit about them — the auditor
+   * is looking at the unit — and their correction is a relocation, not a soft delete.
+   */
+  readonly foundSerialised: readonly SerialisedSessionLine[];
+  /** Every found entry, in the order they were added — what the saved sheet carries. */
+  readonly found: readonly FoundHereEntry[];
   /** Set when this location opened onto work saved earlier, so the UI can say so. */
   readonly restored: RestoredCount | null;
   readonly begin: (
@@ -78,6 +92,10 @@ interface CycleCountValue {
   ) => void;
   readonly setCount: (lineKey: string, value: string) => void;
   readonly setPresence: (itemId: string, value: SerialisedPresence) => void;
+  /** Add an item to this location's sheet because it was physically found here (issue #640). */
+  readonly addFound: (entry: FoundHereEntry) => void;
+  /** Take a found item back off the sheet — added in error, or the wrong item picked. */
+  readonly removeFound: (itemId: string) => void;
   /**
    * Empty this location's sheet — the live inputs *and* the saved copy behind them. Both the
    * auditor's "Start over" and the moment a count is authorised go through here: once the sheet
@@ -89,12 +107,20 @@ interface CycleCountValue {
 
 const CycleCountContext = createContext<CycleCountValue | null>(null);
 
+/**
+ * The lot a found DISCRETE line is counted against: the item's **untracked** batch at this
+ * placement. Derived from the canonical default key rather than restated, so it cannot drift from
+ * what {@link foundLineKey} keys the same line by.
+ */
+const FOUND_BATCH: BatchIdentity = batchIdentityFromKey(DEFAULT_BATCH_KEY);
+
 export function CycleCountProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState<{ id: string; name: string } | null>(null);
-  const [lines, setLines] = useState<readonly CycleCountSessionLine[]>([]);
+  const [loadedLines, setLoadedLines] = useState<readonly CycleCountSessionLine[]>([]);
   const [counts, setCounts] = useState<Record<string, string>>({});
-  const [serialised, setSerialised] = useState<readonly SerialisedSessionLine[]>([]);
+  const [loadedSerialised, setLoadedSerialised] = useState<readonly SerialisedSessionLine[]>([]);
   const [presence, setPresenceMap] = useState<Record<string, SerialisedPresence>>({});
+  const [found, setFound] = useState<readonly FoundHereEntry[]>([]);
   const [restored, setRestored] = useState<RestoredCount | null>(null);
 
   // Which location the sheet below currently belongs to. `begin` is re-run whenever the
@@ -119,8 +145,8 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
       serialisedLines: readonly SerialisedSessionLine[] = [],
     ) => {
       setLocation(loc);
-      setLines(sessionLines);
-      setSerialised(serialisedLines);
+      setLoadedLines(sessionLines);
+      setLoadedSerialised(serialisedLines);
 
       if (seededLocationRef.current === loc.id) {
         // Same location, fresh data: keep the auditor's counts and only reconcile the presence
@@ -139,6 +165,7 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
       );
       setCounts({ ...sheet.counts });
       setPresenceMap({ ...sheet.presence });
+      setFound(sheet.found);
       setRestored(
         sheet.restoredEntries > 0 ? { entries: sheet.restoredEntries, savedAt: sheet.savedAt } : null,
       );
@@ -156,6 +183,28 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
     setPresenceMap((prev) => ({ ...prev, [itemId]: value }));
   }, []);
 
+  const addFound = useCallback((entry: FoundHereEntry) => {
+    editedSinceSeedRef.current = true;
+    // Appended, so the sheet reads in the order it was worked: what the location was expected to
+    // hold, then what the auditor turned up. `usableFound` drops a repeat of the same item, so a
+    // second add is a no-op rather than a second line to count the same shelf twice.
+    setFound((prev) => (prev.some((e) => e.itemId === entry.itemId) ? prev : [...prev, entry]));
+  }, []);
+
+  const removeFound = useCallback((itemId: string) => {
+    editedSinceSeedRef.current = true;
+    setFound((prev) => prev.filter((entry) => entry.itemId !== itemId));
+    // The quantity typed against a removed line goes with it. Leaving it behind would resurrect
+    // the count if the same item were added again, which is the auditor's number attached to a
+    // decision they have since reversed.
+    setCounts((prev) => {
+      const key = foundLineKey({ itemId });
+      if (!(key in prev)) return prev;
+      const { [key]: _removed, ...rest } = prev;
+      return rest;
+    });
+  }, []);
+
   const clearSheet = useCallback(() => {
     const locationId = seededLocationRef.current;
     // Cleared here as well as by the mirroring effect below (which an emptied sheet would also
@@ -164,9 +213,13 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
     if (locationId) useCountDraftStore.getState().clear(locationId);
     editedSinceSeedRef.current = false;
     setCounts({});
-    setPresenceMap(reconcilePresence(serialised, {}));
+    setPresenceMap(reconcilePresence(loadedSerialised, {}));
+    // The found items go too. They are the auditor's own additions rather than the database's,
+    // so "start over" that kept them would leave the sheet holding a decision from the count
+    // being abandoned — and after an authorisation they have already been acted on.
+    setFound([]);
     setRestored(null);
-  }, [serialised]);
+  }, [loadedSerialised]);
 
   // Mirror the live sheet to the draft store. Done as an effect rather than inside the setters
   // so the write is driven by committed state (React may call an updater more than once), and
@@ -176,23 +229,82 @@ export function CycleCountProvider({ children }: { children: ReactNode }) {
     const locationId = location?.id;
     if (!locationId || seededLocationRef.current !== locationId) return;
     if (!editedSinceSeedRef.current) return; // seeding is not the auditor's work — see the ref above
-    useCountDraftStore.getState().save(locationId, counts, presence);
-  }, [location, counts, presence]);
+    useCountDraftStore.getState().save(locationId, counts, presence, found);
+  }, [location, counts, presence, found]);
+
+  // The found entries still worth showing, given what the location's own read now holds. A
+  // refetch mid-count can turn an addition into a line the database supplies itself — stock the
+  // auditor moved here from the other shelf, or another device's count landing — and the pure
+  // seam drops the duplicate rather than letting the sheet claim the same lot twice.
+  const usable = useMemo(
+    () =>
+      usableFound(
+        found,
+        new Set(loadedLines.map((line) => line.key)),
+        new Set(loadedSerialised.map((line) => line.itemId)),
+      ),
+    [found, loadedLines, loadedSerialised],
+  );
+
+  const lines = useMemo<readonly CycleCountSessionLine[]>(
+    () => [
+      ...loadedLines,
+      ...usable
+        .filter((entry) => entry.mode === 'DISCRETE')
+        .map((entry) => ({
+          key: foundLineKey(entry),
+          itemId: entry.itemId,
+          name: entry.name,
+          // Nothing is recorded here, so anything counted is a surplus at this placement and the
+          // ordinary per-batch reconcile seeds the lot. No branch downstream knows the difference.
+          expected: 0,
+          batch: FOUND_BATCH,
+        })),
+    ],
+    [loadedLines, usable],
+  );
+
+  const foundSerialised = useMemo<readonly SerialisedSessionLine[]>(
+    () =>
+      usable
+        .filter((entry) => entry.mode === 'SERIALISED')
+        .map((entry) => ({ itemId: entry.itemId, name: entry.name, serialNo: entry.serialNo })),
+    [usable],
+  );
 
   const value = useMemo<CycleCountValue>(
     () => ({
       location,
       lines,
       counts,
-      serialised,
+      serialised: loadedSerialised,
       presence,
+      foundSerialised,
+      found: usable,
       restored,
       begin,
       setCount,
       setPresence,
+      addFound,
+      removeFound,
       clearSheet,
     }),
-    [location, lines, counts, serialised, presence, restored, begin, setCount, setPresence, clearSheet],
+    [
+      location,
+      lines,
+      counts,
+      loadedSerialised,
+      presence,
+      foundSerialised,
+      usable,
+      restored,
+      begin,
+      setCount,
+      setPresence,
+      addFound,
+      removeFound,
+      clearSheet,
+    ],
   );
   return <CycleCountContext.Provider value={value}>{children}</CycleCountContext.Provider>;
 }
