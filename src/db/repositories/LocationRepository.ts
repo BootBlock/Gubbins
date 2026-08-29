@@ -16,6 +16,7 @@ import { historyStatement } from './item/history';
 import { BaseRepository } from './base';
 import { planCheckInAllForTarget } from './checkout-plan';
 import { markCountedStatement } from './location-count';
+import { withRecomputeDeferred } from './stock';
 import { locationHistoryStatement, type LocationHistoryFields } from './location-history';
 import { UNASSIGNED_LOCATION_ID, clampDeadStockDays, type LocationHistoryAction } from './constants';
 import { rowToLocation, rowToLocationHistoryEntry } from './mappers';
@@ -650,17 +651,29 @@ export class LocationRepository extends BaseRepository {
     // the grand total per item is preserved (the units just move home). The deleted
     // location's batch and placement rows are then dropped — otherwise their RESTRICT foreign
     // key would block the delete.
-    statements.push({
-      sql: `INSERT INTO stock_batches
+    //
+    // Deferred, and settled once at the end (issue #640). The re-home fills the Unassigned
+    // placement before the deleted one is dropped, so with the recompute triggers live an item's
+    // total is briefly doubled — which for a SERIALISED instance breaches
+    // `CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` and aborted the delete outright,
+    // making a location holding any serialised unit undeletable. The bracket also repairs where
+    // each serialised unit sits, which is right here: the items homed at this location were
+    // re-pointed at Unassigned a few statements above.
+    statements.push(
+      ...withRecomputeDeferred([
+        {
+          sql: `INSERT INTO stock_batches
               (id, item_id, location_id, batch_key, batch_number, lot_number, expiry_date, quantity)
             SELECT item_id || '|' || ? || '|' || batch_key, item_id, ?, batch_key,
                    batch_number, lot_number, expiry_date, quantity
             FROM stock_batches WHERE location_id = ? AND quantity > 0
             ON CONFLICT(id) DO UPDATE SET quantity = stock_batches.quantity + excluded.quantity;`,
-      params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_ID, id],
-    });
-    statements.push({ sql: 'DELETE FROM stock_batches WHERE location_id = ?;', params: [id] });
-    statements.push({ sql: 'DELETE FROM item_stock WHERE location_id = ?;', params: [id] });
+          params: [UNASSIGNED_LOCATION_ID, UNASSIGNED_LOCATION_ID, id],
+        },
+        { sql: 'DELETE FROM stock_batches WHERE location_id = ?;', params: [id] },
+        { sql: 'DELETE FROM item_stock WHERE location_id = ?;', params: [id] },
+      ]),
+    );
 
     // Clear the lend-from pointer on any checkout drawn from this location (Phase 26):
     // an open loan's returned stock will fall back to the item's primary location, and the

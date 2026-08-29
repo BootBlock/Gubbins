@@ -19,6 +19,7 @@ import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useAuditSessionStore } from '../useAuditSessionStore';
 import { useCountDraftStore } from '../useCountDraftStore';
 import { startAudit, markLocation } from '../audit-session';
+import type { LocationCycleCount } from '../useLocationCycleCount';
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -53,10 +54,32 @@ vi.mock('@/db/repositories', () => ({
   }),
 }));
 
-const authoriseCountSpy = vi.hoisted(() => vi.fn().mockResolvedValue({ discrete: [], serialised: [] }));
+const authoriseCountSpy = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ discrete: [], serialised: [], relocated: [] }),
+);
 
 vi.mock('../hooks', () => ({
   useAuthoriseCount: () => ({ mutateAsync: authoriseCountSpy, isPending: false }),
+}));
+
+// The "found something that isn't listed?" control reads the item catalogue, which this file
+// stubs the repository for — so it is replaced with two buttons that add a known find of each
+// tracking mode. Its own picker behaviour is covered in `FoundHereField.test.tsx`; what these
+// tests need is a deterministic way to put a find on the sheet (issue #640).
+const FOUND_BULK = { itemId: 'found-bulk', name: 'Loose screws', serialNo: null, mode: 'DISCRETE' } as const;
+const FOUND_UNIT = { itemId: 'found-unit', name: 'Multimeter', serialNo: 3, mode: 'SERIALISED' } as const;
+
+vi.mock('./FoundHereField', () => ({
+  FoundHereField: ({ count }: { count: LocationCycleCount }) => (
+    <div>
+      <button type="button" onClick={() => count.addFound(FOUND_BULK)}>
+        add found bulk
+      </button>
+      <button type="button" onClick={() => count.addFound(FOUND_UNIT)}>
+        add found unit
+      </button>
+    </div>
+  ),
 }));
 
 // ---------------------------------------------------------------------------
@@ -91,7 +114,7 @@ afterEach(() => {
   useAuditSessionStore.setState({ session: null });
   useCountDraftStore.setState({ drafts: {} });
   localStorage.clear();
-  authoriseCountSpy.mockResolvedValue({ discrete: [], serialised: [] });
+  authoriseCountSpy.mockResolvedValue({ discrete: [], serialised: [], relocated: [] });
 });
 
 // ---------------------------------------------------------------------------
@@ -139,6 +162,7 @@ describe('AuditDayDialog — guided walk', () => {
     authoriseCountSpy.mockImplementation(async (input: { quantityAdjustments: readonly unknown[] }) => ({
       discrete: input.quantityAdjustments.length > 0 ? [{ id: 'w1' }] : [],
       serialised: [],
+      relocated: [],
     }));
     fireEvent.change(screen.getByTestId(COUNT_TESTID), { target: { value: '8' } });
     await act(async () => {
@@ -426,5 +450,39 @@ describe('AuditDayDialog — a location finished with lines left blank', () => {
     expect(screen.getByTestId('audit-stat-partial').textContent).toBe('1');
     expect(screen.getByTestId('audit-summary-partial').textContent).toContain('Drawer A');
     expect(screen.getByTestId('audit-complete-live').textContent).toContain('1 location left part-counted');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Found here (issue #640)
+// ---------------------------------------------------------------------------
+
+describe('AuditDayDialog — recording stock found where it was not expected', () => {
+  it('carries a find into the location’s authorisation, like the standalone count does', async () => {
+    // The walk drives the same per-location engine, so this is here to prove it is *wired*, not
+    // to re-test the engine — the arithmetic and the reconcile shape are covered in
+    // `CycleCountDialog.test.tsx`.
+    renderDialog();
+    await waitFor(() => expect(screen.getByTestId('audit-start')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('audit-start'));
+    await waitForCountInput();
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'add found bulk' }));
+    });
+    fireEvent.change(await screen.findByTestId('count-found-bulk|'), { target: { value: '12' } });
+    fireEvent.change(screen.getByTestId(COUNT_TESTID), { target: { value: '10' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('audit-authorise-continue'));
+    });
+
+    expect(authoriseCountSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        quantityAdjustments: expect.arrayContaining([
+          expect.objectContaining({ itemId: 'found-bulk', counted: 12, locationId: 'locA' }),
+        ]),
+      }),
+    );
   });
 });

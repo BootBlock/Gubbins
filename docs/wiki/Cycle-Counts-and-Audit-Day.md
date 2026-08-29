@@ -31,6 +31,39 @@ under-count — and once the list gets long it scrolls inside the dialog rather 
 > Cycle count a few high-value or fast-moving locations regularly rather than the whole place
 > rarely — you catch drift sooner and it's never a big job.
 
+## Found something that isn’t listed?
+
+A count sheet lists what Gubbins *expects* to be in a location, so on its own it can only ever
+record that something is **missing**. That is the wrong half of the story for the commonest reason
+a shelf comes up short: the things are one shelf over.
+
+Every count sheet therefore has a **Found something that isn’t listed?** box at the bottom. Search
+for the item you are holding and it joins the sheet:
+
+- **Bulk stock** gets a count line expecting **0**, so whatever you enter against it is recorded as
+  a surplus here. The line is tagged **Found here** so you can tell it apart from the rest.
+- **A serialised unit** is listed under **Found here — recorded elsewhere**. Authorising the count
+  **moves** it into this location and records the move in its
+  [[history|Activity-Log]] — it was never missing, only mis-recorded.
+
+The box is there even in a location Gubbins believes is empty, which is exactly where a
+misplaced box tends to turn up.
+
+> **⚠️ Heads-up**
+> For **bulk stock**, adding an item here records what is on *this* shelf and nothing else — it
+> does not take the units off wherever they were recorded before. **Count that location too**, and
+> the shortfall you find there is the other half of the same correction. Do only one and your
+> totals will be too high; do both and they will be right. A **serialised unit** needs no second
+> visit: it is one physical thing, so moving it here is the whole correction.
+
+> **💡 Tip**
+> An added line counts towards the sheet's coverage like any other, so a location with an
+> unanswered addition is a **part-counted** one until you enter a number for it.
+
+Items that aren't counted by quantity can't be added — an
+[[untracked item|Items]] has no quantity to reconcile, and one marked as an unlimited supply is
+never short. The box says so rather than adding a line that could not be authorised.
+
 ## Your counts are kept if you stop partway
 
 Counting happens away from the desk, and you *will* be interrupted. Whatever you've typed into a

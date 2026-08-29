@@ -17,9 +17,14 @@ import {
   withAssertedCount,
 } from '../stock-batches';
 import { markCountedStatement } from '../location-count';
-import { stockRowId } from '../stock';
+import { moveWholeItemStatements, stockRowId } from '../stock';
 import type { TrackingMode } from '../constants';
-import type { Item, ReconciliationAdjustment, SerialisedReconciliation } from '../types';
+import type {
+  Item,
+  ReconciliationAdjustment,
+  SerialisedRelocation,
+  SerialisedReconciliation,
+} from '../types';
 import { historyStatement } from './history';
 import type { Constructor } from './mixin';
 import type { ItemCoreRepository } from './core';
@@ -69,6 +74,8 @@ export interface AuthorisedCount {
   readonly discrete: Item[];
   /** SERIALISED instances retired by the presence audit. */
   readonly serialised: Item[];
+  /** SERIALISED instances moved into the counted location because they were found there (#640). */
+  readonly relocated: Item[];
 }
 
 /**
@@ -300,13 +307,74 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
     }
 
     /**
+     * The read-and-decide half of a **found here** relocation (issue #640) — see
+     * {@link planReconcile}.
+     *
+     * A presence audit that can only record an absence turns every misplacement into a loss: the
+     * shelf that should hold a unit reports it missing and retires it, while the shelf that
+     * actually holds it has no line to say so. This is the other half. Each named instance is
+     * repointed at the location being counted through {@link moveWholeItemStatements} — the same
+     * builder {@link ItemCoreRepository.move} uses, so there is one definition of a wholesale move
+     * rather than two — and logged as `MOVED`, because nothing has left inventory and no quantity
+     * changed.
+     *
+     * Planned rather than executed so it commits with the rest of the count (issue #301): a count
+     * must not be able to record the absence at one shelf and then fail to record the presence at
+     * the other, which is the very failure this exists to prevent.
+     *
+     * Rejects a non-SERIALISED item, and skips an instance that is inactive or already at the
+     * location (a no-op, so a count authorised twice — or replayed on a second device after a
+     * sync — moves nothing the second time).
+     */
+    private async planFoundHere(
+      locationId: string,
+      relocations: readonly SerialisedRelocation[],
+    ): Promise<CountPlan> {
+      const statements: SqlStatement[] = [];
+      const touched: string[] = [];
+      if (relocations.length === 0) return { statements, touched };
+
+      // A relocation writes `items.location_id`, which every other item move gates on
+      // `items:write` rather than the `stock:write` the rest of a count needs. Asserted here, so
+      // a count that relocates nothing is not held to a permission it never exercises.
+      this.assertPermission('items:write');
+
+      const targets = await this.loadCountTargets(relocations.map((r) => r.itemId));
+
+      for (const adj of relocations) {
+        const existing = requireTarget(targets, adj.itemId);
+        if (existing.trackingMode !== 'SERIALISED') {
+          throw new DbError(
+            'SQLITE_CONSTRAINT',
+            `Serialised audit reconciles SERIALISED instances only (${existing.name} is ${existing.trackingMode}).`,
+          );
+        }
+        if (!existing.isActive) continue; // not in active inventory → nothing to relocate
+        if (existing.locationId === locationId) continue; // already recorded here → no-op
+        statements.push(
+          ...moveWholeItemStatements(adj.itemId, locationId),
+          historyStatement(adj.itemId, 'MOVED', this.actorId(), {
+            note: adj.note,
+            metadata: { fromLocationId: existing.locationId, toLocationId: locationId },
+          }),
+        );
+        touched.push(adj.itemId);
+      }
+
+      return { statements, touched };
+    }
+
+    /**
      * Authorise a whole per-location count in **one transaction** (issue #301).
      *
-     * A count is one user action but three writes — the discrete reconciliation, the serialised
-     * presence audit, and stamping the location as counted. Running them as three awaited calls
-     * meant a failure at the second left stock adjusted, presence unreconciled and the location
-     * never stamped, with nothing to say which half applied. Planning all three up front and
-     * committing them together makes the authorisation all-or-nothing.
+     * A count is one user action but several writes — the discrete reconciliation, the serialised
+     * presence audit, any **found here** relocations (issue #640), and stamping the location as
+     * counted. Running them as separate awaited calls meant a failure at the second left stock
+     * adjusted, presence unreconciled and the location never stamped, with nothing to say which
+     * half applied. Planning them all up front and committing them together makes the
+     * authorisation all-or-nothing — which matters most for the relocations, since the shelf a
+     * unit was found on and the shelf it was recorded on are corrected by different halves of the
+     * same count.
      *
      * The location is stamped even when nothing drifted: a clean count is still a completed
      * audit, and that durable timestamp is what the audit-day picker and `LocationInfoCard`
@@ -328,6 +396,8 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       readonly locationId: string;
       readonly quantityAdjustments: readonly ReconciliationAdjustment[];
       readonly serialisedAdjustments: readonly SerialisedReconciliation[];
+      /** SERIALISED instances found in this location that the records place elsewhere (#640). */
+      readonly relocations?: readonly SerialisedRelocation[];
       readonly countedAt?: number;
       /**
        * Stamp the location as counted (default `true`). Pass `false` for a count that did
@@ -339,6 +409,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       this.assertWritable();
       const discrete = await this.planReconcile(input.quantityAdjustments);
       const serialised = await this.planReconcileSerialised(input.serialisedAdjustments);
+      const relocated = await this.planFoundHere(input.locationId, input.relocations ?? []);
       const isSystem = Boolean(
         (
           await this.driver.queryOne<{ is_system: number }>('SELECT is_system FROM locations WHERE id = ?;', [
@@ -349,6 +420,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       await runStockDraw(this.driver, [
         ...discrete.statements,
         ...serialised.statements,
+        ...relocated.statements,
         ...(isSystem || input.markCounted === false
           ? []
           : [markCountedStatement(input.locationId, input.countedAt ?? Date.now())]),
@@ -356,6 +428,7 @@ export function withCycleCount<TBase extends Constructor<ItemCoreRepository>>(Ba
       return {
         discrete: await this.loadTouched(discrete.touched),
         serialised: await this.loadTouched(serialised.touched),
+        relocated: await this.loadTouched(relocated.touched),
       };
     }
 

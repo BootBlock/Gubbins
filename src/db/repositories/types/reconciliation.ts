@@ -56,6 +56,26 @@ export interface SerialisedReconciliation {
 }
 
 /**
+ * One serialised instance the auditor **found** in the location being counted, which the
+ * database places somewhere else (issue #640).
+ *
+ * The counterpart to {@link SerialisedReconciliation}, and deliberately a separate input rather
+ * than a flag on it: a missing instance is reconciled by retiring it from active inventory, while
+ * a found one has not left inventory at all — it is simply somewhere the records do not say. Its
+ * correction is therefore a **relocation** (a `MOVED` ledger entry), not a quantity change, and
+ * it travels in the same transaction as the rest of the count so a shelf cannot end up having
+ * recorded the absence without the presence.
+ *
+ * Like {@link SerialisedReconciliation}, the ledger note is composed upstream, where the
+ * location's name and the instance's ordinal are already in hand.
+ */
+export interface SerialisedRelocation {
+  readonly itemId: string;
+  /** The §4.4 ledger note (built upstream from the location + serial number). */
+  readonly note: string;
+}
+
+/**
  * The resolved writes of an external-scrape merge (spec §4, §9). Only the fields
  * the merge engine decided to apply are present — the §4 no-overwrite decision
  * happens upstream in the pure merge engine — plus any supplier MPNs to map in as

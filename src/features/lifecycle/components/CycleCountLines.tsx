@@ -1,9 +1,10 @@
 /**
  * The shared count sheet for one location (spec §4.4): the blind DISCRETE count inputs
- * (each with a live variance chip) and the SERIALISED presence toggles. Extracted from
- * {@link CycleCountDialog} so the standalone dialog and the guided audit-day stepper
- * render the identical sheet — the only thing that differs between the two is the footer
- * (Close/Authorise vs Skip/Authorise-&-continue), which each caller owns.
+ * (each with a live variance chip), the SERIALISED presence toggles, and the control that adds
+ * an item the auditor found here but the database does not place here (issue #640 — see
+ * {@link FoundHereField}). Extracted from {@link CycleCountDialog} so the standalone dialog and the
+ * guided audit-day stepper render the identical sheet — the only thing that differs between the
+ * two is the footer (Close/Authorise vs Skip/Authorise-&-continue), which each caller owns.
  *
  * Purely presentational: all state (counts, presence) is threaded in from
  * {@link useLocationCycleCount}; this component holds none of its own.
@@ -25,9 +26,11 @@
 import { memo, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button, Input, Tooltip } from '@/components/foundry';
-import { serialisedLabel, type SerialisedPresence } from '../cycle-count';
+import { CloseIcon } from '@/components/icons';
+import { foundLineKey, serialisedLabel, type SerialisedPresence } from '../cycle-count';
 import type { CycleCountSessionLine, SerialisedSessionLine } from '../CycleCountContext';
 import type { LocationCycleCount } from '../useLocationCycleCount';
+import { FoundHereField } from './FoundHereField';
 
 /**
  * How many rows a sheet may hold before it is windowed rather than rendered whole. Well above
@@ -53,7 +56,11 @@ const SHEET_MAX_HEIGHT = 'max-h-[22rem]';
 const ROW_CLASSES = 'flex items-center gap-3 rounded-lg bg-secondary/30 px-3 py-2';
 
 export function CycleCountLines({ count }: { count: LocationCycleCount }) {
-  const { lines, counts, setCount, serialised, presence, setPresence } = count;
+  const { lines, counts, setCount, serialised, presence, setPresence, foundSerialised, removeFound } = count;
+  // Which line keys the auditor added themselves, so the row can say so. Derived from `found`
+  // rather than tracked separately, because `found` is what the provider prunes when a refetch
+  // turns an addition into a line the database supplies itself.
+  const foundKeys = new Set(count.found.filter((e) => e.mode === 'DISCRETE').map(foundLineKey));
   return (
     <>
       {lines.length > 0 && (
@@ -63,7 +70,15 @@ export function CycleCountLines({ count }: { count: LocationCycleCount }) {
           rowHeight={COUNT_ROW_HEIGHT}
           testId="cycle-count-lines"
         >
-          {(line) => <CountRow line={line} value={counts[line.key] ?? ''} setCount={setCount} />}
+          {(line) => (
+            <CountRow
+              line={line}
+              value={counts[line.key] ?? ''}
+              setCount={setCount}
+              found={foundKeys.has(line.key)}
+              removeFound={removeFound}
+            />
+          )}
         </Sheet>
       )}
 
@@ -84,7 +99,73 @@ export function CycleCountLines({ count }: { count: LocationCycleCount }) {
           </Sheet>
         </div>
       )}
+
+      {foundSerialised.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Found here — recorded elsewhere
+          </p>
+          <ul className="space-y-1.5" data-testid="found-serialised-lines">
+            {foundSerialised.map((line) => (
+              <li key={line.itemId}>
+                <FoundInstanceRow line={line} removeFound={removeFound} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <FoundHereField count={count} />
     </>
+  );
+}
+
+/** One serialised instance the auditor found here. Removable; no present/missing to judge. */
+function FoundInstanceRow({
+  line,
+  removeFound,
+}: {
+  line: SerialisedSessionLine;
+  removeFound: LocationCycleCount['removeFound'];
+}) {
+  return (
+    <div className={ROW_CLASSES}>
+      <span className="flex-1 text-sm font-medium">{serialisedLabel(line)}</span>
+      {/*
+        Keyboard-reachable on purpose: the trigger is a plain label rather than a control, so it is
+        the tooltip's *own* tab stop that carries the explanation of what authorising will do to
+        this unit. `triggerTabIndex={-1}` belongs on a trigger wrapping something already
+        focusable — the remove button beside it — not here.
+      */}
+      <Tooltip content="Authorising this count **moves** this unit into the location you are counting, and records the move in its history.">
+        <span className="text-xs font-semibold text-warning">Move here</span>
+      </Tooltip>
+      <RemoveFoundButton itemId={line.itemId} label={serialisedLabel(line)} removeFound={removeFound} />
+    </div>
+  );
+}
+
+/** Take a found item back off the sheet. Icon-only, so it carries its own accessible name. */
+function RemoveFoundButton({
+  itemId,
+  label,
+  removeFound,
+}: {
+  itemId: string;
+  label: string;
+  removeFound: LocationCycleCount['removeFound'];
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      className="size-7 shrink-0 p-0"
+      onClick={() => removeFound(itemId)}
+      aria-label={`Remove ${label} from this count`}
+      data-testid={`remove-found-${itemId}`}
+    >
+      <CloseIcon className="size-4" aria-hidden />
+    </Button>
   );
 }
 
@@ -172,16 +253,31 @@ const CountRow = memo(function CountRow({
   line,
   value,
   setCount,
+  found,
+  removeFound,
 }: {
   line: CycleCountSessionLine;
   value: string;
   setCount: LocationCycleCount['setCount'];
+  /** This line was added by the auditor, not by the location's own stock (issue #640). */
+  found: boolean;
+  removeFound: LocationCycleCount['removeFound'];
 }) {
   const counted = value.trim().length ? Number(value) : null;
   const variance = counted !== null ? counted - line.expected : null;
   return (
     <div className={ROW_CLASSES}>
-      <span className="flex-1 text-sm font-medium">{line.name}</span>
+      <span className="flex-1 text-sm font-medium">
+        {line.name}
+        {found ? (
+          /* Says why this line is here at all, since the sheet is otherwise everything the
+             database expects and an unexplained extra row reads as a bug. The expected quantity
+             stays hidden either way — the count is still blind. */
+          <span className="ml-2 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-normal text-warning">
+            Found here
+          </span>
+        ) : null}
+      </span>
       <Input
         type="number"
         min={0}
@@ -204,6 +300,7 @@ const CountRow = memo(function CountRow({
       >
         {variance === null ? '—' : variance === 0 ? 'OK' : `${variance > 0 ? '+' : ''}${variance}`}
       </span>
+      {found ? <RemoveFoundButton itemId={line.itemId} label={line.name} removeFound={removeFound} /> : null}
     </div>
   );
 });

@@ -84,6 +84,22 @@ describe('ItemRepository — per-location stock ledger (Phase 25)', () => {
     expect(placements).toEqual([{ locationId: c.id, locationName: 'C', quantity: 10 }]);
   });
 
+  it('moves a serialised instance, whose quantity may never leave 1 on the way (issue #640)', async () => {
+    // `items.quantity` is SUM(item_stock), and emptying one placement and filling another is
+    // necessarily two writes — so a per-statement recompute walks the total through 2 or 0, and
+    // `CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` aborts the whole move. Before the
+    // recompute was deferred over the pair, relocating a serialised unit failed outright.
+    const a = await locations.create({ name: 'A' });
+    const b = await locations.create({ name: 'B' });
+    const [meter] = await items.createSerialised({ name: 'Multimeter', count: 1, locationId: a.id });
+
+    const moved = await items.move(meter.id, b.id);
+
+    expect(moved.locationId).toBe(b.id);
+    expect(moved.quantity).toBe(1);
+    expect(await items.listStock(meter.id)).toEqual([{ locationId: b.id, locationName: 'B', quantity: 1 }]);
+  });
+
   it('refuses to split a non-DISCRETE item', async () => {
     const a = await locations.create({ name: 'A' });
     const b = await locations.create({ name: 'B' });

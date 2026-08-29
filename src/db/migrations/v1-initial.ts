@@ -1564,9 +1564,9 @@ const baselineStatements: SqlStatement[] = [
     // ledger being rebuilt one row at a time; every intermediate step differs from the settled
     // value, so the recompute writes `items.quantity` without touching `updated_at` — which is
     // precisely the condition {@link updatedAtTrigger} watches for, and it re-stamps a row nobody
-    // edited. `withRecomputeDeferred` (`features/sync/snapshot.ts`) turns it off around a restore
-    // or clone and settles the projection once at the end, so a snapshot restores byte-identical
-    // and an inconsistent one is still repaired.
+    // edited. `withRecomputeDeferred` (`db/repositories/stock.ts`) turns it off around a restore,
+    // a clone or a whole-item move and settles the projection once at the end, so a snapshot
+    // restores byte-identical and an inconsistent one is still repaired.
     sql: `
         CREATE TABLE stock_delta_capture (
           id            INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),

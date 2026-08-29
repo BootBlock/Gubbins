@@ -19,6 +19,11 @@ import {
   serialisedLabel,
   missingInstances,
   serialisedAuditNote,
+  serialisedFoundNote,
+  countLineKey,
+  foundLineKey,
+  usableFound,
+  type FoundHereEntry,
   type SerialisedAuditLine,
   type SerialisedPresence,
 } from './cycle-count';
@@ -390,6 +395,52 @@ describe('serialised audit (§4.4)', () => {
   it('composes a serialised-audit ledger note', () => {
     expect(serialisedAuditNote(lines[1], 'Drawer A2')).toBe(
       'Serialised audit of Drawer A2: Multimeter #2 not found — marked missing.',
+    );
+  });
+});
+
+describe('found here — recording a presence, not only an absence (issue #640)', () => {
+  const bulk: FoundHereEntry = { itemId: 'a', name: 'Loose screws', serialNo: null, mode: 'DISCRETE' };
+  const unit: FoundHereEntry = { itemId: 'b', name: 'Multimeter', serialNo: 3, mode: 'SERIALISED' };
+
+  it('keys a found line by the item’s untracked lot, exactly as the sheet keys its own lines', () => {
+    // The claim the whole seam rests on: a found line and the database's line for the same
+    // untracked lot are the *same* key, so they can collide rather than double up.
+    expect(foundLineKey(bulk)).toBe(countLineKey('a', ''));
+  });
+
+  it('keeps a found item the location’s own sheet does not already list', () => {
+    expect(usableFound([bulk, unit], new Set(), new Set())).toEqual([bulk, unit]);
+  });
+
+  it('drops a found lot the database has since started recording here', () => {
+    // The audit itself makes stock move. An addition that the location's own read now supplies
+    // must not become a second expected-zero line beside it, or the sheet counts the shelf twice.
+    expect(usableFound([bulk, unit], new Set([countLineKey('a', '')]), new Set())).toEqual([unit]);
+  });
+
+  it('drops a found instance that is now recorded at this location', () => {
+    expect(usableFound([bulk, unit], new Set(), new Set(['b']))).toEqual([bulk]);
+  });
+
+  it('leaves a found lot alone when the item is only here under a numbered batch', () => {
+    // Unlabelled stock of an item whose tracked lot is also in this drawer is a genuine find,
+    // not a duplicate — the two are different lots and reconcile at different rows.
+    expect(usableFound([bulk], new Set([countLineKey('a', 'LOT-7')]), new Set())).toEqual([bulk]);
+  });
+
+  it('collapses the same item added twice into one find', () => {
+    expect(usableFound([bulk, { ...bulk, name: 'Screws (again)' }], new Set(), new Set())).toEqual([bulk]);
+  });
+
+  it('composes a ledger note that says the unit moved rather than that it went missing', () => {
+    expect(serialisedFoundNote({ itemId: 'b', name: 'Multimeter', serialNo: 3 }, 'Drawer B')).toBe(
+      'Serialised audit of Drawer B: Multimeter #3 found here — moved from its recorded location.',
+    );
+    // The two notes must not be mistakable for one another in the ledger: one retires a unit, the
+    // other relocates it.
+    expect(serialisedFoundNote({ itemId: 'b', name: 'Multimeter', serialNo: 3 }, 'Drawer B')).not.toBe(
+      serialisedAuditNote({ itemId: 'b', name: 'Multimeter', serialNo: 3 }, 'Drawer B'),
     );
   });
 });

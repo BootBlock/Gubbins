@@ -54,7 +54,7 @@ function CycleCountBody({
   onClose: () => void;
 }) {
   const count = useLocationCycleCount(location);
-  const { isLoading, isEmpty, drift, missing, totalToApply, coverage, pending, restored, clearSheet } = count;
+  const { isLoading, isEmpty, missing, totalToApply, coverage, pending, restored, clearSheet } = count;
   const [applied, setApplied] = useState<number | null>(null);
   // The coverage the finished count actually achieved, captured at authorisation. `coverage`
   // itself is reset by the `clearSheet()` inside `authorise()`, so the result view has to read
@@ -168,6 +168,13 @@ function CycleCountBody({
         ) : isEmpty ? (
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">No countable items in this location to audit.</p>
+            {/*
+              The sheet is rendered even with nothing on it, because it carries the "found
+              something that isn't listed?" control (issue #640) — and a location the database
+              believes is empty is exactly where misplaced stock turns up. Adding an item here
+              makes the location non-empty, so the ordinary counting branch takes over.
+            */}
+            <CycleCountLines count={count} />
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={onClose} disabled={pending}>
                 Close
@@ -200,8 +207,13 @@ function CycleCountBody({
                     {coverageSummary(coverage)}
                   </span>
                 ) : null}
-                {drift.length + missing.length} {plural(drift.length + missing.length, 'adjustment')} to
-                authorise
+                {/*
+                  `totalToApply`, not a tally of its own: the button beside this line and the
+                  result message after it both read that value, and a footer counting only drift
+                  and missing instances said "0 adjustments to authorise" next to a button
+                  offering "Authorise (1)" as soon as a serialised unit was found here (#640).
+                */}
+                {totalToApply} {plural(totalToApply, 'adjustment')} to authorise
                 {missing.length > 0 ? ` (${missing.length} missing)` : ''}
               </p>
               <div className="flex gap-2">

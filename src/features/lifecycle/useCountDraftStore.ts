@@ -21,7 +21,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { adoptUnversioned } from '@/lib/persisted-state';
-import type { SerialisedPresence } from './cycle-count';
+import type { FoundHereEntry, SerialisedPresence } from './cycle-count';
 import {
   capCountDrafts,
   draftFrom,
@@ -43,6 +43,7 @@ interface CountDraftStore {
     locationId: string,
     counts: Readonly<Record<string, string>>,
     presence: Readonly<Record<string, SerialisedPresence>>,
+    found: readonly FoundHereEntry[],
   ) => void;
 
   /** Drop a location's sheet — it has been authorised, skipped, or explicitly started over. */
@@ -65,9 +66,9 @@ export const useCountDraftStore = create<CountDraftStore>()(
     (set) => ({
       drafts: {},
 
-      save: (locationId, counts, presence) =>
+      save: (locationId, counts, presence, found) =>
         set((state) => {
-          const next = draftFrom(counts, presence, Date.now());
+          const next = draftFrom(counts, presence, found, Date.now());
           if (sameCountDraft(next, state.drafts[locationId] ?? null)) return state;
           if (!next) return { drafts: without(state.drafts, new Set([locationId])) };
           return { drafts: capCountDrafts({ ...state.drafts, [locationId]: next }) };

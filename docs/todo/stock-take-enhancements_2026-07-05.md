@@ -1,6 +1,6 @@
 # Stock-take (audit day) enhancements — backlog (living plan)
 
-> **Status:** 🟢 ACTIVE — open backlog; G1 shipped, F1 next.
+> **Status:** 🟢 ACTIVE — open backlog; G1 and K1 shipped, F1 next.
 
 A grouped backlog of cycle-count / stock-take enhancements, to be implemented **one task at a
 time** in separate sessions. Each task has a stable ID (`F1`, `F2`, …) so a session can be kicked
@@ -19,7 +19,9 @@ are deliberately excluded; see "Explicitly out of scope" at the bottom.
 and the guided `AuditDayDialog` stepper. Blind count today: DISCRETE lines get a typed quantity
 with a live variance chip; SERIALISED instances get a binary Present/Missing toggle.
 Reconciliation writes one `ReconciliationAdjustment` per drifted batch line and a reversible
-soft-delete per missing instance. The audit-day walk (scope picker → stepper → summary) is
+soft-delete per missing instance. Since **K1** the sheet is no longer only what the database
+expects: the auditor can add an item they found in the location, which joins the sheet as an
+expected-zero count line (DISCRETE) or as a relocation (SERIALISED). The audit-day walk (scope picker → stepper → summary) is
 resumable via the persisted `useAuditSessionStore`, but that store — and the whole audit
 outcome — is discarded once the walk is abandoned/done; nothing survives into a durable history.
 See `[[cycle-count-and-audit-day]]` memory for the full architecture map.
@@ -81,6 +83,34 @@ token-based Tailwind utilities actually emit.
   Depends on whatever loan/checkout/booking concept currently exists for serialised items (see
   `[[cycle-count-and-audit-day]]` and the bookings feature) — confirm the mapping before building.
 
+## K. Recording a presence, not only an absence
+
+- **K1 — Add an item to a count that the location does not hold. ✅ Done** (issue #640).
+  The sheet was built purely from what the database expects in the location, so a count could
+  record that something was *missing* but never that it was *here* — and the dominant real-world
+  cause of a shortfall in a home inventory is that the units are one shelf over. The audit then
+  wrote them off. `FoundHereField` (an `ItemPicker` on the shared sheet, in both dialogs and in the
+  "nothing to count here" state) adds a **found** entry, carried in `CycleCountProvider` and
+  mirrored into the saved sheet like any other work. A DISCRETE find becomes a count line with
+  `expected: 0`, so the existing per-batch reconcile seeds the placement as a surplus; a SERIALISED
+  find becomes a `SerialisedRelocation`, applied in the same transaction as the rest of the count.
+  Deliberately **not** a transfer: the auditor is at one shelf and can only report what is on it,
+  so counting the location the units left is what removes them from there.
+  - Side-effect worth knowing: **no** path could relocate a SERIALISED instance at all.
+    `CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` tripped on the intermediate total,
+    since emptying one placement and filling another is necessarily two writes and `items.quantity`
+    is a trigger-derived `SUM(item_stock)`. That aborted `ItemRepository.move()`, a project
+    assembly's whole-item draw of a serialised part, and deleting any location holding a serialised
+    unit. All three now go through `moveWholeItemStatements` / `withRecomputeDeferred`, which write
+    the total once at the value it ends on.
+  - Making relocation possible needed an invariant it had been getting for free: a serialised
+    instance sits at exactly one placement. Two devices can each find the same unit on a different
+    shelf, and the merge unions the placement rows — which summed to two and aborted every
+    subsequent merge until the database was hand-edited. `serialisedPlacementRepairStatements`
+    (in the settle pass, so it covers merge, restore and move alike) settles the unit at the
+    location `items.location_id` names, that column already converging by last-write-wins.
+    Regression coverage: `src/db/repositories/serialised-placement.test.ts`.
+
 ## J. Scheduling & habit-forming
 
 - **J1 — Recurring stock-take reminders.** "Audit the garage every 90 days" — a per-location (or
@@ -93,8 +123,9 @@ token-based Tailwind utilities actually emit.
 
 ## Suggested starting points
 
-G1 shipped 2026-07-05. Next up: **F1** (barcode scan-to-count — biggest single UX win), then
-**H1** (variance tolerance/recount).
+G1 shipped 2026-07-05; K1 shipped 2026-08-29. Next up: **F1** (barcode scan-to-count — biggest
+single UX win, and the natural home for "scanned something that isn't on the sheet", which K1 now
+has a defined answer for), then **H1** (variance tolerance/recount).
 
 ## Explicitly out of scope (enterprise-only, doesn't fit a home-inventory app)
 

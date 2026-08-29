@@ -18,6 +18,7 @@ import {
   type LowStockThresholds,
   type ReconciliationAdjustment,
   type SerialisedReconciliation,
+  type SerialisedRelocation,
 } from '@/db/repositories';
 import { agendaKeys } from '@/features/calendar/keys';
 import { useReportWriteFailure } from '@/features/errors';
@@ -337,6 +338,8 @@ export function useAuthoriseCount() {
       locationId: string;
       quantityAdjustments: readonly ReconciliationAdjustment[];
       serialisedAdjustments: readonly SerialisedReconciliation[];
+      /** Serialised instances found here that the records place elsewhere (issue #640). */
+      relocations?: readonly SerialisedRelocation[];
       /** False for a sheet with lines left blank — applies the adjustments, omits the stamp. */
       markCounted?: boolean;
     }) => getItemRepository().authoriseCount(input),
@@ -345,7 +348,10 @@ export function useAuthoriseCount() {
     onSettled: (result) => {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
-      [...(result?.discrete ?? []), ...(result?.serialised ?? [])].forEach(
+      // Relocated instances are named here too (issue #640): the move writes a `MOVED` entry on
+      // the item's own ledger, and the two locations either side of it both changed what they
+      // hold — none of which the item-level sweep above would refresh on its own.
+      [...(result?.discrete ?? []), ...(result?.serialised ?? []), ...(result?.relocated ?? [])].forEach(
         (item) => void client.invalidateQueries({ queryKey: inventoryKeys.itemHistory(item.id) }),
       );
     },

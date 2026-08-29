@@ -17,7 +17,7 @@ import {
   sameCountDraft,
   type CountDraft,
 } from './count-draft';
-import type { SerialisedPresence } from './cycle-count';
+import type { FoundHereEntry, SerialisedPresence } from './cycle-count';
 
 const AT = 1_700_000_000_000;
 
@@ -28,47 +28,47 @@ const instance = (itemId: string) => ({ itemId });
 
 describe('draftFrom — what is worth saving', () => {
   it('keeps only entered counts, dropping blank and whitespace-only inputs', () => {
-    const draft = draftFrom({ a: '4', b: '', c: '   ', d: '0' }, {}, AT);
-    expect(draft).toEqual({ counts: { a: '4', d: '0' }, missing: [], savedAt: AT });
+    const draft = draftFrom({ a: '4', b: '', c: '   ', d: '0' }, {}, [], AT);
+    expect(draft).toEqual({ counts: { a: '4', d: '0' }, missing: [], found: [], savedAt: AT });
   });
 
   it('stores only instances flagged MISSING — PRESENT is the default, not a decision', () => {
     const presence: Record<string, SerialisedPresence> = { i1: 'PRESENT', i2: 'MISSING', i3: 'PRESENT' };
-    expect(draftFrom({}, presence, AT)?.missing).toEqual(['i2']);
+    expect(draftFrom({}, presence, [], AT)?.missing).toEqual(['i2']);
   });
 
   it('sorts the missing ids, so the same work compares equal whatever order it was flagged in', () => {
-    const first = draftFrom({}, { z: 'MISSING', a: 'MISSING' }, AT);
-    const second = draftFrom({}, { a: 'MISSING', z: 'MISSING' }, AT);
+    const first = draftFrom({}, { z: 'MISSING', a: 'MISSING' }, [], AT);
+    const second = draftFrom({}, { a: 'MISSING', z: 'MISSING' }, [], AT);
     expect(first?.missing).toEqual(['a', 'z']);
     expect(sameCountDraft(first, second)).toBe(true);
   });
 
   it('is null when nothing has been entered — an untouched sheet is not progress', () => {
-    expect(draftFrom({}, {}, AT)).toBeNull();
-    expect(draftFrom({ a: '', b: ' ' }, { i1: 'PRESENT' }, AT)).toBeNull();
+    expect(draftFrom({}, {}, [], AT)).toBeNull();
+    expect(draftFrom({ a: '', b: ' ' }, { i1: 'PRESENT' }, [], AT)).toBeNull();
   });
 
   it('treats a count of "0" as real work (counting nothing on the shelf is a finding)', () => {
-    expect(draftFrom({ a: '0' }, {}, AT)).not.toBeNull();
+    expect(draftFrom({ a: '0' }, {}, [], AT)).not.toBeNull();
   });
 });
 
 describe('sameCountDraft — the no-op guard', () => {
-  const base = draftFrom({ a: '4' }, { i1: 'MISSING' }, AT);
+  const base = draftFrom({ a: '4' }, { i1: 'MISSING' }, [], AT);
 
   it('ignores savedAt, so a re-save of unchanged work does not bump the age', () => {
-    expect(sameCountDraft(base, draftFrom({ a: '4' }, { i1: 'MISSING' }, AT + 60_000))).toBe(true);
+    expect(sameCountDraft(base, draftFrom({ a: '4' }, { i1: 'MISSING' }, [], AT + 60_000))).toBe(true);
   });
 
   it('spots a changed, added or removed count', () => {
-    expect(sameCountDraft(base, draftFrom({ a: '5' }, { i1: 'MISSING' }, AT))).toBe(false);
-    expect(sameCountDraft(base, draftFrom({ a: '4', b: '1' }, { i1: 'MISSING' }, AT))).toBe(false);
-    expect(sameCountDraft(base, draftFrom({}, { i1: 'MISSING' }, AT))).toBe(false);
+    expect(sameCountDraft(base, draftFrom({ a: '5' }, { i1: 'MISSING' }, [], AT))).toBe(false);
+    expect(sameCountDraft(base, draftFrom({ a: '4', b: '1' }, { i1: 'MISSING' }, [], AT))).toBe(false);
+    expect(sameCountDraft(base, draftFrom({}, { i1: 'MISSING' }, [], AT))).toBe(false);
   });
 
   it('spots a changed presence flag', () => {
-    expect(sameCountDraft(base, draftFrom({ a: '4' }, { i1: 'PRESENT' }, AT))).toBe(false);
+    expect(sameCountDraft(base, draftFrom({ a: '4' }, { i1: 'PRESENT' }, [], AT))).toBe(false);
   });
 
   it('compares null (nothing to save) correctly against a real draft', () => {
@@ -79,7 +79,7 @@ describe('sameCountDraft — the no-op guard', () => {
 });
 
 describe('restoreCountSheet — opening a location onto saved work', () => {
-  const draft: CountDraft = { counts: { 'w1|default': '8' }, missing: ['s1'], savedAt: AT };
+  const draft: CountDraft = { counts: { 'w1|default': '8' }, missing: ['s1'], found: [], savedAt: AT };
 
   it('hands back the counts and missing flags that still have a line to sit on', () => {
     const sheet = restoreCountSheet(draft, [line('w1|default')], [instance('s1'), instance('s2')]);
@@ -136,7 +136,10 @@ describe('capCountDrafts — bounding a store written on every keystroke', () =>
   /** `count` drafts, oldest first, keyed `loc0…locN`. */
   const many = (count: number): Record<string, CountDraft> =>
     Object.fromEntries(
-      Array.from({ length: count }, (_, i) => [`loc${i}`, { counts: { a: '1' }, missing: [], savedAt: i }]),
+      Array.from({ length: count }, (_, i) => [
+        `loc${i}`,
+        { counts: { a: '1' }, missing: [], found: [], savedAt: i },
+      ]),
     );
 
   it('leaves a map at or under the cap untouched (same object, no needless rewrite)', () => {
@@ -157,15 +160,83 @@ describe('capCountDrafts — bounding a store written on every keystroke', () =>
   it('sorts a draft with no usable stamp as the oldest', () => {
     const drafts: Record<string, CountDraft> = {
       ...many(MAX_COUNT_DRAFTS),
-      undated: { counts: { a: '1' }, missing: [], savedAt: null },
+      undated: { counts: { a: '1' }, missing: [], found: [], savedAt: null },
     };
     expect(capCountDrafts(drafts).undated).toBeUndefined();
   });
 });
 
+describe('found-here entries survive a paused count (issue #640)', () => {
+  const bulk: FoundHereEntry = { itemId: 'a', name: 'Loose screws', serialNo: null, mode: 'DISCRETE' };
+  const unit: FoundHereEntry = { itemId: 'b', name: 'Multimeter', serialNo: 3, mode: 'SERIALISED' };
+
+  it('saves a find even when nothing has been typed yet — noticing it IS the work', () => {
+    expect(draftFrom({}, {}, [bulk], AT)).toEqual({ counts: {}, missing: [], found: [bulk], savedAt: AT });
+  });
+
+  it('hands back the find and the quantity typed against its line', () => {
+    // The line a find creates is one the location's own read will never produce, so restoring
+    // has to keep both halves or the quantity is thrown away with nothing left to say why.
+    const draft = draftFrom({ 'a|': '12' }, {}, [bulk], AT)!;
+    const sheet = restoreCountSheet(draft, [line('w1|')], []);
+    expect(sheet.found).toEqual([bulk]);
+    expect(sheet.counts).toEqual({ 'a|': '12' });
+    // One row on the sheet, so one restored entry — the find and the quantity typed against it
+    // are not two pieces of work to report back.
+    expect(sheet.restoredEntries).toBe(1);
+  });
+
+  it('drops a find the database now supplies itself, but keeps what was counted', () => {
+    const draft = draftFrom({ 'a|': '12' }, {}, [bulk], AT)!;
+    const sheet = restoreCountSheet(draft, [line('a|')], []);
+    expect(sheet.found).toEqual([]);
+    // The addition is redundant once the database lists that lot itself, but the quantity is not:
+    // twelve is what the auditor counted on that shelf, and the line now asking the question is
+    // the same lot at the same placement. Dropping it would send them back to recount.
+    expect(sheet.counts).toEqual({ 'a|': '12' });
+  });
+
+  it('drops a found instance the records now place here', () => {
+    const draft = draftFrom({}, {}, [unit], AT)!;
+    expect(restoreCountSheet(draft, [], [instance('b')]).found).toEqual([]);
+  });
+
+  it('tells two sheets apart by what was found on them', () => {
+    const base = draftFrom({}, {}, [bulk], AT);
+    expect(sameCountDraft(base, draftFrom({}, {}, [bulk], AT + 60_000))).toBe(true);
+    expect(sameCountDraft(base, draftFrom({}, {}, [bulk, unit], AT))).toBe(false);
+    expect(sameCountDraft(base, draftFrom({}, {}, [unit], AT))).toBe(false);
+  });
+});
+
 describe('normaliseCountDrafts — untrusted rehydrated JSON', () => {
+  it('supplies an empty found list for a sheet stored before finds existed (issue #640)', () => {
+    const stored = { locA: { counts: { 'w1|default': '8' }, missing: [], savedAt: AT } };
+    expect(normaliseCountDrafts(stored).locA?.found).toEqual([]);
+  });
+
+  it('drops a stored find that has lost the tracking mode telling us what to do with it', () => {
+    const stored = {
+      locA: {
+        counts: {},
+        missing: [],
+        found: [
+          { itemId: 'a', name: 'Screws', serialNo: null, mode: 'DISCRETE' },
+          { itemId: 'b', name: 'Mystery', serialNo: null }, // no mode — nothing can act on it
+          { itemId: 'c', name: 'Gauge', serialNo: null, mode: 'CONSUMABLE_GAUGE' }, // not countable
+          { itemId: '', name: 'Nameless', serialNo: null, mode: 'DISCRETE' },
+          { itemId: 'a', name: 'Screws again', serialNo: null, mode: 'DISCRETE' }, // duplicate
+        ],
+        savedAt: AT,
+      },
+    };
+    expect(normaliseCountDrafts(stored).locA?.found).toEqual([
+      { itemId: 'a', name: 'Screws', serialNo: null, mode: 'DISCRETE' },
+    ]);
+  });
+
   it('reads a well-formed map back verbatim', () => {
-    const stored = { locA: { counts: { 'w1|default': '8' }, missing: ['s1'], savedAt: AT } };
+    const stored = { locA: { counts: { 'w1|default': '8' }, missing: ['s1'], found: [], savedAt: AT } };
     expect(normaliseCountDrafts(stored)).toEqual(stored);
   });
 

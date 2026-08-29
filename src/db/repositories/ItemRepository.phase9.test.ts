@@ -231,7 +231,7 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
         quantityAdjustments: [],
         serialisedAdjustments: [],
       });
-      expect(result).toEqual({ discrete: [], serialised: [] });
+      expect(result).toEqual({ discrete: [], serialised: [], relocated: [] });
       expect((await locations.getById(drawer.id))?.lastCountedAt).not.toBeNull();
     });
 
@@ -296,6 +296,92 @@ describe('ItemRepository — Phase 9 (perishables, condition, variants, reconcil
         markCounted: false,
       });
       expect((await locations.getById(drawer.id))?.lastCountedAt).toBe(1_000);
+    });
+
+    it('seeds a lot the placement has never held, so a surplus found here can be recorded', async () => {
+      // The DISCRETE half of "found here" (issue #640). Nothing of this item is recorded in the
+      // drawer, so the count sheet cannot list it — the auditor adds it with an expected
+      // quantity of 0, and the count has to create the placement rather than fail on a row that
+      // does not exist. Without this, a shortfall caused by misplacement could only ever be
+      // written off at the shelf that lost the units.
+      const shelf = await locations.create({ name: 'Shelf 1' });
+      const drawer = await locations.create({ name: 'Drawer F' });
+      const widget = await items.create({ name: 'Widget', quantity: 12, locationId: shelf.id });
+
+      await items.authoriseCount({
+        locationId: drawer.id,
+        quantityAdjustments: [
+          {
+            itemId: widget.id,
+            counted: 12,
+            locationName: 'Drawer F',
+            locationId: drawer.id,
+            batch: { batchNumber: null, lotNumber: null, expiryDate: null },
+          },
+        ],
+        serialisedAdjustments: [],
+      });
+
+      const stock = await items.listStock(widget.id);
+      expect(stock.find((s) => s.locationId === drawer.id)?.quantity).toBe(12);
+      // The shelf is untouched: this count is a statement about the drawer only. Counting the
+      // shelf is what takes the units off it.
+      expect(stock.find((s) => s.locationId === shelf.id)?.quantity).toBe(12);
+    });
+
+    it('moves a serialised instance found here rather than retiring it (issue #640)', async () => {
+      const shelf = await locations.create({ name: 'Shelf 2' });
+      const drawer = await locations.create({ name: 'Drawer G' });
+      const [meter] = await items.createSerialised({ name: 'Multimeter', count: 1, locationId: shelf.id });
+
+      const result = await items.authoriseCount({
+        locationId: drawer.id,
+        quantityAdjustments: [],
+        serialisedAdjustments: [],
+        relocations: [{ itemId: meter.id, note: 'found here' }],
+      });
+
+      expect(result.relocated.map((i) => i.locationId)).toEqual([drawer.id]);
+      const moved = await items.getById(meter.id);
+      expect(moved?.locationId).toBe(drawer.id);
+      // Still in active inventory — the whole point is that it was never lost.
+      expect(moved?.isActive).toBe(true);
+      const history = await items.getHistory(meter.id);
+      expect(history.rows.some((h) => h.action === 'MOVED' && h.note === 'found here')).toBe(true);
+    });
+
+    it('is a no-op for an instance already recorded here, so a replayed count moves nothing', async () => {
+      const drawer = await locations.create({ name: 'Drawer H' });
+      const [meter] = await items.createSerialised({ name: 'Multimeter', count: 1, locationId: drawer.id });
+
+      const result = await items.authoriseCount({
+        locationId: drawer.id,
+        quantityAdjustments: [],
+        serialisedAdjustments: [],
+        relocations: [{ itemId: meter.id, note: 'found here' }],
+      });
+
+      expect(result.relocated).toEqual([]);
+      expect((await items.getHistory(meter.id)).rows.some((h) => h.action === 'MOVED')).toBe(false);
+    });
+
+    it('applies nothing at all when a relocation names an item that cannot be relocated', async () => {
+      // Same all-or-nothing contract as the rest of the count (issue #301): the discrete
+      // adjustment and the stamp must not survive a rejected relocation.
+      const drawer = await locations.create({ name: 'Drawer I' });
+      const widget = await items.create({ name: 'Widget', quantity: 10, locationId: drawer.id });
+
+      await expect(
+        items.authoriseCount({
+          locationId: drawer.id,
+          quantityAdjustments: [{ itemId: widget.id, counted: 8, locationName: 'Bench' }],
+          serialisedAdjustments: [],
+          relocations: [{ itemId: widget.id, note: 'found here' }], // DISCRETE, not SERIALISED
+        }),
+      ).rejects.toBeInstanceOf(DbError);
+
+      expect((await items.getById(widget.id))?.quantity).toBe(10);
+      expect((await locations.getById(drawer.id))?.lastCountedAt).toBeNull();
     });
 
     it('counts the system Unassigned location, omitting the stamp it cannot write', async () => {

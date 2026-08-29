@@ -1045,6 +1045,23 @@ describe('ProjectRepository (spec §4 Projects & BOMs)', () => {
     expect(after?.quantity).toBe(1);
   });
 
+  it('CONTAINER: carries a serialised instance into the container without aborting', async () => {
+    // The whole-item draw empties one placement and fills another, so with the recompute triggers
+    // live `items.quantity` briefly reads 2 and `CHECK (tracking_mode <> 'SERIALISED' OR
+    // quantity = 1)` aborted the entire finalise. Nothing in the project surface said so — the
+    // failure surfaced as a constraint error on a build that had nothing wrong with it (#640).
+    const p = await projects.create({ name: 'Meter rig' });
+    const meter = await items.create({ name: 'Multimeter', trackingMode: 'SERIALISED' });
+    await projects.addLine(p.id, { itemId: meter.id, requiredQty: 1 });
+
+    const result = await projects.finaliseAssembly(p.id, { outcome: 'CONTAINER' });
+
+    const after = await items.getById(meter.id);
+    expect(after?.locationId).toBe(result.locationId);
+    expect(after?.quantity).toBe(1);
+    expect(after?.isActive).toBe(true);
+  });
+
   it('CONTAINER: carries a gauge vessel in whole, and never calls it short there', async () => {
     // The bottle goes in the box; there is no slice of glue to move, so a requirement larger than
     // what is left must not block the move.
