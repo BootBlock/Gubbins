@@ -73,6 +73,8 @@ export interface SyncResult {
   readonly kitLinksBroken: number;
   /** Issue #542: loans the merge kept closed against a peer's newer still-open copy (returned offline). */
   readonly loanReturnsPreserved: number;
+  /** Loans whose instalment count the merge kept from being rewound (issue #662). */
+  readonly loanInstalmentsPreserved: number;
   /** Expired tombstones pruned (§7.2 TTL). */
   readonly prunedTombstones: number;
   /** The clock offset applied (ms, server − local). */
@@ -308,6 +310,7 @@ export async function runSync(
     bookingsCancelled: outcome.bookingsCancelled,
     kitLinksBroken: outcome.kitLinksBroken,
     loanReturnsPreserved: outcome.loanReturnsPreserved,
+    loanInstalmentsPreserved: outcome.loanInstalmentsPreserved,
     clockOffset: offset,
     historyInserted: outcome.historyInserted,
     tagEdgesAdded: outcome.tagEdgesAdded,
@@ -367,6 +370,7 @@ function result(status: SyncResult['status'], partial: Partial<SyncResult>): Syn
     bookingsCancelled: partial.bookingsCancelled ?? 0,
     kitLinksBroken: partial.kitLinksBroken ?? 0,
     loanReturnsPreserved: partial.loanReturnsPreserved ?? 0,
+    loanInstalmentsPreserved: partial.loanInstalmentsPreserved ?? 0,
     prunedTombstones: partial.prunedTombstones ?? 0,
     clockOffset: partial.clockOffset ?? 0,
     historyInserted: partial.historyInserted ?? 0,

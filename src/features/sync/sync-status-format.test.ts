@@ -11,6 +11,8 @@ function makeResult(overrides: Partial<SyncResult> = {}): SyncResult {
     reparented: 0,
     rejectedCycles: 0,
     serialisedLoansClosed: 0,
+    loanReturnsPreserved: 0,
+    loanInstalmentsPreserved: 0,
     bookingsCancelled: 0,
     kitLinksBroken: 0,
     prunedTombstones: 0,
@@ -67,6 +69,27 @@ describe('describeSyncOutcome', () => {
     );
     expect(describeSyncOutcome(makeResult({ serialisedLoansClosed: 2 }))).toContain(
       '2 duplicate loans closed',
+    );
+  });
+
+  it('tells a returned loan kept closed apart from a part-returned one kept counted (#542, #662)', () => {
+    const plain = describeSyncOutcome(makeResult({ status: 'SYNCED' }));
+    expect(plain).not.toMatch(/kept closed|returned count/);
+
+    // A loan the merge would have re-opened. Something genuinely came back.
+    const closed = describeSyncOutcome(makeResult({ loanReturnsPreserved: 1 }));
+    expect(closed).toContain('1 returned loan kept closed (it was still checked out elsewhere).');
+    expect(closed).not.toMatch(/returned count/);
+
+    // A loan handed back in part. NOTHING was closed, so it must not claim a loan came back —
+    // it is still out with the borrower, and only the count of what is back was preserved.
+    const partial = describeSyncOutcome(makeResult({ loanInstalmentsPreserved: 1 }));
+    expect(partial).toContain(
+      '1 part-returned loan kept its returned count (another device had fewer back).',
+    );
+    expect(partial).not.toMatch(/kept closed/);
+    expect(describeSyncOutcome(makeResult({ loanInstalmentsPreserved: 2 }))).toContain(
+      '2 part-returned loans kept their returned count',
     );
   });
 

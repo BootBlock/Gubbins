@@ -74,6 +74,7 @@ import type {
   ReconciliationPlan,
   ReparentLog,
   SchemaDictionary,
+  LoanInstalmentRepair,
   LoanReturnRepair,
   KitLinkBreak,
   SerialisedLoanClosure,
@@ -128,6 +129,7 @@ const EMPTY_PLAN: ReconciliationPlan = {
   bookingsCancelled: [],
   kitLinksBroken: [],
   loanReturnsPreserved: [],
+  loanInstalmentsPreserved: [],
   collisions: [],
   keyParks: [],
   tombstoneClears: [],
@@ -245,18 +247,15 @@ export function reconcile(
   // all of which the FK guard, the tag-edge sections and the apply must see settled.
   const { collisions, rekeys } = resolveUniqueKeyCollisions(local, localUpserts, localDeletes, offset);
 
-  // --- Issue #542 a return is terminal -------------------------------------------
+  // --- Issues #542, #662: a return is terminal, and an instalment is too -----------
   // `returned_at` is write-once, which whole-row LWW cannot see: a peer's newer still-open copy of
   // a loan this device has returned would re-open it, stranding the stock the return gave back.
+  // `returned_quantity` is monotonic for the same reason, so the same pass carries the higher
+  // instalment count across — and reports it apart, since that repair closes no loan.
   // Runs before the serialised pass below, so that pass counts a re-opened loan as the closed one
   // it really is rather than collapsing a phantom pair.
-  const loanReturnsPreserved = resolveLoanReturnConflicts(
-    local,
-    remote,
-    localUpserts,
-    localDeletes,
-    dictionary.checkouts,
-  );
+  const { returnsPreserved: loanReturnsPreserved, instalmentsPreserved: loanInstalmentsPreserved } =
+    resolveLoanReturnConflicts(local, remote, localUpserts, localDeletes, dictionary.checkouts);
 
   // --- Issue #193 serialised-loan cardinality -----------------------------------
   // Collapse a serialised item that the id-keyed union left on loan more than once. Runs after
@@ -444,6 +443,7 @@ export function reconcile(
     bookingsCancelled,
     kitLinksBroken,
     loanReturnsPreserved,
+    loanInstalmentsPreserved,
     collisions,
     keyParks,
     tombstoneClears,
@@ -819,7 +819,9 @@ function resolveSerialisedLoanConflicts(
  * So the merge honours the monotonic column instead of the row's timestamp: where one side's copy
  * is closed and the other's is open, the **return** is taken, mutating `localUpserts` in place.
  * Both devices run the same rule over the same two rows and reach the identical result without
- * reference to which side is local.
+ * reference to which side is local. A closure repair is reported as one; an instalment-count
+ * repair that closed nothing is reported as its own thing, because telling the user a loan was
+ * "kept closed" when both copies still have it out would be a plainly false statement.
  *
  * Only the return is taken across, onto the row the merge has already settled on — never a raw
  * snapshot row in its place. Earlier passes have written to that upsert: `resolveUniqueKeyCollisions`
@@ -856,10 +858,11 @@ function resolveLoanReturnConflicts(
   localUpserts: TableRow[],
   localDeletes: readonly Tombstone[],
   allowedCols: readonly string[] | undefined,
-): LoanReturnRepair[] {
+): { returnsPreserved: LoanReturnRepair[]; instalmentsPreserved: LoanInstalmentRepair[] } {
   const localRows = rowsById(local.tables.checkouts ?? []);
   const remoteRows = rowsById(remote.tables.checkouts ?? []);
-  if (localRows.size === 0 || remoteRows.size === 0) return [];
+  const empty = { returnsPreserved: [], instalmentsPreserved: [] };
+  if (localRows.size === 0 || remoteRows.size === 0) return empty;
 
   const deleted = new Set(localDeletes.filter((d) => d.tableName === 'checkouts').map((d) => d.id));
   const upsertIndex = new Map<string, number>();
@@ -867,14 +870,19 @@ function resolveLoanReturnConflicts(
     if (u.table === 'checkouts') upsertIndex.set(String(u.row.id), i);
   });
 
-  const repairs: LoanReturnRepair[] = [];
+  const returnsPreserved: LoanReturnRepair[] = [];
+  const instalmentsPreserved: LoanInstalmentRepair[] = [];
 
-  /** Replace (or add) this loan's settled upsert with `row`, and record the repair. */
-  const write = (id: string, row: SqlRow) => {
+  /**
+   * Replace (or add) this loan's settled upsert with `row`, and log the repair in `into` — the
+   * closure log or the instalment-count log, which are separate because only one of them means a
+   * loan came back (see {@link LoanInstalmentRepair}).
+   */
+  const write = (id: string, row: SqlRow, into: { itemId: string; checkoutId: string }[]) => {
     const at = upsertIndex.get(id);
     if (at !== undefined) localUpserts[at] = { table: 'checkouts', row };
     else localUpserts.push({ table: 'checkouts', row });
-    repairs.push({ itemId: String(row.item_id), checkoutId: id });
+    into.push({ itemId: String(row.item_id), checkoutId: id });
   };
 
   for (const [id, l] of localRows) {
@@ -894,9 +902,11 @@ function resolveLoanReturnConflicts(
     // column's `returned_quantity <= quantity` CHECK, and the apply is atomic — one crafted row
     // would abort every other change in the merge, on this and every subsequent sync. Clamping is
     // the {@link sanitiseRow} treatment for a value used in arithmetic rather than interpolation.
+    // `Number(…) || 0` rather than a cast, because a bound that can itself be NaN is not a bound:
+    // `Math.min(n, NaN)` is NaN, so a row with no readable `quantity` would fail open.
     const watermark = Math.min(
       Math.max(returnedQuantity(l), returnedQuantity(r)),
-      Math.max(num(merged.quantity), 0),
+      Number(merged.quantity) || 0,
     );
 
     const lClosed = isReturned(l);
@@ -906,7 +916,11 @@ function resolveLoanReturnConflicts(
       // which is the same value on both devices once LWW has settled, so both converge with no
       // last-write-wins churn.
       if (watermark > returnedQuantity(merged)) {
-        write(id, { ...merged, returned_quantity: watermark, updated_at: num(merged.updated_at) + 1 });
+        write(
+          id,
+          { ...merged, returned_quantity: watermark, updated_at: num(merged.updated_at) + 1 },
+          instalmentsPreserved,
+        );
       }
       continue;
     }
@@ -915,19 +929,23 @@ function resolveLoanReturnConflicts(
     // taken from the closed copy's `updated_at` — the one value both devices hold identically for
     // it — so the +1 bump converges however the rest of the row was resolved.
     const closed = lClosed ? l : allowedCols ? sanitiseRow(r, allowedCols) : r;
-    write(id, {
-      ...merged,
-      checked_out_at: num(closed.checked_out_at),
-      returned_at: num(closed.returned_at),
-      return_note: closed.return_note ?? null,
-      // The closed copy's counter is by definition the higher one — it reached `quantity` — but
-      // take the max rather than assume it, so a peer that recorded an instalment the closing
-      // device never saw cannot be rewound by the very repair that preserves its return.
-      returned_quantity: watermark,
-      updated_at: num(closed.updated_at) + 1,
-    });
+    write(
+      id,
+      {
+        ...merged,
+        checked_out_at: num(closed.checked_out_at),
+        returned_at: num(closed.returned_at),
+        return_note: closed.return_note ?? null,
+        // The closed copy's counter is by definition the higher one — it reached `quantity` — but
+        // take the max rather than assume it, so a peer that recorded an instalment the closing
+        // device never saw cannot be rewound by the very repair that preserves its return.
+        returned_quantity: watermark,
+        updated_at: num(closed.updated_at) + 1,
+      },
+      returnsPreserved,
+    );
   }
-  return repairs;
+  return { returnsPreserved, instalmentsPreserved };
 }
 
 /**

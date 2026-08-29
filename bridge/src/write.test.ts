@@ -20,6 +20,7 @@ import { ADMIN_USER_ID, SYSTEM_USER_ID } from '@/db/repositories/constants';
 import { UserRepository } from '@/db/repositories/UserRepository.ts';
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
+import { toCheckout } from './api/dto.ts';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { CheckoutRepository } from '@/db/repositories/CheckoutRepository.ts';
 import { reconcile } from '@/features/sync/reconcile';
@@ -298,6 +299,14 @@ describe('applyOperation', () => {
     expect(item.quantity).toBe(38); // only the two came back
     expect(checkout!.returnedAt).toBeNull(); // four are still with the borrower
     expect(checkout!.returnedQuantity).toBe(2);
+
+    // …and the public DTO can say so. Without `returnedQuantity` an API consumer sees
+    // `{ quantity: 6, status: 'OPEN', returnedAt: null }` — indistinguishable from a loan
+    // nothing has come back from, with no field expressing that four are still out.
+    const dto = toCheckout(checkout!);
+    expect(dto.status).toBe('OPEN');
+    expect(dto.quantity).toBe(6);
+    expect(dto.returnedQuantity).toBe(2);
   });
 
   it('rejects returning more than a loan still has out with a 422', async () => {

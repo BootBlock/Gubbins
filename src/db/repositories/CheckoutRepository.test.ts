@@ -5,12 +5,7 @@ import { runMigrations } from '@/db/migrations';
 import { migrations } from '@/db/migrations/index';
 import { MS_PER_DAY, SYSTEM_USER_ID } from './constants';
 import { CheckoutRepository, onLoanCheckoutExistsSql, overdueCheckoutExistsSql } from './CheckoutRepository';
-import {
-  checkInId,
-  isReturnedQuantityGuardViolation,
-  LOAN_RETURN_RACE_MESSAGE,
-  planCheckIn,
-} from './checkout-plan';
+import { checkInId, LOAN_RETURN_RACE_MESSAGE, planCheckIn } from './checkout-plan';
 import { ContactRepository } from './ContactRepository';
 import { ItemRepository } from './ItemRepository';
 import { ProjectRepository } from './ProjectRepository';
@@ -322,14 +317,25 @@ describe('ContactRepository & CheckoutRepository (borrowing, §4)', () => {
       it('reports a lost partial-return race in plain words', async () => {
         const itemId = await makeItem('Drill bit', 10);
         const checkout = await checkouts.checkout({ itemId, contactName: 'Bob', quantity: 6 });
-        const stale = await planCheckIn(driver, checkout.id, SYSTEM_USER_ID, { quantity: 2 });
-        await checkouts.checkIn(checkout.id, { quantity: 1 });
 
-        // The guard's abort is what `checkIn` translates, so assert both halves of that seam:
-        // the transaction fails, and the failure is the one the translation recognises.
-        const failure = await driver.transaction(stale).catch((error: unknown) => error);
-        expect(isReturnedQuantityGuardViolation(failure)).toBe(true);
-        expect(LOAN_RETURN_RACE_MESSAGE).toMatch(/still out/);
+        // Two returns started together, driven through the real `checkIn` — not a hand-replayed
+        // plan — so the guard's abort travels the whole path a caller sees. Each awaits its read
+        // before either writes, which is the TOCTOU the watermark exists to catch.
+        const [first, second] = await Promise.allSettled([
+          checkouts.checkIn(checkout.id, { quantity: 2 }),
+          checkouts.checkIn(checkout.id, { quantity: 3 }),
+        ]);
+
+        // Exactly one lands, and the loser reads as a sentence rather than as constraint text.
+        const outcomes = [first, second];
+        expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+        const loser = outcomes.find((o) => o.status === 'rejected');
+        expect(loser?.reason).toBeInstanceOf(DbError);
+        expect((loser?.reason as DbError).message).toBe(LOAN_RETURN_RACE_MESSAGE);
+
+        // And the loser landed nothing: only the winner's units are back.
+        const after = await checkouts.getById(checkout.id);
+        expect((await items.getById(itemId))?.quantity).toBe(4 + after!.returnedQuantity);
       });
 
       it('restores each instalment to the exact lot the units were lent from', async () => {

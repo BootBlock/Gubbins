@@ -23,7 +23,7 @@
 import { DbError } from '../errors';
 import type { IDatabaseDriver, SqlStatement, SqlValue } from '../rpc/driver';
 import { BaseRepository, collaboratorOptions, type RepositoryOptions } from './base';
-import type { BorrowerType, CheckoutStatus, Condition } from './constants';
+import type { BorrowerType, CheckoutStatus } from './constants';
 import { ContactRepository } from './ContactRepository';
 import {
   borrowerColumn,
@@ -31,6 +31,7 @@ import {
   LOAN_RETURN_RACE_MESSAGE,
   planCheckIn,
   planCheckInAllForTarget,
+  type CheckInPlanOptions,
 } from './checkout-plan';
 import { historyStatement } from './item/history';
 import { stockRowId } from './stock';
@@ -139,31 +140,14 @@ export function onLoanCheckoutExistsSql(): string {
 }
 
 /**
- * Optional facets captured when a loan is returned (§4 Borrowing).
+ * Optional facets captured when a loan is returned (§4 Borrowing) — the public name for
+ * {@link CheckInPlanOptions}, which is where they are declared and documented.
  *
- * A single options object rather than positional args so the return flow can grow more
- * captured state (condition, note, and future recount/maintenance flags) without churning
- * the signature at every call site. Both fields are optional — `checkIn(id)` with no options
- * is the fast one-tap return.
+ * An alias rather than a second interface: {@link CheckoutRepository.checkIn} hands its options
+ * straight to `planCheckIn`, so the two must accept the same fields, and two structural twins
+ * would let a field added to one be silently dropped on the way to the other.
  */
-export interface CheckInOptions {
-  /** Free-text return remark; stored in the checkout's own `return_note` column (B1). */
-  readonly note?: string;
-  /**
-   * How many units are coming back this time (issue #662). Omitted returns everything still out —
-   * the whole loan, for a loan nothing has come back from — so `checkIn(id)` is still the one-tap
-   * return. A smaller value restores just those units and leaves the loan **open** with the rest
-   * out. Must be between 1 and the outstanding quantity; anything else is rejected rather than
-   * clamped, so a miscount is reported instead of quietly rounded away.
-   */
-  readonly quantity?: number;
-  /**
-   * The item's condition *on return* (B2). When supplied and different from the item's current
-   * condition, updates `items.condition` and logs `CONDITION_CHANGED` in the same transaction.
-   * Omitted leaves the condition untouched.
-   */
-  readonly condition?: Condition;
-}
+export type CheckInOptions = CheckInPlanOptions;
 
 export class CheckoutRepository extends BaseRepository {
   private readonly contacts: ContactRepository;

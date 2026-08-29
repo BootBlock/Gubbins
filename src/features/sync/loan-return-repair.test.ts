@@ -166,7 +166,10 @@ describe('issue #662 — preserving a partial return', () => {
 
     expect(row?.returned_quantity).toBe(2);
     expect(row?.returned_at).toBeNull(); // four are still out — the loan has not closed
-    expect(plan.loanReturnsPreserved).toEqual([{ itemId: 'i1', checkoutId: 'k1' }]);
+    // Logged as an instalment repair, NOT as a return kept closed: nothing was closed here, and
+    // the sync summary's "kept closed" sentence would be a plainly false statement.
+    expect(plan.loanInstalmentsPreserved).toEqual([{ itemId: 'i1', checkoutId: 'k1' }]);
+    expect(plan.loanReturnsPreserved).toEqual([]);
   });
 
   it('leaves two copies that agree about the count untouched', () => {
@@ -181,7 +184,9 @@ describe('issue #662 — preserving a partial return', () => {
       checkouts: [six({ returned_quantity: 2, updated_at: 900 })],
     });
 
-    expect(reconcile(local, remote, opts).loanReturnsPreserved).toEqual([]);
+    const plan = reconcile(local, remote, opts);
+    expect(plan.loanReturnsPreserved).toEqual([]);
+    expect(plan.loanInstalmentsPreserved).toEqual([]);
   });
 
   it('carries the higher count across when the other copy closes the loan', () => {
@@ -198,9 +203,13 @@ describe('issue #662 — preserving a partial return', () => {
       checkouts: [six({ returned_quantity: 6, returned_at: 500, updated_at: 500 })],
     });
 
-    const row = checkoutUpsert(reconcile(local, remote, opts));
+    const plan = reconcile(local, remote, opts);
+    const row = checkoutUpsert(plan);
     expect(row?.returned_at).toBe(500);
     expect(row?.returned_quantity).toBe(6);
+    // This one DID close a loan, so it belongs in the return log rather than the instalment one.
+    expect(plan.loanReturnsPreserved).toEqual([{ itemId: 'i1', checkoutId: 'k1' }]);
+    expect(plan.loanInstalmentsPreserved).toEqual([]);
   });
 
   it('never writes a count above the units the loan lent out', () => {

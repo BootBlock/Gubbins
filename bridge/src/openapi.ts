@@ -2601,13 +2601,16 @@ export const openapiDocument: JsonValue = {
         type: 'object',
         description:
           'One loan. The borrower is a tagged union: `borrowerType` says which kind of target ' +
-          'holds it and `borrowerId` is that target’s id. `status` is derived from `returnedAt`.',
+          'holds it and `borrowerId` is that target’s id. `status` is derived from `returnedAt`. ' +
+          'A loan may be returned in instalments, so what is still out is ' +
+          '`quantity - returnedQuantity`, not `quantity`.',
         required: [
           'id',
           'itemId',
           'borrowerType',
           'borrowerId',
           'quantity',
+          'returnedQuantity',
           'dueDate',
           'checkedOutAt',
           'returnedAt',
@@ -2622,6 +2625,11 @@ export const openapiDocument: JsonValue = {
           borrowerType: { type: 'string', enum: ['contact', 'project', 'location'], example: 'contact' },
           borrowerId: { type: 'string', example: 'contact-sam' },
           quantity: { type: 'integer', example: 1 },
+          returnedQuantity: {
+            type: 'integer',
+            example: 0,
+            description: 'How many of `quantity` have come back. Still out = `quantity - returnedQuantity`.',
+          },
           dueDate: {
             type: 'integer',
             nullable: true,

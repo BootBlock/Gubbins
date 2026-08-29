@@ -88,7 +88,17 @@ export function borrowerColumn(type: BorrowerType): 'contact_id' | 'project_id' 
 }
 
 /**
- * The optional extras a return can carry — structurally identical to `CheckInOptions`.
+ * The optional facets a return can carry (§4 Borrowing) — the **one** definition, which
+ * `CheckoutRepository` re-exports as its public `CheckInOptions` rather than restating.
+ *
+ * The two were separate structural twins until issue #662 added a third field to both: because
+ * `checkIn` passes its options straight into {@link planCheckIn} and TypeScript matches
+ * structurally, a field added to only one side compiles and is then silently dropped on the way
+ * to the plan. One declaration makes that impossible instead of merely unlikely.
+ *
+ * An options object rather than positional args so the return flow can grow more captured state
+ * without churning the signature at every call site. Every field is optional — a return with no
+ * options at all is the fast one-tap return of the whole loan.
  *
  * `condition` is deliberately **not** widened to include `null`: an omitted condition
  * (`undefined`) leaves the item untouched, whereas a `null` would read as "changed to no
@@ -96,7 +106,13 @@ export function borrowerColumn(type: BorrowerType): 'contact_id' | 'project_id' 
  * naming a condition that does not exist. Only `undefined` means "don't touch".
  */
 export interface CheckInPlanOptions {
+  /** Free-text return remark; stored in the checkout's own `return_note` column (B1). */
   readonly note?: string;
+  /**
+   * The item's condition *on return* (B2). When supplied and different from the item's current
+   * condition, updates `items.condition` and logs `CONDITION_CHANGED` in the same transaction.
+   * Omitted leaves the condition untouched.
+   */
   readonly condition?: Condition;
   /**
    * How many units are coming back **this time** (issue #662). Omitted returns everything still
@@ -178,9 +194,12 @@ function onlyWhileOpen(base: SqlStatement, checkoutId: string, fromReturned: num
  * restore the stock, close the loan and log it. Returns an **empty** list when the loan has
  * already been returned (the idempotent no-op {@link CheckoutRepository.checkIn} relies on).
  *
- * Every write is guarded by {@link OPEN_LOAN_EXISTS} and the `returned_at` stamp is emitted last,
- * so two returns that race past the JS guard (both reading `returned_at IS NULL`) still restore
- * stock and log `CHECKED_IN` exactly once — the loser's whole transaction no-ops (issue #296).
+ * Every write is guarded by {@link OPEN_LOAN_AT_WATERMARK} and the watermark is advanced last, so
+ * two returns that race past the JS guard still restore stock and log `CHECKED_IN` exactly once.
+ * How the loser ends depends on what it raced: a return that lost to another **whole-loan** return
+ * finds the loan closed and no-ops entirely, as it always did (issue #296); one that lost to a
+ * **partial** return finds the loan still open at a moved watermark, and aborts its own
+ * transaction rather than restore against a count that no longer holds (issue #662).
  *
  * Throws when the checkout does not exist — the caller asked to return something that isn't there.
  */
