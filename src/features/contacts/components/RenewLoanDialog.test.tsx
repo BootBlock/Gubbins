@@ -38,6 +38,7 @@ function makeCheckout(overrides: Partial<CheckoutWithNames> = {}): CheckoutWithN
     locationId: null,
     borrowerName: 'Ada Lovelace',
     quantity: 1,
+    returnedQuantity: 0,
     dueDate: JAN_15_2026,
     checkedOutAt: 0,
     returnedAt: null,

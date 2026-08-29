@@ -270,11 +270,34 @@ export interface KitLinkBreak {
  * has returned it, a *later* edit to the still-open copy wins and the row comes back open. The
  * stock the return already gave back stays in the ledger, so the asset ends up recorded as on loan
  * *and* on the shelf. The merge takes the closed copy instead, recording it here.
+ *
+ * Kept distinct from {@link LoanInstalmentRepair}, which preserves a return **without** closing
+ * anything, so the two are counted and described as the different outcomes they are.
  */
 export interface LoanReturnRepair {
   /** The item the loan is for. */
   readonly itemId: string;
   /** The loan whose return the merge preserved. */
+  readonly checkoutId: string;
+}
+
+/**
+ * Issue #662 repair log: a loan whose instalment count the merge would have rewound was kept.
+ *
+ * `checkouts.returned_quantity` is the write-once `returned_at` one step earlier — a loan returned
+ * in instalments accumulates it, and each instalment has already put its units on the shelf by the
+ * time the counter records them. Whole-row last-write-wins does not know that either, so a peer's
+ * newer copy that has not seen an instalment wins the row and the units read as still out while
+ * the stock ledger says they are back. The merge takes the higher count instead.
+ *
+ * Recorded separately from {@link LoanReturnRepair} because **no loan was closed** — both copies
+ * may agree the loan is still open, and only the count was behind. Reporting it as a return kept
+ * closed would tell the user a loan came back when none did.
+ */
+export interface LoanInstalmentRepair {
+  /** The item the loan is for. */
+  readonly itemId: string;
+  /** The loan whose instalment count the merge preserved. */
   readonly checkoutId: string;
 }
 
@@ -413,6 +436,8 @@ export interface ReconciliationPlan {
   readonly kitLinksBroken: readonly KitLinkBreak[];
   /** Issue #542: loans kept closed against a peer's newer still-open copy (see {@link LoanReturnRepair}). */
   readonly loanReturnsPreserved: readonly LoanReturnRepair[];
+  /** Loans whose instalment count the merge kept from being rewound (issue #662). */
+  readonly loanInstalmentsPreserved: readonly LoanInstalmentRepair[];
   /** Issue #187: ids retired to a peer's row under a shared natural key (see {@link CollisionResolution}). */
   readonly collisions: readonly CollisionResolution[];
   /** Issue #707: rows to move off a natural key another upsert takes (see {@link KeyPark}). */

@@ -1369,12 +1369,28 @@ const baselineStatements: SqlStatement[] = [
           project_id     TEXT    REFERENCES projects(id)  ON DELETE CASCADE,
           location_id    TEXT    REFERENCES locations(id) ON DELETE CASCADE,
           quantity       INTEGER NOT NULL DEFAULT 1,
+          -- How many of the lent units have come back so far (issue #662). A loan goes out in
+          -- quantity, so it must be allowed to come back in instalments: each return adds its
+          -- units here and restores exactly that many, and the loan closes (returned_at is
+          -- stamped) only once the counter reaches quantity. A one-movement return still goes
+          -- 0 -> quantity in a single step, which is every loan that existed before this
+          -- column, so an untouched loan reads exactly as it always did.
+          --
+          -- Cumulative and monotonic, like purchase_order_lines.received_qty, and guarded the
+          -- same way: every write is a compare-and-swap against the value the plan was read
+          -- from, and a lost race writes the sentinel -1 to trip the returned_quantity >= 0
+          -- CHECK and roll the whole return back (see checkout-plan.ts). The upper bound is a
+          -- CHECK rather than a JS guard because it is the invariant that makes the counter
+          -- safe to subtract from: outstanding is quantity - returned_quantity, and it can
+          -- never read negative.
+          returned_quantity INTEGER NOT NULL DEFAULT 0,
           due_date       INTEGER,
           checked_out_at INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           returned_at    INTEGER,
           note           TEXT,
           updated_at     INTEGER NOT NULL DEFAULT (${SQL_NOW_MS}),
           CHECK (quantity > 0),
+          CHECK (returned_quantity >= 0 AND returned_quantity <= quantity),
           CHECK (returned_at IS NULL OR returned_at >= checked_out_at),
           -- Exactly one borrower: contact XOR project XOR location.
           CHECK (

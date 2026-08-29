@@ -230,6 +230,12 @@ export interface CheckoutDto {
   readonly borrowerId: string;
   /** Units lent on this loan (a serialised item always lends as 1). */
   readonly quantity: number;
+  /**
+   * How many of `quantity` have come back so far. A loan can be returned in instalments, so a
+   * loan with `status: "OPEN"` and a non-zero count still has `quantity - returnedQuantity` out
+   * with the borrower — read that difference, not `quantity`, to know what is outstanding.
+   */
+  readonly returnedQuantity: number;
   /** Due date (UNIX-ms) for overdue tracking, or null for an open-ended loan. */
   readonly dueDate: number | null;
   readonly checkedOutAt: number;
@@ -287,6 +293,7 @@ export function toCheckout(checkout: Checkout): CheckoutDto {
     // rather than asserting non-null over data the bridge did not write itself.
     borrowerId: checkout.contactId ?? checkout.projectId ?? checkout.locationId ?? '',
     quantity: checkout.quantity,
+    returnedQuantity: checkout.returnedQuantity,
     dueDate: checkout.dueDate,
     checkedOutAt: checkout.checkedOutAt,
     returnedAt: checkout.returnedAt,

@@ -39,6 +39,12 @@ import type { SyncConflict, SyncTable } from './types';
  * distinguishing value the repair has just carried across — while "Use my version" would rewrite
  * that half of the repair with `returned_at` excused beside it.
  *
+ * Issue #662 adds `returned_quantity`, which is the same column one step earlier: a loan that goes
+ * out in quantity comes back in instalments, and the counter only ever climbs, so
+ * `resolveLoanReturnConflicts` merges it by taking the larger of the two copies rather than the
+ * newer. Restoring the losing side's value would rewind a return that has already given its units
+ * back to the shelf, and the next sync would take the larger figure again anyway.
+ *
  * `checked_out_at` joins it because the schema ties the two — `CHECK (returned_at IS NULL OR
  * returned_at >= checked_out_at)` — so they can only be excused together. Excusing the return
  * alone leaves a restore writing one half of the pair against the other's merged value, and a
@@ -51,7 +57,7 @@ export const NON_LWW_COLUMNS: Partial<Record<SyncTable, ReadonlySet<string>>> = 
   items: new Set(['current_net_value', 'quantity']),
   item_stock: new Set(['quantity']),
   stock_batches: new Set(['quantity']),
-  checkouts: new Set(['returned_at', 'checked_out_at', 'return_note']),
+  checkouts: new Set(['returned_at', 'returned_quantity', 'checked_out_at', 'return_note']),
 };
 
 /** The non-LWW columns for a table (empty when none), for conflict detection/diff/restore. */

@@ -33,6 +33,7 @@ const loan = (overrides: Partial<CheckoutWithNames> = {}): CheckoutWithNames => 
   projectId: 'p1',
   locationId: null,
   quantity: 2,
+  returnedQuantity: 0,
   dueDate: null,
   checkedOutAt: 0,
   returnedAt: null,

@@ -5,6 +5,7 @@ import type { Contact, CheckoutWithNames } from '@/db/repositories';
 import { useFormatters } from '@/lib/useFormatters';
 import { useContactCheckouts, useUpdateContact } from '../contacts';
 import { useErrorMessage } from '@/features/errors';
+import { useT } from '@/features/i18n';
 
 /**
  * Edit an existing contact's details: rename them, and fill in the optional metadata
@@ -209,7 +210,12 @@ function LoanHistory({ contactId }: { contactId: string }) {
 
 function LoanHistoryRow({ checkout }: { checkout: CheckoutWithNames }) {
   const fmt = useFormatters();
+  const t = useT();
   const returned = checkout.returnedAt !== null;
+  // An open loan that has come back in part (issue #662) still shows the quantity it went out
+  // with above — that is what the loan *is* — so the outstanding figure is stated here instead,
+  // where the rest of the loan's progress is.
+  const partlyReturned = !returned && checkout.returnedQuantity > 0;
   // Status reads at a glance from a token-tinted chip: overdue (danger) / on loan (primary) /
   // returned (muted). Colour is never the sole signal — the label always reads (WCAG 1.4.1).
   const status = checkout.isOverdue
@@ -232,6 +238,14 @@ function LoanHistoryRow({ checkout }: { checkout: CheckoutWithNames }) {
       <p className="mt-1 text-xs text-muted-foreground">
         Out {fmt.date(checkout.checkedOutAt)}
         {returned ? ` · returned ${fmt.date(checkout.returnedAt!)}` : ''}
+        {partlyReturned
+          ? ` · ${t('contacts.checkin.stillOutOfLoan', {
+              vars: {
+                outstanding: checkout.quantity - checkout.returnedQuantity,
+                quantity: checkout.quantity,
+              },
+            })}`
+          : ''}
       </p>
       {checkout.note ? (
         <p className="mt-1 text-xs text-muted-foreground">

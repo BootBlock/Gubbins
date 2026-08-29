@@ -3270,8 +3270,8 @@ paths:
     post:
       tags:
       - "writes"
-      summary: "Return a lent item, closing its loan"
-      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Restores the units to the placement (and lot) they were lent from and stamps the loan returned, exactly as the app does. `checkoutId` is optional when the item has exactly one open loan, and required (422) once it has more than one. Needs checkouts:write (not stock:write)."
+      summary: "Return a lent item, in whole or in part"
+      description: "Opt-in (GUBBINS_BRIDGE_ALLOW_WRITES=on); returns 404 when writes are disabled. Restores the units to the placement (and lot) they were lent from, exactly as the app does, and stamps the loan returned once nothing is left out. `quantity` is optional and hands back everything still out when absent; a smaller value returns part of the loan and leaves it open with the rest. `checkoutId` is optional when the item has exactly one open loan, and required (422) once it has more than one. Needs checkouts:write (not stock:write)."
       parameters:
       -
         name: "id"
@@ -3300,6 +3300,10 @@ paths:
                 checkoutId:
                   type: "string"
                   description: "Which loan to close. Only needed when the item has more than one open loan; it must belong to this item and still be open."
+                quantity:
+                  type: "integer"
+                  minimum: 1
+                  description: "How many units are coming back. Omit to return everything still out. A value above the outstanding quantity is a 422."
                 note:
                   type: "string"
                   nullable: true
@@ -3307,7 +3311,7 @@ paths:
                   description: "Optional remark recorded on the return (kept separate from the loan’s own note)."
       responses:
         "200":
-          description: "The updated item and the loan that was closed."
+          description: "The updated item and the loan the units came back from — still open when part of it is out."
           headers:
             Idempotency-Replayed:
               description: "Present only when the request carried an `Idempotency-Key`. `true` means this is a previous attempt’s stored result and nothing was changed a second time."
@@ -5572,13 +5576,14 @@ components:
               $ref: "#/components/schemas/ItemFieldValue"
     Checkout:
       type: "object"
-      description: "One loan. The borrower is a tagged union: `borrowerType` says which kind of target holds it and `borrowerId` is that target’s id. `status` is derived from `returnedAt`."
+      description: "One loan. The borrower is a tagged union: `borrowerType` says which kind of target holds it and `borrowerId` is that target’s id. `status` is derived from `returnedAt`. A loan may be returned in instalments, so what is still out is `quantity - returnedQuantity`, not `quantity`."
       required:
       - "id"
       - "itemId"
       - "borrowerType"
       - "borrowerId"
       - "quantity"
+      - "returnedQuantity"
       - "dueDate"
       - "checkedOutAt"
       - "returnedAt"
@@ -5606,6 +5611,10 @@ components:
         quantity:
           type: "integer"
           example: 1
+        returnedQuantity:
+          type: "integer"
+          example: 0
+          description: "How many of `quantity` have come back. Still out = `quantity - returnedQuantity`."
         dueDate:
           type: "integer"
           nullable: true

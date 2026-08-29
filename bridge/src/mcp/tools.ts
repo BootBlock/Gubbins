@@ -442,8 +442,9 @@ export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
     name: 'gubbins_check_in',
     mutates: true,
     description:
-      'Return a lent item, restoring its stock to wherever it was lent from and closing the ' +
-      'loan. When the item has exactly one open loan the item id alone is enough; if it has ' +
+      'Return a lent item, restoring its stock to wherever it was lent from. The loan closes once ' +
+      'nothing is left out; pass quantity to hand back only part of it and leave the rest on loan. ' +
+      'When the item has exactly one open loan the item id alone is enough; if it has ' +
       'several, pass checkoutId to say which one is back. Confirm with the user before returning.',
     inputSchema: {
       type: 'object',
@@ -452,6 +453,11 @@ export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
         checkoutId: {
           type: 'string',
           description: 'Which loan to close; only needed when the item has more than one open loan.',
+        },
+        quantity: {
+          type: 'integer',
+          minimum: 1,
+          description: 'How many units are coming back. Omit to return everything still out on the loan.',
         },
         note: {
           type: 'string',
@@ -468,6 +474,9 @@ export function createWriteTools(execute: WriteExecutor): readonly McpTool[] {
         kind: 'check-in',
         itemId: requireString(args, 'id'),
         ...optionalStringArg(args, 'checkoutId'),
+        ...(args.quantity !== undefined && args.quantity !== null
+          ? { quantity: requireInteger(args, 'quantity') }
+          : {}),
         ...noteArg(args),
       });
     },

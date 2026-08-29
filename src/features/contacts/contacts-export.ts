@@ -36,6 +36,10 @@ export function loansExportColumns(): readonly TabularColumn<CheckoutWithNames>[
     { header: 'Item', value: (c) => c.itemName },
     { header: 'Borrower', value: (c) => c.borrowerName },
     { header: 'Quantity', value: (c) => c.quantity },
+    // What the borrower still has, which for a loan returned in instalments (issue #662) is not
+    // the quantity beside it. An export that stated only the loan's size would under-report a
+    // partly-returned loan by exactly the units already back on the shelf.
+    { header: 'Still out', value: (c) => c.quantity - c.returnedQuantity },
     { header: 'Checked out', value: (c) => isoTimestamp(c.checkedOutAt) },
     { header: 'Due', value: (c) => isoTimestamp(c.dueDate) },
     { header: 'Overdue', value: (c) => (c.isOverdue ? 'Yes' : 'No') },

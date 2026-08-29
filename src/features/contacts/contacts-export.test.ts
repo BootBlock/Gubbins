@@ -18,6 +18,7 @@ function loan(overrides: Partial<CheckoutWithNames> = {}): CheckoutWithNames {
     projectId: null,
     locationId: null,
     quantity: 2,
+    returnedQuantity: 0,
     dueDate: Date.parse('2026-08-01T00:00:00Z'),
     checkedOutAt: Date.parse('2026-07-20T10:00:00Z'),
     returnedAt: null,
@@ -62,11 +63,20 @@ describe('loansExportColumns', () => {
       Item: 'Cordless drill',
       Borrower: 'Alex Rivera',
       Quantity: 2,
+      'Still out': 2,
       'Checked out': '2026-07-20T10:00:00.000Z',
       Due: '2026-08-01T00:00:00.000Z',
       Overdue: 'No',
       Note: 'For the workshop.',
     });
+  });
+
+  it('states what is still out, not the size of the loan, once part of it is back', () => {
+    // A partly-returned loan (issue #662) is still open, so it appears in this export — and the
+    // figure a person chasing returns needs is the four the borrower still has, not the six.
+    const cells = loanCells(loan({ quantity: 6, returnedQuantity: 2 }));
+    expect(cells.Quantity).toBe(6);
+    expect(cells['Still out']).toBe(4);
   });
 
   it('spells overdue out for a person chasing returns', () => {
@@ -110,7 +120,7 @@ describe('buildLoansExport / buildContactsExport', () => {
     const loans = await buildLoansExport('csv', [loan()]);
     const contacts = await buildContactsExport('csv', [contact()]);
     expect(String(loans.content).split('\r\n')[0]).toBe(
-      'Item,Borrower,Quantity,Checked out,Due,Overdue,Note',
+      'Item,Borrower,Quantity,Still out,Checked out,Due,Overdue,Note',
     );
     expect(String(contacts.content).split('\r\n')[0]).toBe(
       'Name,Email,Mobile,Home phone,Address,Open loans,Note',

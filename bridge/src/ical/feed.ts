@@ -201,7 +201,14 @@ async function loanEvents(driver: IDatabaseDriver, dtstamp: ICalDate): Promise<V
 function loanEvent(checkout: CheckoutWithNames, dtstamp: ICalDate): VEvent {
   // The borrower may be a contact, a project or a location (B4) — `borrowerName` is resolved
   // per target type by the repository, so this reads correctly for all three.
-  const detail = `On loan to ${checkout.borrowerName}. Quantity ${checkout.quantity}.`;
+  // What the borrower still has, which for a loan returned in instalments is not the quantity it
+  // went out with. A calendar event chasing a due-back that named the original six, when four are
+  // out, would send someone after two units that are already on the shelf.
+  const outstanding = checkout.quantity - checkout.returnedQuantity;
+  const detail =
+    outstanding === checkout.quantity
+      ? `On loan to ${checkout.borrowerName}. Quantity ${checkout.quantity}.`
+      : `On loan to ${checkout.borrowerName}. Quantity ${outstanding} of ${checkout.quantity} still out.`;
   return allDayEvent({
     uid: `loan-${checkout.id}${UID_SUFFIX}`,
     dtstamp,
