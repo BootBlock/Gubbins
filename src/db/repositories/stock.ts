@@ -65,6 +65,7 @@ export function settleStockProjectionStatements(itemId?: string): SqlStatement[]
   const placementSum = `(SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE item_id = items.id)`;
   const one = itemId !== undefined;
   return [
+    ...serialisedPlacementRepairStatements(itemId),
     // A placement the ledger carries batches for but no `item_stock` row: the insert arm of
     // `trg_stock_batches_recompute_ins`. Matched on the natural key rather than the derived id,
     // because a foreign snapshot's `item_stock.id` need not follow the `item|location` form.
@@ -94,6 +95,61 @@ export function settleStockProjectionStatements(itemId?: string): SqlStatement[]
 }
 
 /**
+ * Bring every SERIALISED item's placements back to the one the schema insists on: exactly one
+ * unit, at the location the item itself names (issue #640).
+ *
+ * A serialised record *is* one physical thing, and `CHECK (tracking_mode <> 'SERIALISED' OR
+ * quantity = 1)` says so. Nothing enforces *where* that one unit sits, though, and two devices
+ * counting the same week can legitimately reach different answers: one finds the multimeter in
+ * the garage and relocates it there, the other finds it on the bench. Sync unions the ledger by
+ * row, so both placements arrive holding one unit, the projection sums them to two, and the CHECK
+ * aborts — not with a wrong number that later heals, but with a merge that fails again on every
+ * attempt until somebody edits the database by hand.
+ *
+ * `items.location_id` is the arbiter, because it is a single column on a row that already
+ * converges by last-write-wins — so the two devices agree on where the unit is *before* this runs,
+ * and this only makes the placement ledger say the same thing. The later count wins, which is the
+ * same rule a disagreement between two counts of a lot settles by.
+ *
+ * Applied only to an item the placement ledger already speaks for, in the spirit of the `EXISTS`
+ * guards below: a snapshot that carries `items` but no `stock_batches` at all is not asserting
+ * that its serialised units are homeless, and fabricating placements for them would be this
+ * function inventing stock rather than reconciling it. An item with *any* batch row is fair game,
+ * including one whose home placement has no row yet — that is the divergence above, mid-repair.
+ *
+ * Deliberately not filtered on `is_active`: the CHECK is unconditional, so a soft-deleted
+ * instance still holds its one unit and still needs somewhere to hold it.
+ */
+function serialisedPlacementRepairStatements(itemId?: string): SqlStatement[] {
+  const one = itemId !== undefined;
+  return [
+    {
+      // Everywhere it is not: emptied, not deleted, so the correction travels by row-level LWW
+      // like every other emptying in this ledger.
+      sql: `UPDATE stock_batches SET quantity = 0
+             WHERE ${one ? 'item_id = ? AND ' : ''}quantity <> 0
+               AND EXISTS (SELECT 1 FROM items i
+                            WHERE i.id = stock_batches.item_id
+                              AND i.tracking_mode = 'SERIALISED'
+                              AND i.location_id <> stock_batches.location_id);`,
+      params: one ? [itemId] : undefined,
+    },
+    {
+      // …and exactly one unit where it is, in the untracked batch a serialised instance is
+      // created with. Seeds the row when the home placement has none, which is what the other
+      // half of a diverged pair looks like once the statement above has emptied it.
+      sql: `INSERT INTO stock_batches (id, item_id, location_id, batch_key, quantity)
+            SELECT i.id || '|' || i.location_id || '|', i.id, i.location_id, '', 1
+              FROM items i
+             WHERE ${one ? 'i.id = ? AND ' : ''}i.tracking_mode = 'SERIALISED'
+               AND EXISTS (SELECT 1 FROM stock_batches b WHERE b.item_id = i.id)
+            ON CONFLICT(id) DO UPDATE SET quantity = 1 WHERE stock_batches.quantity <> 1;`,
+      params: one ? [itemId] : undefined,
+    },
+  ];
+}
+
+/**
  * Move an item **wholesale** to another location: every placement consolidated into the target,
  * and the item's own `location_id` following.
  *
@@ -113,8 +169,11 @@ export function settleStockProjectionStatements(itemId?: string): SqlStatement[]
  */
 export function moveWholeItemStatements(itemId: string, toLocationId: string): SqlStatement[] {
   return [
-    ...withRecomputeDeferred(consolidateStockStatements(itemId, toLocationId), itemId),
+    // First, so the settle's serialised repair reads the destination as the item's home rather
+    // than the shelf it is leaving — otherwise the repair would dutifully undo the move.
+    // `location_id` is no part of the quantity projection, so nothing else cares about the order.
     { sql: 'UPDATE items SET location_id = ? WHERE id = ?;', params: [toLocationId, itemId] },
+    ...withRecomputeDeferred(consolidateStockStatements(itemId, toLocationId), itemId),
   ];
 }
 

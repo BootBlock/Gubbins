@@ -96,11 +96,20 @@ token-based Tailwind utilities actually emit.
   find becomes a `SerialisedRelocation`, applied in the same transaction as the rest of the count.
   Deliberately **not** a transfer: the auditor is at one shelf and can only report what is on it,
   so counting the location the units left is what removes them from there.
-  - Side-effect worth knowing: `ItemRepository.move()` could never relocate a SERIALISED instance
-    at all (`CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` tripped on the intermediate
-    total, since emptying one placement and filling another is two writes). Fixed at the shared
-    seam — `moveWholeItemStatements` defers the recompute over the pair and settles the projection
-    once — so `move()` and the count's relocation are one definition.
+  - Side-effect worth knowing: **no** path could relocate a SERIALISED instance at all.
+    `CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` tripped on the intermediate total,
+    since emptying one placement and filling another is necessarily two writes and `items.quantity`
+    is a trigger-derived `SUM(item_stock)`. That aborted `ItemRepository.move()`, a project
+    assembly's whole-item draw of a serialised part, and deleting any location holding a serialised
+    unit. All three now go through `moveWholeItemStatements` / `withRecomputeDeferred`, which write
+    the total once at the value it ends on.
+  - Making relocation possible needed an invariant it had been getting for free: a serialised
+    instance sits at exactly one placement. Two devices can each find the same unit on a different
+    shelf, and the merge unions the placement rows — which summed to two and aborted every
+    subsequent merge until the database was hand-edited. `serialisedPlacementRepairStatements`
+    (in the settle pass, so it covers merge, restore and move alike) settles the unit at the
+    location `items.location_id` names, that column already converging by last-write-wins.
+    Regression coverage: `src/db/repositories/serialised-placement.test.ts`.
 
 ## J. Scheduling & habit-forming
 

@@ -25,7 +25,7 @@ import {
 } from '@/features/projects/assembly';
 import { UNASSIGNED_LOCATION_ID, type TrackingMode } from '../constants';
 import { historyStatement } from '../item/history';
-import { consolidateStockStatements, setStockStatement } from '../stock';
+import { moveWholeItemStatements, setStockStatement } from '../stock';
 import { itemConsumeStatements, itemMoveStatements, runStockDraw, withOperationKey } from '../stock-batches';
 import type { FinaliseAssemblyInput } from '../types';
 import type { Constructor } from './mixin';
@@ -248,13 +248,12 @@ export function withAssembly<TBase extends Constructor<ProjectCoreRepository>>(B
       // goes into the container whole, primary location and all.
       const wholeItem = draw.mode !== 'COUNT' || draw.takesAll;
       if (wholeItem) {
-        // Bring every placement of the part into the container (Phase 25), then point its
-        // primary location at the container.
-        statements.push(...consolidateStockStatements(draw.itemId, locationId));
-        statements.push({
-          sql: 'UPDATE items SET location_id = ? WHERE id = ?;',
-          params: [locationId, draw.itemId],
-        });
+        // Bring every placement of the part into the container (Phase 25) and point its primary
+        // location at the container. Through the shared builder, which is what lets a SERIALISED
+        // part be drawn at all: emptying one placement and filling another is two writes, so a
+        // per-statement recompute walks `items.quantity` through 2 or 0 and
+        // `CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` aborts the finalise (issue #640).
+        statements.push(...moveWholeItemStatements(draw.itemId, locationId));
       } else {
         statements.push(...(await itemMoveStatements(this.driver, draw.itemId, draw.takeQty, locationId)));
       }
