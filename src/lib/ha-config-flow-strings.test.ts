@@ -35,18 +35,31 @@ const flow = read(FLOW);
 /** Every `<attr>="<value>"` in the flow source, e.g. `matches('step_id')` for the form steps. */
 function matches(attribute: string): string[] {
   // The leading class stands in for a word boundary, so `error=` does not also match the
-  // `probe_error=` of some future keyword argument.
+  // `probe_error=` of some future keyword argument. Only the literal directly after the `=` is
+  // seen, so a value in the alternative branch of a ternary is not — the one such site today
+  // (`reason="bridge_moved" if moved else "already_configured"`) names a reason that the list
+  // below covers anyway.
   const pattern = new RegExp(`(?:^|[^a-zA-Z_])${attribute}="([a-z_]+)"`, 'g');
   return [...new Set([...flow.matchAll(pattern)].map((m) => m[1]))];
 }
 
 /**
- * Abort reasons Home Assistant raises itself, so no `reason=` names them:
- * `_async_abort_entries_match()` aborts with `already_configured`, and `async_set_unique_id()`
- * — which defaults to `raise_on_progress=True` — aborts with `already_in_progress` when a
- * discovery flow is already holding that unique id.
+ * Abort reasons Home Assistant names on the flow's behalf. Nothing in `config_flow.py` spells
+ * them, so the sweep above cannot see them, yet each is an end state a user can reach:
+ *
+ * - `_async_abort_entries_match()` aborts with `already_configured`.
+ * - `async_set_unique_id()` defaults to `raise_on_progress=True`, and aborts with
+ *   `already_in_progress` when another flow — in practice the discovery one — already holds
+ *   that unique id.
+ * - `async_update_reload_and_abort()` given no `reason` (neither of our two calls passes one)
+ *   uses `reauth_successful` or `reconfigure_successful`, whichever the flow's source calls for.
  */
-const RAISED_BY_HOME_ASSISTANT = ['already_configured', 'already_in_progress'];
+const RAISED_BY_HOME_ASSISTANT = [
+  'already_configured',
+  'already_in_progress',
+  'reauth_successful',
+  'reconfigure_successful',
+];
 
 const config = parse(STRINGS).config as {
   step: Record<string, unknown>;
