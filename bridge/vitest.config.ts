@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { DEFAULT_TEST_TIMEOUT_MS } from '../vitest.timeouts';
 
 /**
  * Isolated Vitest config for the bridge package.
@@ -25,5 +26,8 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     pool: 'threads',
+    // The same per-test budget as the app suite, for the same reason — this suite times out
+    // intermittently under Vitest's 5s default when the machine is busy. See `vitest.timeouts.ts`.
+    testTimeout: DEFAULT_TEST_TIMEOUT_MS,
   },
 });

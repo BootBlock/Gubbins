@@ -858,6 +858,12 @@ describe('snow drift saturation (issue #437)', () => {
     }
   });
 
+  // Budget: seconds of pure simulation even on an idle machine, and the frame count below is
+  // load-bearing rather than padding. With the per-column capacity replaced by one shared cap —
+  // the bug this guards — the run still passes at 12,000 frames and only fails at 24,000,
+  // because a drift that has not yet saturated rolls whether or not anything caps it. So the
+  // cost cannot be trimmed, and under Vitest's 5s default the test timed out whenever the
+  // machine was busy. 30s covers that contention; a genuine hang is nowhere near it.
   it('settles a drift whose crest rolls instead of levelling into a hard line', () => {
     // Deterministic field: a seeded PRNG stands in for Math.random so flakes spread across the
     // width (a pinned constant would stack them all in one column) and the run is reproducible.
@@ -924,5 +930,5 @@ describe('snow drift saturation (issue #437)', () => {
     const low = Math.max(...settled);
     expect(TOP - high).toBeGreaterThan(2); // a real drift built up
     expect(low - high).toBeGreaterThan(1.5); // …and its top rolls rather than shelving flat
-  });
+  }, 30_000); // see the budget note above the test
 });

@@ -11,6 +11,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import type { Plugin } from 'vite';
 import { buildContentSecurityPolicy } from './src/csp';
 import { resolveBasePath } from './src/base-path';
+import { DEFAULT_TEST_TIMEOUT_MS } from './vitest.timeouts';
 
 // Single-source the app version from package.json (read here so it never enters
 // the TS program / app bundle as a JSON import) and expose it via `define`.
@@ -348,6 +349,8 @@ export default defineConfig({
     // SQLite WASM / worker integration is validated via the :memory: driver and
     // mocked RPC bridge (spec §8.5), so no CSS or worker processing is needed here.
     css: false,
+    // The shared per-test budget; see `vitest.timeouts.ts` for why it is not Vitest's 5s.
+    testTimeout: DEFAULT_TEST_TIMEOUT_MS,
     // Use the worker_threads pool rather than Vitest's default `forks` pool.
     // On Node 25 the forks pool (tinypool spawning `child_process.fork` workers)
     // hits a cold-start race that crashes the whole run once on a cold cache —
