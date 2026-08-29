@@ -95,6 +95,12 @@ Discovery works in both directions, and each side is separately opt-in.
 The bridge can **advertise itself** on your network (mDNS/zeroconf), so Home Assistant can discover
 it rather than you typing addresses — an opt-in, locally-gated convenience.
 
+> **💡 Tip**
+> Once a bridge has been discovered it waits for you as a card under **Settings → Devices &
+> services**, and that card is the quickest way in — it already knows the address, so it only asks
+> for the token. Typing the same address into **Add integration** while that card is waiting stops
+> and points you back at it, rather than setting the bridge up twice.
+
 The bridge can also **find Home Assistant**, so you don't have to type its address into the bridge
 either. Switch it on and leave the address blank: the bridge asks your network where Home Assistant
 is when it starts, uses the address it advertises, and says which one it found in its log.
