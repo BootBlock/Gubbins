@@ -2132,8 +2132,10 @@ export const CATEGORY_PRESETS: readonly CategoryPreset[] = [
         name: 'Vehicle',
         glyph: '🚙',
         defaultTrackingMode: 'SERIALISED',
-        // A service interval measured in distance, not days — the one facet only a vehicle
-        // naturally wants, and the reason `USAGE` exists.
+        // A vehicle is serviced by how far it has run, not by the calendar, so its schedule
+        // counts usage rather than days. A category default cannot name the unit — the seeded
+        // schedule leaves `usage_unit` null, so an item reads "every 10000 units" until the
+        // owner names it (miles, km, hours) on the schedule itself.
         defaultMaintenanceBasis: 'USAGE',
         defaultMaintenanceIntervalUsage: 10000,
       },

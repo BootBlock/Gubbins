@@ -401,18 +401,20 @@ it creates, so you can see what you're getting before you add it.
 
 Some presets arrive with more than fields. `Appliance`, `Vehicle`, `Filters & consumables` and
 `Plant` each set a **default servicing schedule** on the category, so every item you file under
-one is already on a sensible rhythm — a year for an appliance, 90 days for a filter, a week for a
-plant's watering, and 10,000 miles or kilometres for a vehicle (see
-[[Maintenance and Servicing|Maintenance-and-Servicing]]). Several also set a
+one is already on a sensible rhythm — a year for an appliance, 90 days for a filter and a week for
+a plant's watering. `Vehicle` is the exception: it counts **usage**, not days, and starts at 10,000
+per service. The preset can't say what those 10,000 are, so the item reads *every 10000 units*
+until you name the unit — miles, kilometres or hours — on the schedule itself (see
+[[Maintenance and Servicing|Maintenance-and-Servicing]]). Several presets also set a
 [[due-date reminder|#turning-a-date-into-a-deadline]] on the dates that matter: a vehicle's
 service, roadworthiness test and insurance renewal give 30 days' notice, a filter's change date
 gives 14, and a seed packet's best-before gives 60.
 
 > **ℹ️ Note**
 > The `Medication` preset gives **Expiry date** 30 days' notice. A field's name is its identity
-> across your whole inventory, so if you already use `Food` or `Adhesive` — which share that same
-> **Expiry date** field — those categories start giving you 30 days' notice too. You can change or
-> remove the notice on the field at any time, and it changes everywhere at once.
+> across your whole inventory, so every other category using that same **Expiry date** field —
+> `Food`, `Adhesive` and `Cleaning & household chemicals` — starts giving you 30 days' notice too.
+> You can change or remove the notice on the field at any time, and it changes everywhere at once.
 
 A **search box** above the sections filters the library as you type, matching preset names,
 descriptions and field names alike — so `isbn` finds the `Book` preset and `expiry` finds
