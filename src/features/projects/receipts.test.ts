@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { TRACKING_MODES } from '@/db/repositories';
-import { planReceipt, outstandingQty, receiptLandingFor, recordOnlyReceiptReason } from './receipts';
+import {
+  planReceipt,
+  outstandingQty,
+  receiptLandingFor,
+  recordOnlyReason,
+  recordOnlyReceiptReason,
+} from './receipts';
+import { EN_CATALOG } from '@/features/i18n/messages';
 
 describe('planReceipt (spec §4 partial / split receipts)', () => {
   it('defaults an unspecified quantity to the full outstanding remainder', () => {
@@ -121,6 +128,25 @@ describe('recordOnlyReceiptReason (issue #608)', () => {
     for (const mode of TRACKING_MODES) {
       expect(recordOnlyReceiptReason(mode) !== null).toBe(receiptLandingFor(mode) === 'RECORD_ONLY');
     }
+  });
+
+  // The catalog carries a second English of every clause, for the screens that render one inside a
+  // translated sentence. Two Englishes can drift, so this drives both and compares them: the seam's
+  // stored `text` and `en.json`'s value for the same key must be the same words (issue #589).
+  it('keeps the catalog copy of each clause identical to the stored English', () => {
+    const catalog = EN_CATALOG as Record<string, string | undefined>;
+    for (const mode of TRACKING_MODES) {
+      const reason = recordOnlyReason(mode);
+      if (reason === null) continue;
+      expect(catalog[reason.messageKey], `${mode} → ${reason.messageKey}`).toBe(reason.text);
+    }
+  });
+
+  // Every mode's key must be a distinct one, or two modes would explain themselves the same way in
+  // a translated catalog while reading differently in a ledger note.
+  it('gives each record-only mode its own catalog key', () => {
+    const keys = TRACKING_MODES.map((m) => recordOnlyReason(m)?.messageKey).filter((k) => k !== undefined);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it('reads as a clause, so one string serves both the ledger note and the dialogs', () => {

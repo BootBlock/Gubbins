@@ -8,6 +8,7 @@
  * states.
  */
 
+import type { BatchIdentity } from '@/features/inventory/batches';
 import type { PurchaseOrderStatus } from '../constants';
 import type { SupplierRef } from './suppliers';
 
@@ -144,4 +145,21 @@ export interface UpdatePurchaseOrderLineInput {
   readonly description?: string | null;
   readonly orderedQty?: number;
   readonly unitCost?: number | null;
+}
+
+/**
+ * One line's share of a delivery, for `PurchaseOrderRepository.receiveLines` (issue #589).
+ *
+ * The fields are exactly the arguments a single `receiveLine` call takes, named per line so a
+ * whole delivery is described in one value: the same destination and batch may be repeated
+ * across every entry, or varied where a split delivery went to two places.
+ */
+export interface PurchaseOrderLineReceipt {
+  readonly lineId: string;
+  /** Units accepted on this line; omit to receive its whole outstanding remainder. */
+  readonly quantity?: number;
+  /** Where the units land; omit for the linked item's own home location. */
+  readonly locationId?: string;
+  /** The batch/lot the units arrived tagged with, where the delivery carried one. */
+  readonly batch?: BatchIdentity;
 }

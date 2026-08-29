@@ -1,7 +1,7 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { Button, FormField, Input, Modal } from '@/components/foundry';
 import { LocationSelect, type LocationOption } from '@/features/inventory/components/LocationSelect';
-import type { BatchIdentity } from '@/features/inventory/batches';
+import { batchIdentityFrom, type BatchIdentity } from '@/features/inventory/batches';
 import type { PurchaseOrderLine, TrackingMode } from '@/db/repositories';
 import { recordOnlyReceiptReason } from '@/features/projects/receipts';
 import { fromDateInputValue } from '@/lib/date-input';
@@ -35,11 +35,6 @@ export interface ReceiveLineDialogProps {
   readonly isSaving: boolean;
   readonly onSubmit: (input: { quantity?: number; locationId?: string; batch?: BatchIdentity }) => void;
   readonly onClose: () => void;
-}
-
-function optionalText(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
 }
 
 export function ReceiveLineDialog({
@@ -81,16 +76,9 @@ export function ReceiveLineDialog({
       onSubmit({ quantity: qty });
       return;
     }
-    const bn = optionalText(batchNumber);
-    const ln = optionalText(lotNumber);
-    // A date on its own is enough to make this a tracked lot: an expiry is what FEFO consumes by
-    // and what the expiry alerts read (issue #684), so a perishable delivery is worth separating
-    // even when it carries no batch or lot marking. Mirrors the BOM receipt's own rule.
-    const expiry = fromDateInputValue(expiryDate);
-    const batch: BatchIdentity | undefined =
-      bn !== null || ln !== null || expiry !== null
-        ? { batchNumber: bn, lotNumber: ln, expiryDate: expiry }
-        : undefined;
+    // What makes an arrival a tracked lot — including the rule that a date on its own is enough —
+    // is `batchIdentityFrom`'s to decide, so every receipt dialog answers it the same way.
+    const batch = batchIdentityFrom(batchNumber, lotNumber, fromDateInputValue(expiryDate));
     onSubmit({
       quantity: qty,
       locationId: locationId.length === 0 ? undefined : locationId,

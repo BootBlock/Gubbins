@@ -22,6 +22,7 @@ import type { PurchaseOrderWithLines } from '@/db/repositories';
 let poData: PurchaseOrderWithLines | undefined;
 let setStatusSpy: ReturnType<typeof vi.fn>;
 let receiveLineSpy: ReturnType<typeof vi.fn>;
+let receiveDeliverySpy: ReturnType<typeof vi.fn>;
 let deletePoSpy: ReturnType<typeof vi.fn>;
 let removeLineSpy: ReturnType<typeof vi.fn>;
 const refetchOrders = vi.fn();
@@ -91,6 +92,7 @@ vi.mock('./queries', () => ({
   useAddPurchaseOrderLine: () => ({ mutate: vi.fn(), isPending: false }),
   useRemovePurchaseOrderLine: () => ({ mutate: removeLineSpy, isPending: false }),
   useReceivePurchaseOrderLine: () => ({ mutate: receiveLineSpy, isPending: false }),
+  useReceivePurchaseOrderDelivery: () => ({ mutate: receiveDeliverySpy, isPending: false }),
   useReturnPurchaseOrderLine: () => ({ mutate: vi.fn(), isPending: false }),
   // Phase 65 — Reorder / Shopping-list tab
   useReorderPlan: () => ({ isLoading: false, data: [] }),
@@ -250,6 +252,11 @@ beforeEach(() => {
 
   // receiveLine spy: synchronously calls onSuccess when invoked.
   receiveLineSpy = vi.fn((_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
+    callbacks?.onSuccess?.();
+  });
+
+  // The order-level receipt (issue #589), likewise calling back synchronously.
+  receiveDeliverySpy = vi.fn((_vars: unknown, callbacks?: { onSuccess?: () => void }) => {
     callbacks?.onSuccess?.();
   });
 
@@ -455,6 +462,85 @@ describe("PurchaseOrdersScreen — an order's total renders in the order's curre
     const line = screen.getAllByTestId('po-line-row')[0]!;
     expect(line.textContent).toContain('€50.00');
     expect(line.textContent).not.toContain('£');
+  });
+});
+
+/**
+ * The order-level "Receive delivery" (issue #589) — the common case the per-line dialog could only
+ * express as one modal round-trip per line.
+ */
+describe('PurchaseOrdersScreen — receiving the whole delivery', () => {
+  /** An ORDERED order with two outstanding lines and one already fully received. */
+  function orderedPoWithThreeLines(): PurchaseOrderWithLines {
+    const line = (id: string, description: string, orderedQty: number, receivedQty: number) => ({
+      id,
+      poId: 'po-1',
+      itemId: null,
+      description,
+      orderedQty,
+      receivedQty,
+      unitCost: null,
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    return makeDraftPo({
+      effectiveStatus: 'ORDERED',
+      lines: [
+        line('line-1', 'Resistor 10k', 10, 0),
+        line('line-2', 'Capacitor 100n', 5, 2),
+        line('line-3', 'Heat-shrink', 3, 3),
+      ],
+    }) as unknown as PurchaseOrderWithLines;
+  }
+
+  it('offers the order-level receipt only while something is outstanding', () => {
+    poData = orderedPoWithThreeLines();
+    renderScreen();
+    expect(screen.getByTestId('po-receive-delivery')).toBeInTheDocument();
+
+    cleanup();
+    // Every line fully received: there is nothing left for the delivery dialog to offer.
+    poData = makeDraftPo({
+      effectiveStatus: 'RECEIVED',
+      lines: [
+        {
+          id: 'line-1',
+          poId: 'po-1',
+          itemId: null,
+          description: 'Resistor 10k',
+          orderedQty: 10,
+          receivedQty: 10,
+          unitCost: null,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ],
+    }) as unknown as PurchaseOrderWithLines;
+    renderScreen();
+    expect(screen.queryByTestId('po-receive-delivery')).toBeNull();
+  });
+
+  it('receives every outstanding line in one write, leaving the fully-received one out', () => {
+    poData = orderedPoWithThreeLines();
+    renderScreen();
+
+    fireEvent.click(screen.getByTestId('po-receive-delivery'));
+    // The fully-received line is not offered — there is nothing to receive on it.
+    expect(screen.getAllByTestId('po-delivery-row')).toHaveLength(2);
+
+    fireEvent.click(screen.getByTestId('po-delivery-save'));
+
+    expect(receiveDeliverySpy).toHaveBeenCalledTimes(1);
+    const vars = receiveDeliverySpy.mock.calls[0]![0] as {
+      poId: string;
+      receipts: readonly { lineId: string; quantity?: number }[];
+    };
+    expect(vars.poId).toBe('po-1');
+    expect(vars.receipts.map((r) => [r.lineId, r.quantity])).toEqual([
+      ['line-1', 10],
+      // Its remainder, not its ordered quantity — 2 of the 5 already arrived.
+      ['line-2', 3],
+    ]);
   });
 });
 

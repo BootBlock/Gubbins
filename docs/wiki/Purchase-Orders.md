@@ -92,6 +92,10 @@ Everything is **previewed before anything is written**, so you can see exactly w
 
 When a delivery arrives, **receive** it against the PO. Gubbins supports:
 
+- **The whole delivery at once** — **Receive delivery**, above the lines, opens every outstanding
+  line with its remaining quantity already filled in. Choose the destination and any batch once,
+  correct anything that didn't match, and confirm.
+- **One line at a time** — the **Receive** button on a line, for a single correction.
 - **Partial receipts** — receive some now, the rest later; the outstanding quantity stays on
   order.
 - **Split lines** — a line delivered across multiple shipments is handled cleanly.
@@ -100,6 +104,25 @@ When a delivery arrives, **receive** it against the PO. Gubbins supports:
   [[batch|Batches-and-Lots]].
 
 Received stock lands in your inventory and the in-transit figure drops accordingly.
+
+### Receiving the whole delivery
+
+**Receive delivery** lists every line with something still to arrive, each ticked and pre-filled
+with the quantity outstanding. Adjust it for the exceptions:
+
+- **A short line** — type the quantity that actually arrived. The rest stays on order.
+- **A line that didn't arrive** — untick it. Nothing is received against it.
+- **Where it all goes** — the destination location, batch number, lot number and expiry are asked
+  once and applied to the whole delivery. Leave the destination blank to send each line to its own
+  item's home location.
+
+The whole delivery is recorded in one go, so the order never ends up half-received if something
+goes wrong part-way through. Use a line's own **Receive** button afterwards when one line needs a
+different destination or batch from the rest.
+
+> **💡 Tip**
+> A delivery split across two places is two passes: receive what went to the first location, then
+> use **Receive delivery** again for what is still outstanding.
 
 ### Lines that record a delivery without moving stock
 
@@ -114,7 +137,8 @@ Gubbins is simply plain about what receiving it does:
 - The item picker names the tracking mode on the line — *"Torque wrench · Serialised — no stock
   movement"*.
 - The receive dialog says no stock will be added, and why, and doesn't ask for a destination
-  location or a batch and expiry it would have nothing to tag.
+  location or a batch and expiry it would have nothing to tag. Receiving a whole delivery says the
+  same on the line's own row, and the shared destination and batch are simply not applied to it.
 - The receipt is written to the item's [[activity log|Activity-Log]] anyway, saying how many
   arrived and why none of them landed — so the unchanged on-hand figure is explained rather than
   silent. A refund back to the supplier is logged the same way.

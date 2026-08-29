@@ -30,6 +30,7 @@ const repos = vi.hoisted(() => ({
   updateLine: vi.fn(async () => ({ id: 'ln-1' })),
   removeLine: vi.fn(async () => undefined),
   receiveLine: vi.fn(async () => ({ id: 'ln-1' })),
+  receiveLines: vi.fn(async () => [{ id: 'ln-1' }]),
   returnLine: vi.fn(async () => ({ id: 'ln-1' })),
 }));
 
@@ -43,6 +44,7 @@ vi.mock('@/db/repositories', async (importOriginal) => ({
     updateLine: repos.updateLine,
     removeLine: repos.removeLine,
     receiveLine: repos.receiveLine,
+    receiveLines: repos.receiveLines,
     returnLine: repos.returnLine,
   }),
 }));
@@ -51,6 +53,7 @@ import {
   useAddPurchaseOrderLine,
   useCreatePurchaseOrder,
   useDeletePurchaseOrder,
+  useReceivePurchaseOrderDelivery,
   useReceivePurchaseOrderLine,
   useRemovePurchaseOrderLine,
   useReturnPurchaseOrderLine,
@@ -104,6 +107,16 @@ describe('purchase-order writes refresh the open count', () => {
     result.current.mutate({ poId: 'po-1', lineId: 'ln-1', locationId: 'loc-1' });
 
     await waitFor(() => expect(repos.receiveLine).toHaveBeenCalled());
+    await waitFor(() => expect(sweptList(keys)).toBe(true));
+  });
+
+  it('sweeps the list prefix when a whole delivery is received at once', async () => {
+    const { keys, wrapper } = trackedClient();
+    const { result } = renderHook(() => useReceivePurchaseOrderDelivery(), { wrapper });
+
+    result.current.mutate({ poId: 'po-1', receipts: [{ lineId: 'ln-1', quantity: 2 }] });
+
+    await waitFor(() => expect(repos.receiveLines).toHaveBeenCalled());
     await waitFor(() => expect(sweptList(keys)).toBe(true));
   });
 

@@ -30,7 +30,7 @@
 import { isCurrencyMismatch, toStoredMoney } from '@/lib/money';
 import { batchKeyOf, type BatchIdentity } from '@/features/inventory/batches';
 import { SQL_NOW_MS } from '../migrations/migration';
-import { planPoReceipt, planPoReturn } from '@/features/purchasing/po-receipt';
+import { planPoReceipt, planPoReturn, type PoReceiptPlan } from '@/features/purchasing/po-receipt';
 import { receiptLandingFor, recordOnlyReceiptReason } from '@/features/projects/receipts';
 import { derivePoStatus, type PoStatusLine } from '@/features/purchasing/po-status';
 import { type ReorderPlanGroup } from '@/features/purchasing/reorder-plan';
@@ -56,6 +56,7 @@ import type {
   PurchaseOrder,
   PurchaseOrderCountFilter,
   PurchaseOrderLine,
+  PurchaseOrderLineReceipt,
   PurchaseOrderLineRow,
   PurchaseOrderRow,
   PurchaseOrderStatus,
@@ -434,13 +435,113 @@ export class PurchaseOrderRepository extends BaseRepository {
     this.assertWritable();
     const line = await this.requireLine(lineId);
 
+    const { statements, plan } = await this.receiptStatements(line, opts, new Map());
+    statements.push(await this.statusSnapshotStatement(line.poId, new Map([[lineId, plan.nextReceivedQty]])));
+
+    await runReceiptWrite(() => this.driver.transaction(statements), PO_RECEIPT_RACE_MESSAGE);
+
+    return (await this.getLine(lineId))!;
+  }
+
+  /**
+   * Receive **several lines of one order in a single transaction** — the "the box arrived and
+   * everything in it is here" case (issue #589), which used to be one round-trip through
+   * {@link receiveLine} per line.
+   *
+   * This is not a loop over {@link receiveLine} wearing a different name: it builds every line's
+   * statements through the same private {@link receiptStatements} builder those two share, then
+   * commits the lot — the line writes, the stock, the ledger entries and one status snapshot —
+   * as one atomic unit. A delivery therefore lands whole or not at all, rather than leaving an
+   * order half-received because the eleventh line lost a race.
+   *
+   * Each entry carries its own quantity, destination and batch, so the caller may apply one
+   * destination across the delivery or vary it per line; omitting a quantity receives that line's
+   * whole outstanding remainder, exactly as {@link receiveLine} does. Lines are grouped by their
+   * order for the status snapshot, so entries spanning two orders are still each derived correctly.
+   */
+  async receiveLines(receipts: readonly PurchaseOrderLineReceipt[]): Promise<PurchaseOrderLine[]> {
+    this.assertPermission('purchase-orders:write');
+    this.assertPermission('stock:write');
+    this.assertWritable();
+    if (receipts.length === 0) return [];
+
+    // Two entries for one line would each be planned from the same pre-transaction read, so both
+    // compare-and-swap writes would expect the *original* total and the second would trip the
+    // guard's sentinel — rolling back a delivery the caller believed it had described correctly.
+    // Refusing says so plainly instead; a caller wanting to receive twice into one line means one
+    // entry with the two quantities added together.
+    const seen = new Set<string>();
+    for (const receipt of receipts) {
+      if (seen.has(receipt.lineId)) {
+        throw new DbError(
+          'SQLITE_CONSTRAINT',
+          'A delivery can name each order line only once. Combine the quantities into one entry.',
+        );
+      }
+      seen.add(receipt.lineId);
+    }
+
+    const statements: SqlStatement[] = [];
+    // The post-receipt total per line, per order, so one snapshot statement per order sees every
+    // line this transaction moves — deriving it from a plain read would ignore its siblings.
+    const nextByOrder = new Map<string, Map<string, number>>();
+    // An item's on-hand quantity as it stands *after* the receipts already planned here. Two lines
+    // of one order can name the same item (a split line, or the same part at two prices), and the
+    // second entry's "now N" would otherwise repeat the first's figure.
+    const runningItemQty = new Map<string, number>();
+    const lineIds: string[] = [];
+
+    for (const receipt of receipts) {
+      const line = await this.requireLine(receipt.lineId);
+      const built = await this.receiptStatements(line, receipt, runningItemQty);
+      statements.push(...built.statements);
+      lineIds.push(line.id);
+      let forOrder = nextByOrder.get(line.poId);
+      if (!forOrder) {
+        forOrder = new Map<string, number>();
+        nextByOrder.set(line.poId, forOrder);
+      }
+      forOrder.set(line.id, built.plan.nextReceivedQty);
+    }
+
+    for (const [poId, nextByLine] of nextByOrder) {
+      statements.push(await this.statusSnapshotStatement(poId, nextByLine));
+    }
+
+    await runReceiptWrite(() => this.driver.transaction(statements), PO_RECEIPT_RACE_MESSAGE);
+
+    const updated: PurchaseOrderLine[] = [];
+    for (const id of lineIds) updated.push((await this.getLine(id))!);
+    return updated;
+  }
+
+  /**
+   * The statements one receipt instalment contributes, and the plan they were built from — the
+   * single definition {@link receiveLine} and {@link receiveLines} both receive through, so a
+   * delivery received line-by-line and the same delivery received in one go can never write
+   * different things.
+   *
+   * `runningItemQty` carries an item's on-hand total forward across the instalments of one
+   * transaction; pass an empty map for a lone receipt. It is read *and written*, so the caller's
+   * map accumulates.
+   *
+   * The status snapshot is deliberately **not** included: it is per order rather than per line,
+   * and a bulk receipt writes one for the whole delivery.
+   */
+  private async receiptStatements(
+    line: PurchaseOrderLine,
+    opts: { locationId?: string; quantity?: number; batch?: BatchIdentity },
+    runningItemQty: Map<string, number>,
+  ): Promise<{ statements: SqlStatement[]; plan: PoReceiptPlan }> {
     const plan = planPoReceipt(line.orderedQty, line.receivedQty, opts.quantity);
 
     // Receiving nothing (an already-complete line) touches no quantity at all, so it skips the
-    // guarded write rather than racing over a value it is not changing; the status snapshot below
-    // still gets its chance to catch up.
+    // guarded write rather than racing over a value it is not changing; the status snapshot the
+    // caller appends still gets its chance to catch up.
     const statements: SqlStatement[] =
-      plan.receivedDelta > 0 ? [receivedQtyDeltaStatement(lineId, line.receivedQty, plan.receivedDelta)] : [];
+      plan.receivedDelta > 0
+        ? [receivedQtyDeltaStatement(line.id, line.receivedQty, plan.receivedDelta)]
+        : [];
 
     if (line.itemId && plan.receivedDelta > 0) {
       const item = await this.driver.queryOne<{
@@ -451,7 +552,8 @@ export class PurchaseOrderRepository extends BaseRepository {
       const landing = item ? receiptLandingFor(item.tracking_mode) : null;
       if (item && landing === 'COUNT') {
         const qty = plan.receivedDelta;
-        const nextQty = item.quantity + qty;
+        const nextQty = (runningItemQty.get(line.itemId) ?? item.quantity) + qty;
+        runningItemQty.set(line.itemId, nextQty);
         // Received stock lands at the destination location in the per-location ledger
         // (Phase 25); when that differs from the item's primary location the item simply
         // becomes multi-location (the units are physically wherever they arrived).
@@ -490,17 +592,18 @@ export class PurchaseOrderRepository extends BaseRepository {
         statements.push(
           historyStatement(line.itemId, 'RECEIVED', this.actorId(), {
             note: `Received ${qty} of ${line.orderedQty} from a purchase order. No stock was added: ${recordOnlyReceiptReason(item.tracking_mode)}.`,
-            metadata: { poId: line.poId, lineId, quantity: qty, trackingMode: item.tracking_mode },
+            metadata: {
+              poId: line.poId,
+              lineId: line.id,
+              quantity: qty,
+              trackingMode: item.tracking_mode,
+            },
           }),
         );
       }
     }
 
-    statements.push(await this.statusSnapshotStatement(line.poId, lineId, plan.nextReceivedQty));
-
-    await runReceiptWrite(() => this.driver.transaction(statements), PO_RECEIPT_RACE_MESSAGE);
-
-    return (await this.getLine(lineId))!;
+    return { statements, plan };
   }
 
   /**
@@ -593,7 +696,7 @@ export class PurchaseOrderRepository extends BaseRepository {
       }
     }
 
-    statements.push(await this.statusSnapshotStatement(line.poId, lineId, plan.nextReceivedQty));
+    statements.push(await this.statusSnapshotStatement(line.poId, new Map([[lineId, plan.nextReceivedQty]])));
 
     await runReceiptWrite(() => runStockDraw(this.driver, statements), PO_RECEIPT_RACE_MESSAGE);
 
@@ -763,12 +866,13 @@ export class PurchaseOrderRepository extends BaseRepository {
 
   /**
    * The statement that recomputes and persists a PO's status snapshot **inside the caller's own
-   * transaction**, given the post-write `received_qty` of the single line that transaction is
-   * changing (issue #298). Running the refresh afterwards as its own call left a window in which a
-   * failure — or an interleaved edit — stranded a fully-received order still reading ORDERED.
+   * transaction**, given the post-write `received_qty` of every line that transaction is changing
+   * (issue #298; several lines at once since issue #589). Running the refresh afterwards as its own
+   * call left a window in which a failure — or an interleaved edit — stranded a fully-received
+   * order still reading ORDERED.
    *
    * The derivation itself stays in the pure {@link derivePoStatus} seam, applied to the PO's line
-   * progress with the changing line's about-to-be-committed total substituted in, so the snapshot
+   * progress with the changing lines' about-to-be-committed totals substituted in, so the snapshot
    * matches what the transaction is committing. `derivePoStatus` is asked for the lines' verdict
    * alone (by naming a non-authoritative persisted status, as {@link setStatus} does); the WHERE
    * clause is what preserves the user-authoritative DRAFT / CANCELLED states, and `status <> ?`
@@ -784,13 +888,15 @@ export class PurchaseOrderRepository extends BaseRepository {
    */
   private async statusSnapshotStatement(
     poId: string,
-    lineId: string,
-    receivedQty: number,
+    receivedQtyByLineId: ReadonlyMap<string, number>,
   ): Promise<SqlStatement> {
     const progress = await this.readLineProgress(poId);
     const next: PurchaseOrderStatus = derivePoStatus(
       'ORDERED',
-      progress.map((l) => (l.id === lineId ? { ...l, receivedQty } : l)),
+      progress.map((l) => {
+        const receivedQty = receivedQtyByLineId.get(l.id);
+        return receivedQty === undefined ? l : { ...l, receivedQty };
+      }),
     );
     return {
       sql: `UPDATE purchase_orders SET status = ?

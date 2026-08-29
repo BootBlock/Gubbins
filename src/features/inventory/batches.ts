@@ -55,6 +55,29 @@ export function normaliseBatch(identity: BatchIdentity): BatchIdentity {
 }
 
 /**
+ * The batch identity a receipt form's three optional fields describe, or `undefined` when they
+ * describe none — the one definition of what makes an arrival a *tracked lot* (issue #589).
+ *
+ * Any one of the three is enough: a batch number, a lot number, **or** an expiry date on its own.
+ * An expiry is what FEFO consumes by and what the expiry alerts read (issue #684), so a perishable
+ * delivery is worth separating even when it carries no batch or lot marking. Blank and
+ * whitespace-only text is no marking at all, which {@link normaliseBatch} already decides.
+ *
+ * Every receipt dialog builds its identity through this, so two of them cannot come to disagree
+ * about which deliveries are tracked.
+ */
+export function batchIdentityFrom(
+  batchNumber: string | null,
+  lotNumber: string | null,
+  expiryDate: number | null,
+): BatchIdentity | undefined {
+  const identity = normaliseBatch({ batchNumber, lotNumber, expiryDate });
+  return identity.batchNumber === null && identity.lotNumber === null && identity.expiryDate === null
+    ? undefined
+    : identity;
+}
+
+/**
  * A deterministic, collision-free key for a batch identity, stable across devices so two
  * devices recording the same lot at the same placement generate the same `stock_batches`
  * row id and merge by LWW (mirroring the `item_stock` `${item}|${location}` convention).

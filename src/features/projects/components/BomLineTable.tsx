@@ -9,9 +9,11 @@ import {
   type ReservationStatus,
   type TrackingMode,
 } from '@/db/repositories';
+import { batchIdentityFrom } from '@/features/inventory/batches';
 import { useItemsAvailability, useItemsRelations, useItemsTrackingModes } from '@/features/inventory/queries';
 import { useT } from '@/features/i18n';
 import { missingRequirementsByLine } from '@/features/inventory/item-requirements';
+import { fromDateInputValue } from '@/lib/date-input';
 import { useRemoveBomLine, useSetProcurement, useSetReservation, useReceiveLine } from '../projects';
 import { outstandingQty, recordOnlyReceiptReason } from '../receipts';
 import { PROCUREMENT_STATUS_LABELS, RESERVATION_STATUS_LABELS } from './projects-ui';
@@ -68,15 +70,11 @@ function ReceiveControl({
   const clamped = Math.min(Math.max(1, qty || 1), outstanding);
 
   // A record-only receipt sends no batch identity: the write discards it, so offering it would
-  // ask for something nothing reads.
-  const batch: ReceiveBatch | undefined =
-    !recordOnly && (batchNumber.trim() || expiry)
-      ? {
-          batchNumber: batchNumber.trim() || null,
-          lotNumber: null,
-          expiryDate: expiry ? new Date(expiry).getTime() : null,
-        }
-      : undefined;
+  // ask for something nothing reads. What makes an arrival a tracked lot is `batchIdentityFrom`'s
+  // to decide, so this control and the purchase-order dialogs answer it the same way.
+  const batch: ReceiveBatch | undefined = recordOnly
+    ? undefined
+    : batchIdentityFrom(batchNumber, null, fromDateInputValue(expiry));
 
   return (
     <div className="flex items-center gap-1.5">
