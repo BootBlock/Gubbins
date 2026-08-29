@@ -8,7 +8,9 @@ import { buildSurfaceMap, resolveTopRadii, trackSurfaces, COLUMN_WIDTH, NO_SURFA
 
 afterEach(() => {
   document.body.innerHTML = '';
+  scrollPageTo(0);
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 /** Fake a DOMRect for an element (happy-dom has no layout engine). */
@@ -24,6 +26,13 @@ function mockRect(el: Element, left: number, top: number, width: number, height:
     y: top,
     toJSON: () => ({}),
   } as DOMRect);
+}
+
+/** Scroll the page and fire the event the tracker listens for, as a real scroll would. */
+function scrollPageTo(y: number): void {
+  const el = document.scrollingElement ?? document.documentElement;
+  Object.defineProperty(el, 'scrollTop', { value: y, configurable: true });
+  document.dispatchEvent(new Event('scroll', { bubbles: true }));
 }
 
 /** A square-cornered rect literal (the common case in these tests); 40px tall by default. */
@@ -179,5 +188,60 @@ describe('trackSurfaces', () => {
       tracker.stop();
       tracker.stop();
     }).not.toThrow();
+  });
+
+  it('reports how far the page has scrolled since the map was built (issue #438)', () => {
+    vi.useFakeTimers();
+    // The rebuild is scheduled inside a rAF; run it inline so advancing the timers is enough.
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    const btn = document.createElement('button');
+    document.body.appendChild(btn);
+    mockRect(btn, 10, 400, 80, 30);
+
+    const tracker = trackSurfaces();
+    const col = Math.floor(10 / COLUMN_WIDTH);
+    const built = tracker.snapshot().generation;
+    expect(tracker.scrollShift()).toBe(0);
+
+    // The page scrolls 120px down. The rebuild is still debounced, so the map keeps describing
+    // where the control *was* — and the shift is what says where it is now (negative = moved up).
+    scrollPageTo(120);
+    expect(tracker.snapshot().generation).toBe(built);
+    expect(tracker.snapshot().tops[col]).toBe(400);
+    expect(tracker.scrollShift()).toBe(-120);
+
+    // The debounce expires and the map is rebuilt at the new position: the shift is spent, and
+    // the snapshot publishes the scroll offset it was built at.
+    mockRect(btn, 10, 280, 80, 30);
+    vi.advanceTimersByTime(200);
+    expect(tracker.snapshot().generation).toBeGreaterThan(built);
+    expect(tracker.snapshot().tops[col]).toBe(280);
+    expect(tracker.snapshot().scrollY).toBe(120);
+    expect(tracker.scrollShift()).toBe(0);
+
+    tracker.stop();
+    vi.useRealTimers();
+  });
+
+  it('counts a scroll as a change even when the map itself is identical (issue #438)', () => {
+    // No landable control at all, so the maps before and after are byte-identical. The published
+    // scroll offset must still move, or a consumer would keep drawing at a spent shift.
+    vi.useFakeTimers();
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    const tracker = trackSurfaces();
+    const built = tracker.snapshot().generation;
+    scrollPageTo(60);
+    vi.advanceTimersByTime(200);
+    expect(tracker.snapshot().generation).toBeGreaterThan(built);
+    expect(tracker.snapshot().scrollY).toBe(60);
+    expect(tracker.scrollShift()).toBe(0);
+    tracker.stop();
+    vi.useRealTimers();
   });
 });

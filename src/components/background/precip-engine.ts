@@ -125,7 +125,9 @@
  * flake actually lands or the layout moves) and per frame is a single `drawImage` composite. Far
  * particles (and rain's deep-background layers) deliberately don't interact — they read as behind
  * the scene — which also throttles the landing rate. When the tracker reports the layout moved
- * (scroll, resize, DOM change), settled snow on moved surfaces is cleared, as if knocked off.
+ * (resize, DOM change), settled snow on moved surfaces is cleared, as if knocked off. A *page
+ * scroll* is not that: a drift rides its control down the screen live, without waiting for the
+ * tracker's debounced rebuild (issue #438) — see {@link startPrecip}'s `surfShift`.
  *
  * Colours come from the `--precip-rain` / `--precip-snow` design tokens (read live, so the layer is
  * theme-correct); {@link PrecipController.refresh} re-reads them + rebuilds the sprites when the
@@ -1472,6 +1474,19 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   let surfTops: Int16Array = new Int16Array(0);
   /** Tracker generation the map was adopted at; -1 forces adoption on the next frame. */
   let surfGen = -1;
+  /** Page scroll offset the adopted map was built at (the baseline {@link surfShift} measures from). */
+  let surfScrollY = 0;
+  /**
+   * How far (css px) the adopted map's surfaces have moved on screen since it was built, because
+   * the page scrolled under them (issue #438). The map is rebuilt on a debounce, so between a
+   * scroll and its rebuild the map describes where the controls *were*; this is the live
+   * correction, read from the tracker every frame. Map y + `surfShift` = screen y.
+   *
+   * Settled snow is therefore drawn — and falling flakes land — where the control actually is
+   * while the page scrolls, instead of hanging at the old position until the rebuild lands. It is
+   * 0 at every rebuild, and 0 for an inner scroll container (see the tracker's `scrollShift`).
+   */
+  let surfShift = 0;
   /** Settled-snow depth per column (css px). */
   let depths = new Float32Array(0);
   /**
@@ -1504,6 +1519,8 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    */
   let drawnMoundGen = -1;
   let drawnDy = 0;
+  /** The scroll shift the overlay was blitted at — a changed shift is a changed frame. */
+  let drawnShift = 0;
   let drawnC0 = -1;
   let drawnC1 = -1;
   /** Offscreen cache the mound shapes are path-rendered into (a few times/s at most). */
@@ -1904,6 +1921,8 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       sideDepths = new Float32Array(0);
       underDepths = new Float32Array(0);
       surfGen = -1;
+      surfScrollY = 0;
+      surfShift = 0;
       moundVisible = false;
       moundDirty = false;
       for (const s of splashes) s.t = s.life;
@@ -1915,22 +1934,30 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
 
   /**
    * Adopt the tracker's latest surface map (issue #68). Columns whose top edge moved beyond the
-   * tolerance lose their settled snow — the control moved (scroll, layout change), so its drift
-   * is knocked off; columns whose surface is unchanged keep building. The tracker swaps in a
-   * fresh array per rebuild (never mutates the published one), so holding the previous reference
-   * is a stable comparison baseline and no copy is needed.
+   * tolerance lose their settled snow — the control moved (layout change), so its drift is
+   * knocked off; columns whose surface is unchanged keep building. The tracker swaps in a fresh
+   * array per rebuild (never mutates the published one), so holding the previous reference is a
+   * stable comparison baseline and no copy is needed.
+   *
+   * A *page scroll* is not the control moving, though — the world scrolled past, and a drift
+   * rides its control the way it did while the page was moving (issue #438). So the two maps are
+   * compared in the same frame of reference: the previous map's edges are carried forward by the
+   * scroll between the two rebuilds, and only what moved relative to *that* is knocked off.
    */
   function reconcileSurfaces(snap: SurfaceSnapshot): void {
     const next = snap.tops;
     const nextBots = snap.bots;
     const prev = surfTops;
     const prevBots = surfBots;
+    // How far the old map's edges travelled on screen between the two rebuilds (see above).
+    const dScroll = surfScrollY - snap.scrollY;
+    const carry = (y: number): number => (y === NO_SURFACE ? NO_SURFACE : y + dScroll);
     if (depths.length !== next.length) depths = new Float32Array(next.length);
     if (sideDepths.length !== next.length * 2) sideDepths = new Float32Array(next.length * 2);
     if (underDepths.length !== next.length) underDepths = new Float32Array(next.length);
     for (let c = 0; c < next.length; c++) {
-      const before = c < prev.length ? (prev[c] ?? NO_SURFACE) : NO_SURFACE;
-      const beforeBot = c < prevBots.length ? (prevBots[c] ?? NO_SURFACE) : NO_SURFACE;
+      const before = carry(c < prev.length ? (prev[c] ?? NO_SURFACE) : NO_SURFACE);
+      const beforeBot = carry(c < prevBots.length ? (prevBots[c] ?? NO_SURFACE) : NO_SURFACE);
       const topMoved = Math.abs((next[c] ?? NO_SURFACE) - before) > SETTLE.moveTolerance;
       const botMoved = Math.abs((nextBots[c] ?? NO_SURFACE) - beforeBot) > SETTLE.moveTolerance;
       if (topMoved) {
@@ -1949,13 +1976,19 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     }
     surfTops = next;
     surfBots = nextBots;
+    surfScrollY = snap.scrollY;
     surfGen = snap.generation;
+    // The new map is the new baseline: whatever the shift was, it is spent.
+    surfShift = 0;
     // Splashes are absolutely positioned: one whose surface moved would hang mid-air, so expire
     // it (splashes on unmoved surfaces play out normally).
     for (const s of splashes) {
       if (s.t >= s.life) continue;
       const c = surfaceCol(s.x);
-      if (c < 0 || Math.abs(topAt(c) - s.y) > SETTLE.moveTolerance) s.t = s.life;
+      // The splash's y is in the *previous* map's frame, so carry it forward before comparing.
+      const y = s.y + dScroll;
+      if (c < 0 || Math.abs(topAt(c) - y) > SETTLE.moveTolerance) s.t = s.life;
+      else s.y = y;
     }
     // The layout moved: bypass the deposit throttle so surviving mounds re-render at their new
     // positions on the very next overlay pass, never lingering where controls used to be.
@@ -2082,8 +2115,12 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     if (c < 0) return;
     const top = topAt(c);
     if (top === NO_SURFACE) return;
+    // The map is in its own frame while a scroll is outrunning the rebuild, so the fall is
+    // measured there too — the flake lands on the control as drawn, not where it used to be.
+    const y = p.y - surfShift;
+    const wasY = prevY - surfShift;
     const line = kind === 'snow' ? top - depthAt(c) : top;
-    if (prevY >= line || p.y < line) return;
+    if (wasY >= line || y < line) return;
     if (kind === 'snow') {
       // A drift near its capacity sheds (issue #437) — the flake blows off the full crest and
       // carries on down, so the mound rolls to a stop instead of levelling into a hard line.
@@ -2114,6 +2151,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const c1 = Math.floor(p.x / COLUMN_WIDTH);
     if (c0 === c1) return false;
     const step = c1 > c0 ? 1 : -1;
+    const y = p.y - surfShift; // map frame, as in `tryLand`
     for (let c = c0 + step; step > 0 ? c <= c1 : c >= c1; c += step) {
       // A sweep may start in the off-screen wrap margin (that's where wrapped flakes re-enter):
       // skip out-of-range columns rather than aborting, or faces near the upwind screen edge
@@ -2121,8 +2159,8 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       if (c < 0 || c >= surfTops.length) continue;
       const top = topAt(c);
       if (top === NO_SURFACE) continue;
-      if (p.y <= top + 1) continue; // above this surface: the flake passes over the top
-      if (p.y - top > s.maxLen) continue; // too deep below the known edge: passes behind
+      if (y <= top + 1) continue; // above this surface: the flake passes over the top
+      if (y - top > s.maxLen) continue; // too deep below the known edge: passes behind
       // Only a genuine cliff is a face; inside a control (or over a walkable step) the flake
       // was already below the previous column's surface and no new face was crossed.
       const prevTop = c - step >= 0 && c - step < surfTops.length ? topAt(c - step) : NO_SURFACE;
@@ -2162,7 +2200,10 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const bot = botAt(c);
     if (bot === NO_SURFACE) return false;
     const line = bot + underDepthAt(c);
-    if (prevY >= line || p.y < line) return false; // didn't cross the lip line downward
+    // Map frame, as in `tryLand`.
+    const y = p.y - surfShift;
+    const wasY = prevY - surfShift;
+    if (wasY >= line || y < line) return false; // didn't cross the lip line downward
     if (Math.random() >= snowUnderCatchChance(frameWarm)) return false; // falls on past
     const reach = u.kernel.length - 1;
     let changed = false;
@@ -2265,7 +2306,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    * Returns whether anything was actually blown, so the caller only starts the cooldown on a hit.
    */
   function blowAt(x: number, y: number): boolean {
-    const hit = blowTargetCol(x, y);
+    // The tap arrives in screen coords; the drift is stored in the map's frame (see `tryLand`).
+    const my = y - surfShift;
+    const hit = blowTargetCol(x, my);
     if (hit < 0) return false;
     const span = Math.ceil(BLOW.radius / COLUMN_WIDTH);
     let first = hit;
@@ -2303,7 +2346,8 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         // Launched from the slice of snow that was actually removed: between the crest that was
         // there and the one left behind.
         const px = crestX(c) + rand(-COLUMN_WIDTH / 2, COLUMN_WIDTH / 2);
-        const py = top - before + removed * Math.random();
+        // Back into screen coords: the plume flies free of the map, so it must not ride the shift.
+        const py = top - before + removed * Math.random() + surfShift;
         if (!throwFlake(px, py, f, x)) break;
         thrown++;
       }
@@ -2631,17 +2675,23 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    * this is the only place the lift is applied. The caller reads the lift and passes it in,
    * because it also needs it to decide whether this frame differs from the one already on screen;
    * `c0 < 0` means no lift.
+   *
+   * The whole layer also rides {@link surfShift}, the live page-scroll correction — that is what
+   * keeps a drift glued to its control while a scroll outruns the map rebuild (issue #438).
    */
   function blitMounds(dy: number, c0: number, c1: number): void {
     if (c0 < 0) {
-      octx!.drawImage(moundCanvas!, 0, 0, cssWidth, cssHeight);
+      // The common case — nothing hovered, nothing scrolled since the rebuild — stays one plain
+      // full-canvas blit, with no source rectangle to work out.
+      if (surfShift === 0) octx!.drawImage(moundCanvas!, 0, 0, cssWidth, cssHeight);
+      else blitMoundSpan(0, cssWidth, surfShift);
       return;
     }
     const x0 = clamp(c0 * COLUMN_WIDTH, 0, cssWidth);
     const x1 = clamp((c1 + 1) * COLUMN_WIDTH, 0, cssWidth);
-    blitMoundSpan(0, x0, 0);
-    blitMoundSpan(x0, x1, dy);
-    blitMoundSpan(x1, cssWidth, 0);
+    blitMoundSpan(0, x0, surfShift);
+    blitMoundSpan(x0, x1, surfShift + dy);
+    blitMoundSpan(x1, cssWidth, surfShift);
   }
 
   /**
@@ -2691,6 +2741,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       !blowing &&
       !overlayClean &&
       drawnMoundGen === moundGen &&
+      drawnShift === surfShift &&
       drawnDy === dy &&
       drawnC0 === c0 &&
       drawnC1 === c1
@@ -2700,10 +2751,15 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     octx!.clearRect(0, 0, cssWidth, cssHeight);
     overlayClean = false;
     if (hasMound) blitMounds(dy, c0, c1);
+    // Splashes are pinned to the surface they broke on, so they ride the scroll shift with it;
+    // a plume, thrown clear of the map, is already in screen coords and must not.
+    if (surfShift !== 0) octx!.translate(0, surfShift);
     drawSplashes(dt);
+    if (surfShift !== 0) octx!.translate(0, -surfShift);
     if (blowing) drawBlown(dt);
     octx!.globalAlpha = 1;
     drawnMoundGen = splashing || blowing ? -1 : moundGen;
+    drawnShift = surfShift;
     drawnDy = dy;
     drawnC0 = c0;
     drawnC1 = c1;
@@ -3129,6 +3185,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         // Adopt the surface map *before* the particle step, so landings test current geometry.
         const snap = surfaces!.snapshot();
         if (snap.generation !== surfGen) reconcileSurfaces(snap);
+        // …and read how far the page has scrolled since that map was built, so this frame's
+        // landings and its overlay both use the controls' *current* position (issue #438).
+        surfShift = surfaces!.scrollShift();
       }
     }
     // (Every envelope stays 0 on a static reduced-motion frame, so the calm scene has no haze,

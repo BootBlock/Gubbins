@@ -22,6 +22,9 @@
  *  - Triggers are **trailing-debounced** ({@link REBUILD_DEBOUNCE_MS}) so a scroll or a burst of
  *    list churn produces one rebuild at rest, not a rebuild storm mid-gesture — with a hard cap
  *    ({@link REBUILD_MAX_LATENCY_MS}) so a *continuous* storm can't keep the map stale forever.
+ *    A page scroll needs no rebuild to be followed, though: it moves every mapped surface by the
+ *    same amount, which {@link SurfaceTracker.scrollShift} reports live and for free, so the
+ *    consumer can ride it at frame rate while the rebuild takes its time (issue #438).
  *  - The rebuild itself runs inside `requestAnimationFrame`, so its one batched layout read
  *    lands at a frame boundary instead of an arbitrary timer tick.
  *  - Nothing runs while the tab is **hidden** (the consuming engine is paused then anyway); a
@@ -113,6 +116,12 @@ export interface SurfaceSnapshot {
    * surface or the bottom sits below the fold (an off-screen underside has nothing to show).
    */
   readonly bots: Int16Array;
+  /**
+   * The page scroll offset (css px) the maps were built at. Paired with the live scroll position
+   * it gives {@link SurfaceTracker.scrollShift} — how far the mapped surfaces have moved since —
+   * so a consumer can follow a scroll at frame rate instead of waiting for the next rebuild.
+   */
+  readonly scrollY: number;
   readonly generation: number;
 }
 
@@ -138,6 +147,19 @@ export interface SurfaceTracker {
   snapshot(): SurfaceSnapshot;
   /** The surface currently under the pointer and its live lift, or null. See {@link HoverFollow}. */
   hoverFollow(): HoverFollow | null;
+  /**
+   * How far (css px) the published map's surfaces have moved on screen since it was built,
+   * because the *page* scrolled under them — negative when the page scrolled down. Live: it
+   * updates on the scroll event itself, so a consumer can draw settled snow on a scrolling page
+   * at frame rate rather than leaving it behind until the debounced rebuild catches up
+   * (issue #438). Reads a value cached by the scroll listener, so it costs no layout.
+   *
+   * Only the *page* scroll is followed. An inner scroll container moves its own surfaces without
+   * moving the page, so this stays 0 there and the rebuild remains the only correction — as does
+   * a `position: fixed` surface, which the shift would move when it should not (none exist in the
+   * app root today, and the next rebuild resolves it either way).
+   */
+  scrollShift(): number;
   /** Detach every listener/observer (idempotent). */
   stop(): void;
 }
@@ -329,6 +351,17 @@ function collectControlRects(
   return rects;
 }
 
+/**
+ * The page's current vertical scroll offset in css px. `document.scrollingElement` is the element
+ * that actually scrolls the page in either box mode; `scrollY` is the fallback where there is no
+ * document element to read (and 0 where neither exists, as in a non-DOM environment).
+ */
+function pageScrollY(): number {
+  const el = typeof document !== 'undefined' ? document.scrollingElement : null;
+  if (el) return el.scrollTop;
+  return typeof scrollY === 'number' ? scrollY : 0;
+}
+
 /** Content equality for two maps (lengths differing counts as changed). */
 function mapsEqual(a: Int16Array, b: Int16Array): boolean {
   if (a.length !== b.length) return false;
@@ -350,8 +383,11 @@ export function trackSurfaces(): SurfaceTracker {
   const snap = {
     tops: new Int16Array(0) as Int16Array,
     bots: new Int16Array(0) as Int16Array,
+    scrollY: pageScrollY(),
     generation: 0,
   };
+  /** The live page scroll offset, refreshed by the scroll listener and at every rebuild. */
+  let pageY = snap.scrollY;
   let timer: ReturnType<typeof setTimeout> | 0 = 0;
   let firstRequestAt = 0;
   let stopped = false;
@@ -383,10 +419,17 @@ export function trackSurfaces(): SurfaceTracker {
     }
     const w = typeof innerWidth === 'number' ? innerWidth : 0;
     const h = typeof innerHeight === 'number' ? innerHeight : 0;
+    // A rebuild may also be triggered by something that moved the page under us without a scroll
+    // event of its own (a resize, a layout change), so re-read rather than trusting the cache.
+    pageY = pageScrollY();
     const next = buildSurfaceMap(collectControlRects(root, w, h, hoverEl), w, h);
-    if (!mapsEqual(next.tops, snap.tops) || !mapsEqual(next.bots, snap.bots)) {
+    // The published scroll offset is the baseline of the published maps, so the two are always
+    // adopted together: a scroll that left the maps byte-identical still counts as a change,
+    // because it resets the shift a consumer is drawing with (issue #438).
+    if (!mapsEqual(next.tops, snap.tops) || !mapsEqual(next.bots, snap.bots) || pageY !== snap.scrollY) {
       snap.tops = next.tops;
       snap.bots = next.bots;
+      snap.scrollY = pageY;
       snap.generation++;
     }
   }
@@ -489,8 +532,18 @@ export function trackSurfaces(): SurfaceTracker {
     startPoll();
   }
 
+  /**
+   * Cache the page scroll offset, then request the rebuild. The cache is what makes
+   * {@link SurfaceTracker.scrollShift} free to read every frame: the scroll event fires before
+   * the frame it affects, so the value a frame reads is that frame's own (issue #438).
+   */
+  function onScroll(): void {
+    pageY = pageScrollY();
+    request();
+  }
+
   // `scroll` does not bubble, but a capture listener still sees every inner container's scroll.
-  addEventListener('scroll', request, { capture: true, passive: true });
+  addEventListener('scroll', onScroll, { capture: true, passive: true });
   addEventListener('resize', request);
   document.addEventListener('visibilitychange', onVisibility);
   /*
@@ -526,6 +579,10 @@ export function trackSurfaces(): SurfaceTracker {
     hoverFollow() {
       return hover;
     },
+    scrollShift() {
+      // Positive = the surfaces have moved *down* the screen (the page scrolled up).
+      return snap.scrollY - pageY;
+    },
     stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
@@ -535,7 +592,7 @@ export function trackSurfaces(): SurfaceTracker {
       hoverEl = null;
       hover = null;
       clearInterval(periodic);
-      removeEventListener('scroll', request, { capture: true });
+      removeEventListener('scroll', onScroll, { capture: true });
       removeEventListener('resize', request);
       document.removeEventListener('visibilitychange', onVisibility);
       root.removeEventListener('pointerover', onPointerOver, { capture: true });
