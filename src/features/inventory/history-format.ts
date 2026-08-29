@@ -4,12 +4,14 @@
  * The immutable `item_history` ledger stores a small `HistoryAction` enum plus an
  * already-British-English `note` (e.g. "Gauge -45g (now 400g).") and optional
  * quantity / net-value deltas. This module turns one raw {@link ItemHistoryEntry}
- * into the three display primitives the Activity Log view renders — a short action
- * title, the detail line and a signed delta badge with a tone — keeping that logic
- * out of the component so it unit-tests directly (mirrors `describeScrapeError` /
- * `liveRegionAttrs`). It never touches the DOM, a clock or React.
+ * into the display primitives the Activity Log view renders — a short action title, the
+ * detail line, a signed delta badge with a tone, and the per-field before/after values an
+ * edit or a sync merge recorded — keeping that logic out of the component so it unit-tests
+ * directly (mirrors `describeScrapeError` / `liveRegionAttrs`). It never touches the DOM, a
+ * clock or React.
  */
 import type { HistoryAction, ItemHistoryEntry } from '@/db/repositories';
+import { AUDITED_ITEM_FIELDS } from './audited-item-fields';
 
 /** Short, British-English action titles for the Activity Log (one per §4 action). */
 const ACTION_LABELS: Record<HistoryAction, string> = {
@@ -71,6 +73,22 @@ export const HISTORY_TONE_BADGE: Record<Exclude<HistoryTone, 'neutral'>, string>
   negative: 'bg-secondary text-muted-foreground',
 };
 
+/**
+ * A JSON-round-tripped ledger value. `metadata` is stored as JSON, so whatever `SqlValue` the
+ * write path recorded arrives back as one of these four.
+ */
+export type HistoryChangeValue = string | number | boolean | null;
+
+/** One field an edit or a sync merge changed: its name, the value before, and the value after. */
+export interface HistoryFieldChange {
+  /** The camelCase field name — an {@link AUDITED_ITEM_FIELDS} member, or an unknown peer's. */
+  readonly field: string;
+  /** The value before the change; `null` means the field was not set. */
+  readonly from: HistoryChangeValue;
+  /** The value after the change; `null` means the field was cleared. */
+  readonly to: HistoryChangeValue;
+}
+
 /** Everything the Activity Log row needs to render one ledger entry. */
 export interface HistoryEntryView {
   /** Short action title, e.g. "Quantity changed". */
@@ -81,6 +99,57 @@ export interface HistoryEntryView {
   readonly delta: string | null;
   /** Colour cue for the delta: a gain, a loss, or neither. */
   readonly tone: HistoryTone;
+  /**
+   * The per-field before/after values the entry recorded (issues #144, #487), in
+   * {@link AUDITED_ITEM_FIELDS} order, or empty for an entry that carries none. Formatting each
+   * value needs the user's locale and currency, so that is the view layer's job
+   * (`history-change-format.ts`); this seam only parses and orders them.
+   */
+  readonly changes: readonly HistoryFieldChange[];
+  /**
+   * Whether {@link detail} says nothing {@link changes} does not. `ATTRIBUTES_CHANGED` writes its
+   * note as "Changed unit cost, barcode." — a list of exactly the fields below it, so a row that
+   * showed both would say everything twice. A `MERGE_OVERWRITTEN` note explains *why* the values
+   * moved ("Two devices edited this item…"), which nothing else carries, so it is kept.
+   *
+   * It is also kept when the entry names a field this build does not know. The change list can
+   * only show that field by its raw camelCase name, while the note — written by the peer that
+   * knew what the field was called — names it in prose. Dropping the note there would make the
+   * row *less* legible than before the values were shown at all.
+   */
+  readonly noteRepeatsChanges: boolean;
+}
+
+/** Registry order, so a multi-field edit lists its fields the same way every time. */
+const FIELD_ORDER = new Map(AUDITED_ITEM_FIELDS.map((field, index) => [field, index]));
+
+/** A JSON scalar this module can render, or `null` for anything else (an object, an array). */
+function changeValue(raw: unknown): HistoryChangeValue {
+  const type = typeof raw;
+  return type === 'string' || type === 'number' || type === 'boolean' ? (raw as HistoryChangeValue) : null;
+}
+
+/**
+ * The `{field, from, to}` records an entry's metadata carries, ordered by {@link FIELD_ORDER}
+ * with any field this build does not know appended in the order it was recorded.
+ *
+ * Written defensively because `item_history` unions across devices (§7.3): the payload may have
+ * been produced by a newer peer, or by an older one that never wrote `changes` at all. Anything
+ * that is not a record naming a field is dropped rather than rendered as `[object Object]`.
+ */
+export function parseHistoryChanges(entry: ItemHistoryEntry): readonly HistoryFieldChange[] {
+  const raw = entry.metadata?.changes;
+  if (!Array.isArray(raw)) return [];
+  const parsed: HistoryFieldChange[] = [];
+  for (const candidate of raw) {
+    if (typeof candidate !== 'object' || candidate === null) continue;
+    const { field, from, to } = candidate as Record<string, unknown>;
+    if (typeof field !== 'string' || field.length === 0) continue;
+    parsed.push({ field, from: changeValue(from), to: changeValue(to) });
+  }
+  const rank = (change: HistoryFieldChange): number => FIELD_ORDER.get(change.field) ?? FIELD_ORDER.size;
+  // A stable sort (guaranteed since ES2019) is what keeps the unknown fields in recorded order.
+  return parsed.sort((a, b) => rank(a) - rank(b));
 }
 
 export function describeHistoryEntry(entry: ItemHistoryEntry): HistoryEntryView {
@@ -93,11 +162,17 @@ export function describeHistoryEntry(entry: ItemHistoryEntry): HistoryEntryView 
         ? entry.netValueDelta
         : null;
   const detail = entry.note?.trim() ? entry.note.trim() : null;
+  const changes = parseHistoryChanges(entry);
   return {
     label: historyActionLabel(entry.action),
     detail,
     delta: movement === null ? null : signedDelta(movement),
     tone: movement === null ? 'neutral' : movement > 0 ? 'positive' : 'negative',
+    changes,
+    noteRepeatsChanges:
+      entry.action === 'ATTRIBUTES_CHANGED' &&
+      changes.length > 0 &&
+      changes.every((change) => FIELD_ORDER.has(change.field)),
   };
 }
 

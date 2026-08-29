@@ -54,6 +54,21 @@ export function useCategories() {
 }
 
 /**
+ * Category id → name, for the places that hold an id and need to show a name — the Activity Log's
+ * before/after values, which record `categoryId` because that is what the immutable ledger stores
+ * (issue #486).
+ *
+ * Reads the same bounded whole-set query as {@link useCategories}, so a screen using both pays for
+ * one fetch, and rebuilds the map only when that set actually changes. A missing id is a category
+ * deleted since the entry was written; the caller decides what to show for it rather than getting
+ * a blank.
+ */
+export function useCategoryNames(): ReadonlyMap<string, string> {
+  const { data } = useCategories();
+  return useMemo(() => new Map((data?.rows ?? []).map((c) => [c.id, c.name])), [data]);
+}
+
+/**
  * The category ids that at least one active item currently uses, scoped to `locationId`
  * (null = the whole inventory) — the set the Category facet offers so it only lists
  * categories in use, not every category ever defined (issue #76). Deliberately split from

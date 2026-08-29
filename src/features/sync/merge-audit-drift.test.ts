@@ -1,7 +1,7 @@
 /**
  * The merge-overwrite registry against the two things it must not drift from (issue #487).
  *
- * `merge-audit.ts` keeps its own list of the `items` columns whose loss is worth recording,
+ * `audited-item-fields.ts` keeps the list of the `items` columns whose loss is worth recording,
  * because reconciliation works on raw snapshot rows and never goes through `ItemRepository`.
  * A second list of the same thing is exactly the sort that rots quietly: a field added to the
  * edit path's audit would keep raising `ATTRIBUTES_CHANGED` entries while a merge went on
@@ -19,7 +19,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository';
 import { ItemRepository } from '@/db/repositories/ItemRepository';
-import { AUDITED_ITEM_FIELDS } from './merge-audit';
+import { AUDITED_ITEM_FIELDS } from '@/features/inventory/audited-item-fields';
 
 /**
  * The fields the edit path audits under its own dedicated action rather than through

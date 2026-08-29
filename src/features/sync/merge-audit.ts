@@ -12,9 +12,17 @@
  * remote one, it names the fields the merge overwrote and the values it discarded, in the same
  * `{field, from, to}` shape the edit path writes, so one reader handles both.
  *
+ * The set of fields it audits, and the prose that names each one, come from the shared
+ * `audited-item-fields` registry, which the Activity Log reads too, so the two entries a user sees
+ * name the same field the same way. `ItemRepository.update` cannot read it — the db layer holds no
+ * feature-layer imports — so it passes its own labels inline; what holds the two *sets* together is
+ * `merge-audit-drift.test.ts`, which drives every mutable field the edit path takes and compares
+ * what it audited against this registry.
+ *
  * Pure and database-free — the reconcile engine builds the records, `applyPlan` writes them.
  */
 import type { SqlRow, SqlValue } from '@/db/rpc/driver';
+import { AUDITED_ITEM_COLUMNS } from '@/features/inventory/audited-item-fields';
 import { uuidv5 } from '@/lib/derived-uuid';
 import { fromStoredMoney } from '@/lib/money';
 
@@ -24,78 +32,6 @@ export interface FieldChange {
   readonly from: SqlValue;
   readonly to: SqlValue;
 }
-
-interface AuditedColumn {
-  /** The `items` column as it is stored and as it travels in a snapshot. */
-  readonly column: string;
-  /** The camelCase field name a machine consumer reads out of the metadata. */
-  readonly field: string;
-  /** British-English prose for the entry's note. */
-  readonly label: string;
-  /** A money column, stored in integer micro-units and reported in major units (issue #286). */
-  readonly money?: true;
-}
-
-/**
- * The `items` columns whose loss is worth recording — deliberately the **same set** the edit
- * path audits, so a value that raises a ledger entry when a person changes it also raises one
- * when a merge discards it.
- *
- * That set is every structured attribute: identity, classification, price, reordering,
- * perishability, provenance, lifecycle dates and physical measurements, plus the three that have
- * their own actions on the edit path (`name` → `RENAMED`, `tracking_mode` → `TRACKING_CHANGED`,
- * `condition` → `CONDITION_CHANGED`). A merge writes one entry rather than four, so they arrive
- * here as ordinary fields.
- *
- * What stays out is what the edit path leaves silent, for the same reasons: free-form prose
- * (`description`, `notes`, `operational_metadata`), whose before/after copy would bloat a ledger
- * that syncs to every device for a field nobody audits by value; and the reporting preferences
- * (`is_favourite`, `is_unlimited`, `dead_stock_mode`). Out too are the columns no LWW upsert
- * decides: `quantity` and `current_net_value` are merged by the Delta-CRDTs (`nonLwwColumns`),
- * and `location_id`, `parent_id` and `is_active` are moved by their own dedicated paths.
- *
- * Every audited column is bounded — a line of text, a number or a date — so a record of all of
- * them together stays far inside the `metadata` payload limit even at its worst.
- */
-const AUDITED_COLUMNS: readonly AuditedColumn[] = [
-  { column: 'name', field: 'name', label: 'name' },
-  { column: 'tracking_mode', field: 'trackingMode', label: 'tracking mode' },
-  { column: 'condition', field: 'condition', label: 'condition' },
-  { column: 'category_id', field: 'categoryId', label: 'category' },
-  { column: 'mpn', field: 'mpn', label: 'MPN' },
-  { column: 'manufacturer', field: 'manufacturer', label: 'manufacturer' },
-  { column: 'barcode', field: 'barcode', label: 'barcode' },
-  { column: 'serial_number', field: 'serialNumber', label: 'serial number' },
-  { column: 'unit_cost', field: 'unitCost', label: 'unit cost', money: true },
-  {
-    column: 'cost_per_unit_of_measure',
-    field: 'costPerUnitOfMeasure',
-    label: 'cost per unit of measure',
-    money: true,
-  },
-  { column: 'expiry_date', field: 'expiryDate', label: 'expiry date' },
-  { column: 'batch_number', field: 'batchNumber', label: 'batch number' },
-  { column: 'lot_number', field: 'lotNumber', label: 'lot number' },
-  { column: 'reorder_point', field: 'reorderPoint', label: 'reorder point' },
-  {
-    column: 'reorder_gauge_percent',
-    field: 'reorderGaugePercent',
-    label: 'reorder gauge percentage',
-  },
-  { column: 'reorder_qty', field: 'reorderQty', label: 'reorder quantity' },
-  { column: 'acquired_at', field: 'acquiredAt', label: 'acquired date' },
-  { column: 'warranty_expires_at', field: 'warrantyExpiresAt', label: 'warranty expiry' },
-  { column: 'purchase_price', field: 'purchasePrice', label: 'purchase price', money: true },
-  { column: 'depreciation_months', field: 'depreciationMonths', label: 'depreciation period' },
-  { column: 'weight', field: 'weight', label: 'weight' },
-  { column: 'width', field: 'width', label: 'width' },
-  { column: 'height', field: 'height', label: 'height' },
-  { column: 'depth', field: 'depth', label: 'depth' },
-  { column: 'current_value', field: 'currentValue', label: 'current value', money: true },
-];
-
-/** @internal Exported so a drift test can hold this set against the edit path's tracked fields. */
-export const AUDITED_ITEM_FIELDS: readonly string[] = AUDITED_COLUMNS.map((c) => c.field);
 
 /**
  * A snapshot value as the ledger records it: `bigint` narrowed to `number` (a snapshot read can
@@ -126,13 +62,15 @@ function major(value: unknown): SqlValue {
  */
 export function overwrittenFields(losing: SqlRow, winning: SqlRow): FieldChange[] {
   const changes: FieldChange[] = [];
-  for (const { column, field, money } of AUDITED_COLUMNS) {
+  for (const { column, field, kind } of AUDITED_ITEM_COLUMNS) {
     if (!(column in winning) || !(column in losing)) continue;
     const from = losing[column];
     const to = winning[column];
     if (String(from ?? '') === String(to ?? '')) continue;
     changes.push(
-      money ? { field, from: major(from), to: major(to) } : { field, from: plain(from), to: plain(to) },
+      kind === 'money'
+        ? { field, from: major(from), to: major(to) }
+        : { field, from: plain(from), to: plain(to) },
     );
   }
   return changes;
@@ -141,7 +79,7 @@ export function overwrittenFields(losing: SqlRow, winning: SqlRow): FieldChange[
 /** The labels, in registry order, for the fields a set of changes names. */
 export function labelsFor(changes: readonly FieldChange[]): string[] {
   const named = new Set(changes.map((c) => c.field));
-  return AUDITED_COLUMNS.filter((c) => named.has(c.field)).map((c) => c.label);
+  return AUDITED_ITEM_COLUMNS.filter((c) => named.has(c.field)).map((c) => c.label);
 }
 
 /**

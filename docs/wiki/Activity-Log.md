@@ -27,17 +27,31 @@ instead.
 - The **global Activity feed** shows everything across your inventory, newest first.
 - Each **item's Activity tab** shows just that item's history — a complete story of one thing.
 
-Editing an item's details is recorded too, as a single **Details changed** entry naming what you
-changed: its price (unit cost, purchase price or current value), barcode, serial number,
-manufacturer and manufacturer part number, category, batch and lot numbers,
-[[reorder thresholds|Low-Stock-and-Gauges]], expiry, acquisition and warranty dates, depreciation
-period, weight and dimensions — alongside the renames, tracking-mode switches and condition changes
-that have always been logged.
+Editing an item's details is recorded too, as a single **Details changed** entry — and it shows
+**the value before and the value after**, one line per field, so the entry answers *“what was this
+item's cost in March?”* and not merely *“something about the cost moved”*:
+
+```text
+Details changed
+Unit cost   £4.00 → £5.50
+Barcode     Not set → 5012345678900
+```
+
+Each value is shown the way you entered it: a price in your currency, a date in your usual format,
+a category by name, a weight or a measurement in your chosen units. A field that was empty reads
+**Not set** rather than leaving a gap, so clearing a value is as clear as changing one.
+
+The fields recorded are its price (unit cost, purchase price, cost per unit of measure or current
+value), barcode, serial number, manufacturer and manufacturer part number, category, batch and lot
+numbers, [[reorder thresholds|Low-Stock-and-Gauges]], expiry, acquisition and warranty dates,
+depreciation period, weight and dimensions — alongside the renames, tracking-mode switches and
+condition changes that have always been logged.
 
 A [[sync|Cloud-Sync]] can change an item's details too, without anybody editing it. When two
 devices edited the same item while apart, the more recent change wins and the other is set aside —
-and an **Overwritten by sync** entry records it, naming each field the merge replaced. So the log
-never reads as though a discarded edit still stands.
+and an **Overwritten by sync** entry records it the same way, naming each field the merge replaced
+and showing the value it discarded beside the one it adopted. So the log never reads as though a
+discarded edit still stands, and the version that lost is not lost with it.
 
 > **ℹ️ Note**
 > A few things change quietly. The free-text description, notes and **operational parameters** do,
