@@ -3,8 +3,8 @@
  *
  * In production on a static host, the COOP/COEP headers the SQLite OPFS VFS needs are
  * supplied by the service worker (src/sw.ts). On the very first visit the page is not yet
- * isolated; once the worker takes control we reload exactly once so SharedArrayBuffer
- * becomes available. The dev server sets the headers directly, so this is a no-op locally.
+ * isolated; once the worker takes control we reload so SharedArrayBuffer becomes available.
+ * The dev server sets the headers directly, so this is a no-op locally.
  *
  * This lives in a separate `'self'` file (not an inline <script>) so the Content-Security-
  * Policy can forbid inline script entirely — see src/csp.ts.
@@ -26,11 +26,30 @@
 
   if (window.crossOriginIsolated) return;
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
-  var KEY = 'gubbins-coi-reloaded';
+
+  /*
+   * How many reloads this session may spend chasing isolation (issue #260).
+   *
+   * The reload has to be capped, or an origin whose COOP/COEP headers are stripped in transit
+   * would reload for ever. It must not be capped at *one*, though: a single attempt spent on a
+   * navigation that did not come back isolated leaves the session with no way out but closing
+   * the tab. Two is the smallest cap that survives one wasted attempt.
+   *
+   * A cap is all that is needed to stop a loop, because the only thing that schedules a reload
+   * here is a *new* worker taking control — `controllerchange` does not fire again for a
+   * controller that is already in place, so the stripped-headers case stops on its own after
+   * the first attempt regardless of what is left in the budget.
+   *
+   * Exhausting the budget is no longer a dead end either: the boot gate watches for the same
+   * event, and opens the database on the fallback VFS once a worker controls the page without
+   * isolation arriving. See `useDatabaseBoot.ts`.
+   */
+  var KEY = 'gubbins-coi-reload-attempts';
+  var MAX_ATTEMPTS = 2;
   navigator.serviceWorker.addEventListener('controllerchange', function () {
-    if (!sessionStorage.getItem(KEY)) {
-      sessionStorage.setItem(KEY, '1');
-      window.location.reload();
-    }
+    var attempts = parseInt(sessionStorage.getItem(KEY), 10) || 0;
+    if (attempts >= MAX_ATTEMPTS) return;
+    sessionStorage.setItem(KEY, String(attempts + 1));
+    window.location.reload();
   });
 })();

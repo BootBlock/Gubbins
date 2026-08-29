@@ -8,6 +8,7 @@ import { labFlag } from '@/state/stores/useLabStore';
 import { useT, type MessageKey } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
 import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
+import { waiveIsolation } from '@/lib/env/isolation-waiver';
 import { setTabLockOverride, type TabLockDenial } from '@/db/tab-lock';
 import type { DbError, DbErrorCode } from '@/db/errors';
 import type { DbLossRecord } from '@/db/db-presence';
@@ -196,7 +197,19 @@ function technicalReport(diagnosis: SupportDiagnosis): string {
  * worker still starting up. It leads with the diagnosed cause and what to do about it, and only
  * blames the browser once {@link diagnoseSupport} has ruled everything else out.
  */
-export function UnsupportedScreen({ diagnosis }: { diagnosis: SupportDiagnosis }) {
+export function UnsupportedScreen({
+  diagnosis,
+  isolationWaivable = false,
+}: {
+  diagnosis: SupportDiagnosis;
+  /**
+   * The gate waited for isolation as long as it usefully could and it never arrived, so the
+   * user may choose the fallback store instead of waiting further (issue #260). The screen is
+   * otherwise a dead end in that state: only a service worker taking control can change the
+   * reading, and reloading has already been given every chance to make that happen.
+   */
+  isolationWaivable?: boolean;
+}) {
   const t = useT();
   const { accent, icon, title, lede, steps, note } = CAUSE_PRESENTATION[diagnosis.cause];
 
@@ -224,6 +237,26 @@ export function UnsupportedScreen({ diagnosis }: { diagnosis: SupportDiagnosis }
       <Button className="mt-4 w-full" onClick={() => location.reload()}>
         {t('boot.unsupported.reload')}
       </Button>
+
+      {isolationWaivable ? (
+        <>
+          <p className="mt-4 text-sm text-muted-foreground">{t('boot.unsupported.waive.note')}</p>
+          <Button
+            variant="outline"
+            className="mt-2 w-full"
+            data-testid="boot-waive-isolation"
+            onClick={() => {
+              // Recorded before the reload, for the same reason the data-loss notice persists
+              // its acknowledgement first: the next boot is what reads it, and it must not
+              // depend on anything else happening in this one.
+              waiveIsolation();
+              location.reload();
+            }}
+          >
+            {t('boot.unsupported.waive.action')}
+          </Button>
+        </>
+      ) : null}
 
       {/* Same disclosure the route-error screen uses for its own "Technical details". */}
       <details className="mt-4 rounded-lg border border-border">

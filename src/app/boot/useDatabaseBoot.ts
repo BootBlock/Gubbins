@@ -18,8 +18,12 @@ import { checkCriticalSupport, checkIsolationSupport } from '@/lib/env/feature-d
 import {
   diagnoseCriticalSupport,
   isolationIsSettled,
+  isolationMayStillArrive,
+  waitForServiceWorkerControl,
+  ISOLATION_CONTROL_WAIT_MS,
   type SupportDiagnosis,
 } from '@/lib/env/support-diagnosis';
+import { isolationWaived } from '@/lib/env/isolation-waiver';
 import { acquireDatabaseTabLock, type TabLockDenial } from '@/db/tab-lock';
 import { bootDatabase, countStoredItems, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
@@ -37,7 +41,17 @@ import {
 
 export type BootState =
   | { readonly status: 'starting' }
-  | { readonly status: 'unsupported'; readonly diagnosis: SupportDiagnosis }
+  | {
+      readonly status: 'unsupported';
+      readonly diagnosis: SupportDiagnosis;
+      /**
+       * The gate is out of ways to reach isolation on its own, so the user may choose to open
+       * the database on the fallback VFS instead of waiting further (issue #260). False for
+       * every other verdict, where continuing would not help — there is nothing to fall back
+       * *to* without OPFS, and a blocked script or blocked site data is not the user's to waive.
+       */
+      readonly isolationWaivable: boolean;
+    }
   | {
       readonly status: 'multi-tab';
       readonly reason: TabLockDenial;
@@ -83,7 +97,11 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   // rather than seeing a verdict that changes a moment later.
   const support = checkCriticalSupport();
   if (!support.supported) {
-    commit({ status: 'unsupported', diagnosis: await diagnoseCriticalSupport(support.missing) });
+    commit({
+      status: 'unsupported',
+      diagnosis: await diagnoseCriticalSupport(support.missing),
+      isolationWaivable: false,
+    });
     return;
   }
 
@@ -92,13 +110,42 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   // one diagnosis that means isolation is genuinely not coming — and only once that is *settled*
   // (`isolationIsSettled`), because the choice is effectively permanent: the fallback database
   // this boot would create is the one the origin must keep opening afterwards. Every other cause
-  // still stops here, including `isolation-pending` — the normal first visit, waiting on the
-  // service worker that supplies the COOP/COEP headers, which resolves itself on reload.
+  // still stops here. A waiver skips the question outright: the user has already been asked, on
+  // the screen this step would otherwise show them again (issue #260).
   const isolation = checkIsolationSupport();
-  if (!isolation.supported) {
-    const diagnosis = await diagnoseCriticalSupport(isolation.missing);
+  if (!isolation.supported && !isolationWaived()) {
+    let diagnosis = await diagnoseCriticalSupport(isolation.missing);
+
+    // Wait for the answer to settle, rather than commit to the first reading (issue #260). The
+    // un-settled causes — `isolation-pending`, and an `isolation-blocked` whose worker has not
+    // reached `active` yet — both describe a boot still in motion, and the gate used to park on
+    // the screen for whichever of them it happened to see. Recovery then rested entirely on
+    // `coi-bootstrap.js` reloading on `controllerchange`, and a session whose reload budget was
+    // already spent had no way out of that screen but closing the tab.
+    //
+    // Nothing here can make *this* document isolated — only a fresh navigation can — so the
+    // point of waiting is to watch the question settle: once a worker controls the page and
+    // isolation still has not arrived, the answer is final and the fallback VFS is the right
+    // one to open. One wait is enough, and deliberately so: it ends on the single event that
+    // can change the reading, so a second pass would have nothing new to see and could only
+    // spin.
+    if (isolationMayStillArrive(diagnosis.cause, diagnosis.signals)) {
+      commit({ status: 'unsupported', diagnosis, isolationWaivable: false });
+      await waitForServiceWorkerControl(ISOLATION_CONTROL_WAIT_MS);
+      if (!isMounted()) return;
+      diagnosis = await diagnoseCriticalSupport(checkIsolationSupport().missing);
+    }
+
     if (diagnosis.cause !== 'isolation-blocked' || !isolationIsSettled(diagnosis.signals)) {
-      commit({ status: 'unsupported', diagnosis });
+      // Still un-settled after that wait means no further waiting will tell us more, so hand
+      // the decision to the user rather than leaving a spinner up for the rest of the session.
+      // Any other cause is a genuine stop with its own guidance, and offering the fallback
+      // there would be answering a question the user did not ask.
+      commit({
+        status: 'unsupported',
+        diagnosis,
+        isolationWaivable: isolationMayStillArrive(diagnosis.cause, diagnosis.signals),
+      });
       return;
     }
   }

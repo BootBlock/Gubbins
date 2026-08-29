@@ -188,6 +188,8 @@
   "boot.unsupported.isolation.step1": "Private and incognito windows switch background helpers off. Try an ordinary window.",
   "boot.unsupported.isolation.step2": "A content blocker or privacy extension may be blocking it — allow this site, then reload.",
   "boot.unsupported.isolation.step3": "Antivirus software, a VPN, or a workplace or school network can alter pages in a way that prevents this.",
+  "boot.unsupported.waive.note": "Gubbins can start without it and keep your data in a slightly slower store instead. Everything works the same; the difference is only in how the data is written.",
+  "boot.unsupported.waive.action": "Start without it",
   "boot.unsupported.browser.title": "Browser not supported",
   "boot.unsupported.browser.lede": "Everything else on this device checks out, so this really does look like the browser: it’s missing the private, secure storage Gubbins needs to keep your data safe.",
   "boot.unsupported.browser.step1": "Try the latest Chrome, Edge, or Firefox.",
