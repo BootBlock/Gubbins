@@ -21,6 +21,9 @@ import { foldLocationPath, isLocationPathCell } from '@/features/inventory/label
 import { isoTimestamp } from './export-every-page';
 import {
   buildTabularExport,
+  CSV_DELIMITER,
+  delimitedBodyRow,
+  delimitedHeaderRow,
   toCsv,
   type TabularCell,
   type TabularColumn,
@@ -136,6 +139,24 @@ export const ITEM_CSV_COLUMNS: readonly TabularColumn<Item>[] = CSV_COLUMNS.map(
 /** Build a spreadsheet-friendly CSV of items (RFC-4180 quoting via the shared serialiser). */
 export function buildItemsCsv(items: readonly Item[]): string {
   return toCsv(ITEM_CSV_COLUMNS, items);
+}
+
+/**
+ * The items-CSV header line, unterminated — the first thing a *streamed* export writes.
+ *
+ * The bridge's `GET /api/v1/items.csv` cannot call {@link buildItemsCsv}: that materialises the
+ * whole catalogue and the whole document before a byte goes out (issue #533). It writes the
+ * header once and then a row at a time instead, through {@link itemsCsvRow}. Both routes serialise
+ * through the same column spec and the same cell quoting, so the streamed bytes are the buffered
+ * bytes — `export-data.test.ts` drives both and compares them rather than trusting that sentence.
+ */
+export function itemsCsvHeader(): string {
+  return delimitedHeaderRow(ITEM_CSV_COLUMNS, CSV_DELIMITER);
+}
+
+/** One items-CSV row, unterminated. The streamed twin of {@link buildItemsCsv}'s body rows. */
+export function itemsCsvRow(item: Item): string {
+  return delimitedBodyRow(ITEM_CSV_COLUMNS, item, CSV_DELIMITER);
 }
 
 /**

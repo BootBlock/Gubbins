@@ -33,9 +33,9 @@ export const MAX_ORDERBY_TERMS = 8;
 /** Hard cap on the raw `$filter` string length — an abuse guard against a pathological filter. */
 export const MAX_FILTER_LENGTH = 512;
 
-/**
- * Hard ceiling on the number of rows a single CSV export may serialise — an abuse/memory guard
- * so a `.csv` pull can't be coerced into buffering an unbounded result set. Generous enough that
- * it never bites a real personal inventory; a larger dataset is truncated to this many rows.
- */
-export const MAX_CSV_ROWS = 100_000;
+// There is deliberately no row cap on the CSV export any more (issue #533). It existed to stop a
+// `.csv` pull buffering an unbounded result set, which it did by truncating at 100,000 rows — and
+// truncating in silence, so a larger catalogue exported a prefix and said nothing. The export now
+// streams a keyset-paged walk (`items-csv.ts`), holding one page rather than the whole document,
+// so the memory it was guarding no longer grows with the answer and the guard has nothing left to
+// buy. Do not reinstate one without a way for the response to say it applied.

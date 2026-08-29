@@ -1448,13 +1448,15 @@ export const openapiDocument: JsonValue = {
           'description, notes, trackingMode, quantity, isUnlimited, mpn, manufacturer, unitCost — ' +
           "the same shape as the app's own export; the quantity cell is blank for an unlimited-" +
           'supply row). Honours the same $filter/$search/$orderby/location/' +
-          'category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows ' +
-          '(up to a hard cap), not a single page. Point Excel/Power BI "From Web" at it for a ' +
-          'refreshable pull.',
-        parameters: [filterParam, searchParam, orderbyParam],
+          'category/includeInactive scope as GET /api/v1/items, and returns ALL matching rows, ' +
+          'not a single page — the response is streamed, so there is no row cap. Point Excel/' +
+          'Power BI "From Web" at it for a refreshable pull; the response carries an ETag and ' +
+          'Last-Modified, so a refresh against an unchanged snapshot is answered 304.',
+        parameters: [filterParam, searchParam, orderbyParam, ...conditionalParams],
         responses: {
           200: {
             description: 'The CSV file (RFC-4180, CRLF rows).',
+            headers: validatorHeaders,
             content: {
               'text/csv': {
                 schema: { type: 'string' },
@@ -1464,6 +1466,7 @@ export const openapiDocument: JsonValue = {
               },
             },
           },
+          304: notModifiedResponse,
           ...(errorResponses(400, 401, 429) as Record<string, JsonValue>),
         },
       },

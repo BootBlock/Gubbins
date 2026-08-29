@@ -123,16 +123,20 @@ export function sendXml(res: ServerResponse, status: number, body: string): void
 }
 
 /**
- * Write a `text/csv` response as a downloadable attachment — used by the `items.csv` export.
- * The `filename` is a fixed, safe literal (never user input), so no escaping is required.
+ * Open a `text/csv` response as a downloadable attachment — used by the `items.csv` export. The
+ * `filename` is a fixed, safe literal (never user input), so no escaping is required.
+ *
+ * Unlike every other helper here this writes the head **only**: the export streams its rows as it
+ * reads them rather than buffering the whole document (issue #533), so the caller writes the
+ * content and ends the response itself. Pass `validators` so a spreadsheet refreshing on open can
+ * revalidate rather than re-export; omit them and the response stays uncacheable.
  */
-export function sendCsv(res: ServerResponse, status: number, body: string, filename: string): void {
-  res.writeHead(status, {
+export function beginCsv(res: ServerResponse, filename: string, validators?: CacheValidators): void {
+  res.writeHead(200, {
     'content-type': 'text/csv; charset=utf-8',
-    'cache-control': 'no-store',
+    ...cacheHeaders(validators),
     'content-disposition': `attachment; filename="${filename}"`,
   });
-  res.end(body);
 }
 
 /**

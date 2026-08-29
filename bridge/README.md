@@ -843,9 +843,15 @@ in
 column shape and RFC-4180 quoting as the app's own catalogue export (`id, name, description,
 notes, trackingMode, quantity, isUnlimited, mpn, manufacturer, unitCost`; an unlimited-supply
 row's quantity cell is blank), reused verbatim so the two never
-drift. Unlike the JSON list it returns **all** matching rows (up to a hard cap of 100,000), not a
-single page, and it honours the same `$filter`/`$search`/`$orderby`/`location`/`category`/
-`includeInactive` scope.
+drift. Unlike the JSON list it returns **all** matching rows, not a single page, and it honours the
+same `$filter`/`$search`/`$orderby`/`location`/`category`/`includeInactive` scope. There is no row
+cap: the response is streamed a page at a time as the rows are read, so neither the row set nor the
+document is ever held whole, however large the inventory.
+
+Like the calendar and the syndication feeds, it is answered **conditionally** — the response
+carries an `ETag` and a `Last-Modified`, and a refresh that sends either one back is answered
+`304 Not Modified` while the snapshot is unchanged. That is what makes a workbook set to refresh on
+open cheap to serve.
 
 > The Gubbins **app** already exports far richer CSVs (a round-trippable catalogue with custom-field
 > columns, plus ten analytics reports) from its **Export Wizard** — use that for a one-off download.

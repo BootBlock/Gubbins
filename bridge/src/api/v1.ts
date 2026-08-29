@@ -36,7 +36,6 @@ import {
   sendError,
   sendJson,
   sendText,
-  sendCsv,
   sendCalendar,
   sendFeed,
   sendNotModified,
@@ -65,15 +64,11 @@ import {
   type WebhookDeliveryLog,
   type WebhookDeliveryRecord,
 } from '../events/webhook-log.ts';
-import { MAX_CSV_ROWS, MAX_PAGE_LIMIT } from './limits.ts';
 import { handleOData } from './odata-service.ts';
-import { buildItemsCsv } from '@/features/export/export-data.ts';
+import { streamItemsCsv } from './items-csv.ts';
 import { hasSelection } from './field-select.ts';
 import { createItemViewContext, projectItem, SEARCH_DEFAULT_FIELDS } from './item-view.ts';
 import { SearchAstError } from '@/db/search/parseASTtoSQL.ts';
-import type { SearchAST } from '@/db/search/ast.ts';
-import type { ItemSort } from '@/db/repositories/item/sql.ts';
-import type { Item } from '@/db/repositories/types';
 import {
   buildCategoryEntity,
   buildCategoryList,
@@ -82,14 +77,12 @@ import {
   buildItemList,
   buildLocationEntity,
   buildLocationList,
-  itemPage,
   parseItemFilterOr400,
   parseOrderByOr400,
   parseSelectionOr400,
   readItemListFilters,
   readSelection,
   type EntityResult,
-  type ItemQueryFilters,
   type ListResult,
 } from './reads.ts';
 import { toCapabilityKey, type ListEnvelope, type PaginationMeta } from './dto.ts';
@@ -322,7 +315,7 @@ export async function handleApiV1(res: ServerResponse, url: URL, ctx: ApiV1Conte
       if (segments.length === 2) return void (await handleItem(res, driver, url, decode(segments[1]!)));
       break;
     case 'items.csv':
-      if (segments.length === 1) return void (await handleItemsCsv(res, driver, url));
+      if (segments.length === 1) return void (await handleItemsCsv(res, state, url, ctx.conditional));
       break;
     case 'calendar.ics':
       if (segments.length === 1) return void (await handleCalendar(res, state, url, ctx.conditional));
@@ -987,18 +980,31 @@ async function handleItemCount(res: ServerResponse, driver: Driver, url: URL): P
  * shape and RFC-4180 quoting as the app's own export, reused verbatim so the two never drift).
  * A refreshable pull for Excel/Power BI "From Web". Honours the same `$filter`/`$search`/
  * `$orderby`/location/category/includeInactive scope as `GET /api/v1/items`; unlike the JSON
- * list it returns **all** matching rows (up to {@link MAX_CSV_ROWS}), not a single page.
+ * list it returns **all** matching rows, not a single page.
+ *
+ * A refreshable pull is a *polled* read — the spreadsheet re-fetches every time it is opened — so,
+ * like the calendar and the syndication feeds, it is answered conditionally: a refresh against an
+ * unchanged snapshot costs a `304` and no walk at all (issue #533). When it does have to run, it
+ * streams (see `items-csv.ts`) rather than buffering the catalogue and the document.
  */
-async function handleItemsCsv(res: ServerResponse, driver: Driver, url: URL): Promise<void> {
+async function handleItemsCsv(
+  res: ServerResponse,
+  state: BridgeServerState,
+  url: URL,
+  conditional: ConditionalHeaders | undefined,
+): Promise<void> {
   const sort = parseOrderByOr400(res, url);
   if (sort === null) return;
   const ast = parseItemFilterOr400(res, url);
   if (ast === null) return;
 
   const filters = readItemListFilters(url);
+  const validators = itemsCsvValidators(state, url);
+  if (validators !== undefined && isNotModified(conditional, validators)) {
+    return void sendNotModified(res, validators);
+  }
   try {
-    const rows = await collectAllItems(driver, ast, filters, sort);
-    sendCsv(res, 200, buildItemsCsv(rows), 'items.csv');
+    await streamItemsCsv(res, state.driver, ast, filters, sort, validators);
   } catch (err) {
     if (err instanceof SearchAstError) {
       return void sendError(res, 400, 'bad_request', err.message, { v1: true });
@@ -1008,24 +1014,38 @@ async function handleItemsCsv(res: ServerResponse, driver: Driver, url: URL): Pr
 }
 
 /**
- * Gather every matching item (for the CSV export) by looping the repository a page at a time,
- * stopping at {@link MAX_CSV_ROWS} so a huge dataset can't buffer unbounded. Uses the same
- * `$filter`-vs-`list` split as the JSON endpoint, so the CSV row set matches `GET /items`.
+ * Every query parameter that decides which rows the CSV contains and in what order — the variant
+ * key its entity-tag is cut over.
+ *
+ * Listed rather than taken from `url.search` wholesale, so that two refreshes differing only in a
+ * parameter the export never reads (a cache-buster a spreadsheet appends, say) revalidate against
+ * each other instead of each earning a fresh full export. Every name here is one
+ * {@link parseOrderByOr400}, {@link parseItemFilterOr400} or {@link readItemListFilters} actually
+ * reads — add a parameter to those and it belongs here too, or a client that changes it will be
+ * told nothing changed.
  */
-async function collectAllItems(
-  driver: Driver,
-  ast: SearchAST | undefined,
-  filters: ItemQueryFilters,
-  sort: readonly ItemSort[] | undefined,
-): Promise<readonly Item[]> {
-  const items = new ItemRepository(driver);
-  const rows: Item[] = [];
-  for (let offset = 0; rows.length < MAX_CSV_ROWS; offset += MAX_PAGE_LIMIT) {
-    const page = await itemPage(items, ast, filters, sort, MAX_PAGE_LIMIT, offset);
-    rows.push(...page.rows);
-    if (!page.hasMore) break;
-  }
-  return rows.length > MAX_CSV_ROWS ? rows.slice(0, MAX_CSV_ROWS) : rows;
+const CSV_VARIANT_PARAMS = [
+  '$filter',
+  '$search',
+  '$orderby',
+  'location',
+  'category',
+  'includeInactive',
+] as const;
+
+/**
+ * The validators for one CSV representation, or `undefined` when the snapshot carries no usable
+ * generation instant (nothing honest to validate against, so the response stays uncached).
+ *
+ * The export is a pure projection of the snapshot, exactly as the feeds are, so its bytes can only
+ * change when the snapshot re-hydrates. The variant is the scope that selected this representation
+ * ({@link CSV_VARIANT_PARAMS}), so a filtered export and the whole catalogue never share a tag.
+ */
+function itemsCsvValidators(state: BridgeServerState, url: URL): CacheValidators | undefined {
+  const snapshotMs = snapshotInstant(state.snapshotGeneratedAt);
+  if (snapshotMs === null) return undefined;
+  const variant = CSV_VARIANT_PARAMS.map((name) => `${name}=${url.searchParams.get(name) ?? ''}`).join('&');
+  return cacheValidators(snapshotMs, `items.csv ${variant}`);
 }
 
 // --- calendar (read-only iCalendar subscription feed) -----------------------------
