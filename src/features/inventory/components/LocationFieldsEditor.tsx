@@ -160,12 +160,14 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
 
       {available.length > 0 ? (
         <div className="flex items-end gap-2">
-          {/* A fixed width rather than the shrink-to-fit the flex row would otherwise give this
-              box (issue #435). The popover is anchored to the trigger's width, so a box sized to
-              whichever field happens to be selected sets the menu's width from it too — and the
-              field names inside it then truncate. `max-w-full` keeps the row inside a narrow
-              dialog; nothing below that width changes. */}
-          <div className="w-72 max-w-full">
+          {/* A width of its own, rather than the shrink-to-fit this flex row would otherwise
+              give the box (issue #435). The listbox popover is anchored to the trigger, so a box
+              sized to whichever field happens to be selected sets the *menu's* width from it too
+              — and the field names inside it then truncate, which is the one list a user is
+              reading in order to choose from it. The box still shrinks below this on a narrow
+              screen: the trigger's label is `min-w-0 truncate`, so nothing here holds the row
+              wider than the dialog. */}
+          <div className="w-72">
             <Select
               value={adding}
               onChange={setAdding}
