@@ -230,8 +230,10 @@ describe('useDatabaseBoot — the wait for isolation has to end somewhere', () =
 
     const { result } = renderHook(() => useDatabaseBoot());
 
+    // The reading it booted on is the one that stops a fresh origin dead, and the single
+    // diagnosis proves no wait happened — a wait always re-reads on the way out.
     await waitFor(() => expect(result.current.status).toBe('ready'));
-    expect(diagnoseCriticalSupport).not.toHaveBeenCalled();
+    expect(diagnoseCriticalSupport).toHaveBeenCalledTimes(1);
   });
 
   it('never offers the fallback where the database is in the primary store', async () => {
@@ -269,6 +271,48 @@ describe('useDatabaseBoot — the wait for isolation has to end somewhere', () =
 
     await waitFor(() => expect(result.current.status).toBe('unsupported'));
     expect(bootDatabase).not.toHaveBeenCalled();
+  });
+
+  it('still stops a fallback origin for a cause that is not about isolation', async () => {
+    // Skipping the wait must not skip the *diagnosis*: a blocked script is a blocked script
+    // whichever store this origin's database lives in, and the screen for it is the only place
+    // that says so.
+    detectDbStorageLayout.mockResolvedValue('sahpool');
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'scripts-blocked',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('unsupported'));
+    expect(bootDatabase).not.toHaveBeenCalled();
+  });
+
+  it('does not strand the boot when the store cannot be read at all', async () => {
+    // `readPlainDatabaseFile` rethrows anything that is not "absent" — a file locked by another
+    // tab, an I/O error — and this call sits outside the try/catch that guards the open. An
+    // escaping rejection would leave the gate on the starting screen with no reload, no
+    // diagnosis and no offer: the exact dead end this change exists to remove.
+    detectDbStorageLayout.mockRejectedValue(
+      new DOMException('The file is locked.', 'NoModificationAllowedError'),
+    );
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    // Read as `opfs`, the conservative answer: the screen appears, and the offer to open the
+    // fallback — which could not reach a plain-OPFS database — is withheld.
+    await waitFor(() =>
+      expect(result.current).toMatchObject({ status: 'unsupported', isolationWaivable: false }),
+    );
   });
 
   it('boots straight through once the user has waived the wait', async () => {
