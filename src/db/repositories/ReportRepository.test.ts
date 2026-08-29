@@ -1957,6 +1957,41 @@ describe('ReportRepository', () => {
       expect(report.endValue).toBe(0);
       expect(report.startValue).toBe(0);
     });
+
+    it('marks in-window revaluations of valued items, per day (issue #481)', async () => {
+      const now = Date.now();
+      const day = 86_400_000;
+      const item = await items.create({ name: 'Collectible', quantity: 1, unitCost: 40 });
+      const other = await items.create({ name: 'Sculpture', quantity: 1, unitCost: 10 });
+      const revaluedOn = Math.floor((now - 10 * day) / day) * day;
+      // Two items revalued on the same day collapse to one counted mark; a third on another day
+      // gets its own. A revaluation before the window opened is not on the drawn span at all.
+      await items.recordRevaluation(item.id, { value: 900, revaluedAt: revaluedOn });
+      await items.recordRevaluation(other.id, { value: 300, revaluedAt: revaluedOn + 3_600_000 });
+      await items.recordRevaluation(item.id, { value: 950, revaluedAt: revaluedOn + 5 * day });
+      await items.recordRevaluation(item.id, { value: 800, revaluedAt: now - 90 * day });
+
+      const report = await reports.valuationTrend(30, 4, now);
+
+      expect(report.revaluations).toEqual([
+        { at: revaluedOn, count: 2 },
+        { at: revaluedOn + 5 * day, count: 1 },
+      ]);
+    });
+
+    it('leaves out revaluations of items the line does not value (issue #481)', async () => {
+      const now = Date.now();
+      const day = 86_400_000;
+      // An unlimited source holds no finite value and is excluded from the anchor and the
+      // movements, so a mark for one would point at a change the line cannot show.
+      const water = await items.create({ name: 'Mains water', quantity: 500, unitCost: 2 });
+      await items.recordRevaluation(water.id, { value: 5, revaluedAt: now - 10 * day });
+      await driver.execute('UPDATE items SET is_unlimited = 1 WHERE id = ?;', [water.id]);
+
+      const report = await reports.valuationTrend(30, 4, now);
+
+      expect(report.revaluations).toEqual([]);
+    });
   });
 
   describe('dataHygiene', () => {

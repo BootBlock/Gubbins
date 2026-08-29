@@ -73,6 +73,7 @@ import {
 } from '@/features/reports/stock-aging';
 import {
   buildValuationTrend,
+  type RevaluationEvent,
   type ValuationEvent,
   type ValuationTrendReport,
 } from '@/features/reports/valuation-trend';
@@ -1935,7 +1936,15 @@ export class ReportRepository extends BaseRepository {
    * inventory is worth. Issue #399 settled this as a decision rather than an accident: the trend
    * promises "how the value you hold today has moved" (a shape indicator anchored to the headline),
    * **not** "what the headline read on each past day" — and the sparkline caption says so at the
-   * call site. Active, non-parent items only. `now` defaults to the wall clock.
+   * call site.
+   *
+   * What the report *does* carry is where each manual revaluation was recorded
+   * (`ValuationTrendReport.revaluations`, issue #481): the instants only, aggregated per day, so
+   * the sparkline can mark "a value was reset here" without a single point moving. Only the
+   * `revaluations` log is read: a `unit_cost` edit does leave a dated `ATTRIBUTES_CHANGED` row on
+   * the item's own history, but it is not a revaluation and is not marked here — so an unmarked
+   * day is not a day nothing changed, and the UI says so. Active, non-parent items only. `now`
+   * defaults to the wall clock.
    */
   async valuationTrend(
     windowDays: number,
@@ -2006,7 +2015,21 @@ export class ReportRepository extends BaseRepository {
         }),
     }));
 
-    return buildValuationTrend(currentValue, events, windowStart, now, points);
+    // Manual revaluation points inside the same window, on the same items the line values, so a
+    // mark only ever names a change the line actually spans. Only the instant is read: the marks
+    // annotate the line and never re-price it (issue #481) — repricing history from this log is
+    // exactly what #399 declined, because it would pull the right-hand endpoint off the headline.
+    const revaluationRows = await this.driver.query<{ revalued_at: number }>(
+      `SELECT r.revalued_at AS revalued_at
+         FROM revaluations r
+         JOIN items i ON i.id = r.item_id
+        WHERE r.revalued_at > ? AND r.revalued_at <= ?
+          AND ${valuableItemFilter('i')};`,
+      [windowStart, now],
+    );
+    const revaluations: RevaluationEvent[] = revaluationRows.map((r) => ({ revaluedAt: r.revalued_at }));
+
+    return buildValuationTrend(currentValue, events, windowStart, now, points, revaluations);
   }
 
   // Phase 77 — data-hygiene / quality report -------------------------------------

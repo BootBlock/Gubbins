@@ -170,7 +170,7 @@ function makeAllLoaded() {
   queryState.trend = {
     isLoading: false,
     isError: false,
-    data: { points: [], startValue: 0, endValue: 0, changeValue: 0 },
+    data: { points: [], startValue: 0, endValue: 0, changeValue: 0, revaluations: [] },
   };
   queryState.hygiene = {
     isLoading: false,

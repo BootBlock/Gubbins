@@ -201,6 +201,7 @@ describe('report CSV builders', () => {
         startValue: 30,
         endValue: 20,
         changeValue: -10,
+        revaluations: [],
       },
       isoDate,
     );
