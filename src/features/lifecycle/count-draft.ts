@@ -156,7 +156,8 @@ export interface RestoredCountSheet {
   readonly presence: Readonly<Record<string, SerialisedPresence>>;
   /** Items the auditor had added to the sheet themselves (issue #640). */
   readonly found: readonly FoundHereEntry[];
-  /** Entries that came back from the draft (counts, missing flags, found items); 0 = a fresh sheet. */
+  /** Rows that came back from the draft — counted lines, missing flags and found items, each
+   *  counted once; 0 = a fresh sheet. */
   readonly restoredEntries: number;
   /** When the restored sheet was saved; null when nothing was restored or the stamp was unusable. */
   readonly savedAt: number | null;
@@ -193,7 +194,13 @@ export function restoreCountSheet(
     serialised.map((line) => [line.itemId, missing.has(line.itemId) ? 'MISSING' : 'PRESENT'] as const),
   );
 
-  const restoredEntries = Object.keys(counts).length + missing.size + found.length;
+  // One per restored *row*, not per stored value. A found DISCRETE entry brings its own count
+  // line with it, so the entry and the quantity typed against it are one row on the sheet — and
+  // the notice this feeds says "Restored N counts" to someone about to decide whether the shelf
+  // still matches them. Two for one row makes that number a worse answer, not a fuller one.
+  const foundLineKeys = new Set(found.map(foundLineKey));
+  const restoredEntries =
+    Object.keys(counts).filter((key) => !foundLineKeys.has(key)).length + missing.size + found.length;
   return {
     counts,
     presence,

@@ -97,9 +97,10 @@ export function settleStockProjectionStatements(itemId?: string): SqlStatement[]
  * Move an item **wholesale** to another location: every placement consolidated into the target,
  * and the item's own `location_id` following.
  *
- * The consolidation is bracketed so the derived-quantity triggers stay dormant while it runs, and
- * the projection is settled once from the finished ledger. That is not an optimisation — it is
- * what makes the move legal at all for a SERIALISED instance (issue #640). `items.quantity` is
+ * The consolidation runs inside {@link withRecomputeDeferred}, so the derived-quantity triggers
+ * stay dormant while it runs and the projection is settled once from the finished ledger. That is
+ * not an optimisation — it is what makes the move legal at all for a SERIALISED instance
+ * (issue #640). `items.quantity` is
  * `SUM(item_stock)`, and the two statements that empty one placement and fill another are
  * necessarily two writes, so a per-statement recompute walks the total through 2 (fill first) or 0
  * (empty first). Either breaches `CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` and aborts
@@ -112,11 +113,52 @@ export function settleStockProjectionStatements(itemId?: string): SqlStatement[]
  */
 export function moveWholeItemStatements(itemId: string, toLocationId: string): SqlStatement[] {
   return [
+    ...withRecomputeDeferred(consolidateStockStatements(itemId, toLocationId), itemId),
+    { sql: 'UPDATE items SET location_id = ? WHERE id = ?;', params: [toLocationId, itemId] },
+  ];
+}
+
+/**
+ * Bracket a batch of statements so the derived-quantity recompute triggers stay dormant while they
+ * run, then settle the projection once at the end (issue #548).
+ *
+ * There are two reasons a caller wants this, and they are not the same reason.
+ *
+ * A **restore or clone** rebuilds the stock ledger one row at a time, and the triggers see every
+ * intermediate partial sum. An item with stock in two locations restores its settled `quantity`
+ * first, then watches the projection knock it down to the first location's share and back up again
+ * — and because that recompute writes `quantity` without touching `updated_at`, the auto-stamp
+ * trigger fires on each step and re-stamps a row nobody edited. The damage is not cosmetic: the
+ * bridge hydrates the served file through this path on every push, so those items always look newer
+ * than the app's genuine edits to them, and last-write-wins discards the edits with a `200 ok`. The
+ * app's Merge restore has the milder form of it — every multi-placement item comes back looking
+ * freshly edited and beats a peer's newer version at the next sync.
+ *
+ * A **move** ({@link moveWholeItemStatements}) has a harder problem: for a SERIALISED instance the
+ * intermediate sums are not merely noisy, they are *illegal*. See that function for why.
+ *
+ * Suppressing the triggers alone would not do, because the projection is not always a formality: a
+ * Merge restore lands a backup's placements alongside local ones the backup never knew about, and
+ * the totals genuinely have to be recomputed. So the settle pass runs inside the bracket, after the
+ * caller's statements, doing set-based what the triggers did per row — and doing it once, from the
+ * finished ledger, rather than from each partial sum along the way. On the ordinary consistent
+ * snapshot it writes nothing and every `updated_at` restores byte-identical.
+ *
+ * `itemId` narrows the settle to one item; omit it to sweep everything, which is what a restore
+ * needs and what a single move must not pay for.
+ *
+ * The switch is flipped inside the caller's own transaction, so a rollback restores it too. Only
+ * wraps a non-empty batch, matching `withCaptureDisabled` — an empty transaction has no projection
+ * to settle. **Do not nest one inside another**: the inner bracket restores the switch to 1 and
+ * would re-arm the triggers for the remainder of the outer batch.
+ */
+export function withRecomputeDeferred(statements: readonly SqlStatement[], itemId?: string): SqlStatement[] {
+  if (statements.length === 0) return [...statements];
+  return [
     { sql: 'UPDATE stock_delta_capture SET recompute = 0 WHERE id = 1;' },
-    ...consolidateStockStatements(itemId, toLocationId),
+    ...statements,
     ...settleStockProjectionStatements(itemId),
     { sql: 'UPDATE stock_delta_capture SET recompute = 1 WHERE id = 1;' },
-    { sql: 'UPDATE items SET location_id = ? WHERE id = ?;', params: [toLocationId, itemId] },
   ];
 }
 

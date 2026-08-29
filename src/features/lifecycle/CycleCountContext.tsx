@@ -53,7 +53,7 @@ export interface SerialisedSessionLine {
 
 /** What was handed back from a saved sheet when this location opened (null = a fresh count). */
 export interface RestoredCount {
-  /** Entries restored — typed counts plus missing flags. Always at least 1. */
+  /** Rows restored — counted lines, missing flags and found items. Always at least 1. */
   readonly entries: number;
   /** When the sheet was saved (epoch ms), or null if the stored stamp was unusable. */
   readonly savedAt: number | null;

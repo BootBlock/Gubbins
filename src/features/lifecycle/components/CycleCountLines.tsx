@@ -131,10 +131,13 @@ function FoundInstanceRow({
   return (
     <div className={ROW_CLASSES}>
       <span className="flex-1 text-sm font-medium">{serialisedLabel(line)}</span>
-      <Tooltip
-        content="Authorising this count **moves** this unit into the location you are counting, and records the move in its history."
-        triggerTabIndex={-1}
-      >
+      {/*
+        Keyboard-reachable on purpose: the trigger is a plain label rather than a control, so it is
+        the tooltip's *own* tab stop that carries the explanation of what authorising will do to
+        this unit. `triggerTabIndex={-1}` belongs on a trigger wrapping something already
+        focusable — the remove button beside it — not here.
+      */}
+      <Tooltip content="Authorising this count **moves** this unit into the location you are counting, and records the move in its history.">
         <span className="text-xs font-semibold text-warning">Move here</span>
       </Tooltip>
       <RemoveFoundButton itemId={line.itemId} label={serialisedLabel(line)} removeFound={removeFound} />

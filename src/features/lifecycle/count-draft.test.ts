@@ -79,7 +79,7 @@ describe('sameCountDraft — the no-op guard', () => {
 });
 
 describe('restoreCountSheet — opening a location onto saved work', () => {
-  const draft: CountDraft = { counts: { 'w1|default': '8' }, missing: ['s1'], savedAt: AT };
+  const draft: CountDraft = { counts: { 'w1|default': '8' }, missing: ['s1'], found: [], savedAt: AT };
 
   it('hands back the counts and missing flags that still have a line to sit on', () => {
     const sheet = restoreCountSheet(draft, [line('w1|default')], [instance('s1'), instance('s2')]);
@@ -136,7 +136,10 @@ describe('capCountDrafts — bounding a store written on every keystroke', () =>
   /** `count` drafts, oldest first, keyed `loc0…locN`. */
   const many = (count: number): Record<string, CountDraft> =>
     Object.fromEntries(
-      Array.from({ length: count }, (_, i) => [`loc${i}`, { counts: { a: '1' }, missing: [], savedAt: i }]),
+      Array.from({ length: count }, (_, i) => [
+        `loc${i}`,
+        { counts: { a: '1' }, missing: [], found: [], savedAt: i },
+      ]),
     );
 
   it('leaves a map at or under the cap untouched (same object, no needless rewrite)', () => {
@@ -157,7 +160,7 @@ describe('capCountDrafts — bounding a store written on every keystroke', () =>
   it('sorts a draft with no usable stamp as the oldest', () => {
     const drafts: Record<string, CountDraft> = {
       ...many(MAX_COUNT_DRAFTS),
-      undated: { counts: { a: '1' }, missing: [], savedAt: null },
+      undated: { counts: { a: '1' }, missing: [], found: [], savedAt: null },
     };
     expect(capCountDrafts(drafts).undated).toBeUndefined();
   });
@@ -178,15 +181,18 @@ describe('found-here entries survive a paused count (issue #640)', () => {
     const sheet = restoreCountSheet(draft, [line('w1|')], []);
     expect(sheet.found).toEqual([bulk]);
     expect(sheet.counts).toEqual({ 'a|': '12' });
-    expect(sheet.restoredEntries).toBe(2);
+    // One row on the sheet, so one restored entry — the find and the quantity typed against it
+    // are not two pieces of work to report back.
+    expect(sheet.restoredEntries).toBe(1);
   });
 
-  it('drops a find the database now supplies itself, and the count typed against it', () => {
+  it('drops a find the database now supplies itself, but keeps what was counted', () => {
     const draft = draftFrom({ 'a|': '12' }, {}, [bulk], AT)!;
     const sheet = restoreCountSheet(draft, [line('a|')], []);
     expect(sheet.found).toEqual([]);
-    // The database's own line for that lot is on the sheet with its real expected quantity, and
-    // a count entered against an expected-zero line is not an answer to that question.
+    // The addition is redundant once the database lists that lot itself, but the quantity is not:
+    // twelve is what the auditor counted on that shelf, and the line now asking the question is
+    // the same lot at the same placement. Dropping it would send them back to recount.
     expect(sheet.counts).toEqual({ 'a|': '12' });
   });
 

@@ -33,7 +33,12 @@ import {
 // at module scope, and screen tests that mock the barrel wholesale do not provide them.
 import { SYSTEM_USER_ID, UNASSIGNED_LOCATION_ID, type HistoryAction } from '@/db/repositories/constants';
 import { historyStatement } from '@/db/repositories/item/history';
-import { settleStockProjectionStatements } from '@/db/repositories/stock';
+// The stock projection and the bracket that defers it live with the ledger they maintain, not
+// with this module: a repository move needs the same bracket (issue #640) and cannot import from
+// `features/sync`. Re-exported here because the snapshot apply paths, their tests and their mocks
+// all name it at this path.
+import { withRecomputeDeferred } from '@/db/repositories/stock';
+export { withRecomputeDeferred };
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
@@ -685,41 +690,6 @@ export function withCaptureDisabled(statements: readonly SqlStatement[]): SqlSta
     { sql: 'UPDATE stock_delta_capture SET enabled = 0 WHERE id = 1;' },
     ...statements,
     { sql: 'UPDATE stock_delta_capture SET enabled = 1 WHERE id = 1;' },
-  ];
-}
-
-/**
- * Bracket a batch of snapshot-apply statements so the derived-quantity recompute triggers stay
- * dormant while they run, then settle the whole projection once at the end (issue #548).
- *
- * A restore or clone rebuilds the stock ledger one row at a time, and the recompute triggers see
- * every intermediate partial sum. An item with stock in two locations restores its settled
- * `quantity` first, then watches the projection knock it down to the first location's share and
- * back up again — and because that recompute writes `quantity` without touching `updated_at`, the
- * auto-stamp trigger fires on each step and re-stamps a row nobody edited. The damage is not
- * cosmetic: the bridge hydrates the served file through this path on every push, so those items
- * always look newer than the app's genuine edits to them, and last-write-wins discards the edits
- * with a `200 ok`. The app's Merge restore has the milder form of it — every multi-placement item
- * comes back looking freshly edited and beats a peer's newer version at the next sync.
- *
- * Suppressing the triggers alone would not do, because the projection is not always a formality: a
- * Merge restore lands a backup's placements alongside local ones the backup never knew about, and
- * the totals genuinely have to be recomputed. So the settle pass runs inside the bracket, after the
- * caller's statements, doing set-based what the triggers did per row — and doing it once, from the
- * finished ledger, rather than from each partial sum along the way. On the ordinary consistent
- * snapshot it writes nothing and every `updated_at` restores byte-identical.
- *
- * The switch is flipped inside the caller's own transaction, so a rollback restores it too. Only
- * wraps a non-empty batch, matching {@link withCaptureDisabled} — an empty transaction has no
- * projection to settle.
- */
-export function withRecomputeDeferred(statements: readonly SqlStatement[]): SqlStatement[] {
-  if (statements.length === 0) return [...statements];
-  return [
-    { sql: 'UPDATE stock_delta_capture SET recompute = 0 WHERE id = 1;' },
-    ...statements,
-    ...settleStockProjectionStatements(),
-    { sql: 'UPDATE stock_delta_capture SET recompute = 1 WHERE id = 1;' },
   ];
 }
 

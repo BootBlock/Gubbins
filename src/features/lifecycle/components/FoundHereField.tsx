@@ -11,6 +11,7 @@ import { useCallback, useState } from 'react';
 import { LiveRegion } from '@/components/foundry';
 import type { Item } from '@/db/repositories';
 import { ItemPicker } from '@/features/inventory/components/ItemPicker';
+import { usePermission } from '@/features/users/usePermission';
 import { foundLineKey, type FoundHereEntry } from '../cycle-count';
 import type { LocationCycleCount } from '../useLocationCycleCount';
 
@@ -34,10 +35,18 @@ import type { LocationCycleCount } from '../useLocationCycleCount';
  *   authorising moves it here rather than changing any quantity.
  *
  * Items the sheet cannot count are refused with a reason rather than silently ignored: an
- * UNTRACKED item has no quantity to reconcile, and an unlimited one is by definition never short.
+ * UNTRACKED item has no quantity to reconcile, an unlimited one is by definition never short, and
+ * a serialised unit needs the permission its relocation will be gated on. That last one is not
+ * cosmetic: authorising a count is all-or-nothing, so a row the repository will reject takes the
+ * whole shelf's work down with it, with nothing on screen saying which row did it.
  */
 export function FoundHereField({ count }: { count: LocationCycleCount }) {
   const { lines, serialised, found, addFound } = count;
+  // Relocating a serialised unit writes `items.location_id`, which the repository gates on
+  // `items:write` — a stricter key than the `stock:write` the rest of a count needs, and one the
+  // built-in Technician role deliberately withholds. Answered here so the refusal names the row,
+  // rather than at authorisation where it would discard the whole sheet.
+  const mayRelocate = usePermission('items:write');
   const [refused, setRefused] = useState<string | null>(null);
   // Bumped on every accepted pick to remount the picker, which is what clears the text it holds:
   // the control owns its own box, so handing it a null value does not empty it.
@@ -63,6 +72,10 @@ export function FoundHereField({ count }: { count: LocationCycleCount }) {
         setRefused(`${item.name} is not counted by quantity, so it cannot be added to a count sheet.`);
         return;
       }
+      if (item.trackingMode === 'SERIALISED' && !mayRelocate) {
+        setRefused(`Recording ${item.name} here would move it, and you cannot move items.`);
+        return;
+      }
       setRefused(null);
       addFound({
         itemId: item.id,
@@ -72,7 +85,7 @@ export function FoundHereField({ count }: { count: LocationCycleCount }) {
       } satisfies FoundHereEntry);
       setNonce((n) => n + 1);
     },
-    [addFound],
+    [addFound, mayRelocate],
   );
 
   return (
@@ -81,7 +94,7 @@ export function FoundHereField({ count }: { count: LocationCycleCount }) {
         key={nonce}
         value={null}
         onChange={onPick}
-        label="Found something that is not listed?"
+        label="Found something that isn’t listed?"
         hint={FOUND_HINT}
         placeholder="Search for an item…"
         exclude={exclude}
