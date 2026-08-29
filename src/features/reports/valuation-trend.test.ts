@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildValuationTrend, type ValuationEvent } from './valuation-trend';
+import { buildValuationTrend, type RevaluationEvent, type ValuationEvent } from './valuation-trend';
 
 // A fixed, day-aligned window so boundary instants are easy to reason about in assertions.
 const DAY = 86_400_000;
@@ -179,5 +179,71 @@ describe('buildValuationTrend', () => {
     const b = buildValuationTrend(1_000, shuffled, START, END, 6);
 
     expect(b.points).toEqual(a.points);
+  });
+});
+
+describe('buildValuationTrend revaluation marks (issue #481)', () => {
+  it('reports no marks when none are passed', () => {
+    expect(buildValuationTrend(1_000, [], START, END, 5).revaluations).toEqual([]);
+  });
+
+  it('counts revaluations per calendar day, oldest first, whatever order they arrive in', () => {
+    // Two on one day at different times of day, one on another — the marks say *which day*, so
+    // the two must collapse onto a single counted mark rather than drawing two ticks a few hours
+    // apart on a strip whose stored instants carry no time of day.
+    const dayOne = Math.floor((START + 2 * DAY) / DAY) * DAY;
+    const dayTwo = Math.floor((START + 6 * DAY) / DAY) * DAY;
+    const revaluations: RevaluationEvent[] = [
+      { revaluedAt: dayTwo },
+      { revaluedAt: dayOne + 3_600_000 },
+      { revaluedAt: dayOne + 20 * 3_600_000 },
+    ];
+
+    const report = buildValuationTrend(1_000, [], START, END, 5, revaluations);
+
+    expect(report.revaluations).toEqual([
+      { at: dayOne, count: 2 },
+      { at: dayTwo, count: 1 },
+    ]);
+  });
+
+  it('applies the same end-inclusive window rule as the ledger events', () => {
+    // A mark outside the drawn span would point at nothing, so the boundary rule must match the
+    // one that decides which events move the line: `windowStart < at <= windowEnd`.
+    const revaluations: RevaluationEvent[] = [
+      { revaluedAt: START - DAY },
+      { revaluedAt: START },
+      { revaluedAt: END },
+      { revaluedAt: END + DAY },
+    ];
+
+    const report = buildValuationTrend(1_000, [], START, END, 5, revaluations);
+
+    expect(report.revaluations).toEqual([{ at: Math.floor(END / DAY) * DAY, count: 1 }]);
+  });
+
+  it('drops a non-finite instant rather than bucketing it to NaN', () => {
+    const report = buildValuationTrend(1_000, [], START, END, 5, [
+      { revaluedAt: Number.NaN },
+      { revaluedAt: Number.POSITIVE_INFINITY },
+    ]);
+
+    expect(report.revaluations).toEqual([]);
+  });
+
+  it('never moves a point on the line — the marks annotate, they do not re-price', () => {
+    // The whole promise of #399/#289 is that the right-hand endpoint lands on the headline. A mark
+    // that changed any value would reopen exactly that, so drive both and compare the lines.
+    const events: ValuationEvent[] = [
+      { createdAt: START + 3 * DAY, valueDelta: 250 },
+      { createdAt: START + 7 * DAY, valueDelta: -80 },
+    ];
+    const plain = buildValuationTrend(1_000, events, START, END, 6);
+    const marked = buildValuationTrend(1_000, events, START, END, 6, [{ revaluedAt: START + 5 * DAY }]);
+
+    expect(marked.points).toEqual(plain.points);
+    expect(marked.endValue).toBe(plain.endValue);
+    expect(marked.changeValue).toBe(plain.changeValue);
+    expect(marked.revaluations).toHaveLength(1);
   });
 });

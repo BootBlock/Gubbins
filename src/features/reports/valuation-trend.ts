@@ -35,6 +35,33 @@ export interface ValuationPoint {
   readonly value: number;
 }
 
+/**
+ * One recorded manual revaluation, as the `revaluations` log stores it (issue #481). Only the
+ * instant is needed: the marks say *where* a value was manually reset, never what the line would
+ * have been had it been re-priced (see {@link RevaluationMark}).
+ */
+export interface RevaluationEvent {
+  /** UNIX-ms the revaluation was recorded for — day-grained (midnight UTC) when set from the UI. */
+  readonly revaluedAt: number;
+}
+
+/**
+ * One "a value was manually reset here" mark on the trend line (issue #481), aggregated to a
+ * **calendar day** (midnight UTC — the grain `revaluations.revalued_at` is written at by the
+ * revaluation editor, so a day is the finest resolution the stored instant honestly carries).
+ *
+ * A mark carries no value. It deliberately does **not** re-price the line: the trend stays
+ * anchored to the "Inventory value" headline and every point stays priced at each item's value as
+ * it stands today (issue #399 settled that promise, issue #289 the anchor). A mark adds the
+ * missing "something changed here" context without moving a single point.
+ */
+export interface RevaluationMark {
+  /** Midnight-UTC of the day one or more revaluations were recorded on. */
+  readonly at: number;
+  /** How many revaluations were recorded that day, across all valued items. */
+  readonly count: number;
+}
+
 /** The valuation-trend report: an evenly-spaced reconstructed line plus its headline deltas. */
 export interface ValuationTrendReport {
   /** Start of the window (UNIX-ms) — `points[0].at`. */
@@ -49,6 +76,12 @@ export interface ValuationTrendReport {
   readonly endValue: number;
   /** Net change across the window (`endValue − startValue`). */
   readonly changeValue: number;
+  /**
+   * In-window manual revaluations, aggregated per calendar day and ordered oldest first (issue
+   * #481). Empty when none were recorded — or when the only value changes were `unit_cost` edits,
+   * which the schema keeps no log of and so can never be marked.
+   */
+  readonly revaluations: readonly RevaluationMark[];
 }
 
 /**
@@ -86,11 +119,18 @@ export interface ValuationTrendReport {
  * Runs in `O(points + events log events)`: events are sorted once by `createdAt`, then a single
  * descending sweep accumulates the tail-sum subtracted at each boundary.
  *
+ * **Revaluation marks (issue #481).** Any `revaluations` passed in are folded into
+ * {@link ValuationTrendReport.revaluations} — one {@link RevaluationMark} per calendar day, counted,
+ * oldest first — using the *same* end-inclusive window rule as the ledger events, so a mark can
+ * never sit outside the drawn line. They annotate the line and never alter it: no value here is
+ * derived from a revaluation, which is what keeps the right-hand endpoint on the headline.
+ *
  * @param currentValue The present total inventory value (the anchor the line is reconstructed from).
  * @param events       The value-tagged ledger entries; order is irrelevant (sorted internally).
  * @param windowStart  UNIX-ms of the first boundary (inclusive).
  * @param windowEnd    UNIX-ms of the last boundary (inclusive); treated as "now".
  * @param points       Requested number of boundaries; clamped to `>= 2`.
+ * @param revaluations Recorded manual revaluations; order is irrelevant (aggregated internally).
  */
 export function buildValuationTrend(
   currentValue: number,
@@ -98,6 +138,7 @@ export function buildValuationTrend(
   windowStart: number,
   windowEnd: number,
   points: number,
+  revaluations: readonly RevaluationEvent[] = [],
 ): ValuationTrendReport {
   const count = Math.max(2, Math.floor(points));
   // Inclusive even spacing: with `count` boundaries there are `count − 1` gaps between the ends.
@@ -143,5 +184,40 @@ export function buildValuationTrend(
     startValue,
     endValue,
     changeValue: endValue - startValue,
+    revaluations: aggregateRevaluations(revaluations, windowStart, windowEnd),
   };
+}
+
+/** Milliseconds in a calendar day — the grain revaluation marks are aggregated to. */
+const DAY_MS = 86_400_000;
+
+/**
+ * Group in-window revaluations into one counted {@link RevaluationMark} per calendar day, oldest
+ * first (issue #481).
+ *
+ * **Why a day.** The revaluation editor writes `revalued_at` at **midnight UTC** through the
+ * `lib/date-input` seam, so the stored instant already carries no time of day; flooring to the
+ * UTC day is therefore not a loss of precision but a statement of the precision that exists, and
+ * it lands each mark on exactly the day `Formatters.calendarDate` will render for it. It also
+ * bounds the marks by the window length rather than by how many items were revalued at once.
+ *
+ * **Why the same window rule as the events.** {@link inTimeWindowEndInclusive} is what decides
+ * which ledger entries move the line, so reusing it is what guarantees a mark can only ever fall
+ * on a span the line actually covers. A non-finite instant is dropped rather than bucketed to
+ * `NaN`.
+ */
+function aggregateRevaluations(
+  revaluations: readonly RevaluationEvent[],
+  windowStart: number,
+  windowEnd: number,
+): RevaluationMark[] {
+  const byDay = new Map<number, number>();
+  for (const revaluation of revaluations) {
+    const at = revaluation.revaluedAt;
+    if (!Number.isFinite(at)) continue;
+    if (!inTimeWindowEndInclusive(at, windowStart, windowEnd)) continue;
+    const day = Math.floor(at / DAY_MS) * DAY_MS;
+    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  }
+  return [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([at, count]) => ({ at, count }));
 }
