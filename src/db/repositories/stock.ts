@@ -124,26 +124,68 @@ function serialisedPlacementRepairStatements(itemId?: string): SqlStatement[] {
   const one = itemId !== undefined;
   return [
     {
-      // Everywhere it is not: emptied, not deleted, so the correction travels by row-level LWW
-      // like every other emptying in this ledger.
+      // Every row but the one it belongs in: emptied, not deleted, so the correction travels by
+      // row-level LWW.
+      //
+      // Unlike every other emptying in this ledger, it is **not** captured as a movement on the
+      // merge and restore paths, because those run the whole apply inside `withCaptureDisabled` —
+      // so for the two placements a repair touches, `stock_batches.quantity == Σ stock_deltas`
+      // stops holding. `sideIsComplete` (`features/sync/reconcile.ts`) then declines to replay them
+      // and settles them by last-write-wins instead, and `stock-delta-compaction` leaves their
+      // rows uncompacted.
+      //
+      // That is the right trade here rather than an oversight. A serialised placement's quantity is
+      // pinned at 1 by the table CHECK, so there is no arithmetic for the delta CRDT to protect:
+      // *where* the unit is, is decided by `items.location_id`, which last-write-wins already
+      // settles correctly and is what this repair reads. Writing deltas by hand to keep the sum
+      // tidy would put a fabricated movement in an append-only ledger the capture triggers are the
+      // sole author of — describing a unit moving that nobody moved.
+      //
+      // "The one it belongs in" is the **untracked** batch at the item's own location, because a
+      // serialised instance is only ever seeded with that one — its lot identity lives on the
+      // `items` row's own `batch_number` / `lot_number` / `expiry_date` columns, not on a tracked
+      // placement. So a tracked row against a serialised item can only arrive from a foreign or
+      // hand-edited snapshot, and leaving it beside the untracked row the next statement writes
+      // would total two.
       sql: `UPDATE stock_batches SET quantity = 0
              WHERE ${one ? 'item_id = ? AND ' : ''}quantity <> 0
                AND EXISTS (SELECT 1 FROM items i
                             WHERE i.id = stock_batches.item_id
                               AND i.tracking_mode = 'SERIALISED'
-                              AND i.location_id <> stock_batches.location_id);`,
+                              AND (i.location_id <> stock_batches.location_id
+                                   OR stock_batches.batch_key <> ''));`,
       params: one ? [itemId] : undefined,
     },
     {
       // …and exactly one unit where it is, in the untracked batch a serialised instance is
-      // created with. Seeds the row when the home placement has none, which is what the other
-      // half of a diverged pair looks like once the statement above has emptied it.
+      // created with.
+      sql: `UPDATE stock_batches SET quantity = 1
+             WHERE ${one ? 'item_id = ? AND ' : ''}batch_key = '' AND quantity <> 1
+               AND EXISTS (SELECT 1 FROM items i
+                            WHERE i.id = stock_batches.item_id
+                              AND i.tracking_mode = 'SERIALISED'
+                              AND i.location_id = stock_batches.location_id);`,
+      params: one ? [itemId] : undefined,
+    },
+    {
+      // Seeding the home row when there is none, which is what the other half of a diverged pair
+      // looks like once the first statement has emptied it.
+      //
+      // Matched on the **natural** key rather than the derived id, for the reason the `item_stock`
+      // arm below gives: a foreign or hand-edited snapshot's `stock_batches.id` need not follow the
+      // `item|location|batch` form, and it is applied with whatever id it carries. An
+      // `ON CONFLICT(id)` here would miss such a row, fall through to an insert, and hit the
+      // table's `UNIQUE (item_id, location_id, batch_key)` instead — aborting every restore, merge,
+      // move and location delete touching that item, permanently. Which is the failure this
+      // function exists to prevent, reintroduced by the way it was written.
       sql: `INSERT INTO stock_batches (id, item_id, location_id, batch_key, quantity)
             SELECT i.id || '|' || i.location_id || '|', i.id, i.location_id, '', 1
               FROM items i
              WHERE ${one ? 'i.id = ? AND ' : ''}i.tracking_mode = 'SERIALISED'
                AND EXISTS (SELECT 1 FROM stock_batches b WHERE b.item_id = i.id)
-            ON CONFLICT(id) DO UPDATE SET quantity = 1 WHERE stock_batches.quantity <> 1;`,
+               AND NOT EXISTS (SELECT 1 FROM stock_batches b
+                                WHERE b.item_id = i.id AND b.location_id = i.location_id
+                                  AND b.batch_key = '');`,
       params: one ? [itemId] : undefined,
     },
   ];

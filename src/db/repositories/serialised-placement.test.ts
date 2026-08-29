@@ -121,6 +121,56 @@ describe('a serialised instance holds one unit, in one place', () => {
     expect((await items.getById(meter.id))?.quantity).toBe(1);
   });
 
+  it('repairs a home placement whose row id a foreign snapshot chose for itself', async () => {
+    // A snapshot's `stock_batches.id` need not follow the `item|location|batch` form, and is
+    // applied with whatever id it carries. Matching the home row by that derived id instead of by
+    // its natural key misses such a row, falls through to an insert, and hits
+    // `UNIQUE (item_id, location_id, batch_key)` — aborting every restore, merge, move and
+    // location delete touching that item, which is the failure this repair exists to prevent.
+    const store = await locations.create({ name: 'Store' });
+    const [meter] = await items.createSerialised({ name: 'Meter', count: 1, locationId: store.id });
+    await driver.transaction(
+      withCaptureDisabled(
+        withRecomputeDeferred([
+          { sql: 'UPDATE stock_batches SET id = ? WHERE item_id = ?;', params: ['foreign-row-1', meter.id] },
+          { sql: 'UPDATE stock_batches SET quantity = 0 WHERE id = ?;', params: ['foreign-row-1'] },
+        ]),
+      ),
+    );
+
+    // The repair has to find that row and set it back to one, not add a second beside it.
+    const rows = await driver.query<{ id: string; quantity: number }>(
+      'SELECT id, quantity FROM stock_batches WHERE item_id = ?;',
+      [meter.id],
+    );
+    expect(rows).toEqual([{ id: 'foreign-row-1', quantity: 1 }]);
+    expect((await items.getById(meter.id))?.quantity).toBe(1);
+  });
+
+  it('collapses a tracked lot a foreign snapshot pinned on it', async () => {
+    // A serialised instance is only ever seeded with the untracked batch — its lot identity is on
+    // the `items` row's own columns, not on a tracked placement — so a tracked row against one can
+    // only arrive from outside. Left in place beside the untracked row the repair writes, it would
+    // total two and abort the restore carrying it.
+    const store = await locations.create({ name: 'Store' });
+    const [meter] = await items.createSerialised({ name: 'Meter', count: 1, locationId: store.id });
+
+    await driver.transaction(
+      withCaptureDisabled(
+        withRecomputeDeferred([
+          {
+            sql: `INSERT INTO stock_batches (id, item_id, location_id, batch_key, lot_number, quantity)
+                  VALUES (?, ?, ?, 'LOT-7', 'L-7', 1);`,
+            params: [`${meter.id}|${store.id}|LOT-7`, meter.id, store.id],
+          },
+        ]),
+      ),
+    );
+
+    expect(await placements(meter.id)).toEqual({ [store.id]: 1 });
+    expect((await items.getById(meter.id))?.quantity).toBe(1);
+  });
+
   it('leaves a serialised item the placement ledger says nothing about alone', async () => {
     // The `EXISTS` guard the rest of the settle carries, for the same reason: a snapshot holding
     // `items` but no `stock_batches` is not claiming its serialised units are homeless, and this
