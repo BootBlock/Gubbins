@@ -396,6 +396,17 @@ settling first.
 
 ## 9. Implementation notes
 
+> **Two of these are now spent (2026-08-29).** They are live instructions rather than a record, so
+> read them with this first. **The `Colour` bullet is discharged:** tier 1 settled it — the
+> `Magic: The Gathering cards` field is `Card colour` now, all eleven `Colour` declarations are
+> `COLOUR`, and nothing is gated by it any more, `Embroidery floss` included (§11.7). What remains of
+> §3 is [#715](https://github.com/BootBlock/Gubbins/issues/715), and the "other nine names" it
+> mentions are fourteen. **The i18n bullet is answered:** the decision it asks for was taken when
+> tier 1 shipped, and `category-presets.ts` now records it in the `CategoryPreset` docblock — `name`
+> and `description` are English registry data by design, "a deliberate exception to the project's
+> i18n rule, and one that holds for new presets as much as for the original set". A new **section
+> label** still needs both catalogs, exactly as the bullet says.
+
 - **Settle §3's `Colour` before shipping `Yarn` or `Embroidery floss`.** Both want the `COLOUR`
   definition ten presets already share, and both therefore land in the existing `Colour` conflict.
   That one name is the only part of §3 that gates tier 1; the other nine names and the parity test
@@ -780,7 +791,7 @@ cross-check against §12 came later; see the box below the table.
 
 | Natural name | Why it could not be used | Used instead |
 | --- | --- | --- |
-| `Type` | SELECT *and* TEXT across 20 presets, 18 distinct option lists | `Fitting kind`, `Tool kind`, `Sign kind`, `Bearing kind`, `Tackle kind`, `Gear kind`, `Machine kind`, `Vinyl kind`, `Paper kind`, `Ingredient kind`, `Finding kind` |
+| `Type` | SELECT *and* TEXT across 20 presets, 18 distinct option lists | `Fitting kind`, `Tool kind`, `Sign kind`, `Bearing kind`, `Tackle kind`, `Camping gear kind`, `Machine kind`, `Vinyl kind`, `Paper kind`, `Ingredient kind`, `Finding kind` |
 | `Material` | TEXT *and* SELECT across 12 presets, 8 distinct option lists | `Fitting material`, `Seal material`, `Bead material`, `Sign material`, `Rim material`, `Handle material` |
 | `Finish` | SELECT with 2 divergent lists already | `Glaze finish`, `Vinyl finish`, `Paper finish`, `Plating` |
 | `Diameter (mm)` | SELECT in `3D Filament` (1.75 / 2.85) — a NUMBER here would be **rejected at import** | `Rod diameter (mm)`, `Bore (mm)`, `Outside diameter (mm)` |
@@ -1161,8 +1172,9 @@ is that date that alerts.
   king, Cot, Not applicable), `Tog rating` (NUMBER), `Thread count` (NUMBER), `Fibre` (TEXT, reuses
   from `Yarn`), `Colour` (COLOUR, reuses), `Care` (TEXT, reuses from `Yarn`), `In rotation` (ON_OFF).
 - `Size` is a `SELECT` in `Clothing` with garment sizes, so `Bed size` — this is the same shape of
-  problem `Card colour` and `Yarn weight` solved. `Colour` (COLOUR) inherits the §9 prerequisite that
-  `Yarn` and `Embroidery floss` already carry: settle the `Colour` conflict first.
+  problem `Card colour` and `Yarn weight` solved. `Colour` (COLOUR) is a plain reuse and carries no
+  prerequisite: §9 says the `Colour` conflict gates `Yarn` and `Embroidery floss`, but tier 1 settled
+  it, and all eleven `Colour` declarations in the library are now `COLOUR` (§11.7).
 - 🛏️ belongs to `Vintage quilts & textiles`; 🛌 is free, and the repetition would not have been
   clearly more literal in either direction.
 
@@ -1474,11 +1486,16 @@ inside `FIELD_UNIT_MAX_LENGTH` (16).
 **Recommendation.** Do not convert the library. Convert the 13 above, leave the other 14 spelt as
 they are, and record in the file's header comment *why* the bracket survives on the rest — otherwise
 the next author reads a half-converted library as an unfinished job and finishes it into the merge
-above. The payoff for the 13 is real rather than cosmetic: `CustomFieldsEditor` labels the input
-through `inventory.fields.unit.withName`, and `custom-fields.ts` renders the value as `5 V`, so the
-unit shows in both places without the name having to carry it. The cost is one rename each on any
-existing user's category, which is the same cost the §3 fix already carries; do the two together if
-they land in the same release.
+above. The payoff for the 13 is real rather than cosmetic, and it lands in three places already
+built for it: `CustomFieldsEditor` labels the input through `inventory.fields.unit.withName`
+(`CustomFieldsEditor.tsx:123`); `card-fields.ts` carries a `measure` value kind whose whole purpose
+is that "the unit has to travel with the *value* here — `5 V` rather than a bare `5`"
+(`card-fields.ts:208`), which `ItemCardFields.tsx:91` renders; and `custom-fields.ts` appends the
+unit to a range-violation message ("must be at most 24 V"). So the unit reaches the user at the
+input, on the card and in the error, without the name having to carry it — and today, with `unit`
+unset on all 60 `NUMBER` fields, none of those three sites has anything to show. The cost is one
+rename each on any existing user's category, which is the same cost the §3 fix already carries; do
+the two together if they land in the same release.
 
 Two adjacent findings worth folding into the same change:
 
