@@ -255,30 +255,24 @@ function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
   /** The page scroll offset the current map was built at, and the live one (issue #438). */
   let scrollY = builtAtScrollY;
   let pageY = builtAtScrollY;
-  /** The same pair for an inner scroll container, plus the columns it spans (issue #716). */
-  let innerId = 0;
-  let innerBuiltTop = 0;
+  /**
+   * The equivalent for an inner scroll container (issue #716): whether one is being followed,
+   * the offset its live shift is measured from, its live offset, the columns it spans, and the
+   * shift the most recent rebuild spent — which the tracker publishes rather than deriving.
+   */
+  let innerTracked = false;
+  let innerBase = 0;
   let innerTop = 0;
   let innerC0 = -1;
   let innerC1 = -1;
+  let innerCarry = 0;
   const tracker: SurfaceTracker = {
-    snapshot: () => ({
-      tops,
-      bots,
-      scrollY,
-      innerId,
-      innerTop: innerBuiltTop,
-      innerC0,
-      innerC1,
-      generation,
-    }),
+    snapshot: () => ({ tops, bots, scrollY, innerCarry, innerC0, innerC1, generation }),
     hoverFollow: () => hover,
-    scrollShift: () => ({
-      page: scrollY - pageY,
-      inner: innerId === 0 ? 0 : innerBuiltTop - innerTop,
-      c0: innerId === 0 || innerBuiltTop === innerTop ? -1 : innerC0,
-      c1: innerId === 0 || innerBuiltTop === innerTop ? -1 : innerC1,
-    }),
+    scrollShift: () => {
+      const inner = innerTracked ? innerBase - innerTop : 0;
+      return { page: scrollY - pageY, inner, c0: inner === 0 ? -1 : innerC0, c1: inner === 0 ? -1 : innerC1 };
+    },
     stop: () => {},
   };
   let created = 0;
@@ -309,6 +303,7 @@ function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
       }
       tops = moved;
       bots = new Int16Array(bots);
+      innerCarry = 0;
       generation++;
     },
     /** Scroll the page without rebuilding the map — what a scroll does between rebuilds. */
@@ -316,14 +311,14 @@ function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
       pageY += by;
     },
     /**
-     * Start following an inner scroll container spanning columns `c0`…`c1` (issue #716). The
-     * real tracker adopts one on its second scroll event; this is the state after that.
+     * Start following an inner scroll container spanning columns `c0`…`c1` (issue #716) — the
+     * state the real tracker is in after the first scroll event has adopted it.
      */
     trackInner(c0: number, c1: number) {
-      innerId = 1;
+      innerTracked = true;
       innerC0 = c0;
       innerC1 = c1;
-      innerBuiltTop = 0;
+      innerBase = 0;
       innerTop = 0;
     },
     /** Scroll that container without rebuilding the map — the inner analogue of `scrollPage`. */
@@ -345,22 +340,24 @@ function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
       tops = moved;
       bots = new Int16Array(bots);
       scrollY = pageY;
+      innerCarry = 0;
       generation++;
     },
     /**
      * Rebuild the map at the container's live scroll offset: only the tops over its columns move,
-     * and the published baseline catches up with them (issue #716).
+     * the spent shift is published as the carry, and the baseline restarts (issue #716).
      */
     rebuildAfterInnerScroll() {
       const moved = new Int16Array(cols);
-      const by = innerTop - innerBuiltTop;
+      const by = innerTop - innerBase;
       for (let c = 0; c < cols; c++) {
         const t = tops[c] ?? NO_SURFACE;
         moved[c] = t === NO_SURFACE || c < innerC0 || c > innerC1 ? t : t - by;
       }
       tops = moved;
       bots = new Int16Array(bots);
-      innerBuiltTop = innerTop;
+      innerCarry = innerBase - innerTop;
+      innerBase = innerTop;
       generation++;
     },
   };
@@ -641,11 +638,19 @@ describe('startPrecip settled snow while the page scrolls (issue #438)', () => {
   });
 });
 
-/** The destination x and y of the last `n` mound blits — one per span the blit cut the canvas at. */
-function lastMoundBlits(orec: ReturnType<typeof makeCtx>, n: number): Array<{ x: number; y: number }> {
+/**
+ * The last `n` mound blits — one per span the blit cut the canvas at, as its destination x and y.
+ * A blit that is *not* cut into spans is the plain 5-argument full-canvas form, which carries no
+ * offset at all, so it reads back as `'full'` rather than as an offset of zero: the two are
+ * different frames, and a test meaning "painted exactly where the map says" means this one.
+ */
+function lastMoundBlits(
+  orec: ReturnType<typeof makeCtx>,
+  n: number,
+): Array<{ x: number; y: number } | 'full'> {
   return orec.drawImages
     .slice(-n)
-    .map(({ args }) => (args.length === 9 ? { x: args[5] as number, y: args[6] as number } : { x: 0, y: 0 }));
+    .map(({ args }) => (args.length === 9 ? { x: args[5] as number, y: args[6] as number } : 'full'));
 }
 
 describe('startPrecip settled snow while a list scrolls inside its own panel (issue #716)', () => {
@@ -661,7 +666,7 @@ describe('startPrecip settled snow while a list scrolls inside its own panel (is
     });
     let now = 0;
     for (let i = 1; i <= 250; i++) pump((now += 50));
-    expect(lastMoundBlits(orec, 1)).toEqual([{ x: 0, y: 0 }]); // settled, and painted at the map
+    expect(lastMoundBlits(orec, 1)).toEqual(['full']); // settled, and painted at the map
 
     // A list occupying the right half of the screen (x 600…1199) scrolls 30px down between
     // rebuilds. Only its own columns move: the blit is cut at the panel's left edge.
@@ -707,7 +712,7 @@ describe('startPrecip settled snow while a list scrolls inside its own panel (is
     pump((now += 50));
     pump(now + 50);
     expect(orec.drawImages.length).toBeGreaterThan(mark);
-    expect(lastMoundBlits(orec, 1)).toEqual([{ x: 0, y: 0 }]);
+    expect(lastMoundBlits(orec, 1)).toEqual(['full']);
     ctrl.stop();
   });
 
@@ -734,7 +739,7 @@ describe('startPrecip settled snow while a list scrolls inside its own panel (is
     pump((now += 50));
     pump(now + 50);
     expect(orec.drawImages.length).toBeGreaterThan(mark); // the drift is still there…
-    expect(lastMoundBlits(orec, 1)).toEqual([{ x: 0, y: 0 }]); // …and never moved
+    expect(lastMoundBlits(orec, 1)).toEqual(['full']); // …and never moved
     ctrl.stop();
   });
 
@@ -1058,8 +1063,7 @@ describe('startPrecip wind-plaster (blizzard side accumulation)', () => {
         tops,
         bots,
         scrollY: 0,
-        innerId: 0,
-        innerTop: 0,
+        innerCarry: 0,
         innerC0: -1,
         innerC1: -1,
         generation: 1,
@@ -1121,8 +1125,7 @@ describe('snow stick-chance seams (issue #455 follow-up)', () => {
         tops,
         bots,
         scrollY: 0,
-        innerId: 0,
-        innerTop: 0,
+        innerCarry: 0,
         innerC0: -1,
         innerC1: -1,
         generation: 1,

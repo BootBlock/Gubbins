@@ -124,14 +124,16 @@ export interface SurfaceSnapshot {
    */
   readonly scrollY: number;
   /**
-   * Identity of the inner scroll container being followed (issue #716), or 0 for none. A fresh
-   * id is issued whenever the tracked container changes, so a consumer can tell "the same
-   * container, scrolled further" — where {@link innerTop} is a comparable baseline — from "a
-   * different container", where it is not.
+   * How far (css px) the *previous* map's surfaces over {@link innerC0}…{@link innerC1} had been
+   * carried by an inner container's scroll when this map replaced it (issue #716) — the value
+   * {@link SurfaceTracker.scrollShift} reported for those columns, spent at this rebuild. A
+   * consumer reconciling the two maps needs it to compare them in one frame of reference; the
+   * page's equivalent is the difference between the two published {@link scrollY} values.
+   *
+   * Meaningful only at the generation it was published with: like every other field here it is
+   * written when the generation is bumped, and a bump is forced whenever it is non-zero.
    */
-  readonly innerId: number;
-  /** That container's own `scrollTop` (css px) when the maps were built. */
-  readonly innerTop: number;
+  readonly innerCarry: number;
   /** First / last column (inclusive) the container spans; -1 / -1 when there is none. */
   readonly innerC0: number;
   readonly innerC1: number;
@@ -181,14 +183,15 @@ export interface SurfaceTracker {
    * something scrolled under them. Live: it updates on the scroll event itself, so a consumer
    * can draw settled snow on a scrolling page — or in a scrolling list — at frame rate rather
    * than leaving it behind until the debounced rebuild catches up (issues #438, #716). Reads
-   * values cached by the scroll listener, so it costs no layout, and returns one stable object
-   * mutated in place so a per-frame read allocates nothing.
+   * values cached by the scroll listener, so the per-frame read itself costs no layout and no
+   * allocation — one stable object, mutated in place. The listener reads a rect only when the
+   * scrolled *container* changes, never per scroll event.
    *
-   * Two limits, both self-correcting at the next rebuild. A container is followed only from the
-   * *second* scroll event that reaches it, because the first is what establishes which container
-   * to follow — until then it behaves as it did before #716. And a surface that sits over the
-   * container's columns without being inside it (a heading above the list), or a
-   * `position: fixed` surface under a page scroll, rides a shift it should not.
+   * Two limits. A container is followed only from the *second* scroll event that reaches it: the
+   * first is what identifies the container, and it carries no baseline to measure the step it
+   * has just taken from. And a surface that sits over the container's columns without being
+   * inside it (a heading above the list), or a `position: fixed` surface under a page scroll,
+   * rides a shift it should not — both self-correcting at the next rebuild.
    */
   scrollShift(): ScrollShift;
   /** Detach every listener/observer (idempotent). */
@@ -383,6 +386,19 @@ function collectControlRects(
 }
 
 /**
+ * The columns a rect covers, as the inclusive `[c0, c1]` pair the engine's span logic expects —
+ * `null` for a rect that is entirely off the left edge, where there are no columns to name. The
+ * one definition of that convention: the hover follow and the inner-container follow both publish
+ * a span through it, and the engine cuts the mound blit at the edges of either without caring
+ * which produced it.
+ */
+function columnSpan(r: DOMRect): { c0: number; c1: number } | null {
+  if (r.right <= 0) return null;
+  const c0 = Math.max(0, Math.floor(r.left / COLUMN_WIDTH));
+  return { c0, c1: Math.max(c0, Math.floor((r.right - 1) / COLUMN_WIDTH)) };
+}
+
+/**
  * The page's current vertical scroll offset in css px. `document.scrollingElement` is the element
  * that actually scrolls the page in either box mode; `scrollY` is the fallback where there is no
  * document element to read (and 0 where neither exists, as in a non-DOM environment).
@@ -415,8 +431,7 @@ export function trackSurfaces(): SurfaceTracker {
     tops: new Int16Array(0) as Int16Array,
     bots: new Int16Array(0) as Int16Array,
     scrollY: pageScrollY(),
-    innerId: 0,
-    innerTop: 0,
+    innerCarry: 0,
     innerC0: -1,
     innerC1: -1,
     generation: 0,
@@ -427,10 +442,14 @@ export function trackSurfaces(): SurfaceTracker {
   // ── Inner scroll container follow (issue #716) ───────────────────────────────────────────
   /** The container that scrolled most recently, or null while only the page has scrolled. */
   let innerEl: Element | null = null;
-  /** Its identity for {@link SurfaceSnapshot.innerId}; a fresh value per container, 0 for none. */
-  let innerId = 0;
-  /** Source of those ids — monotonic, so a re-tracked container never reuses an old baseline. */
-  let innerSeq = 0;
+  /**
+   * The `scrollTop` the shift is measured from: where the container stood when it was adopted,
+   * or at the last rebuild, whichever is later. Unlike the page's, this baseline is *not* the
+   * published map's — a container that starts scrolling between rebuilds is followed from its
+   * second scroll event rather than waiting for one, which is why the carry it eventually spends
+   * is published outright ({@link SurfaceSnapshot.innerCarry}) instead of being derived.
+   */
+  let innerBase = 0;
   /** Its live `scrollTop`, cached by the scroll listener exactly as {@link pageY} is. */
   let innerTop = 0;
   /** The columns it spans. Measured when it changes and at every rebuild — an inner scroll moves
@@ -466,18 +485,10 @@ export function trackSurfaces(): SurfaceTracker {
    * entirely off the left edge (where there are no columns for its shift to apply to).
    */
   function measureInner(): void {
-    if (innerEl && !innerEl.isConnected) {
-      innerEl = null;
-      innerId = 0;
-    }
-    const r = innerEl ? innerEl.getBoundingClientRect() : null;
-    if (!r || r.right <= 0) {
-      innerC0 = -1;
-      innerC1 = -1;
-      return;
-    }
-    innerC0 = Math.max(0, Math.floor(r.left / COLUMN_WIDTH));
-    innerC1 = Math.max(innerC0, Math.floor((r.right - 1) / COLUMN_WIDTH));
+    if (innerEl && !innerEl.isConnected) innerEl = null;
+    const span = innerEl ? columnSpan(innerEl.getBoundingClientRect()) : null;
+    innerC0 = span ? span.c0 : -1;
+    innerC1 = span ? span.c1 : -1;
   }
 
   function rebuild(): void {
@@ -493,23 +504,23 @@ export function trackSurfaces(): SurfaceTracker {
     // event of its own (a resize, a layout change), so re-read rather than trusting the cache.
     pageY = pageScrollY();
     measureInner();
+    // Whatever shift the container's columns are drawn with is spent by this rebuild, which reads
+    // their live position — so it is published for the consumer to reconcile against, and the
+    // baseline restarts here.
     innerTop = innerEl ? innerEl.scrollTop : 0;
+    const innerCarry = innerEl && innerC0 >= 0 ? innerBase - innerTop : 0;
+    innerBase = innerTop;
     const next = buildSurfaceMap(collectControlRects(root, w, h, hoverEl), w, h);
-    // The published scroll offsets are the baseline of the published maps, so all of them are
-    // adopted together: a scroll that left the maps byte-identical still counts as a change,
-    // because it resets the shift a consumer is drawing with (issues #438, #716).
+    // The published offsets are the baseline of the published maps, so all of them are adopted
+    // together: a scroll that left the maps byte-identical still counts as a change, because it
+    // resets the shift a consumer is drawing with (issues #438, #716).
     const scrolled =
-      pageY !== snap.scrollY ||
-      innerId !== snap.innerId ||
-      innerTop !== snap.innerTop ||
-      innerC0 !== snap.innerC0 ||
-      innerC1 !== snap.innerC1;
+      pageY !== snap.scrollY || innerCarry !== 0 || innerC0 !== snap.innerC0 || innerC1 !== snap.innerC1;
     if (!mapsEqual(next.tops, snap.tops) || !mapsEqual(next.bots, snap.bots) || scrolled) {
       snap.tops = next.tops;
       snap.bots = next.bots;
       snap.scrollY = pageY;
-      snap.innerId = innerId;
-      snap.innerTop = innerTop;
+      snap.innerCarry = innerCarry;
       snap.innerC0 = innerC0;
       snap.innerC1 = innerC1;
       snap.generation++;
@@ -566,11 +577,9 @@ export function trackSurfaces(): SurfaceTracker {
       hover = null;
       return;
     }
-    const r = hoverEl.getBoundingClientRect();
     const dy = transformOffsetY(hoverEl);
-    const c0 = Math.max(0, Math.floor(r.left / COLUMN_WIDTH));
-    const c1 = Math.max(c0, Math.floor((r.right - 1) / COLUMN_WIDTH));
-    hover = { c0, c1, dy };
+    const span = columnSpan(hoverEl.getBoundingClientRect());
+    hover = span ? { c0: span.c0, c1: span.c1, dy } : null;
     if (!hovering && Math.abs(dy) < 0.25) {
       // Released and fully back at rest — nothing left to follow.
       hoverEl = null;
@@ -620,10 +629,11 @@ export function trackSurfaces(): SurfaceTracker {
    * the frame it affects, so the value a frame reads is that frame's own (issue #438).
    *
    * A scroll of an inner container is not a page scroll — it moves only the surfaces inside that
-   * container — so the two are cached separately and the container is tracked by identity
-   * (issue #716). Only the most recently scrolled container is followed; where a second one
-   * scrolls before the rebuild lands, the first reverts to unshifted until that rebuild, which
-   * knocks its snow off as a layout change exactly as it did before #716.
+   * container — so the two are cached separately (issue #716). The first event on a container
+   * adopts it and sets its baseline, which is why the step that event reports cannot itself be
+   * followed. Only the most recently scrolled container is followed; where a second one scrolls
+   * before the rebuild lands, the first reverts to unshifted until that rebuild, which knocks
+   * its snow off as a layout change exactly as it did before #716.
    */
   function onScroll(e: Event): void {
     const t = e.target;
@@ -635,8 +645,8 @@ export function trackSurfaces(): SurfaceTracker {
     } else {
       if (el !== innerEl) {
         innerEl = el;
-        innerId = ++innerSeq;
         measureInner();
+        innerBase = el.scrollTop;
       }
       innerTop = el.scrollTop;
     }
@@ -683,12 +693,9 @@ export function trackSurfaces(): SurfaceTracker {
     scrollShift() {
       // Positive = the surfaces have moved *down* the screen (the scroll went up).
       shift.page = snap.scrollY - pageY;
-      // Only comparable against the *same* container the map was built against: a different one
-      // (or a first scroll the map predates) has no baseline here, so it waits for the rebuild.
-      const sameContainer = innerId !== 0 && innerId === snap.innerId;
-      shift.inner = sameContainer ? snap.innerTop - innerTop : 0;
-      shift.c0 = shift.inner === 0 ? -1 : snap.innerC0;
-      shift.c1 = shift.inner === 0 ? -1 : snap.innerC1;
+      shift.inner = innerEl && innerC0 >= 0 ? innerBase - innerTop : 0;
+      shift.c0 = shift.inner === 0 ? -1 : innerC0;
+      shift.c1 = shift.inner === 0 ? -1 : innerC1;
       return shift;
     },
     stop() {

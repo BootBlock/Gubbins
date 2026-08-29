@@ -274,44 +274,40 @@ describe('trackSurfaces', () => {
     const outsideCol = Math.floor(40 / COLUMN_WIDTH);
 
     const tracker = trackSurfaces();
-    // The first scroll event is what tells the tracker which container to follow, so it has no
-    // baseline yet and reports no shift — the behaviour before #716, for one debounce window.
+    // The first scroll event identifies the container and sets its baseline; the step it reports
+    // is the one step there is nothing to measure from, so it is not followed.
     scrollInnerTo(panel, 50);
     expect(tracker.scrollShift().inner).toBe(0);
 
-    // The rebuild adopts the container: its identity, its scroll offset, and its columns.
-    vi.advanceTimersByTime(200);
-    const built = tracker.snapshot();
-    expect(built.innerId).toBeGreaterThan(0);
-    expect(built.innerTop).toBe(50);
-    expect(built.innerC0).toBe(Math.floor(400 / COLUMN_WIDTH));
-    expect(built.innerC1).toBe(Math.floor(799 / COLUMN_WIDTH));
-    expect(tracker.scrollShift().inner).toBe(0);
-
-    // Scrolling it further is now followed live, over its columns only: the page never moved,
-    // so `page` stays 0 and the control outside the panel is outside the reported span.
+    // From the second event on it is followed live, over its own columns only, without waiting
+    // for a rebuild: the page never moved, so `page` stays 0, and the control outside the panel
+    // is outside the reported span.
     scrollInnerTo(panel, 130);
     const shift = tracker.scrollShift();
     expect(shift.page).toBe(0);
     expect(shift.inner).toBe(-80);
+    expect(shift.c0).toBe(Math.floor(400 / COLUMN_WIDTH));
+    expect(shift.c1).toBe(Math.floor(799 / COLUMN_WIDTH));
     expect(insideCol).toBeGreaterThanOrEqual(shift.c0);
     expect(insideCol).toBeLessThanOrEqual(shift.c1);
     expect(outsideCol).toBeLessThan(shift.c0);
     // The map still describes where the row *was* — the shift is the whole correction.
     expect(tracker.snapshot().tops[insideCol]).toBe(300);
 
-    // The debounce expires, the map is rebuilt at the new position, and the shift is spent.
+    // The debounce expires and the map is rebuilt at the new position. The shift is spent, and
+    // is published as the carry so a consumer can compare the two maps in one frame.
     mockRect(inside, 420, 220, 200, 30);
     vi.advanceTimersByTime(200);
     expect(tracker.snapshot().tops[insideCol]).toBe(220);
-    expect(tracker.snapshot().innerTop).toBe(130);
+    expect(tracker.snapshot().innerCarry).toBe(-80);
+    expect(tracker.snapshot().innerC0).toBe(Math.floor(400 / COLUMN_WIDTH));
     expect(tracker.scrollShift().inner).toBe(0);
 
     tracker.stop();
     vi.useRealTimers();
   });
 
-  it('gives a newly scrolled container a fresh identity, so no stale baseline is reused', () => {
+  it('drops the shift when a second container scrolls, rather than moving the wrong columns', () => {
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
       cb(0);
@@ -325,18 +321,19 @@ describe('trackSurfaces', () => {
 
     const tracker = trackSurfaces();
     scrollInnerTo(first, 40);
-    vi.advanceTimersByTime(200);
-    const firstId = tracker.snapshot().innerId;
     scrollInnerTo(first, 90);
     expect(tracker.scrollShift().inner).toBe(-50);
 
-    // A different container scrolls: its offset is not comparable with the published baseline,
-    // so the shift drops to 0 rather than moving the wrong columns by the wrong amount.
+    // Only the most recently scrolled container is followed. The second one's first event has no
+    // baseline of its own yet, and the first one's shift is not carried onto its columns.
     scrollInnerTo(second, 25);
-    expect(tracker.scrollShift().inner).toBe(0);
+    const shift = tracker.scrollShift();
+    expect(shift.inner).toBe(0);
+    expect(shift.c0).toBe(-1);
+
+    // The rebuild spends nothing for the container it is now following, and adopts its columns.
     vi.advanceTimersByTime(200);
-    expect(tracker.snapshot().innerId).not.toBe(firstId);
-    expect(tracker.snapshot().innerTop).toBe(25);
+    expect(tracker.snapshot().innerCarry).toBe(0);
     expect(tracker.snapshot().innerC0).toBe(Math.floor(400 / COLUMN_WIDTH));
 
     tracker.stop();
@@ -361,7 +358,7 @@ describe('trackSurfaces', () => {
     scrollInnerTo(panel, 75);
     vi.advanceTimersByTime(200);
     expect(tracker.snapshot().generation).toBeGreaterThan(built);
-    expect(tracker.snapshot().innerTop).toBe(75);
+    expect(tracker.snapshot().innerCarry).toBe(-55);
     expect(tracker.scrollShift().inner).toBe(0);
     tracker.stop();
     vi.useRealTimers();

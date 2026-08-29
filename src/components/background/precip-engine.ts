@@ -1498,12 +1498,6 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   let colShift = 0;
   let colShiftC0 = -1;
   let colShiftC1 = -1;
-  /** Identity + `scrollTop` of the container the adopted map was built against (0 = none). */
-  let surfInnerId = 0;
-  let surfInnerTop = 0;
-  /** The columns that container spanned when the adopted map was built (-1 / -1 = none). */
-  let surfInnerC0 = -1;
-  let surfInnerC1 = -1;
   /** Settled-snow depth per column (css px). */
   let depths = new Float32Array(0);
   /**
@@ -1947,10 +1941,6 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       colShift = 0;
       colShiftC0 = -1;
       colShiftC1 = -1;
-      surfInnerId = 0;
-      surfInnerTop = 0;
-      surfInnerC0 = -1;
-      surfInnerC1 = -1;
       moundVisible = false;
       moundDirty = false;
       for (const s of splashes) s.t = s.life;
@@ -1978,15 +1968,13 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const nextBots = snap.bots;
     const prev = surfTops;
     const prevBots = surfBots;
-    // How far the old map's edges travelled on screen between the two rebuilds (see above). The
-    // inner container's own travel is comparable only when it is the same container the old map
-    // was built against; a different one has no shared baseline, so its columns simply reconcile
-    // as moved and lose their snow.
+    // How far the old map's edges travelled on screen between the two rebuilds (see above): the
+    // page's own travel, derived from the two published offsets, plus whatever the tracker says
+    // an inner container carried its columns by before this rebuild spent it.
     const dScroll = surfScrollY - snap.scrollY;
-    const sameInner = surfInnerId !== 0 && surfInnerId === snap.innerId;
-    const dInner = sameInner ? surfInnerTop - snap.innerTop : 0;
-    const ic0 = dInner === 0 ? -1 : surfInnerC0;
-    const ic1 = dInner === 0 ? -1 : surfInnerC1;
+    const dInner = snap.innerCarry;
+    const ic0 = dInner === 0 ? -1 : snap.innerC0;
+    const ic1 = dInner === 0 ? -1 : snap.innerC1;
     const carryAt = (c: number): number => (c >= ic0 && c <= ic1 ? dScroll + dInner : dScroll);
     const carry = (c: number, y: number): number => (y === NO_SURFACE ? NO_SURFACE : y + carryAt(c));
     if (depths.length !== next.length) depths = new Float32Array(next.length);
@@ -2014,10 +2002,6 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     surfTops = next;
     surfBots = nextBots;
     surfScrollY = snap.scrollY;
-    surfInnerId = snap.innerId;
-    surfInnerTop = snap.innerTop;
-    surfInnerC0 = snap.innerC0;
-    surfInnerC1 = snap.innerC1;
     surfGen = snap.generation;
     // The new map is the new baseline: whatever the shifts were, they are spent.
     surfShift = 0;
@@ -2052,10 +2036,11 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    * How far column `c` has moved on screen since the map was built: the page shift every column
    * carries, plus the inner container's own shift where this column is one of its (issues #438,
    * #716). Map y + `shiftAt(c)` = screen y. Takes a raw column index, so it is also correct for
-   * the off-screen wrap margin, where {@link surfaceCol} reports -1.
+   * the off-screen wrap margin, where {@link surfaceCol} reports -1 — a negative column is off
+   * the map, so no container's span can claim it.
    */
   function shiftAt(c: number): number {
-    return c >= colShiftC0 && c <= colShiftC1 ? surfShift + colShift : surfShift;
+    return c >= 0 && c >= colShiftC0 && c <= colShiftC1 ? surfShift + colShift : surfShift;
   }
 
   /** {@link shiftAt} for a screen x — the form the splash and blast paths need. */
