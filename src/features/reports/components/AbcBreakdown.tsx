@@ -1,4 +1,4 @@
-import { Money } from '@/components/foundry';
+import { Bar, Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { AbcReport } from '../abc-analysis';
 
@@ -35,7 +35,6 @@ export function AbcBreakdown({
       <ul className="flex flex-col gap-3">
         {tiers.map((tier) => {
           const meta = TIER_META[tier.tier];
-          const widthPercent = Math.max(2, Math.round(tier.valueShare * 100));
           return (
             <li key={tier.tier} className="flex flex-col gap-1">
               <div className="flex items-baseline justify-between gap-3 text-sm">
@@ -49,12 +48,7 @@ export function AbcBreakdown({
                   <Money value={tier.totalValue} formatters={formatters} />
                 </span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
-                <div
-                  className={`h-full rounded-full ${meta.swatch} transition-[width] duration-500 ease-emphasized`}
-                  style={{ width: `${widthPercent}%` }}
-                />
-              </div>
+              <Bar value={tier.valueShare} fillClassName={meta.swatch} />
               <span className="text-xs text-muted-foreground">
                 {formatters.percent(tier.valueShare)} of consumption value
               </span>

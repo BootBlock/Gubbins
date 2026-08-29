@@ -10,7 +10,13 @@
  */
 import type { ComponentType, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { Money, AnimatedNumber, Tooltip, INFO_OPEN_DELAY_MS } from '@/components/foundry';
+import {
+  Money,
+  AnimatedNumber,
+  COUNT_UP_HEADLINE_DURATION_MS,
+  Tooltip,
+  INFO_OPEN_DELAY_MS,
+} from '@/components/foundry';
 import {
   DatabaseIcon,
   StorageIcon,
@@ -633,19 +639,25 @@ function InventoryTotalsWidget() {
       error={error}
       columns={listColumns(size)}
     >
-      {/* The at-a-glance pulse — its headline figures "count in" from zero on load (and
-          roll on any later change). Reduced motion snaps to the final value. */}
+      {/* The at-a-glance pulse — its headline figures "count in" from zero on load over the long
+          headline roll (and roll on any later change). Reduced motion snaps to the final value. */}
       <StatusRow label={t('dashboard.widget.totals.items')}>
-        <AnimatedNumber value={totalItems} animateOnMount />
+        <AnimatedNumber value={totalItems} durationMs={COUNT_UP_HEADLINE_DURATION_MS} animateOnMount />
       </StatusRow>
       <StatusRow label={t('dashboard.widget.totals.stockValue')}>
-        <Money value={totalValue} formatters={fmt} animate animateOnMount />
+        <Money
+          value={totalValue}
+          formatters={fmt}
+          animate
+          animateOnMount
+          durationMs={COUNT_UP_HEADLINE_DURATION_MS}
+        />
       </StatusRow>
       <StatusRow label={t('dashboard.widget.totals.locations')}>
-        <AnimatedNumber value={locationCount} animateOnMount />
+        <AnimatedNumber value={locationCount} durationMs={COUNT_UP_HEADLINE_DURATION_MS} animateOnMount />
       </StatusRow>
       <StatusRow label={t('dashboard.widget.totals.categories')}>
-        <AnimatedNumber value={categoryCount} animateOnMount />
+        <AnimatedNumber value={categoryCount} durationMs={COUNT_UP_HEADLINE_DURATION_MS} animateOnMount />
       </StatusRow>
     </WidgetShell>
   );

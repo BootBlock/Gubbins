@@ -1777,6 +1777,32 @@
 }
 
 /*
+ * Proportional-bar grow-in (issue #448). A CSS `transition` covers only *later* changes to a
+ * width, never the first paint, so a breakdown panel's bars arrived already drawn with nothing to
+ * watch. This one-shot keyframe gives the Foundry `Bar` fill its entrance: it sweeps out from zero
+ * to the width its inline style sets.
+ *
+ * There is deliberately no `to` keyframe. An implicit one takes the element's own underlying
+ * value, so the animation always lands on the real width with no second source of truth to drift
+ * (the same trick `gubbins-ring-draw` above uses for the gauge ring). `backwards` — not `both` —
+ * holds the zero start before the first frame and then releases, leaving the inline width in
+ * charge, so a later value change still transitions normally.
+ *
+ * Reduced motion: the global `prefers-reduced-motion` / `data-reduce-effects` catch-alls clamp the
+ * duration to ~0.01ms, so the bar is simply drawn at its value — nothing is lost, because the
+ * figure the bar depicts is always in adjacent text.
+ */
+@keyframes gubbins-bar-grow {
+  from {
+    width: 0;
+  }
+}
+
+@utility animate-bar-grow {
+  animation: gubbins-bar-grow 0.9s var(--ease-emphasized) backwards;
+}
+
+/*
  * Milestone success burst (visual-flair F4). A one-shot celebratory *firework* played by the
  * Foundry `BurstProvider` on a genuine milestone (the first item ever added, a completed
  * stock-take): a page-filling shell of sparks that carries into every corner of the viewport over

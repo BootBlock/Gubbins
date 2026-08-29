@@ -53,6 +53,12 @@ calmer centred layout.
 Gubbins has some gentle visual polish that you can dial up or down:
 
 - **Animation** — how animated the interface is, from calm to lively.
+- **Counting figures and growing bars** — headline totals (the **Inventory value** on
+  [[Reports|Reports-Overview]], the figures on your [[Dashboard|Dashboard-and-Widgets]]) count
+  up to their final amount rather than simply appearing, slowing as they settle on it, and the
+  breakdown bars beside them (**Value by category**, **Value by location**, spend, sales,
+  stock ageing) sweep out to their length. Turning **Animation** down, or asking your device
+  for reduced motion, shows every figure and bar at its final value straight away.
 - **Background effect** — an optional soft animated layer behind every screen (gentle falling
   snow or rain). While an effect is running, cards and item rows turn more translucent so the
   drift shows faintly through them, then return to their standard look when you switch it off. The

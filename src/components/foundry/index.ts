@@ -78,7 +78,13 @@ export {
 export { Money, type MoneyProps } from './money';
 export { MoneyInput, type MoneyInputProps } from './money-input';
 export { AnimatedNumber, type AnimatedNumberProps } from './animated-number';
-export { useCountUp, type CountUpOptions } from './useCountUp';
+export {
+  useCountUp,
+  COUNT_UP_DURATION_MS,
+  COUNT_UP_HEADLINE_DURATION_MS,
+  type CountUpOptions,
+} from './useCountUp';
+export { Bar, barPercent, type BarProps } from './bar';
 export { Reveal, type RevealProps } from './reveal';
 export {
   useRevealOnScroll,
