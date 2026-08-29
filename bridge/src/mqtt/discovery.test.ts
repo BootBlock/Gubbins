@@ -9,6 +9,7 @@ import {
   ORIGIN_NAME,
   ORIGIN_SUPPORT_URL,
   buildDiscoveryConfigs,
+  discoveryConfigTopics,
 } from './discovery.ts';
 import type { InventoryState } from './state.ts';
 
@@ -117,5 +118,34 @@ describe('buildDiscoveryConfigs', () => {
   it('honours a custom discovery prefix', () => {
     const custom = buildDiscoveryConfigs(STATE, { ...OPTIONS, discoveryPrefix: 'ha' });
     expect(custom.every((c) => c.topic.startsWith('ha/'))).toBe(true);
+  });
+});
+
+describe('discoveryConfigTopics', () => {
+  /**
+   * The drift test `DEVICE_ENTITY_IDS` asks for: a retraction (issue #565) names config topics from
+   * a recorded id list alone, with no `InventoryState` to build the real configs from, so the two
+   * sides are driven here and compared. Add an entity to `buildDiscoveryConfigs` without listing it
+   * and this goes red — otherwise the new entity would be the one ghost a prefix change leaves
+   * behind. Mutate either side to check it still fails.
+   */
+  it('names exactly the topics buildDiscoveryConfigs emits, in the same order', () => {
+    const emitted = buildDiscoveryConfigs(STATE, OPTIONS).map((c) => c.topic);
+    const named = discoveryConfigTopics(
+      OPTIONS.discoveryPrefix,
+      STATE.locations.map((l) => l.id),
+    );
+    expect(named).toEqual(emitted);
+  });
+
+  it('names only the device entities when no location was published', () => {
+    const emitted = buildDiscoveryConfigs({ ...STATE, locations: [] }, OPTIONS).map((c) => c.topic);
+    expect(discoveryConfigTopics(OPTIONS.discoveryPrefix, [])).toEqual(emitted);
+  });
+
+  it('follows the discovery prefix it is given, so an abandoned tree can be blanked', () => {
+    expect(discoveryConfigTopics('ha-old', ['loc-store'])).toContain(
+      'ha-old/sensor/gubbins/location_loc-store/config',
+    );
   });
 });

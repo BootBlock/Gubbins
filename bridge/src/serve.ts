@@ -56,6 +56,12 @@ import type { WebhookTestCapability } from './server.ts';
 import { attachServerResilience, installProcessResilience, type ProcessResilience } from './resilience.ts';
 import { errorDetail, errorMessage } from './errors.ts';
 import { createMqttPublisher, type MqttPublisher } from './mqtt/publisher.ts';
+import {
+  DEFAULT_MQTT_STATE_FILE,
+  parseRetainedLocations,
+  serialiseRetainedLocations,
+  type RetainedLocationsStore,
+} from './mqtt/retained-locations.ts';
 import { endpointLabel, parseMqttEndpoint, type MqttEndpoint } from './mqtt/client.ts';
 import type { Server } from 'node:http';
 
@@ -540,6 +546,7 @@ async function probeHomeAssistant(client: HaClient, baseUrl: string): Promise<vo
 /** Build the MQTT publisher from config + the already-parsed broker endpoint. */
 function createMqttPublisherFromConfig(config: BridgeConfig, endpoint: MqttEndpoint): MqttPublisher {
   return createMqttPublisher({
+    retainedStore: createRetainedLocationsStore(config),
     endpoint,
     clientId: config.mqttClientId,
     ...(config.mqttUsername !== undefined ? { username: config.mqttUsername } : {}),
@@ -549,6 +556,46 @@ function createMqttPublisherFromConfig(config: BridgeConfig, endpoint: MqttEndpo
     discoveryPrefix: config.mqttDiscoveryPrefix,
     version: BRIDGE_VERSION,
   });
+}
+
+/**
+ * The file-backed memory of which retained topics this bridge has published (issue #565).
+ *
+ * The impure half of `mqtt/retained-locations.ts`, here with the composition root's other `node:`
+ * wiring. Every filesystem failure is swallowed into "there is no record" / "it was not written":
+ * the record makes a *removal* reach the broker, and a bridge that cannot keep it must still
+ * publish. What it costs when it cannot be written is exactly the old behaviour — a location
+ * deleted while the bridge was stopped is not retracted — announced once so the operator can point
+ * `GUBBINS_BRIDGE_MQTT_STATE_FILE` somewhere writable.
+ *
+ * Mode `0o600` for tidiness rather than secrecy: the record holds location ids and topic prefixes,
+ * both already on the wire.
+ */
+function createRetainedLocationsStore(config: BridgeConfig): RetainedLocationsStore {
+  const filePath = config.mqttStateFile ?? DEFAULT_MQTT_STATE_FILE;
+  let warned = false;
+  return {
+    load: () => {
+      try {
+        return parseRetainedLocations(readFileSync(filePath, 'utf8'));
+      } catch {
+        return undefined; // absent (the first ever start), unreadable, a directory.
+      }
+    },
+    save: (record) => {
+      try {
+        writeFileSync(filePath, serialiseRetainedLocations(record), { encoding: 'utf8', mode: 0o600 });
+      } catch {
+        if (warned) return;
+        warned = true;
+        console.warn(
+          `MQTT: could not save ${filePath}, so a location deleted while this bridge is stopped will ` +
+            'keep its retained topic and Home Assistant entity. Set GUBBINS_BRIDGE_MQTT_STATE_FILE to ' +
+            'a writable path.',
+        );
+      }
+    },
+  };
 }
 
 /**

@@ -54,6 +54,9 @@ COPY package.json ./package.json
 # making the same bridge look like a new one. Mount a volume here to survive a recreate.
 RUN mkdir -p /state && chown node:node /state
 ENV GUBBINS_BRIDGE_ID_FILE=/state/bridge-id
+# Same volume, same reason: what the bridge published to MQTT last time. Without it a location
+# deleted while the container was down keeps its retained topic and its Home Assistant entity.
+ENV GUBBINS_BRIDGE_MQTT_STATE_FILE=/state/mqtt-retained.json
 
 # Run as the image's built-in unprivileged user, never root.
 USER node

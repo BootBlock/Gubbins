@@ -13,6 +13,11 @@ import type { BridgeEvent } from '../events/model.ts';
 import { createLookupObserver, LOOKUP_RESOLVED_TYPE, type LookupObserver } from '../events/lookup.ts';
 import type { WhereIsResult } from '../query.ts';
 import { HEALTHY_RELOAD, summarizeSnapshotHealth } from '../snapshot-health.ts';
+import {
+  RETAINED_LOCATIONS_VERSION,
+  type RetainedLocationsRecord,
+  type RetainedLocationsStore,
+} from './retained-locations.ts';
 
 const FIXTURE_URL = new URL('../fixtures/synthetic-mqtt-snapshot.json', import.meta.url);
 const GENERATED_AT = '2025-06-27T07:33:20.000Z';
@@ -160,6 +165,132 @@ describe('publishState', () => {
     );
     expect(configAt).toBeGreaterThanOrEqual(0);
     expect(configAt).toBeLessThan(stateAt);
+  });
+});
+
+/**
+ * A {@link RetainedLocationsStore} held in memory, standing in for the file `serve.ts` writes.
+ * `saved` is the record the publisher last remembered.
+ */
+function fakeStore(initial?: RetainedLocationsRecord): RetainedLocationsStore & {
+  saved: RetainedLocationsRecord | undefined;
+} {
+  const store = {
+    saved: undefined as RetainedLocationsRecord | undefined,
+    load: () => initial,
+    save: (record: RetainedLocationsRecord) => {
+      store.saved = record;
+    },
+  };
+  return store;
+}
+
+const RECORD = (overrides: Partial<RetainedLocationsRecord> = {}): RetainedLocationsRecord => ({
+  version: RETAINED_LOCATIONS_VERSION,
+  prefix: 'gubbins',
+  discoveryPrefix: 'homeassistant',
+  locationIds: ['loc-store', 'loc-bench'],
+  discoveryPublished: true,
+  ...overrides,
+});
+
+describe('retained topics remembered across restarts (issue #565)', () => {
+  it('clears a location that disappeared while this bridge was NOT running', async () => {
+    // The previous run published both locations; only loc-store is in the snapshot this run reads,
+    // so loc-bench was deleted while the bridge was stopped and is in no in-memory diff.
+    const { publisher, fake } = makePublisher({ discovery: true, retainedStore: fakeStore(RECORD()) });
+    const trimmed = await hydrateFromJson(JSON.stringify(await trimmedSnapshot()));
+    try {
+      await publisher.publishState(trimmed.driver, GENERATED_AT);
+    } finally {
+      await trimmed.driver.close();
+    }
+
+    expect(byTopic(fake.published, 'gubbins/location/loc-bench/state')!.payload).toBe('');
+    const config = byTopic(fake.published, 'homeassistant/sensor/gubbins/location_loc-bench/config')!;
+    expect(config.payload).toBe('');
+    expect(config.retain).toBe(true);
+    expect(byTopic(fake.published, 'gubbins/location/loc-store/state')!.payload).not.toBe('');
+  });
+
+  it('retracts a removed location HA entity discovery published before the flag was turned off', async () => {
+    const { publisher, fake } = makePublisher({
+      discovery: false,
+      retainedStore: fakeStore(RECORD({ discoveryPublished: true })),
+    });
+    const trimmed = await hydrateFromJson(JSON.stringify(await trimmedSnapshot()));
+    try {
+      await publisher.publishState(trimmed.driver, GENERATED_AT);
+    } finally {
+      await trimmed.driver.close();
+    }
+
+    // The config is out there whatever the flag now says, so the ghost still has to be cleared —
+    // and nothing else is written under the discovery prefix.
+    expect(fake.published.filter((p) => p.topic.startsWith('homeassistant/')).map((p) => p.topic)).toEqual([
+      'homeassistant/sensor/gubbins/location_loc-bench/config',
+    ]);
+  });
+
+  it('remembers the current location set, and that discovery configs are out there', async () => {
+    const store = fakeStore();
+    const { publisher } = makePublisher({ discovery: true, retainedStore: store });
+    await publisher.publishState(hydrated.driver, GENERATED_AT);
+
+    expect(store.saved).toEqual({
+      version: RETAINED_LOCATIONS_VERSION,
+      prefix: 'gubbins',
+      discoveryPrefix: 'homeassistant',
+      locationIds: ['loc-store', 'loc-bench'],
+      discoveryPublished: true,
+    });
+  });
+
+  it('records discoveryPublished false while the discovery flag is off', async () => {
+    const store = fakeStore();
+    const { publisher } = makePublisher({ discovery: false, retainedStore: store });
+    await publisher.publishState(hydrated.driver, GENERATED_AT);
+    expect(store.saved!.discoveryPublished).toBe(false);
+  });
+
+  it('blanks the tree abandoned by a prefix change, once, at start', () => {
+    const store = fakeStore(RECORD({ prefix: 'old-prefix' }));
+    const { publisher, fake } = makePublisher({ discovery: true, retainedStore: store });
+    publisher.start();
+
+    const blanked = fake.published.filter((p) => p.payload === '' && p.retain);
+    expect(blanked.map((p) => p.topic)).toContain('old-prefix/location/loc-bench/state');
+    expect(blanked.map((p) => p.topic)).toContain('old-prefix/status');
+    expect(blanked.map((p) => p.topic)).toContain('homeassistant/sensor/gubbins/location_loc-store/config');
+    // Nothing is published under the CURRENT prefix by the sweep itself.
+    expect(fake.published.some((p) => p.topic.startsWith('gubbins/'))).toBe(false);
+    // The record is rewritten immediately, so a crash before the first state publish cannot make
+    // the next start blank the same topics all over again.
+    expect(store.saved).toEqual({
+      version: RETAINED_LOCATIONS_VERSION,
+      prefix: 'gubbins',
+      discoveryPrefix: 'homeassistant',
+      locationIds: [],
+      discoveryPublished: false,
+    });
+  });
+
+  it('blanks nothing at start when the prefixes are unchanged', () => {
+    const { publisher, fake } = makePublisher({ discovery: true, retainedStore: fakeStore(RECORD()) });
+    publisher.start();
+    expect(fake.published).toEqual([]);
+  });
+
+  it('keeps the in-memory behaviour when no store is supplied', async () => {
+    const { publisher, fake } = makePublisher({ discovery: true });
+    const trimmed = await hydrateFromJson(JSON.stringify(await trimmedSnapshot()));
+    try {
+      await publisher.publishState(trimmed.driver, GENERATED_AT);
+    } finally {
+      await trimmed.driver.close();
+    }
+    // Nothing was published before, so there is nothing to retract — only the live set goes out.
+    expect(byTopic(fake.published, 'gubbins/location/loc-bench/state')).toBeUndefined();
   });
 });
 

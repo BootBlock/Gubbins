@@ -38,6 +38,9 @@ ExecStart=/usr/bin/node bridge/serve.mjs
 # wins: settings read from an EnvironmentFile= always override an Environment= set here.
 StateDirectory=gubbins-bridge
 Environment=GUBBINS_BRIDGE_ID_FILE=/var/lib/gubbins-bridge/bridge-id
+# The same state directory holds what the bridge last published to MQTT, so a location deleted while
+# the service was stopped is still cleared off the broker on the next start.
+Environment=GUBBINS_BRIDGE_MQTT_STATE_FILE=/var/lib/gubbins-bridge/mqtt-retained.json
 # Token + snapshot path live here (chmod 640, never committed), not in this unit file.
 EnvironmentFile=/etc/gubbins-bridge.env
 Restart=on-failure

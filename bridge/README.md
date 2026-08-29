@@ -1871,6 +1871,24 @@ sensor — so the data going stale is a signal you can alert or automate on, whi
 present. If you *want* entities to disappear on staleness, template an HA `availability` off that
 binary sensor yourself.
 
+### Deleting a location clears its topic
+
+When a location disappears from the inventory, the bridge blanks its retained `.../state` topic —
+and, with discovery on, its Home Assistant entity — so nothing is left on the broker reporting an
+item count for a shelf that no longer exists.
+
+That has to work across a restart too: delete a location while the bridge is stopped and, on the
+next start, it is the *broker* that still holds the retained topic. The bridge cannot ask (it only
+publishes, it never subscribes), so it keeps a small file of what it last published —
+`mqtt-retained.json` in the working directory, or wherever `GUBBINS_BRIDGE_MQTT_STATE_FILE` points —
+and clears the difference on its first publish. Changing `GUBBINS_BRIDGE_MQTT_PREFIX` or the
+discovery prefix abandons a whole tree under the old one, so that is blanked at start too.
+
+> **ℹ️ Note** The file holds location ids and topic prefixes: no secret, nothing that isn't already
+> on the wire. If it cannot be written (a read-only working directory) the bridge says so once and
+> carries on publishing — the only loss is that a deletion made while it was stopped goes
+> unretracted, exactly as it did before the file existed.
+
 ### Location attributes (your custom fields)
 
 Each location's state payload carries an `attributes` object holding the **custom-field values that
@@ -2271,6 +2289,7 @@ the ambient process environment (so systemd/Docker can supply the values instead
 | `GUBBINS_BRIDGE_MQTT_CLIENT_ID` | no | `gubbins-bridge` | The MQTT client identifier. |
 | `GUBBINS_BRIDGE_MQTT_DISCOVERY` | no | `off` | Also publish [Home Assistant MQTT-discovery](#home-assistant-mqtt-discovery-no-custom-component) configs so HA auto-creates entities with no custom component. Only meaningful when MQTT is on. |
 | `GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX` | no | `homeassistant` | HA discovery prefix (match HA's `discovery_prefix` if you changed it). |
+| `GUBBINS_BRIDGE_MQTT_STATE_FILE` | no | `mqtt-retained.json` | Where the bridge remembers which retained topics it has published, so a location deleted **while the bridge was stopped** is still cleared off the broker (and its HA entity removed). Relative to the working directory; the shipped systemd unit and Docker image point it at a writable path. Holds location ids and topic prefixes only — no secret. |
 | `GUBBINS_BRIDGE_HA` | no | `off` | Enable opt-in [Home Assistant reads](#home-assistant-reads-opt-in) so "Count by weight" can read a scale entity. **Off by default** (`/api/v1/scale/*` is `404` when off). Outbound-only and read-only — the bridge cannot call a service. |
 | `GUBBINS_BRIDGE_HA_URL` | when HA on¹ | — | Base URL of your Home Assistant instance, e.g. `http://homeassistant.local:8123`. |
 | `GUBBINS_BRIDGE_HA_TOKEN` | when HA on | — | Home Assistant long-lived access token. `.env` only; **never logged** and never sent to the app. |

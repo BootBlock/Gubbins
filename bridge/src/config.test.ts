@@ -52,6 +52,7 @@ describe('loadConfig (HA-3)', () => {
       mqttClientId: 'gubbins-bridge',
       mqttDiscovery: false,
       mqttDiscoveryPrefix: 'homeassistant',
+      mqttStateFile: undefined,
       homeAssistant: false,
       homeAssistantUrl: undefined,
       homeAssistantToken: undefined,
@@ -136,6 +137,17 @@ describe('loadConfig (HA-3)', () => {
     expect(config.mqttPassword).toBe('placeholder-mqtt-pass');
     expect(config.mqttDiscovery).toBe(true);
     expect(config.mqttPrefix).toBe('home/gubbins');
+  });
+
+  it('takes the retained-topic state file from the environment, defaulting to unset', () => {
+    expect(loadConfig(VALID).mqttStateFile).toBeUndefined();
+    const config = loadConfig({
+      ...VALID,
+      GUBBINS_BRIDGE_MQTT: 'on',
+      GUBBINS_BRIDGE_MQTT_URL: 'mqtt://broker.test:1883',
+      GUBBINS_BRIDGE_MQTT_STATE_FILE: '  /var/lib/gubbins/mqtt-retained.json  ',
+    });
+    expect(config.mqttStateFile).toBe('/var/lib/gubbins/mqtt-retained.json');
   });
 
   it('does NOT expose the SSE HTTP endpoint just because MQTT is on', () => {

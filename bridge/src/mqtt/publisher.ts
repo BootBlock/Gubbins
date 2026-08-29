@@ -30,6 +30,11 @@ import {
   type SocketFactory,
 } from './client.ts';
 import { buildDiscoveryConfigs, discoveryConfigTopic, locationSensorObjectId } from './discovery.ts';
+import {
+  planRetainedRestore,
+  RETAINED_LOCATIONS_VERSION,
+  type RetainedLocationsStore,
+} from './retained-locations.ts';
 import { projectInventoryState, type InventoryState } from './state.ts';
 import {
   AVAILABILITY_OFFLINE,
@@ -55,6 +60,13 @@ export interface MqttPublisherOptions {
   readonly discoveryPrefix: string;
   /** Bridge version, surfaced as the HA device software version (carries no secret). */
   readonly version: string;
+  /**
+   * Where the set of location ids this bridge has retained topics for is remembered across
+   * restarts (issue #565). Omit it and the publisher keeps that set in memory only, which means a
+   * location deleted while the bridge was stopped is never retracted — its state topic and Home
+   * Assistant entity stay on the broker for good. `serve.ts` supplies the file-backed store.
+   */
+  readonly retainedStore?: RetainedLocationsStore;
   /** Injectable client factory (defaults to the real {@link createMqttClient}). */
   readonly createClient?: (options: MqttClientOptions) => MqttClient;
   /** Injectable socket factory forwarded to the default client (tests inject a fake socket). */
@@ -98,9 +110,26 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   // Signature of the location set last published as discovery configs -- so we only re-emit the
   // discovery layout when a location is added/removed/renamed, not on every state refresh.
   let discoverySignature: string | null = null;
+  // What a previous run of this bridge left retained on the broker, under which prefixes (issue
+  // #565). The publish-only client cannot subscribe, so the broker can never be asked — without
+  // this the "before" side of the removal diff would start empty on every start.
+  const restored = planRetainedRestore(options.retainedStore?.load(), {
+    prefix: options.prefix,
+    discoveryPrefix: options.discoveryPrefix,
+  });
   // The location ids we currently have RETAINED topics for, so a removed location's retained state
   // (and its HA discovery entity) can be cleared rather than lingering on the broker as a ghost.
-  let publishedLocationIds: readonly string[] = [];
+  // Seeded from the previous run, so a location deleted while the bridge was stopped is still in
+  // the diff's "before" side and gets retracted on the first publish after the restart.
+  let publishedLocationIds: readonly string[] = restored.seedLocationIds;
+  // Whether discovery configs may already exist under the current discovery prefix. Sticky, and
+  // independent of `options.discovery`: turning the flag off does not remove what it published, so
+  // a later removal must still retract that location's config.
+  let discoveryPublished = restored.discoveryPublished;
+  // Blanked once at startup, below — retained topics under a prefix this run no longer uses.
+  let staleTopics: readonly string[] = restored.staleTopics;
+  // The record last handed to the store, so a reconnect's re-publish doesn't rewrite an identical file.
+  let rememberedSignature: string | null = null;
 
   const client = createClient({
     endpoint: options.endpoint,
@@ -136,6 +165,8 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     }
     clearRemovedLocations(state);
     if (options.discovery) publishDiscoveryIfChanged(state);
+    // After the discovery pass, so the record reflects whether configs are out there.
+    rememberPublished();
   }
 
   /**
@@ -152,7 +183,7 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
       // reads its attributes from that same state topic, so clearing the state first would hand
       // Home Assistant an empty payload to run `json_attributes_template` over — an avoidable
       // parse warning in the log for an entity that is about to disappear anyway.
-      if (options.discovery) {
+      if (options.discovery || discoveryPublished) {
         client.publish(
           discoveryConfigTopic(options.discoveryPrefix, 'sensor', locationSensorObjectId(id)),
           '',
@@ -164,11 +195,46 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     publishedLocationIds = state.locations.map((l) => l.id);
   }
 
+  /**
+   * Persist what is now retained, so the next process can pick the diff up where this one left off.
+   * Best-effort by contract — the store swallows its own failures, because a bridge that cannot
+   * write this file must still publish.
+   */
+  function rememberPublished(): void {
+    if (options.retainedStore === undefined) return;
+    // Reconnects re-publish the whole snapshot, so skip the write when nothing actually moved.
+    const record = {
+      version: RETAINED_LOCATIONS_VERSION,
+      prefix: options.prefix,
+      discoveryPrefix: options.discoveryPrefix,
+      locationIds: publishedLocationIds,
+      discoveryPublished,
+    };
+    const signature = JSON.stringify(record);
+    if (signature === rememberedSignature) return;
+    rememberedSignature = signature;
+    options.retainedStore.save(record);
+  }
+
+  /**
+   * Blank whatever an earlier run left under a prefix this one has stopped using, once, at start.
+   * Publishes made before the connection is up are buffered by the client and flushed on connect,
+   * so this needs no wait — and the record is rewritten immediately, so a crash before the first
+   * state publish cannot make the next start retract the same topics again.
+   */
+  function clearStaleScope(): void {
+    if (staleTopics.length === 0) return;
+    for (const topic of staleTopics) client.publish(topic, '', true);
+    staleTopics = [];
+    rememberPublished();
+  }
+
   /** Re-publish the HA discovery configs only when the location layout has changed since last time. */
   function publishDiscoveryIfChanged(state: InventoryState): void {
     const signature = JSON.stringify(state.locations.map((l) => [l.id, l.name]));
     if (signature === discoverySignature) return;
     discoverySignature = signature;
+    discoveryPublished = true;
     const configs = buildDiscoveryConfigs(state, {
       prefix: options.prefix,
       discoveryPrefix: options.discoveryPrefix,
@@ -180,6 +246,7 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   return {
     start(): void {
       client.start();
+      clearStaleScope();
     },
 
     async publishState(driver: IDatabaseDriver, generatedAt: string | null): Promise<void> {
