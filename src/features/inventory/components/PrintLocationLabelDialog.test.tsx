@@ -140,6 +140,50 @@ describe('PrintLocationLabelDialog — short-code fallback line', () => {
   });
 });
 
+/** The location's own name line, and the toggle that drops it (issue #436). */
+describe('PrintLocationLabelDialog — the location name line', () => {
+  it('prints the name by default, and drops just that line when the toggle is cleared', () => {
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    const cell = () => screen.getByTestId('label-cell');
+    expect(cell().textContent).toContain('Bin 3');
+
+    fireEvent.click(screen.getByTestId('loc-label-show-name'));
+
+    expect(cell().textContent).not.toContain('Bin 3');
+    // The path and the short-code fallback are untouched — only the name line went.
+    expect(cell().textContent).toContain('Workshop / Shelf B');
+    expect(cell().textContent).toContain('00000000');
+    // The dialog still names the location in its own description.
+    expect(screen.getAllByText('Bin 3').length).toBeGreaterThan(0);
+  });
+
+  it('leaves a code-only label when every text toggle is cleared', () => {
+    render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+
+    fireEvent.click(screen.getByTestId('loc-label-show-name'));
+    fireEvent.click(screen.getByTestId('loc-label-show-short-code'));
+    fireEvent.click(screen.getByLabelText('Show full path'));
+
+    const cell = screen.getByTestId('label-cell');
+    expect(cell.textContent).not.toContain('Bin 3');
+    expect(cell.textContent).not.toContain('Workshop / Shelf B');
+    expect(cell.textContent).not.toContain('00000000');
+    // The QR is still drawn — it is the whole point of the label.
+    expect(cell.querySelector('svg')).not.toBeNull();
+  });
+
+  it('starts on again each time the dialog is reopened', () => {
+    const { rerender } = render(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+    fireEvent.click(screen.getByTestId('loc-label-show-name'));
+    expect(screen.getByTestId('label-cell').textContent).not.toContain('Bin 3');
+
+    rerender(<PrintLocationLabelDialog open={false} onClose={() => {}} location={BIN} />);
+    rerender(<PrintLocationLabelDialog open onClose={() => {}} location={BIN} />);
+
+    expect(screen.getByTestId('label-cell').textContent).toContain('Bin 3');
+  });
+});
+
 describe('PrintLocationLabelDialog — a print the browser refuses (issue #510)', () => {
   it('says so rather than leaving the button looking broken', async () => {
     blockPrinting();

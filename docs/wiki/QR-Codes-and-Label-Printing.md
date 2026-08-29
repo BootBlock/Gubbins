@@ -150,6 +150,27 @@ else.
 > below), it is not printed twice — the characters under the bars are the short code, and the extra
 > line is dropped so the label keeps the space.
 
+## What a location label prints
+
+A **location** label carries a QR code of the shelf or bin itself, so scanning it opens Gubbins at
+that location. Three ticks in the **Print location label** dialog decide what is printed around it:
+
+- **Show location** — the location's own name, such as *Storage Box 4*, under the code. On by
+  default. It is the line you read without a scanner, so leave it on unless the bin is already
+  named on the outside, or the label is small enough that the QR code needs every millimetre.
+- **Show full path** — the ancestors above it, such as *Garage ▸ Shelf B*, on the line below the
+  name. On by default, and only offered where the location has a parent. It tells same-named bins
+  apart at a glance.
+- **Short code** — the fallback identifier described above.
+
+Clear all three and you get a code-only sticker: still scannable, but nothing on it says which
+location it belongs to until you scan it.
+
+> **⚠️ Heads-up**
+> Each line you turn on takes height from the QR code. Turning them all on for a small die-cut
+> label can leave the code too small for a phone camera — Gubbins says so in the dialog when it
+> does. The preview is the label, so check it before you print a sheet.
+
 ## Long names on a small label
 
 A name only has so much room. Where one is too long for the label, Gubbins keeps it to **two
