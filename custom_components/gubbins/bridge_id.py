@@ -26,7 +26,10 @@ travels in an unauthenticated mDNS advertisement by design.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 # Mirrors the bridge's own bounds (see `bridge/src/bridge-id.ts`). Nothing here trusts the value to
 # be well-formed: it arrives either over the LAN in an mDNS TXT record or in a JSON body, and an id
@@ -69,6 +72,22 @@ def address_unique_id(host: str, port: int) -> str:
     should be visible from one place if it ever needs removing.
     """
     return f"{host}:{port}"
+
+
+def entry_display_name(hass: HomeAssistant, entry_id: str) -> str:
+    """Name a set-up bridge the way its owner sees it, falling back to its entry id.
+
+    Sits beside :func:`entry_title` deliberately, because the two are easy to confuse and do
+    different jobs: that one *mints* the title Home Assistant gives an entry it named itself,
+    while this one *reads back* whatever title the entry ended up with — which may be one the
+    user typed. Anything that has to name a bridge in a message to the user wants this one.
+
+    The fallback covers an id that no longer resolves to an entry, which is not worth a failure
+    of its own: the caller is already explaining something else, and an id is still an answer to
+    "which bridge".
+    """
+    entry = hass.config_entries.async_get_entry(entry_id)
+    return entry.title if entry is not None else entry_id
 
 
 def entry_title(host: str, port: int) -> str:

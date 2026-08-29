@@ -52,6 +52,10 @@
       "name": "Search inventory",
       "description": "Search the Gubbins inventory (read-only) and return matching items, along with the resolved location ids for each match.",
       "fields": {
+        "config_entry_id": {
+          "name": "Bridge",
+          "description": "Which Gubbins bridge this call is for. Leave it empty while only one bridge is set up. With more than one, name the one you mean: a call that names none is refused rather than sent to whichever bridge loaded first."
+        },
         "query": {
           "name": "Query",
           "description": "Free text, or the power-user syntax (e.g. cap:voltage>3.3)."
@@ -66,6 +70,10 @@
       "name": "Adjust quantity (stock in / out)",
       "description": "Change a discrete item's stock by a signed amount. This moves a number only — to record that someone has borrowed the item, use Check out instead. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
       "fields": {
+        "config_entry_id": {
+          "name": "Bridge",
+          "description": "Which Gubbins bridge this call is for. Leave it empty while only one bridge is set up. With more than one, name the one you mean: a call that names none is refused rather than sent to whichever bridge loaded first."
+        },
         "item_id": {
           "name": "Item id",
           "description": "The Gubbins record id of the item (find it via the search service or the API)."
@@ -88,6 +96,10 @@
       "name": "Adjust gauge (use / refill a consumable)",
       "description": "Change how much is in a measured consumable — grams of filament, millilitres of resin — by a signed amount. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
       "fields": {
+        "config_entry_id": {
+          "name": "Bridge",
+          "description": "Which Gubbins bridge this call is for. Leave it empty while only one bridge is set up. With more than one, name the one you mean: a call that names none is refused rather than sent to whichever bridge loaded first."
+        },
         "item_id": {
           "name": "Item id",
           "description": "The Gubbins record id of the consumable (find it via the search service or the API)."
@@ -110,6 +122,10 @@
       "name": "Check out (lend an item)",
       "description": "Lend an item to a person, a project or a place, optionally with a due date. Unlike adjusting a quantity this records who has it, so it shows as on loan and becomes overdue if the due date passes. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on, and an account with permission to lend; the change syncs back to the app conflict-free.",
       "fields": {
+        "config_entry_id": {
+          "name": "Bridge",
+          "description": "Which Gubbins bridge this call is for. Leave it empty while only one bridge is set up. With more than one, name the one you mean: a call that names none is refused rather than sent to whichever bridge loaded first."
+        },
         "item_id": {
           "name": "Item id",
           "description": "The Gubbins record id of the item to lend (find it via the search service or the API)."
@@ -156,6 +172,10 @@
       "name": "Check in (return a lent item)",
       "description": "Return a lent item, putting the stock back where it came from and closing the loan. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on, and an account with permission to lend; the change syncs back to the app conflict-free.",
       "fields": {
+        "config_entry_id": {
+          "name": "Bridge",
+          "description": "Which Gubbins bridge this call is for. Leave it empty while only one bridge is set up. With more than one, name the one you mean: a call that names none is refused rather than sent to whichever bridge loaded first."
+        },
         "item_id": {
           "name": "Item id",
           "description": "The Gubbins record id of the item coming back (find it via the search service or the API)."
@@ -178,6 +198,10 @@
       "name": "Transfer stock (move between locations)",
       "description": "Move some of a counted item from one location to another. The item's total doesn't change — only where it is. Measured consumables can't be moved this way: a gauge tracks one body of material, so there is nothing to split. Requires the bridge to be started with GUBBINS_BRIDGE_ALLOW_WRITES=on; the change syncs back to the app conflict-free.",
       "fields": {
+        "config_entry_id": {
+          "name": "Bridge",
+          "description": "Which Gubbins bridge this call is for. Leave it empty while only one bridge is set up. With more than one, name the one you mean: a call that names none is refused rather than sent to whichever bridge loaded first."
+        },
         "item_id": {
           "name": "Item id",
           "description": "The Gubbins record id of the item to move (find it via the search service or the API)."
