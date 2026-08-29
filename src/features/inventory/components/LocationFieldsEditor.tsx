@@ -160,15 +160,22 @@ export function LocationFieldsEditor({ locationId }: { locationId: string }) {
 
       {available.length > 0 ? (
         <div className="flex items-end gap-2">
-          <Select
-            value={adding}
-            onChange={setAdding}
-            options={[
-              { value: '', label: t('inventory.location.fields.addPlaceholder') },
-              ...available.map((d) => ({ value: d.id, label: d.name })),
-            ]}
-            aria-label={t('inventory.location.fields.addLabel')}
-          />
+          {/* A fixed width rather than the shrink-to-fit the flex row would otherwise give this
+              box (issue #435). The popover is anchored to the trigger's width, so a box sized to
+              whichever field happens to be selected sets the menu's width from it too — and the
+              field names inside it then truncate. `max-w-full` keeps the row inside a narrow
+              dialog; nothing below that width changes. */}
+          <div className="w-72 max-w-full">
+            <Select
+              value={adding}
+              onChange={setAdding}
+              options={[
+                { value: '', label: t('inventory.location.fields.addPlaceholder') },
+                ...available.map((d) => ({ value: d.id, label: d.name })),
+              ]}
+              aria-label={t('inventory.location.fields.addLabel')}
+            />
+          </div>
           <Button
             disabled={adding === '' || isSaving(adding)}
             onClick={() => {
