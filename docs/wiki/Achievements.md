@@ -24,7 +24,7 @@ A counter at the top says how many of the total you've unlocked.
 ## Earning one
 
 Most achievements come to you — nothing needs turning on, and there's nothing to claim. When you
-cross a milestone you'll see a short burst of fireworks and a message naming what you unlocked.
+cross a milestone a message names what you've unlocked.
 
 | Achievement | How it's earned |
 | --- | --- |
@@ -49,5 +49,6 @@ added rather than only what's on the shelf today.
 > [[Danger Zone|Danger-Zone-Erasing-Data]] clears them along with this device's other local odds
 > and ends.
 
-If you've turned decorative motion down — **Reduce effects**, or your system's reduced-motion
-setting — the fireworks don't play. The message still appears, so you never miss the moment.
+A milestone can also arrive with a short burst of fireworks, but only at the liveliest
+[[Animation|Appearance-and-Theming]] level — the default setting keeps that flourish off, as does
+your system's reduced-motion setting. The message appears either way, so you never miss the moment.

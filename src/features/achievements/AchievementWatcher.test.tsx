@@ -98,6 +98,22 @@ describe('AchievementWatcher', () => {
     expect(useAchievementsStore.getState().unlocked['first-item']).toBeNull();
   });
 
+  it('does not treat a failed count as an empty inventory', () => {
+    // An errored query is no longer pending and still has no data. Reading that as a settled zero
+    // would make the next successful read look like a rising edge, and celebrate items that were
+    // there all along.
+    itemCountMock.mockReturnValue({ data: undefined, isPending: false });
+    const { rerender } = render(tree());
+
+    itemCountMock.mockReturnValue({ data: 40, isPending: false });
+    rerender(tree());
+
+    expect(screen.queryByText('Achievement unlocked: First item')).not.toBeInTheDocument();
+    expect(screen.queryByText('Achievement unlocked: Ten items')).not.toBeInTheDocument();
+    expect(useAchievementsStore.getState().unlocked['first-item']).toBeNull();
+    expect(useAchievementsStore.getState().unlocked['ten-items']).toBeNull();
+  });
+
   it('does not re-award after every item is deleted and one is added again', () => {
     const { rerender } = render(tree());
     itemCountMock.mockReturnValue({ data: 1, isPending: false });

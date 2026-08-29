@@ -34,8 +34,12 @@ export function AchievementWatcher() {
   const highest = useRef<number | null>(null);
 
   useEffect(() => {
-    if (count.isPending) return;
-    const n = count.data ?? 0;
+    // Gate on the *data*, not on `isPending`: a query that has errored is no longer pending but
+    // still has no count, and reading that as a settled zero would record "we saw an empty
+    // inventory". The next successful read would then look like a rising edge and fire a run of
+    // fireworks for items that were there all along — the very thing the note above rules out.
+    if (count.data === undefined) return;
+    const n = count.data;
     const previous = highest.current;
     highest.current = previous === null ? n : Math.max(previous, n);
 
@@ -43,7 +47,7 @@ export function AchievementWatcher() {
       if (n < achievement.itemCount) continue;
       unlock(achievement.id, { celebrate: previous !== null && previous < achievement.itemCount });
     }
-  }, [count.isPending, count.data, unlock]);
+  }, [count.data, unlock]);
 
   return null;
 }

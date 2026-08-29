@@ -100,9 +100,13 @@ export const ACHIEVEMENT_IDS: readonly AchievementId[] = ACHIEVEMENTS.map((a) =>
 export type CountAchievement = Achievement & { readonly itemCount: number };
 
 /**
- * The threshold achievements, smallest first. Derived from {@link ACHIEVEMENTS} rather than listed
- * a second time, so the watcher cannot fall behind the registry.
+ * The threshold achievements, in registry order. Derived from {@link ACHIEVEMENTS} rather than
+ * listed a second time, so the watcher cannot fall behind the registry.
+ *
+ * Order carries no meaning to the watcher — it awards every threshold the count has reached, in
+ * whatever order it finds them — so this deliberately does not re-sort. The registry lists them
+ * smallest first because that is the order the screen shows them in.
  */
 export const COUNT_ACHIEVEMENTS: readonly CountAchievement[] = ACHIEVEMENTS.filter(
   (a): a is CountAchievement => a.itemCount !== undefined,
-).sort((a, b) => a.itemCount - b.itemCount);
+);
