@@ -255,10 +255,24 @@ function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
   /** The page scroll offset the current map was built at, and the live one (issue #438). */
   let scrollY = builtAtScrollY;
   let pageY = builtAtScrollY;
+  /**
+   * The equivalent for an inner scroll container (issue #716): whether one is being followed,
+   * the offset its live shift is measured from, its live offset, the columns it spans, and the
+   * shift the most recent rebuild spent — which the tracker publishes rather than deriving.
+   */
+  let innerTracked = false;
+  let innerBase = 0;
+  let innerTop = 0;
+  let innerC0 = -1;
+  let innerC1 = -1;
+  let innerCarry = 0;
   const tracker: SurfaceTracker = {
-    snapshot: () => ({ tops, bots, scrollY, generation }),
+    snapshot: () => ({ tops, bots, scrollY, innerCarry, innerC0, innerC1, generation }),
     hoverFollow: () => hover,
-    scrollShift: () => scrollY - pageY,
+    scrollShift: () => {
+      const inner = innerTracked ? innerBase - innerTop : 0;
+      return { page: scrollY - pageY, inner, c0: inner === 0 ? -1 : innerC0, c1: inner === 0 ? -1 : innerC1 };
+    },
     stop: () => {},
   };
   let created = 0;
@@ -289,11 +303,27 @@ function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
       }
       tops = moved;
       bots = new Int16Array(bots);
+      innerCarry = 0;
       generation++;
     },
     /** Scroll the page without rebuilding the map — what a scroll does between rebuilds. */
     scrollPage(by: number) {
       pageY += by;
+    },
+    /**
+     * Start following an inner scroll container spanning columns `c0`…`c1` (issue #716) — the
+     * state the real tracker is in after the first scroll event has adopted it.
+     */
+    trackInner(c0: number, c1: number) {
+      innerTracked = true;
+      innerC0 = c0;
+      innerC1 = c1;
+      innerBase = 0;
+      innerTop = 0;
+    },
+    /** Scroll that container without rebuilding the map — the inner analogue of `scrollPage`. */
+    scrollInner(by: number) {
+      innerTop += by;
     },
     /**
      * Rebuild the map at the live scroll offset: every top moves up the screen by however far
@@ -310,6 +340,24 @@ function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
       tops = moved;
       bots = new Int16Array(bots);
       scrollY = pageY;
+      innerCarry = 0;
+      generation++;
+    },
+    /**
+     * Rebuild the map at the container's live scroll offset: only the tops over its columns move,
+     * the spent shift is published as the carry, and the baseline restarts (issue #716).
+     */
+    rebuildAfterInnerScroll() {
+      const moved = new Int16Array(cols);
+      const by = innerTop - innerBase;
+      for (let c = 0; c < cols; c++) {
+        const t = tops[c] ?? NO_SURFACE;
+        moved[c] = t === NO_SURFACE || c < innerC0 || c > innerC1 ? t : t - by;
+      }
+      tops = moved;
+      bots = new Int16Array(bots);
+      innerCarry = innerBase - innerTop;
+      innerBase = innerTop;
       generation++;
     },
   };
@@ -586,6 +634,132 @@ describe('startPrecip settled snow while the page scrolls (issue #438)', () => {
     // snow now landing on the new top has not yet built back to a visible depth. (Keep the snow
     // instead and the very first of these frames re-blits it at the control's new position.)
     expect(orec.drawImages.length).toBe(mark);
+    ctrl.stop();
+  });
+});
+
+/**
+ * The last `n` mound blits — one per span the blit cut the canvas at, as its destination x and y.
+ * A blit that is *not* cut into spans is the plain 5-argument full-canvas form, which carries no
+ * offset at all, so it reads back as `'full'` rather than as an offset of zero: the two are
+ * different frames, and a test meaning "painted exactly where the map says" means this one.
+ */
+function lastMoundBlits(
+  orec: ReturnType<typeof makeCtx>,
+  n: number,
+): Array<{ x: number; y: number } | 'full'> {
+  return orec.drawImages
+    .slice(-n)
+    .map(({ args }) => (args.length === 9 ? { x: args[5] as number, y: args[6] as number } : 'full'));
+}
+
+describe('startPrecip settled snow while a list scrolls inside its own panel (issue #716)', () => {
+  it('moves the drift over the panel only, leaving the rest of the screen where it was', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9); // every flake near → landings are certain
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    let now = 0;
+    for (let i = 1; i <= 250; i++) pump((now += 50));
+    expect(lastMoundBlits(orec, 1)).toEqual(['full']); // settled, and painted at the map
+
+    // A list occupying the right half of the screen (x 600…1199) scrolls 30px down between
+    // rebuilds. Only its own columns move: the blit is cut at the panel's left edge.
+    surfaces.trackInner(150, 299);
+    surfaces.scrollInner(30);
+    pump(now + 50);
+    expect(lastMoundBlits(orec, 2)).toEqual([
+      { x: 0, y: 0 },
+      { x: 600, y: -30 },
+    ]);
+    ctrl.stop();
+  });
+
+  it('keeps the drift on the panel’s rows across the rebuild that catches the map up', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const orec = makeCtx();
+    // Every surface sits inside the panel (columns 0…139), so "the overlay is still compositing"
+    // is exactly "the drift on the scrolled rows survived".
+    const surfaces = makeSurfaces(400, 140);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    surfaces.trackInner(0, 139);
+    let now = 0;
+    for (let i = 1; i <= 250; i++) pump((now += 50));
+    expect(orec.drawImages.length).toBeGreaterThan(0);
+
+    surfaces.scrollInner(30);
+    pump((now += 50));
+    // The panel spans x 0…559; the bare stretch beyond it is cut off and drawn unshifted.
+    expect(lastMoundBlits(orec, 2)).toEqual([
+      { x: 0, y: -30 },
+      { x: 560, y: 0 },
+    ]);
+
+    // The rebuild lands: the rows only *scrolled*, so their drift is still on them, and is
+    // painted unshifted again because the new map already describes the new position.
+    surfaces.rebuildAfterInnerScroll();
+    const mark = orec.drawImages.length;
+    pump((now += 50));
+    pump(now + 50);
+    expect(orec.drawImages.length).toBeGreaterThan(mark);
+    expect(lastMoundBlits(orec, 1)).toEqual(['full']);
+    ctrl.stop();
+  });
+
+  it('leaves a control outside the panel untouched by the panel’s scroll', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const orec = makeCtx();
+    // Mirror of the test above: every surface is now *outside* the panel (which spans columns
+    // 200…299), so carrying its scroll across the whole map would knock this drift off instead.
+    const surfaces = makeSurfaces(400, 140);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    surfaces.trackInner(200, 299);
+    let now = 0;
+    for (let i = 1; i <= 250; i++) pump((now += 50));
+    expect(orec.drawImages.length).toBeGreaterThan(0);
+
+    surfaces.scrollInner(30);
+    surfaces.rebuildAfterInnerScroll();
+    const mark = orec.drawImages.length;
+    pump((now += 50));
+    pump(now + 50);
+    expect(orec.drawImages.length).toBeGreaterThan(mark); // the drift is still there…
+    expect(lastMoundBlits(orec, 1)).toEqual(['full']); // …and never moved
+    ctrl.stop();
+  });
+
+  it('lands flakes where the panel’s rows are on screen, not where the map still has them', () => {
+    // The map puts the rows' tops at y=780, but the panel has since scrolled back up 400px, so
+    // they are really at 1180 — below the 800px-tall layer, where no flake can reach them.
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(780);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    surfaces.trackInner(0, 339);
+    surfaces.scrollInner(-400);
+    let now = 0;
+    for (let i = 1; i <= 250; i++) pump((now += 50));
+    expect(orec.drawImages).toEqual([]);
     ctrl.stop();
   });
 });
@@ -885,9 +1059,17 @@ describe('startPrecip wind-plaster (blizzard side accumulation)', () => {
     tops[170] = 400;
     const bots = new Int16Array(cols).fill(NO_SURFACE);
     const tracker: SurfaceTracker = {
-      snapshot: () => ({ tops, bots, scrollY: 0, generation: 1 }),
+      snapshot: () => ({
+        tops,
+        bots,
+        scrollY: 0,
+        innerCarry: 0,
+        innerC0: -1,
+        innerC1: -1,
+        generation: 1,
+      }),
       hoverFollow: () => null,
-      scrollShift: () => 0,
+      scrollShift: () => ({ page: 0, inner: 0, c0: -1, c1: -1 }),
       stop: () => {},
     };
     const rec = makeCtx();
@@ -939,9 +1121,17 @@ describe('snow stick-chance seams (issue #455 follow-up)', () => {
     const tops = new Int16Array(cols).fill(NO_SURFACE);
     const bots = new Int16Array(cols).fill(300);
     const tracker: SurfaceTracker = {
-      snapshot: () => ({ tops, bots, scrollY: 0, generation: 1 }),
+      snapshot: () => ({
+        tops,
+        bots,
+        scrollY: 0,
+        innerCarry: 0,
+        innerC0: -1,
+        innerC1: -1,
+        generation: 1,
+      }),
       hoverFollow: () => null,
-      scrollShift: () => 0,
+      scrollShift: () => ({ page: 0, inner: 0, c0: -1, c1: -1 }),
       stop: () => {},
     };
     const rec = makeCtx();

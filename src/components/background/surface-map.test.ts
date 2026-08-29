@@ -35,6 +35,16 @@ function scrollPageTo(y: number): void {
   document.dispatchEvent(new Event('scroll', { bubbles: true }));
 }
 
+/**
+ * Scroll an inner container and fire the event the tracker's capture listener sees (issue #716).
+ * `scroll` does not bubble in a real browser, but it is dispatched on the element itself, which
+ * is what the capture listener on `window` picks up.
+ */
+function scrollInnerTo(el: Element, top: number): void {
+  Object.defineProperty(el, 'scrollTop', { value: top, configurable: true });
+  el.dispatchEvent(new Event('scroll', { bubbles: false }));
+}
+
 /** A square-cornered rect literal (the common case in these tests); 40px tall by default. */
 function rect(left: number, top: number, right: number, bottom: number = top + 40) {
   return { left, top, right, bottom, radiusLeft: 0, radiusRight: 0 };
@@ -204,14 +214,14 @@ describe('trackSurfaces', () => {
     const tracker = trackSurfaces();
     const col = Math.floor(10 / COLUMN_WIDTH);
     const built = tracker.snapshot().generation;
-    expect(tracker.scrollShift()).toBe(0);
+    expect(tracker.scrollShift().page).toBe(0);
 
     // The page scrolls 120px down. The rebuild is still debounced, so the map keeps describing
     // where the control *was* — and the shift is what says where it is now (negative = moved up).
     scrollPageTo(120);
     expect(tracker.snapshot().generation).toBe(built);
     expect(tracker.snapshot().tops[col]).toBe(400);
-    expect(tracker.scrollShift()).toBe(-120);
+    expect(tracker.scrollShift().page).toBe(-120);
 
     // The debounce expires and the map is rebuilt at the new position: the shift is spent, and
     // the snapshot publishes the scroll offset it was built at.
@@ -220,7 +230,7 @@ describe('trackSurfaces', () => {
     expect(tracker.snapshot().generation).toBeGreaterThan(built);
     expect(tracker.snapshot().tops[col]).toBe(280);
     expect(tracker.snapshot().scrollY).toBe(120);
-    expect(tracker.scrollShift()).toBe(0);
+    expect(tracker.scrollShift().page).toBe(0);
 
     tracker.stop();
     vi.useRealTimers();
@@ -240,7 +250,116 @@ describe('trackSurfaces', () => {
     vi.advanceTimersByTime(200);
     expect(tracker.snapshot().generation).toBeGreaterThan(built);
     expect(tracker.snapshot().scrollY).toBe(60);
-    expect(tracker.scrollShift()).toBe(0);
+    expect(tracker.scrollShift().page).toBe(0);
+    tracker.stop();
+    vi.useRealTimers();
+  });
+
+  it('reports an inner container scroll against its own columns only (issue #716)', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    // A list that scrolls inside its own panel, with a control in it, and a control outside it.
+    const panel = document.createElement('div');
+    const inside = document.createElement('button');
+    const outside = document.createElement('button');
+    panel.appendChild(inside);
+    document.body.append(panel, outside);
+    mockRect(panel, 400, 100, 400, 500);
+    mockRect(inside, 420, 300, 200, 30);
+    mockRect(outside, 40, 300, 200, 30);
+    const insideCol = Math.floor(420 / COLUMN_WIDTH);
+    const outsideCol = Math.floor(40 / COLUMN_WIDTH);
+
+    const tracker = trackSurfaces();
+    // The first scroll event identifies the container and sets its baseline; the step it reports
+    // is the one step there is nothing to measure from, so it is not followed.
+    scrollInnerTo(panel, 50);
+    expect(tracker.scrollShift().inner).toBe(0);
+
+    // From the second event on it is followed live, over its own columns only, without waiting
+    // for a rebuild: the page never moved, so `page` stays 0, and the control outside the panel
+    // is outside the reported span.
+    scrollInnerTo(panel, 130);
+    const shift = tracker.scrollShift();
+    expect(shift.page).toBe(0);
+    expect(shift.inner).toBe(-80);
+    expect(shift.c0).toBe(Math.floor(400 / COLUMN_WIDTH));
+    expect(shift.c1).toBe(Math.floor(799 / COLUMN_WIDTH));
+    expect(insideCol).toBeGreaterThanOrEqual(shift.c0);
+    expect(insideCol).toBeLessThanOrEqual(shift.c1);
+    expect(outsideCol).toBeLessThan(shift.c0);
+    // The map still describes where the row *was* — the shift is the whole correction.
+    expect(tracker.snapshot().tops[insideCol]).toBe(300);
+
+    // The debounce expires and the map is rebuilt at the new position. The shift is spent, and
+    // is published as the carry so a consumer can compare the two maps in one frame.
+    mockRect(inside, 420, 220, 200, 30);
+    vi.advanceTimersByTime(200);
+    expect(tracker.snapshot().tops[insideCol]).toBe(220);
+    expect(tracker.snapshot().innerCarry).toBe(-80);
+    expect(tracker.snapshot().innerC0).toBe(Math.floor(400 / COLUMN_WIDTH));
+    expect(tracker.scrollShift().inner).toBe(0);
+
+    tracker.stop();
+    vi.useRealTimers();
+  });
+
+  it('drops the shift when a second container scrolls, rather than moving the wrong columns', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    const first = document.createElement('div');
+    const second = document.createElement('div');
+    document.body.append(first, second);
+    mockRect(first, 0, 100, 300, 400);
+    mockRect(second, 400, 100, 300, 400);
+
+    const tracker = trackSurfaces();
+    scrollInnerTo(first, 40);
+    scrollInnerTo(first, 90);
+    expect(tracker.scrollShift().inner).toBe(-50);
+
+    // Only the most recently scrolled container is followed. The second one's first event has no
+    // baseline of its own yet, and the first one's shift is not carried onto its columns.
+    scrollInnerTo(second, 25);
+    const shift = tracker.scrollShift();
+    expect(shift.inner).toBe(0);
+    expect(shift.c0).toBe(-1);
+
+    // The rebuild spends nothing for the container it is now following, and adopts its columns.
+    vi.advanceTimersByTime(200);
+    expect(tracker.snapshot().innerCarry).toBe(0);
+    expect(tracker.snapshot().innerC0).toBe(Math.floor(400 / COLUMN_WIDTH));
+
+    tracker.stop();
+    vi.useRealTimers();
+  });
+
+  it('counts an inner scroll as a change even when the map itself is identical (issue #716)', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    const panel = document.createElement('div');
+    document.body.appendChild(panel);
+    mockRect(panel, 0, 100, 300, 400);
+    const tracker = trackSurfaces();
+    scrollInnerTo(panel, 20);
+    vi.advanceTimersByTime(200);
+    const built = tracker.snapshot().generation;
+    // No landable control anywhere, so the maps stay byte-identical across the rebuild — but the
+    // baseline the consumer draws with moved, so the generation must still say so.
+    scrollInnerTo(panel, 75);
+    vi.advanceTimersByTime(200);
+    expect(tracker.snapshot().generation).toBeGreaterThan(built);
+    expect(tracker.snapshot().innerCarry).toBe(-55);
+    expect(tracker.scrollShift().inner).toBe(0);
     tracker.stop();
     vi.useRealTimers();
   });
