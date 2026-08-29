@@ -46,6 +46,7 @@ const ACTION_LABELS: Record<HistoryAction, string> = {
   HISTORY_CLEARED: 'Activity log cleared',
   MERGE_OVERWRITTEN: 'Overwritten by sync',
   MERGED: 'Merged with a duplicate',
+  VARIANT_RE_PARENTED: 'Variant re-parented',
 };
 
 /**

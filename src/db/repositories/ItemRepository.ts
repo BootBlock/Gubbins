@@ -53,8 +53,6 @@ export type { KitComponent, AssembleOptions } from './item/kits';
 export type { ItemStatusCount } from './item/feeds';
 export { NO_SECTION_PRESENCE, type ItemSectionPresence } from './item/section-presence';
 export {
-  DEDUPE_SCAN_LIMIT,
-  NAME_ADVISORY_THRESHOLD,
   ITEM_REFERENCE_SPECS,
   emptyItemReferenceCounts,
   totalItemReferences,

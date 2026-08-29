@@ -209,6 +209,12 @@ export const HISTORY_ACTIONS = [
   // an ordinary soft delete, so `restore` still brings the removed item back — this entry is what
   // says where its references went, which restoring does not undo.
   'MERGED',
+  // A **variant**'s parent item changed (issue #99) — the deduplication merge re-parents the
+  // removed item's variants onto the kept one. Deliberately *not* `RE_PARENTED`, which on an item
+  // means "its location was removed under it" and publishes as `item.moved`: a variant's parent is
+  // another item, nothing physically moved, and a subscriber watching for a relocation must not be
+  // told one happened.
+  'VARIANT_RE_PARENTED',
 ] as const;
 export type HistoryAction = (typeof HISTORY_ACTIONS)[number];
 

@@ -100,7 +100,7 @@ const MIN_SITES = 250;
  * Floor on coverage, so deleting queries can never be mistaken for improving it, and so widening a
  * row type to `SqlRow` cannot quietly opt a statement out of the check.
  *
- * Today's sweep: 283 sites — 249 verified, 28 unverified, 6 declaring no columns to check. The few
+ * Today's sweep: 322 sites — 286 verified, 29 unverified, 7 declaring no columns to check. The few
  * sites of slack are for a read that is legitimately removed, not for coverage to erode.
  */
 const MIN_VERIFIED = 245;

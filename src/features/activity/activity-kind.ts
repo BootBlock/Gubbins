@@ -74,6 +74,9 @@ const ACTION_KIND: Record<HistoryAction, ActivityKind> = {
   // Two duplicate records folded into one (issue #99) — a change to which record exists, which is
   // what `lifecycle` covers.
   MERGED: 'lifecycle',
+  // A variant's parent item changed (issue #99). `lifecycle`, not `movement`: what changed is
+  // which record this one hangs beneath, not where it physically is.
+  VARIANT_RE_PARENTED: 'lifecycle',
   // Outbound / commercial stock movements.
   SOLD: 'stock',
   // Supplier / external data.

@@ -142,10 +142,14 @@ describe('Item deduplication (issue #99)', () => {
       expect(scan.scanned).toBe(scan.total);
     });
 
-    it('resolves each member’s location and category for display', async () => {
+    it('resolves each member’s location, and its short number, for display', async () => {
+      // The short number is what tells two members of a group apart on screen, since they share
+      // a name by construction.
+      await driver.execute('UPDATE items SET serial_no = 42 WHERE id = ?;', [keep]);
       const scan = await items.findDuplicates({ signals: ['name'] });
-      expect(scan.groups[0]!.members[0]!.locationName).toBeTruthy();
-      expect(scan.groups[0]!.members[0]!.categoryName).toBeNull();
+      const kept = scan.groups[0]!.members.find((m) => m.id === keep)!;
+      expect(kept.locationName).toBeTruthy();
+      expect(kept.serialNo).toBe(42);
     });
 
     it('ignores items that are already removed', async () => {
@@ -290,13 +294,28 @@ describe('Item deduplication (issue #99)', () => {
       await items.mergeItems({ keepId: keep, removeId: gone, remapReferences: true });
 
       expect((await items.getById(child.id))!.parentId).toBe(keep);
-      expect((await items.getHistory(child.id)).rows[0]!.action).toBe('RE_PARENTED');
+      // `VARIANT_RE_PARENTED`, never `RE_PARENTED`: the latter means "its location was removed
+      // under it" and publishes as `item.moved`, which nothing here did.
+      expect((await items.getHistory(child.id)).rows[0]!.action).toBe('VARIANT_RE_PARENTED');
     });
 
     it('never leaves the kept item parented to the item it absorbed', async () => {
       await driver.execute('UPDATE items SET parent_id = ? WHERE id = ?;', [gone, keep]);
       await items.mergeItems({ keepId: keep, removeId: gone, remapReferences: true });
       expect((await items.getById(keep))!.parentId).toBeNull();
+    });
+
+    it('accounts for every reference it was shown, keeper-as-child included', async () => {
+      // The keeper hanging below the removed item is a `variants` reference like any other: the
+      // preview counted it, so the outcome has to say what happened to it.
+      await driver.execute('UPDATE items SET parent_id = ? WHERE id = ?;', [gone, keep]);
+      const before = (await items.countItemReferences([gone])).get(gone)!;
+      expect(before.variants).toBe(1);
+
+      const result = await items.mergeItems({ keepId: keep, removeId: gone, remapReferences: true });
+
+      expect(result.remapped.variants + result.discarded.variants).toBe(before.variants);
+      expect((await items.getHistory(keep)).rows.map((r) => r.action)).toContain('VARIANT_RE_PARENTED');
     });
 
     it('inherits the removed item’s own parent when the keeper hung below it', async () => {

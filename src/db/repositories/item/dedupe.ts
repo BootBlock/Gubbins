@@ -56,7 +56,7 @@ import {
   planKitEdgeRemap,
   planRelationRemap,
   type ItemRelationEdge,
-  type KitEdge,
+  type KitComponentEdge,
 } from '@/features/inventory/dedupe/reference-remap';
 import { escapeLike } from '../like';
 import { foldName } from '@/lib/name-fold';
@@ -77,11 +77,12 @@ export const DEDUPE_SCAN_LIMIT = 50_000;
  * Everything **outside** an item that names it by id, and which a merge therefore re-points.
  *
  * This is the single list: the per-kind counts the tool shows are built from it, and
- * {@link ItemDedupeRepository.mergeItems} returns one figure per `kind`, typed as a
- * `Record<ItemReferenceKind, number>` so a kind added here fails to compile until the merge
- * handles it too. `ItemRepository.dedupe.test.ts` closes the loop by asserting that every kind's
- * count reaches zero on the removed item after a re-point — a kind counted but not moved fails
- * that test rather than quietly leaving references behind.
+ * {@link ItemDedupeRepository.mergeItems} returns one figure per `kind`. Two things stop a kind
+ * added here from being silently skipped: {@link REFERENCE_REMAP_STRATEGY} is an exhaustive
+ * `Record<ItemReferenceKind, …>`, so a new kind fails to compile until the merge says how it
+ * moves; and `ItemRepository.dedupe.test.ts` asserts that every kind's count reaches zero on the
+ * removed item after a re-point, so a kind declared `'bespoke'` and then not written fails that
+ * test rather than quietly leaving references behind.
  *
  * Deliberately **not** here are the removed item's *own* attributes — its stock placements, tags,
  * regions, images, attachments, aliases, capabilities, custom-field values and Activity Log.
@@ -135,11 +136,9 @@ export interface DuplicateScanItem {
   readonly manufacturer: string | null;
   readonly quantity: number;
   readonly createdAt: number;
-  readonly updatedAt: number;
-  /** The human-facing short number shown beside the name, as the item list shows it. */
+  /** The human-facing short number, so two members sharing a name are still told apart. */
   readonly serialNo: number | null;
   readonly locationName: string | null;
-  readonly categoryName: string | null;
 }
 
 export interface DuplicateScanResult {
@@ -207,17 +206,16 @@ interface ScanRow {
   readonly manufacturer: string | null;
   readonly quantity: number;
   readonly created_at: number;
-  readonly updated_at: number;
   readonly serial_no: number | null;
   readonly location_name: string | null;
-  readonly category_name: string | null;
 }
 
 export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: TBase) {
   return class ItemDedupeRepository extends Base {
     /**
      * Find groups of active items that look like the same thing, under the caller's choice of
-     * signals. Read-only, and gated on `items:read` like any other read.
+     * signals. Read-only, and ungated like every other read in this layer — the permission
+     * boundary sits on the writes.
      *
      * Bounded by {@link DEDUPE_SCAN_LIMIT}: the oldest items are scanned first, so a truncated
      * scan covers the records that have had longest to accumulate duplicates. `truncated` says
@@ -231,11 +229,9 @@ export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: 
 
       const rows = await this.driver.query<ScanRow>(
         `SELECT i.id, i.name, i.barcode, i.serial_number, i.mpn, i.manufacturer,
-                i.quantity, i.created_at, i.updated_at, i.serial_no,
-                l.name AS location_name, c.name AS category_name
+                i.quantity, i.created_at, i.serial_no, l.name AS location_name
          FROM items i
-         LEFT JOIN locations  l ON l.id = i.location_id
-         LEFT JOIN categories c ON c.id = i.category_id
+         LEFT JOIN locations l ON l.id = i.location_id
          WHERE i.is_active = 1
          ORDER BY i.created_at ASC, i.id ASC
          LIMIT ?;`,
@@ -251,10 +247,8 @@ export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: 
         manufacturer: row.manufacturer,
         quantity: row.quantity,
         createdAt: row.created_at,
-        updatedAt: row.updated_at,
         serialNo: row.serial_no,
         locationName: row.location_name,
-        categoryName: row.category_name,
       }));
 
       return {
@@ -290,9 +284,12 @@ export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: 
         `SELECT id, name, serial_no FROM items
          WHERE is_active = 1
            AND (LOWER(TRIM(name)) = ? OR name LIKE ? ESCAPE '\\')
-         ORDER BY name COLLATE NOCASE ASC, id ASC
+         -- Exact folded matches first, so the row this is really asking about cannot be cut by
+         -- the LIMIT: a prefix as short as two characters can easily have 200 rows sorting ahead
+         -- of it, and losing the exact one is the whole point of the read.
+         ORDER BY (LOWER(TRIM(name)) = ?) DESC, name COLLATE NOCASE ASC, id ASC
          LIMIT ?;`,
-        [folded, `${escapeLike(name.trim().slice(0, 2))}%`, NAME_ADVISORY_LIMIT],
+        [folded, `${escapeLike(name.trim().slice(0, 2))}%`, folded, NAME_ADVISORY_LIMIT],
       );
 
       const matches: NameMatch[] = [];
@@ -373,7 +370,7 @@ export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: 
 
         // --- The plain kinds: one column, no constraint that two rows can collide on. ---
         for (const spec of ITEM_REFERENCE_SPECS) {
-          if (!PLAIN_REFERENCE_KINDS.has(spec.kind)) continue;
+          if (REFERENCE_REMAP_STRATEGY[spec.kind] !== 'plain') continue;
           if (before[spec.kind] === 0) continue;
           statements.push({
             sql: `UPDATE ${spec.table} SET item_id = ? WHERE item_id = ?;`,
@@ -433,7 +430,7 @@ export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: 
             kit_item_id: string;
             component_item_id: string;
           }>('SELECT id, kit_item_id, component_item_id FROM kit_components;');
-          const edges: KitEdge[] = edgeRows.map((row) => ({
+          const edges: KitComponentEdge[] = edgeRows.map((row) => ({
             id: row.id,
             kitItemId: row.kit_item_id,
             componentItemId: row.component_item_id,
@@ -526,20 +523,22 @@ export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: 
             });
             for (const child of children) {
               statements.push(
-                historyStatement(child.id, 'RE_PARENTED', this.actorId(), {
+                historyStatement(child.id, 'VARIANT_RE_PARENTED', this.actorId(), {
                   note: 'Re-parented by a merge of its parent item.',
                   metadata: { fromItemId: removeId, toItemId: keepId },
                 }),
               );
             }
           }
-          // The keeper is excluded from the move above, never dropped: when it is the removed
-          // item's child, the block below re-parents it onto the removed item's own parent.
           remapped.variants = children.length;
         }
         // The kept item's own parent may be the item being removed, which the move above
         // deliberately skipped. Inherit the removed item's parent instead of leaving the keeper
         // pointing at a removed record — unless that would make it its own parent.
+        //
+        // It counts toward `variants` like any other child: `before.variants` counted it, so
+        // leaving it out would report a reference the tally showed and the outcome never
+        // accounted for.
         if (keep.parentId === removeId) {
           const inherited = remove.parentId === keepId ? null : remove.parentId;
           statements.push({
@@ -547,11 +546,12 @@ export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: 
             params: [inherited, keepId],
           });
           statements.push(
-            historyStatement(keepId, 'RE_PARENTED', this.actorId(), {
+            historyStatement(keepId, 'VARIANT_RE_PARENTED', this.actorId(), {
               note: 'Re-parented because its parent item was merged into it.',
               metadata: { fromItemId: removeId, toItemId: inherited },
             }),
           );
+          remapped.variants += 1;
         }
       }
 
@@ -577,17 +577,28 @@ export function withDedupe<TBase extends Constructor<ItemCoreRepository>>(Base: 
 }
 
 /**
- * The kinds whose re-point is a single `UPDATE … SET item_id = ?`: one nullable-or-not column,
- * no unique index or `CHECK` that two rows folding onto one item could violate. Every other kind
- * is handled explicitly above, and the `ItemReferenceKind` type makes leaving one out impossible
- * to do silently.
+ * How each reference kind moves.
+ *
+ * `'plain'` is a single `UPDATE … SET item_id = ?`: one nullable-or-not column, with no unique
+ * index or `CHECK` that two rows folding onto one item could violate. `'bespoke'` means the merge
+ * handles it by hand above, because a plain `UPDATE` would abort the transaction on a constraint
+ * or leave a derived key describing the wrong row.
+ *
+ * A **`Record`, not a `Set`**, and that is the whole point: adding a kind to
+ * {@link ITEM_REFERENCE_SPECS} without adding it here fails to compile, so the merge cannot
+ * quietly ignore a reference the tally already counts.
  */
-const PLAIN_REFERENCE_KINDS = new Set<ItemReferenceKind>([
-  'checkouts',
-  'bookings',
-  'maintenance',
-  'projectBomLines',
-  'purchaseOrderLines',
-  'testRecords',
-  'revaluations',
-]);
+const REFERENCE_REMAP_STRATEGY: Record<ItemReferenceKind, 'plain' | 'bespoke'> = {
+  checkouts: 'plain',
+  bookings: 'plain',
+  maintenance: 'plain',
+  projectBomLines: 'plain',
+  purchaseOrderLines: 'plain',
+  testRecords: 'plain',
+  revaluations: 'plain',
+  supplierParts: 'bespoke',
+  kitMemberships: 'bespoke',
+  kitContents: 'bespoke',
+  relations: 'bespoke',
+  variants: 'bespoke',
+};

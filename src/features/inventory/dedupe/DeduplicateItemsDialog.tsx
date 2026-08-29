@@ -45,6 +45,7 @@ import {
   type ItemReferenceCounts,
 } from '@/db/repositories';
 import { useT, type TypedTranslator } from '@/features/i18n';
+import { itemDisplayName } from '../item-display';
 import { useDuplicateScan, useItemReferenceCounts } from '../queries';
 import { useMergeItems } from '../mutations';
 import {
@@ -176,12 +177,24 @@ export function DeduplicateItemsDialog({ open, onClose }: DeduplicateItemsDialog
     }
     setOutcomes((prev) => ({ ...prev, [group.id]: outcome }));
     setRunning(null);
-    show({
-      tone: outcome.failed > 0 ? 'warning' : 'success',
-      icon: outcome.failed > 0 ? <WarningIcon /> : <SuccessIcon />,
-      heading: t('inventory.dedupe.toast.heading', { vars: { name: keeper.name } }),
-      message: t('inventory.dedupe.toast.message', { vars: { count: outcome.merged } }),
-    });
+    // A run where nothing merged is not a merge, so it is neither headed nor toned as one.
+    show(
+      outcome.merged === 0
+        ? {
+            tone: 'danger',
+            icon: <WarningIcon />,
+            heading: t('inventory.dedupe.toast.noneHeading'),
+            message: t('inventory.dedupe.group.failed', { vars: { count: outcome.failed } }),
+          }
+        : {
+            tone: outcome.failed > 0 ? 'warning' : 'success',
+            icon: outcome.failed > 0 ? <WarningIcon /> : <SuccessIcon />,
+            heading: t('inventory.dedupe.toast.heading', {
+              vars: { name: itemDisplayName(keeper.name, keeper.serialNo) },
+            }),
+            message: t('inventory.dedupe.toast.message', { vars: { count: outcome.merged } }),
+          },
+    );
   }
 
   const found = result.data?.groups.length ?? 0;
@@ -243,7 +256,15 @@ export function DeduplicateItemsDialog({ open, onClose }: DeduplicateItemsDialog
         </Surface>
 
         {result.isError ? (
-          <Banner tone="danger">{t('inventory.dedupe.error')}</Banner>
+          <Banner tone="danger" role="alert">
+            {t('inventory.dedupe.error')}
+          </Banner>
+        ) : /* A re-scan with the *same* options keeps the previous result on screen while it
+               refetches, and the choices and outcomes have already been cleared — which would
+               put an enabled Merge button back on a card whose items are already gone. The
+               result belongs to the scan that produced it, so it goes away with it. */
+        result.isFetching ? (
+          <p className="text-sm text-muted-foreground">{t('inventory.dedupe.scanning')}</p>
         ) : result.data ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground" data-testid="dedupe-summary">
@@ -311,10 +332,11 @@ function GroupCard({
 }) {
   const keeper = group.members.find((m) => m.id === choice.keepId);
   const reason = group.signals.map((s) => t(`inventory.dedupe.signal.${s}`)).join(', ');
-  // Once merged, the card becomes a record of what happened rather than a control: the members
-  // it names no longer describe the database, and re-merging them would be a second decision
-  // made on a stale reading.
-  const done = outcome !== undefined;
+  // Once something has actually merged, the card becomes a record of what happened rather than a
+  // control: the members it names no longer describe the database, and re-merging them would be a
+  // second decision made on a stale reading. A run where *nothing* merged is a different thing —
+  // the database is as it was, so the controls stay and the user can try again beside the reason.
+  const done = (outcome?.merged ?? 0) > 0;
 
   return (
     <Surface className="space-y-3 p-4" data-testid="dedupe-group">
@@ -348,7 +370,9 @@ function GroupCard({
                   }
                 />
                 <span className="sr-only">
-                  {t('inventory.dedupe.group.keepOption', { vars: { name: member.name } })}
+                  {t('inventory.dedupe.group.keepOption', {
+                    vars: { name: itemDisplayName(member.name, member.serialNo) },
+                  })}
                 </span>
               </label>
               {isKeeper ? null : (
@@ -366,11 +390,18 @@ function GroupCard({
                     }
                   />
                   <span className="sr-only">
-                    {t('inventory.dedupe.group.removeOption', { vars: { name: member.name } })}
+                    {t('inventory.dedupe.group.removeOption', {
+                      vars: { name: itemDisplayName(member.name, member.serialNo) },
+                    })}
                   </span>
                 </label>
               )}
-              <span className="min-w-0 flex-1 truncate font-medium">{member.name}</span>
+              {/* With its short number, because every member of a group shares a name — often
+                  exactly — and the number is the only thing on the row that tells two of them
+                  apart the way the rest of the app does. */}
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {itemDisplayName(member.name, member.serialNo)}
+              </span>
               <span className="text-xs text-muted-foreground">
                 {t('inventory.dedupe.member.stock', {
                   vars: {
@@ -387,15 +418,17 @@ function GroupCard({
         })}
       </div>
 
-      {done ? (
+      {outcome ? (
         <div className="space-y-1 text-sm" data-testid="dedupe-group-outcome">
-          <p className="text-glyph-success">
-            {t('inventory.dedupe.group.outcome', { vars: { count: outcome.merged } })}
-          </p>
           {/* Each loss gets its own line rather than a clause: a discarded link and a demoted
               flag are different things, and a sentence that lists both is read as neither. */}
+          {outcome.merged > 0 ? (
+            <p className="text-glyph-success">
+              {t('inventory.dedupe.group.outcome', { vars: { count: outcome.merged } })}
+            </p>
+          ) : null}
           {outcome.failed > 0 ? (
-            <p className="text-glyph-warning">
+            <p className="text-warning">
               {t('inventory.dedupe.group.failed', { vars: { count: outcome.failed } })}
             </p>
           ) : null}
@@ -410,7 +443,9 @@ function GroupCard({
             </p>
           ) : null}
         </div>
-      ) : (
+      ) : null}
+
+      {done ? null : (
         <>
           <label className="flex items-start gap-2 text-sm">
             <Checkbox

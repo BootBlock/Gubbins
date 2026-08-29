@@ -24,6 +24,7 @@
  */
 import { useState } from 'react';
 import { useT } from '@/features/i18n';
+import { itemDisplayName } from '../item-display';
 import { useNameMatches } from '../queries';
 
 export interface DuplicateNameAdvisory {
@@ -57,11 +58,11 @@ export function useDuplicateNameWarning(name: string, itemId?: string): Duplicat
   const warning =
     exact.length > 0
       ? t('inventory.name.warning.duplicate', {
-          vars: { count: exact.length, name: exact[0]!.name },
+          vars: { count: exact.length, name: itemDisplayName(exact[0]!.name, exact[0]!.serialNo) },
         })
       : similar.length > 0
         ? t('inventory.name.warning.similar', {
-            vars: { count: similar.length, name: similar[0]!.name },
+            vars: { count: similar.length, name: itemDisplayName(similar[0]!.name, similar[0]!.serialNo) },
           })
         : '';
 

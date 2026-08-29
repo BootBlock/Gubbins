@@ -27,9 +27,17 @@
  * item.
  */
 import { planRelation } from '../item-relations';
+import { validateKitLink } from '../kits';
 
-/** One `kit_components` edge, as the merge reads it. */
-export interface KitEdge {
+/**
+ * One `kit_components` row, as the merge reads it.
+ *
+ * Named for the table rather than as `KitEdge`, which `features/inventory/kits` already exports
+ * for the sync-side cycle repair with a different shape (`kitId` / `componentId` / `createdAt`).
+ * Two same-named types describing the same table in one feature is a trap; one of them has to
+ * say which it is.
+ */
+export interface KitComponentEdge {
   readonly id: string;
   readonly kitItemId: string;
   readonly componentItemId: string;
@@ -37,7 +45,7 @@ export interface KitEdge {
 
 export interface KitEdgeRemap {
   /** Edges to `UPDATE` in place — same id, carrying the endpoints they should end up holding. */
-  readonly remapped: readonly KitEdge[];
+  readonly remapped: readonly KitComponentEdge[];
   /** Edge ids to `DELETE` (and tombstone): the merge left them impossible. */
   readonly dropped: readonly string[];
 }
@@ -52,13 +60,19 @@ export interface KitEdgeRemap {
  * Candidates are considered in id order, so two devices planning the same merge over the same
  * rows drop the same edges. An edge is dropped when the substitution makes it
  *
- * 1. **self-containment** — both endpoints became the kept item;
- * 2. a **duplicate** of an edge that already survives; or
- * 3. a **cycle** — the kept graph can already reach the edge's kit from its component, so adding
- *    it would let a kit contain itself. Only the newly-impossible edge is dropped; an edge that
- *    was already in the graph is never removed to make room for one that was not.
+ * 1. a **duplicate** of an edge that already survives; or
+ * 2. **self-containment or a cycle**, as judged by `validateKitLink` — the same pure verdict the
+ *    hand-added-link path reaches through `assertKitLinkValid`, asked here of the graph the merge
+ *    would leave behind. The verdict has one definition; this only supplies it a different graph.
+ *
+ * Only the newly-impossible edge is dropped; an edge that was already in the graph is never
+ * removed to make room for one that was not.
  */
-export function planKitEdgeRemap(edges: readonly KitEdge[], removeId: string, keepId: string): KitEdgeRemap {
+export function planKitEdgeRemap(
+  edges: readonly KitComponentEdge[],
+  removeId: string,
+  keepId: string,
+): KitEdgeRemap {
   const touched = edges.filter((e) => e.kitItemId === removeId || e.componentItemId === removeId);
   if (touched.length === 0) return { remapped: [], dropped: [] };
 
@@ -75,30 +89,37 @@ export function planKitEdgeRemap(edges: readonly KitEdge[], removeId: string, ke
   };
   for (const edge of kept) addChild(edge.kitItemId, edge.componentItemId);
 
-  /** Whether `to` is reachable from `from` by following containment downwards. */
-  const reaches = (from: string, to: string): boolean => {
+  /**
+   * Every item reachable *below* `from` through containment — the descendant set
+   * `validateKitLink` reads to decide whether a link would close a loop. The database path
+   * gathers the same set with a recursive CTE (`assertKitLinkValid`); here it comes from the
+   * graph the merge is building, because that is the graph the edge would land in.
+   */
+  const descendantsOf = (from: string): string[] => {
     const seen = new Set<string>([from]);
     const stack = [from];
     while (stack.length > 0) {
       for (const child of children.get(stack.pop()!) ?? []) {
-        if (child === to) return true;
         if (seen.has(child)) continue;
         seen.add(child);
         stack.push(child);
       }
     }
-    return false;
+    return [...seen];
   };
 
-  const remapped: KitEdge[] = [];
+  const remapped: KitComponentEdge[] = [];
   const dropped: string[] = [];
   for (const edge of [...touched].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     const kitItemId = edge.kitItemId === removeId ? keepId : edge.kitItemId;
     const componentItemId = edge.componentItemId === removeId ? keepId : edge.componentItemId;
     const pair = `${kitItemId} ${componentItemId}`;
-    // A cycle closes when the component can already reach the kit — the same test
-    // `assertKitLinkValid` makes for a hand-added link, asked here of the post-merge graph.
-    if (kitItemId === componentItemId || pairs.has(pair) || reaches(componentItemId, kitItemId)) {
+    const rejection = validateKitLink({
+      kitId: kitItemId,
+      componentId: componentItemId,
+      componentDescendantIds: descendantsOf(componentItemId),
+    });
+    if (rejection !== null || pairs.has(pair)) {
       dropped.push(edge.id);
       continue;
     }

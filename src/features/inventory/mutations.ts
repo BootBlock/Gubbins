@@ -52,6 +52,9 @@ import { currentGrossWeight, percentageRemaining, type GaugeConfigChange } from 
 import { emptyAst } from '@/db/search/ast';
 import { activityKeys } from '@/features/activity/queries';
 import { checkoutKeys } from '@/features/contacts/keys';
+import { bookingKeys } from '@/features/bookings/bookings';
+import { purchaseOrderKeys } from '@/features/purchasing/queries';
+import { supplierKeys } from '@/features/suppliers/queries';
 import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
@@ -604,6 +607,14 @@ export function useMergeItems() {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
       void client.invalidateQueries({ queryKey: activityKeys.all });
+      // These four live in key namespaces of their own that `invalidateItems` does not reach, and
+      // a merge is the one write that re-points rows in all of them at once. Without the sweep,
+      // an open Loans, Bookings, Purchase-orders or Supplier screen keeps rendering cached rows
+      // naming an item that no longer holds them.
+      void client.invalidateQueries({ queryKey: checkoutKeys.all });
+      void client.invalidateQueries({ queryKey: bookingKeys.all });
+      void client.invalidateQueries({ queryKey: purchaseOrderKeys.all });
+      void client.invalidateQueries({ queryKey: supplierKeys.all });
     },
   });
 }

@@ -13,6 +13,10 @@ import type { DuplicateGroup, DuplicateScanOptions } from './duplicate-groups';
 
 let scanOptions: DuplicateScanOptions | null = null;
 let groups: DuplicateGroup<DuplicateScanItem>[] = [];
+// Whether the query is mid-refetch. A re-scan with unchanged options keeps the previous `data`
+// on screen while it refetches, which is exactly the state the dialog has to hide.
+let fetching = false;
+const refetchSpy = vi.fn();
 const mergeSpy = vi.fn<(input: MergeItemsInput) => Promise<unknown>>();
 
 vi.mock('../queries', () => ({
@@ -21,8 +25,8 @@ vi.mock('../queries', () => ({
     return {
       data: options ? { groups, scanned: 9, total: 9, truncated: false } : undefined,
       isError: false,
-      isFetching: false,
-      refetch: vi.fn(),
+      isFetching: fetching,
+      refetch: refetchSpy,
     };
   },
   useItemReferenceCounts: () => ({ data: undefined }),
@@ -41,16 +45,16 @@ function member(over: Partial<DuplicateScanItem> & { readonly id: string }): Dup
     manufacturer: null,
     quantity: 0,
     createdAt: 1,
-    updatedAt: 1,
     serialNo: null,
     locationName: 'Drawer',
-    categoryName: null,
     ...over,
   };
 }
 
 beforeEach(() => {
   scanOptions = null;
+  fetching = false;
+  refetchSpy.mockReset();
   mergeSpy.mockReset();
   mergeSpy.mockResolvedValue({
     remapped: emptyItemReferenceCounts(),
@@ -168,5 +172,36 @@ describe('DeduplicateItemsDialog', () => {
     expect(within(outcome).getByText(/couldn’t be merged/)).toBeInTheDocument();
     // The failure does not abandon the rest of the cluster.
     expect(mergeSpy).toHaveBeenCalledTimes(2);
+    // One merged, so the card is a record now.
+    expect(screen.queryByTestId('dedupe-merge')).toBeNull();
+  });
+
+  it('leaves a group that merged nothing retryable, and does not call it merged', async () => {
+    mergeSpy.mockRejectedValue(new Error('nope'));
+    renderDialog();
+    fireEvent.click(screen.getByTestId('dedupe-scan'));
+    fireEvent.click(screen.getByTestId('dedupe-merge'));
+
+    const outcome = await screen.findByTestId('dedupe-group-outcome');
+    expect(within(outcome).getByText(/couldn’t be merged/)).toBeInTheDocument();
+    expect(within(outcome).queryByText(/merged and removed/)).toBeNull();
+    // The database is as it was, so the controls stay and the user can try again.
+    expect(screen.getByTestId('dedupe-merge')).toBeEnabled();
+  });
+
+  it('hides a stale result while a re-scan is in flight, so a merged card cannot be re-armed', async () => {
+    renderDialog();
+    fireEvent.click(screen.getByTestId('dedupe-scan'));
+    fireEvent.click(screen.getByTestId('dedupe-merge'));
+    await screen.findByTestId('dedupe-group-outcome');
+
+    // Re-scanning with the same options keeps the old `data` while it refetches. Without the
+    // gate the outcome would clear and the card would offer to merge items that are already gone.
+    fetching = true;
+    fireEvent.click(screen.getByTestId('dedupe-scan'));
+
+    expect(refetchSpy).toHaveBeenCalled();
+    expect(screen.queryByTestId('dedupe-group')).toBeNull();
+    expect(screen.queryByTestId('dedupe-merge')).toBeNull();
   });
 });

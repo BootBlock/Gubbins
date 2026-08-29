@@ -120,8 +120,6 @@ export type {
   MergeItemsResult,
 } from './ItemRepository';
 export {
-  DEDUPE_SCAN_LIMIT,
-  NAME_ADVISORY_THRESHOLD,
   ITEM_REFERENCE_SPECS,
   emptyItemReferenceCounts,
   totalItemReferences,

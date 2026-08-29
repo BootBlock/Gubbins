@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { planKitEdgeRemap, planRelationRemap, type ItemRelationEdge, type KitEdge } from './reference-remap';
+import {
+  planKitEdgeRemap,
+  planRelationRemap,
+  type ItemRelationEdge,
+  type KitComponentEdge,
+} from './reference-remap';
 
 /**
  * The two re-point planners a merge cannot do with a plain `UPDATE` (issue #99). Each case here
@@ -11,7 +16,7 @@ import { planKitEdgeRemap, planRelationRemap, type ItemRelationEdge, type KitEdg
 const KEEP = 'keep';
 const GONE = 'gone';
 
-function edge(id: string, kitItemId: string, componentItemId: string): KitEdge {
+function edge(id: string, kitItemId: string, componentItemId: string): KitComponentEdge {
   return { id, kitItemId, componentItemId };
 }
 
