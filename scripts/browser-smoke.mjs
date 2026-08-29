@@ -4876,7 +4876,9 @@ try {
                 } catch {
                   /* ignore */
                 }
-                // Mirrors public/coi-bootstrap.js: reload once when the new worker controls us.
+                // This harness reloads at most once on `controllerchange`, which is all this
+                // check needs — it is not a stand-in for public/coi-bootstrap.js, whose own
+                // reload budget is pinned by `src/lib/env/coi-bootstrap.test.ts`.
                 if (!sessionStorage.getItem('__smokeReloaded')) {
                   sessionStorage.setItem('__smokeReloaded', '1');
                   window.location.reload();

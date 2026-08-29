@@ -34,6 +34,11 @@ vi.mock('@/db/tab-lock', () => ({
 
 const bootDatabase = vi.fn(() => Promise.resolve({ driver: {}, migration: { from: 0, to: 1, applied: [] } }));
 const countStoredItems = vi.fn(() => Promise.resolve(0));
+const detectDbStorageLayout = vi.fn(() => Promise.resolve('none' as 'none' | 'opfs' | 'sahpool'));
+vi.mock('@/db/db-storage', () => ({
+  detectDbStorageLayout: () => detectDbStorageLayout(),
+}));
+
 vi.mock('@/db/client', () => ({
   bootDatabase: () => bootDatabase(),
   countStoredItems: () => countStoredItems(),
@@ -67,6 +72,7 @@ afterEach(() => {
   acquireDatabaseTabLock.mockClear();
   bootDatabase.mockClear().mockResolvedValue({ driver: {}, migration: { from: 0, to: 1, applied: [] } });
   countStoredItems.mockClear().mockResolvedValue(0);
+  detectDbStorageLayout.mockClear().mockResolvedValue('none');
 });
 
 /**
@@ -209,6 +215,60 @@ describe('useDatabaseBoot — the wait for isolation has to end somewhere', () =
     await waitFor(() =>
       expect(result.current).toMatchObject({ status: 'unsupported', isolationWaivable: false }),
     );
+  });
+
+  it('does not wait at all for an origin already living on the fallback store', async () => {
+    // The store it must keep opening is already chosen, so there is nothing for the wait to
+    // decide — holding this user on a spinner would be a delay that changes nothing.
+    detectDbStorageLayout.mockResolvedValue('sahpool');
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(diagnoseCriticalSupport).not.toHaveBeenCalled();
+  });
+
+  it('never offers the fallback where the database is in the primary store', async () => {
+    // The offer would be one the gate cannot keep: a plain OPFS database is unreachable from
+    // the fallback VFS, which refuses rather than opening a second, empty one beside it. Taking
+    // it would trade this screen's guidance for a database error the user cannot act on.
+    detectDbStorageLayout.mockResolvedValue('opfs');
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() =>
+      expect(result.current).toMatchObject({ status: 'unsupported', isolationWaivable: false }),
+    );
+  });
+
+  it('ignores a waiver where the database is in the primary store', async () => {
+    // A waiver made on some other screen must not carry this origin past the wait: the boot it
+    // would let through cannot open the database it has.
+    waiveIsolation();
+    detectDbStorageLayout.mockResolvedValue('opfs');
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('unsupported'));
+    expect(bootDatabase).not.toHaveBeenCalled();
   });
 
   it('boots straight through once the user has waived the wait', async () => {

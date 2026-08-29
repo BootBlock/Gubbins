@@ -23,11 +23,21 @@ interface Harness {
   window: Record<string, unknown>;
 }
 
+interface Page {
+  crossOriginIsolated?: boolean;
+  isSecureContext?: boolean;
+  hasSw?: boolean;
+  /**
+   * The session store to run against. Pass the same one to two `run` calls to model the reload
+   * the script asks for: a fresh document, and the *surviving* `sessionStorage` behind it.
+   * Nothing else carries a count across a navigation, which is why the budget lives there.
+   */
+  store?: Map<string, string>;
+}
+
 /** Run the bootstrap against a fake page, and hand back the controls a test needs. */
-function run(
-  page: { crossOriginIsolated?: boolean; isSecureContext?: boolean; hasSw?: boolean } = {},
-): Harness {
-  const { crossOriginIsolated = false, isSecureContext = true, hasSw = true } = page;
+function run(page: Page = {}): Harness {
+  const { crossOriginIsolated = false, isSecureContext = true, hasSw = true, store = new Map() } = page;
   const listeners = new Set<() => void>();
   let reloads = 0;
 
@@ -43,7 +53,6 @@ function run(
   const navigator = hasSw
     ? { serviceWorker: { addEventListener: (_type: string, fn: () => void) => listeners.add(fn) } }
     : {};
-  const store = new Map<string, string>();
   const sessionStorage = {
     getItem: (key: string) => store.get(key) ?? null,
     setItem: (key: string, value: string) => void store.set(key, value),
@@ -73,17 +82,29 @@ describe('coi-bootstrap.js — the isolation reload budget', () => {
     expect(page.reloads()).toBe(1);
   });
 
-  it('reloads a second time when the first attempt did not come back isolated', () => {
-    // The failure this budget exists for: the reload landed before the worker's headers applied
-    // to the navigation, so the page came back exactly as un-isolated as it went in. With a
-    // one-shot guard the session was then stuck on the boot screen until the tab was closed.
-    const page = run();
-    page.controllerChange();
-    page.controllerChange();
-    expect(page.reloads()).toBe(2);
+  it('has an attempt left for the document its own reload creates', () => {
+    // The failure the budget exists for: the reloaded navigation was not intercepted, so it
+    // came back un-isolated *and* uncontrolled, and the next worker to claim it fires the event
+    // again. With a one-shot guard that second chance was already spent, and the session sat on
+    // the boot screen until the tab was closed. Same store, second document — the reload the
+    // first `run` asked for.
+    const store = new Map<string, string>();
+    run({ store }).controllerChange();
+    const second = run({ store });
+    second.controllerChange();
+    expect(second.reloads()).toBe(1);
   });
 
   it('stops after the budget, so stripped headers cannot loop the page for ever', () => {
+    // Across documents, because that is the only way the count is ever reached in practice —
+    // an in-memory counter would satisfy a single-document version of this test and still
+    // reload for ever in a browser.
+    const store = new Map<string, string>();
+    for (let i = 0; i < 5; i += 1) run({ store }).controllerChange();
+    expect(store.get('gubbins-coi-reload-attempts')).toBe('2');
+  });
+
+  it('spends no more than the budget within one document either', () => {
     const page = run();
     for (let i = 0; i < 10; i += 1) page.controllerChange();
     expect(page.reloads()).toBe(2);

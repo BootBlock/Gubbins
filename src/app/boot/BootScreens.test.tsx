@@ -88,13 +88,19 @@ describe('UnsupportedScreen', () => {
     expect(report).toHaveTextContent('missing: Cross-Origin Isolation (COOP/COEP), SharedArrayBuffer');
   });
 
-  it('keeps the fallback offer off the screen while the wait may still resolve', async () => {
-    // Offered too early it is a trap: the fallback database it would create is the one this
-    // origin has to keep opening, so it must not be dangled in front of a boot that is simply
-    // taking its time.
-    render(<UnsupportedScreen diagnosis={diagnosis('isolation-pending')} />);
-    expect(screen.queryByTestId('boot-waive-isolation')).not.toBeInTheDocument();
-  });
+  it.each([undefined, false] as const)(
+    'keeps the fallback offer off the screen while the wait may still resolve (%s)',
+    (waivable) => {
+      // Offered too early it is a trap: the fallback database it would create is the one this
+      // origin has to keep opening, so it must not be dangled in front of a boot that is simply
+      // taking its time — nor in front of a cause the fallback would not fix. Both the explicit
+      // `false` and the default are pinned, since the gate passes the flag on every render and
+      // the default is what every other caller gets.
+      render(<UnsupportedScreen diagnosis={diagnosis('isolation-pending')} isolationWaivable={waivable} />);
+      expect(screen.queryByTestId('boot-waive-isolation')).not.toBeInTheDocument();
+      expect(screen.queryByText(/slightly slower store/)).not.toBeInTheDocument();
+    },
+  );
 
   it('offers a way out once waiting can achieve nothing more, and records it before reloading', async () => {
     // Issue #260: `isolation-pending` used to be a screen with no exit but closing the tab.

@@ -215,7 +215,7 @@ export function waitForServiceWorkerControl(timeoutMs: number): Promise<void> {
       resolve();
       return;
     }
-    if (navigator.serviceWorker.controller != null || timeoutMs <= 0) {
+    if (navigator.serviceWorker.controller != null) {
       resolve();
       return;
     }

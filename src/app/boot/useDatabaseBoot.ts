@@ -24,6 +24,7 @@ import {
   type SupportDiagnosis,
 } from '@/lib/env/support-diagnosis';
 import { isolationWaived } from '@/lib/env/isolation-waiver';
+import { detectDbStorageLayout } from '@/db/db-storage';
 import { acquireDatabaseTabLock, type TabLockDenial } from '@/db/tab-lock';
 import { bootDatabase, countStoredItems, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
@@ -110,43 +111,54 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   // one diagnosis that means isolation is genuinely not coming — and only once that is *settled*
   // (`isolationIsSettled`), because the choice is effectively permanent: the fallback database
   // this boot would create is the one the origin must keep opening afterwards. Every other cause
-  // still stops here. A waiver skips the question outright: the user has already been asked, on
-  // the screen this step would otherwise show them again (issue #260).
+  // still stops here.
   const isolation = checkIsolationSupport();
-  if (!isolation.supported && !isolationWaived()) {
-    let diagnosis = await diagnoseCriticalSupport(isolation.missing);
-
-    // Wait for the answer to settle, rather than commit to the first reading (issue #260). The
-    // un-settled causes — `isolation-pending`, and an `isolation-blocked` whose worker has not
-    // reached `active` yet — both describe a boot still in motion, and the gate used to park on
-    // the screen for whichever of them it happened to see. Recovery then rested entirely on
-    // `coi-bootstrap.js` reloading on `controllerchange`, and a session whose reload budget was
-    // already spent had no way out of that screen but closing the tab.
+  if (!isolation.supported) {
+    // What is already on disk answers this before any diagnosis can, so ask it first (#260).
+    // The gate waits, and offers a way past the wait, only where the choice is still open:
     //
-    // Nothing here can make *this* document isolated — only a fresh navigation can — so the
-    // point of waiting is to watch the question settle: once a worker controls the page and
-    // isolation still has not arrived, the answer is final and the fallback VFS is the right
-    // one to open. One wait is enough, and deliberately so: it ends on the single event that
-    // can change the reading, so a second pass would have nothing new to see and could only
-    // spin.
-    if (isolationMayStillArrive(diagnosis.cause, diagnosis.signals)) {
-      commit({ status: 'unsupported', diagnosis, isolationWaivable: false });
-      await waitForServiceWorkerControl(ISOLATION_CONTROL_WAIT_MS);
-      if (!isMounted()) return;
-      diagnosis = await diagnoseCriticalSupport(checkIsolationSupport().missing);
-    }
+    //  - `sahpool` — this origin's database is already in the fallback store, and
+    //    `detectDbStorageLayout` will keep opening it there. Nothing is left to decide, so
+    //    waiting would be a delay that changes nothing.
+    //  - `opfs` — the database is a plain OPFS file, which the fallback cannot reach at all:
+    //    `openConnection` refuses rather than opening a second, empty one beside it. Waiting is
+    //    still right, but "carry on without isolation" is an offer this gate could not keep, so
+    //    it is never made — and a waiver left over from another screen is not honoured either.
+    //  - `none` — nothing on disk, so the choice is genuinely open and genuinely permanent.
+    const layout = await detectDbStorageLayout();
+    if (!isMounted()) return;
+    const choiceIsOpen = layout === 'none';
 
-    if (diagnosis.cause !== 'isolation-blocked' || !isolationIsSettled(diagnosis.signals)) {
-      // Still un-settled after that wait means no further waiting will tell us more, so hand
-      // the decision to the user rather than leaving a spinner up for the rest of the session.
-      // Any other cause is a genuine stop with its own guidance, and offering the fallback
-      // there would be answering a question the user did not ask.
-      commit({
-        status: 'unsupported',
-        diagnosis,
-        isolationWaivable: isolationMayStillArrive(diagnosis.cause, diagnosis.signals),
-      });
-      return;
+    if (layout !== 'sahpool' && !(choiceIsOpen && isolationWaived())) {
+      let diagnosis = await diagnoseCriticalSupport(isolation.missing);
+
+      // Watch the answer settle, rather than commit to the first reading (issue #260). The
+      // un-settled causes — `isolation-pending`, and an `isolation-blocked` whose worker has
+      // not reached `active` — both describe a boot still in motion, and a gate that answers
+      // from either of them is answering a question that is still open. Nothing here can make
+      // *this* document isolated, since only a fresh navigation can; the point of waiting is
+      // that once a worker controls the page and isolation still has not arrived, the answer
+      // is final and the fallback VFS is the right one to open.
+      if (isolationMayStillArrive(diagnosis.cause, diagnosis.signals)) {
+        commit({ status: 'unsupported', diagnosis, isolationWaivable: false });
+        await waitForServiceWorkerControl(ISOLATION_CONTROL_WAIT_MS);
+        if (!isMounted()) return;
+        diagnosis = await diagnoseCriticalSupport(checkIsolationSupport().missing);
+      }
+
+      if (diagnosis.cause !== 'isolation-blocked' || !isolationIsSettled(diagnosis.signals)) {
+        // One wait, then the decision goes to the user. A worker could still take control a
+        // minute from now, so this is not a proof that it never will — it is the point past
+        // which holding a spinner up costs more than it can win. Any other cause is a genuine
+        // stop with its own guidance, and offering the fallback there would answer a question
+        // the user did not ask.
+        commit({
+          status: 'unsupported',
+          diagnosis,
+          isolationWaivable: choiceIsOpen && isolationMayStillArrive(diagnosis.cause, diagnosis.signals),
+        });
+        return;
+      }
     }
   }
 
