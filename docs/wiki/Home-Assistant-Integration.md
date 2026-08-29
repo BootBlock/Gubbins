@@ -160,7 +160,8 @@ working unchanged. With two or more, name the bridge you mean: an action that na
 refused, listing your bridges by name, rather than going to whichever one happened to start first.
 A bridge counts from the moment you set it up, so one that is briefly offline still counts — the
 alternative would be untargeted actions quietly going to the other vault for as long as it was
-down. A bridge you have disabled doesn't count, because it never runs.
+down. What doesn't count is anything that never runs: a bridge you have disabled, or a
+discovery you dismissed rather than set up.
 
 > **⚠️ Heads-up**
 > This matters most for the change actions below. Sending a workshop adjustment to the household

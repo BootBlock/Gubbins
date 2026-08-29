@@ -318,8 +318,12 @@ def _async_resolve_client(hass: HomeAssistant, call: ServiceCall) -> GubbinsClie
     A bridge that is offline at startup has no client here until Home Assistant's retry reaches
     it, and counting clients would make the second bridge blink out of existence for exactly as
     long as it is unreachable — turning a refusal back into a silent write to the other vault, in
-    the very window this is meant to cover. A *disabled* entry is left out: it never loads at all,
-    so it can only ever refuse calls the user did not need refused.
+    the very window this is meant to cover.
+
+    Home Assistant's own filters decide what "set up" means, rather than a test written here.
+    A *disabled* entry and an *ignored* discovery both fail to be a bridge the user set up, and
+    both would otherwise refuse calls that were never ambiguous — the bridge advertises itself
+    over mDNS, so dismissing a discovery of one you already have is an ordinary thing to do.
     """
     clients: dict[str, GubbinsClient] = hass.data.get(DOMAIN, {})
     entry_id = call.data.get(ATTR_CONFIG_ENTRY_ID)
@@ -336,11 +340,9 @@ def _async_resolve_client(hass: HomeAssistant, call: ServiceCall) -> GubbinsClie
             )
         raise HomeAssistantError(_not_loaded(entry.title))
 
-    entries = [
-        entry
-        for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.disabled_by is None
-    ]
+    entries = hass.config_entries.async_entries(
+        DOMAIN, include_ignore=False, include_disabled=False
+    )
     if not entries:
         raise HomeAssistantError("No Gubbins bridge is configured")
     if len(entries) > 1:
