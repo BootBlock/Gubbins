@@ -245,7 +245,7 @@ describe('startPrecip', () => {
  * simulate the layout moving under settled snow. Wider than the 1200px stub viewport so
  * particles drifting through the off-screen wrap margin still sit over a column.
  */
-function makeSurfaces(top: number, cols = 340) {
+function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
   let tops = new Int16Array(cols).fill(top);
   // Undersides sit below the fold in these tests (NO_SURFACE), so top-landing behaviour is
   // exercised in isolation from the underside-catch path.
@@ -253,8 +253,8 @@ function makeSurfaces(top: number, cols = 340) {
   let generation = 1;
   let hover: HoverFollow | null = null;
   /** The page scroll offset the current map was built at, and the live one (issue #438). */
-  let scrollY = 0;
-  let pageY = 0;
+  let scrollY = builtAtScrollY;
+  let pageY = builtAtScrollY;
   const tracker: SurfaceTracker = {
     snapshot: () => ({ tops, bots, scrollY, generation }),
     hoverFollow: () => hover,
@@ -296,8 +296,10 @@ function makeSurfaces(top: number, cols = 340) {
       pageY += by;
     },
     /**
-     * Rebuild the map at the live scroll offset, as the real tracker does when the debounce
-     * expires: every top moves up the screen by however far the page scrolled.
+     * Rebuild the map at the live scroll offset: every top moves up the screen by however far
+     * the page scrolled, and the published offset catches up with it. That the real tracker
+     * does exactly this is held up by its own test — "reports how far the page has scrolled
+     * since the map was built" in `surface-map.test.ts`.
      */
     rebuildAfterScroll() {
       const moved = new Int16Array(cols);
@@ -536,6 +538,26 @@ describe('startPrecip settled snow while the page scrolls (issue #438)', () => {
     pump(now + 50);
     expect(orec.drawImages.length).toBeGreaterThan(mark); // the drift survived the scroll…
     expect(lastMoundBlitY(orec)).toBe(0); // …and is painted where the new map puts it
+    ctrl.stop();
+  });
+
+  it('lands flakes where the control is on screen, not where the map still has it', () => {
+    // The map puts the control's top at y=780, but the page has since scrolled back up 400px, so
+    // the control is really at 1180 — below the 800px-tall layer, where no flake can reach it.
+    // Measure the fall in the wrong frame and the flakes settle on a control that is off-screen.
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(780, 340, 400);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    surfaces.scrollPage(-400);
+    let now = 0;
+    for (let i = 1; i <= 250; i++) pump((now += 50));
+    expect(orec.drawImages).toEqual([]);
     ctrl.stop();
   });
 

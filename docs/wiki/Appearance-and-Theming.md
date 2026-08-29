@@ -62,10 +62,10 @@ Gubbins has some gentle visual polish that you can dial up or down:
   off flat; once it's full the flakes it turns away carry on falling. A flake blown against a
   control's side, or drifting out beneath its bottom edge, now and then sticks there too,
   plastering the windward face or clinging under the lip (wet, clumpy snow sticks the most;
-  scrolling carries the drifts along with the controls they are sitting on, but move things
-  around — open a panel, let a list grow — and it's all knocked off, ready to build again) —
-  while **rain**
-  splashes off the tops of controls in small ripples as drops strike them. You can clear a drift
+  scrolling the page carries the drifts along with the controls they are sitting on, while
+  scrolling a list inside its own panel — or moving things around, opening a panel, letting a
+  list grow — shakes it all off, ready to build again) — while **rain** splashes off the tops
+  of controls in small ripples as drops strike them. You can clear a drift
   yourself: tap or click one and that part of it blows away in a burst of flakes, thrown up and
   out as a snow blower would throw it. Only the piece you touched goes — the snow either side
   thins away softly rather than ending in a straight edge — and the button or card underneath
