@@ -1,4 +1,4 @@
-import { Money } from '@/components/foundry';
+import { Bar, COUNT_UP_HEADLINE_DURATION_MS, Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { SpendGroup, SpendReport } from '../spend-analytics';
 import { SPEND_SOURCE_LABEL } from '../spend-analytics';
@@ -23,7 +23,6 @@ function SpendBar({
   formatters: Formatters;
   tone?: string;
 }) {
-  const widthPercent = max > 0 ? Math.max(2, Math.round((total / max) * 100)) : 0;
   return (
     <li className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between gap-3 text-sm">
@@ -32,12 +31,7 @@ function SpendBar({
           <Money value={total} formatters={formatters} /> · {Math.round(share * 100)}%
         </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
-        <div
-          className={`h-full rounded-full transition-[width] duration-500 ease-emphasized ${tone}`}
-          style={{ width: `${widthPercent}%` }}
-        />
-      </div>
+      <Bar value={max > 0 ? total / max : 0} fillClassName={tone} />
     </li>
   );
 }
@@ -106,6 +100,7 @@ export function SpendBreakdown({
           formatters={formatters}
           animate
           animateOnMount
+          durationMs={COUNT_UP_HEADLINE_DURATION_MS}
           className="text-lg font-semibold"
         />
       </div>

@@ -1,4 +1,4 @@
-import { AnimatedNumber, Money } from '@/components/foundry';
+import { AnimatedNumber, Bar, COUNT_UP_HEADLINE_DURATION_MS, Money } from '@/components/foundry';
 import { useT } from '@/features/i18n';
 import type { Formatters } from '@/lib/format';
 import type { SalesGroup, SalesReport } from '../sales-analytics';
@@ -20,7 +20,6 @@ function SalesBar({
   max: number;
   formatters: Formatters;
 }) {
-  const widthPercent = max > 0 ? Math.max(2, Math.round((total / max) * 100)) : 0;
   return (
     <li className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between gap-3 text-sm">
@@ -29,12 +28,7 @@ function SalesBar({
           <Money value={total} formatters={formatters} /> · {Math.round(share * 100)}%
         </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
-        <div
-          className="h-full rounded-full bg-primary transition-[width] duration-500 ease-emphasized"
-          style={{ width: `${widthPercent}%` }}
-        />
-      </div>
+      <Bar value={max > 0 ? total / max : 0} />
     </li>
   );
 }
@@ -78,6 +72,7 @@ function Stat({
         formatters={formatters}
         animate
         animateOnMount
+        durationMs={COUNT_UP_HEADLINE_DURATION_MS}
         className={emphasised ? 'text-lg font-semibold' : 'text-base font-medium'}
       />
     </div>
@@ -123,16 +118,28 @@ export function SalesBreakdown({ report, formatters }: { report: SalesReport; fo
               formatters={formatters}
               animate
               animateOnMount
+              durationMs={COUNT_UP_HEADLINE_DURATION_MS}
               className="text-lg font-semibold"
             />
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {Math.round(report.marginPct * 100)}%
-            </span>
+            {/* The share rolls alongside the amount it qualifies — a static percentage beside a
+                rolling figure reads as though one of the two had failed to load. */}
+            <AnimatedNumber
+              value={report.marginPct}
+              format={(n) => `${Math.round(n * 100)}%`}
+              durationMs={COUNT_UP_HEADLINE_DURATION_MS}
+              animateOnMount
+              className="text-xs text-muted-foreground tabular-nums"
+            />
           </span>
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Units sold</span>
-          <AnimatedNumber value={report.unitsSold} className="text-lg font-semibold" animateOnMount />
+          <AnimatedNumber
+            value={report.unitsSold}
+            className="text-lg font-semibold"
+            durationMs={COUNT_UP_HEADLINE_DURATION_MS}
+            animateOnMount
+          />
         </div>
       </div>
 

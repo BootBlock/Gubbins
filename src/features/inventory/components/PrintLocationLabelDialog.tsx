@@ -38,7 +38,7 @@ const COPIES_HINT = [
 
 /** Rich-Markdown help for the **Show full path** toggle. */
 const SHOW_PATH_HINT = [
-  'Print the **ancestor path** above the location name — e.g. *Garage ▸ Shelf B* — not',
+  'Print the **ancestor path** below the location name — e.g. *Garage ▸ Shelf B* — not',
   'just the location itself.',
   '',
   'Keep it on to tell **same-named bins apart** at a glance; turn it off for a cleaner,',
@@ -71,7 +71,7 @@ function CompactSelect({
 /**
  * Print a customisable label for a single **location** (Phase 73). The QR/Code-128
  * encodes the location deep-link so a phone camera — or the in-app scanner — jumps to
- * that bin/shelf; the user picks the symbology, whether to show the ancestor path, how
+ * that bin/shelf; the user picks the symbology, which text lines the label carries, how
  * the A4 sheet tiles, and how many copies to print. Seeds its symbology/sheet layout from the
  * device-local default template (`usePreferencesStore.labelTemplate`); the preview and
  * the printed sheet share `toLocationLabelCell`, so what you see is what prints.
@@ -93,6 +93,9 @@ export function PrintLocationLabelDialog({
   // the item-only field flags are forced on/off so the shared renderer behaves.
   const [symbology, setSymbology] = useState<LabelSymbology>('qr');
   const [sheet, setSheet] = useState<SheetLayout>(PLAIN_PAPER_SHEET_LAYOUT);
+  // The location's own name, printed under the code (issue #436). On by default: a label
+  // nobody can read without scanning it is the exception, not the norm.
+  const [showName, setShowName] = useState(true);
   const [showPath, setShowPath] = useState(true);
   // The fallback identifier line (issue #338) — seeded from the saved default, like the
   // symbology and sheet layout, so a device that turned it off keeps it off here too.
@@ -112,6 +115,7 @@ export function PrintLocationLabelDialog({
     const seed = normaliseLabelTemplate(storedTemplate);
     setSymbology(seed.symbology === 'none' ? 'qr' : seed.symbology);
     setSheet(seed.sheet);
+    setShowName(true);
     setShowPath(true);
     setShowShortCode(seed.showShortId);
     setCopies(1);
@@ -135,7 +139,7 @@ export function PrintLocationLabelDialog({
     () => ({
       symbology,
       sheet,
-      showName: true,
+      showName,
       showLocation: showPath,
       showMpn: false,
       showQuantity: false,
@@ -145,7 +149,7 @@ export function PrintLocationLabelDialog({
       labelWidthMm,
       labelHeightMm,
     }),
-    [symbology, sheet, showPath, showShortCode, sizeMode, labelWidthMm, labelHeightMm],
+    [symbology, sheet, showName, showPath, showShortCode, sizeMode, labelWidthMm, labelHeightMm],
   );
 
   const cell = useMemo(() => toLocationLabelCell(location, baseUrl, template), [location, baseUrl, template]);
@@ -242,6 +246,21 @@ export function PrintLocationLabelDialog({
           {/* The label's text toggles. The help badge sits *outside* each label so tapping it
               opens the tooltip rather than flipping the checkbox. */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 self-end">
+            {/* The location's own name under the code (issue #436) — the only line most
+                people read without reaching for a scanner. */}
+            <div className="flex items-center gap-1">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <Checkbox
+                  checked={showName}
+                  onChange={(e) => setShowName(e.target.checked)}
+                  className="size-3.5"
+                  data-testid="loc-label-show-name"
+                />
+                {t('inventory.labels.showLocationName')}
+              </label>
+              <InfoHint content={t('inventory.labels.showLocationNameHint')} />
+            </div>
+
             {location.path && location.path.trim().length > 0 ? (
               <div className="flex items-center gap-1">
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">

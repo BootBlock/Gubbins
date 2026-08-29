@@ -1,4 +1,10 @@
-import { Money, ShowMore, useProgressiveReveal } from '@/components/foundry';
+import {
+  AnimatedNumber,
+  COUNT_UP_HEADLINE_DURATION_MS,
+  Money,
+  ShowMore,
+  useProgressiveReveal,
+} from '@/components/foundry';
 import { useT } from '@/features/i18n';
 import type { Formatters } from '@/lib/format';
 import type { TurnoverReport } from '../turnover';
@@ -49,7 +55,16 @@ export function TurnoverTable({ report, formatters }: { report: TurnoverReport; 
             className="text-2xl font-semibold tracking-tight tabular-nums"
             data-testid="turnover-headline"
           >
-            {formatRatio(report.turnover)}
+            {report.turnover == null ? (
+              '—'
+            ) : (
+              <AnimatedNumber
+                value={report.turnover}
+                format={formatRatio}
+                durationMs={COUNT_UP_HEADLINE_DURATION_MS}
+                animateOnMount
+              />
+            )}
           </span>
         </div>
         <div className="flex flex-col">
@@ -57,7 +72,16 @@ export function TurnoverTable({ report, formatters }: { report: TurnoverReport; 
             Days of cover
           </span>
           <span className="text-2xl font-semibold tracking-tight tabular-nums">
-            {formatDays(report.daysOnHand, formatters)}
+            {report.daysOnHand == null ? (
+              '—'
+            ) : (
+              <AnimatedNumber
+                value={report.daysOnHand}
+                format={(n) => formatDays(n, formatters)}
+                durationMs={COUNT_UP_HEADLINE_DURATION_MS}
+                animateOnMount
+              />
+            )}
           </span>
         </div>
       </div>

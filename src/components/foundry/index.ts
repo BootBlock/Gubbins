@@ -34,7 +34,8 @@ export {
 // rules the control applies. The bound arithmetic beside it belongs to `NumberInput` alone, which
 // imports it directly, so exporting it here would make a private seam a public API with no caller.
 export { parseNumericText } from './numeric-bounds';
-export { Select, SelectField, type SelectProps, type SelectFieldProps, type SelectOption } from './select';
+export { Select, type SelectProps, type SelectOption } from './select';
+export { SelectField, type SelectFieldProps } from './select-field';
 export {
   CurrencySelect,
   CurrencyAutocompleteField,
@@ -78,7 +79,13 @@ export {
 export { Money, type MoneyProps } from './money';
 export { MoneyInput, type MoneyInputProps } from './money-input';
 export { AnimatedNumber, type AnimatedNumberProps } from './animated-number';
-export { useCountUp, type CountUpOptions } from './useCountUp';
+export {
+  useCountUp,
+  COUNT_UP_DURATION_MS,
+  COUNT_UP_HEADLINE_DURATION_MS,
+  type CountUpOptions,
+} from './useCountUp';
+export { Bar, type BarProps } from './bar';
 export { Reveal, type RevealProps } from './reveal';
 export {
   useRevealOnScroll,
@@ -161,19 +168,12 @@ export { SkipLink, MAIN_CONTENT_ID } from './skip-link';
 export { Interstitial, type InterstitialProps } from './interstitial';
 export { PageHeader, type PageHeaderProps } from './page-header';
 export { PageContainer, type PageContainerProps } from './page-container';
-export {
-  Menu,
-  MenuLink,
-  MenuExternalLink,
-  MenuAction,
-  MenuSeparator,
-  MenuSub,
-  type MenuProps,
-  type MenuLinkProps,
-  type MenuExternalLinkProps,
-  type MenuActionProps,
-  type MenuSubProps,
-} from './menu';
+export { Menu, type MenuProps } from './menu';
+export { MenuLink, type MenuLinkProps } from './menu-link';
+export { MenuExternalLink, type MenuExternalLinkProps } from './menu-external-link';
+export { MenuAction, type MenuActionProps } from './menu-action';
+export { MenuSeparator } from './menu-separator';
+export { MenuSub, type MenuSubProps } from './menu-sub';
 export { LiveRegion, type LiveRegionProps, type LiveUrgency } from './live-region';
 export { liveRegionAttrs, type LiveRegionAttrs } from './aria-live';
 export { ToastProvider, useToast, useOptionalToast, type ToastOptions, type ToastTone } from './toast';
