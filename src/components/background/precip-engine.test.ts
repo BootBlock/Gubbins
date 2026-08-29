@@ -245,16 +245,20 @@ describe('startPrecip', () => {
  * simulate the layout moving under settled snow. Wider than the 1200px stub viewport so
  * particles drifting through the off-screen wrap margin still sit over a column.
  */
-function makeSurfaces(top: number, cols = 340) {
+function makeSurfaces(top: number, cols = 340, builtAtScrollY = 0) {
   let tops = new Int16Array(cols).fill(top);
   // Undersides sit below the fold in these tests (NO_SURFACE), so top-landing behaviour is
   // exercised in isolation from the underside-catch path.
   let bots = new Int16Array(cols).fill(NO_SURFACE);
   let generation = 1;
   let hover: HoverFollow | null = null;
+  /** The page scroll offset the current map was built at, and the live one (issue #438). */
+  let scrollY = builtAtScrollY;
+  let pageY = builtAtScrollY;
   const tracker: SurfaceTracker = {
-    snapshot: () => ({ tops, bots, generation }),
+    snapshot: () => ({ tops, bots, scrollY, generation }),
     hoverFollow: () => hover,
+    scrollShift: () => scrollY - pageY,
     stop: () => {},
   };
   let created = 0;
@@ -275,6 +279,38 @@ function makeSurfaces(top: number, cols = 340) {
     },
     setHover(next: HoverFollow | null) {
       hover = next;
+    },
+    /** Move every control up the screen with the page still where it was — a layout change. */
+    moveSurfaces(by: number) {
+      const moved = new Int16Array(cols);
+      for (let c = 0; c < cols; c++) {
+        const t = tops[c] ?? NO_SURFACE;
+        moved[c] = t === NO_SURFACE ? NO_SURFACE : t - by;
+      }
+      tops = moved;
+      bots = new Int16Array(bots);
+      generation++;
+    },
+    /** Scroll the page without rebuilding the map — what a scroll does between rebuilds. */
+    scrollPage(by: number) {
+      pageY += by;
+    },
+    /**
+     * Rebuild the map at the live scroll offset: every top moves up the screen by however far
+     * the page scrolled, and the published offset catches up with it. That the real tracker
+     * does exactly this is held up by its own test — "reports how far the page has scrolled
+     * since the map was built" in `surface-map.test.ts`.
+     */
+    rebuildAfterScroll() {
+      const moved = new Int16Array(cols);
+      for (let c = 0; c < cols; c++) {
+        const t = tops[c] ?? NO_SURFACE;
+        moved[c] = t === NO_SURFACE ? NO_SURFACE : t - (pageY - scrollY);
+      }
+      tops = moved;
+      bots = new Int16Array(bots);
+      scrollY = pageY;
+      generation++;
     },
   };
 }
@@ -453,6 +489,103 @@ describe('startPrecip control interaction (issue #68)', () => {
     expect(rec.drawImages.length).toBeGreaterThan(0); // the calm static frame still paints
     expect(orec.drawImages.length).toBe(0); // …but the overlay is never touched
     expect(orec.clearCount).toBe(0);
+    ctrl.stop();
+  });
+});
+
+/**
+ * Where the settled snow was painted on the overlay's most recent blit. A snow layer with no
+ * splashes and no tap draws nothing else onto the overlay, so the last blit is always the mound
+ * layer: the plain 5-argument full-canvas form when it sits exactly where the map says, and the
+ * 9-argument source-rect form (destination y at index 6) when it is offset from it.
+ */
+function lastMoundBlitY(orec: ReturnType<typeof makeCtx>): number | null {
+  const args = orec.drawImages[orec.drawImages.length - 1]?.args;
+  if (!args) return null;
+  return args.length === 9 ? (args[6] as number) : 0;
+}
+
+describe('startPrecip settled snow while the page scrolls (issue #438)', () => {
+  /**
+   * Settle a drift on a full-width control top, then scroll the page *without* rebuilding the
+   * map — the state the real tracker is in for up to its whole debounce window. The drift must
+   * move with the control on the very next frame, not wait for the rebuild.
+   */
+  it('moves the drift with its control on the next frame, then keeps it across the rebuild', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9); // every flake near → landings are certain
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    let now = 0;
+    for (let i = 1; i <= 250; i++) pump((now += 50));
+    expect(lastMoundBlitY(orec)).toBe(0); // settled, and painted where the map says
+
+    // The page scrolls 30px down between rebuilds: the control is 30px higher than the map says.
+    surfaces.scrollPage(30);
+    pump((now += 50));
+    expect(lastMoundBlitY(orec)).toBe(-30);
+
+    // The rebuild lands. The control only *scrolled*, so its drift is still on it — and is now
+    // painted unshifted again, because the new map already describes the new position.
+    surfaces.rebuildAfterScroll();
+    const mark = orec.drawImages.length;
+    pump((now += 50));
+    pump(now + 50);
+    expect(orec.drawImages.length).toBeGreaterThan(mark); // the drift survived the scroll…
+    expect(lastMoundBlitY(orec)).toBe(0); // …and is painted where the new map puts it
+    ctrl.stop();
+  });
+
+  it('lands flakes where the control is on screen, not where the map still has it', () => {
+    // The map puts the control's top at y=780, but the page has since scrolled back up 400px, so
+    // the control is really at 1180 — below the 800px-tall layer, where no flake can reach it.
+    // Measure the fall in the wrong frame and the flakes settle on a control that is off-screen.
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(780, 340, 400);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    surfaces.scrollPage(-400);
+    let now = 0;
+    for (let i = 1; i <= 250; i++) pump((now += 50));
+    expect(orec.drawImages).toEqual([]);
+    ctrl.stop();
+  });
+
+  it('still knocks the drift off a control that genuinely moved', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    const orec = makeCtx();
+    const surfaces = makeSurfaces(400);
+    const ctrl = startPrecip(makeCanvas(makeCtx()), {
+      kind: 'snow',
+      reduced: false,
+      overlay: makeCanvas(orec),
+      surfaces: surfaces.factory,
+    });
+    let now = 0;
+    for (let i = 1; i <= 250; i++) pump((now += 50));
+    expect(lastMoundBlitY(orec)).toBe(0);
+
+    // The control moves 30px up with the page standing still — a layout change, not a scroll.
+    // The drift is knocked off it, as it always has been, so the overlay goes quiet: it is
+    // cleared once and then skips the pass entirely. (Were the snow kept, it would follow the
+    // control to its new top and keep compositing.)
+    surfaces.moveSurfaces(30);
+    const mark = orec.drawImages.length;
+    for (let i = 0; i < 3; i++) pump((now += 50));
+    // Nothing composited over the next few frames: the drift went with the move, and the fresh
+    // snow now landing on the new top has not yet built back to a visible depth. (Keep the snow
+    // instead and the very first of these frames re-blits it at the control's new position.)
+    expect(orec.drawImages.length).toBe(mark);
     ctrl.stop();
   });
 });
@@ -752,8 +885,9 @@ describe('startPrecip wind-plaster (blizzard side accumulation)', () => {
     tops[170] = 400;
     const bots = new Int16Array(cols).fill(NO_SURFACE);
     const tracker: SurfaceTracker = {
-      snapshot: () => ({ tops, bots, generation: 1 }),
+      snapshot: () => ({ tops, bots, scrollY: 0, generation: 1 }),
       hoverFollow: () => null,
+      scrollShift: () => 0,
       stop: () => {},
     };
     const rec = makeCtx();
@@ -805,8 +939,9 @@ describe('snow stick-chance seams (issue #455 follow-up)', () => {
     const tops = new Int16Array(cols).fill(NO_SURFACE);
     const bots = new Int16Array(cols).fill(300);
     const tracker: SurfaceTracker = {
-      snapshot: () => ({ tops, bots, generation: 1 }),
+      snapshot: () => ({ tops, bots, scrollY: 0, generation: 1 }),
       hoverFollow: () => null,
+      scrollShift: () => 0,
       stop: () => {},
     };
     const rec = makeCtx();
