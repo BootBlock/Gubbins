@@ -39,13 +39,35 @@ describe('a serialised instance holds one unit, in one place', () => {
     await driver.close();
   });
 
-  /** Every placement of `itemId` holding stock, as `locationId → quantity`. */
+  /**
+   * Every placement of `itemId` holding stock, as `locationId → quantity`.
+   *
+   * Keyed by location, so it cannot tell one row at a location from two — use {@link stockRows}
+   * where the *lot* is the point.
+   */
   async function placements(itemId: string): Promise<Record<string, number>> {
     const rows = await driver.query<{ location_id: string; quantity: number }>(
       'SELECT location_id, quantity FROM stock_batches WHERE item_id = ? AND quantity <> 0;',
       [itemId],
     );
     return Object.fromEntries(rows.map((r) => [r.location_id, Number(r.quantity)]));
+  }
+
+  /** Every `stock_batches` row of `itemId`, lot and all, ordered so the list is stable. */
+  async function stockRows(
+    itemId: string,
+  ): Promise<{ id: string; location_id: string; batch_key: string; quantity: number }[]> {
+    const rows = await driver.query<{
+      id: string;
+      location_id: string;
+      batch_key: string;
+      quantity: number;
+    }>(
+      `SELECT id, location_id, batch_key, quantity FROM stock_batches
+        WHERE item_id = ? ORDER BY location_id, batch_key;`,
+      [itemId],
+    );
+    return rows.map((r) => ({ ...r, quantity: Number(r.quantity) }));
   }
 
   it('can be deleted out from under, re-homing to Unassigned rather than aborting', async () => {
@@ -167,7 +189,41 @@ describe('a serialised instance holds one unit, in one place', () => {
       ),
     );
 
-    expect(await placements(meter.id)).toEqual({ [store.id]: 1 });
+    // Read row by row, not by location: two rows at one shelf are exactly what this is pinning,
+    // and a location-keyed tally cannot see the difference.
+    expect(await stockRows(meter.id)).toEqual([
+      { id: `${meter.id}|${store.id}|`, location_id: store.id, batch_key: '', quantity: 1 },
+      { id: `${meter.id}|${store.id}|LOT-7`, location_id: store.id, batch_key: 'LOT-7', quantity: 0 },
+    ]);
+    expect((await items.getById(meter.id))?.quantity).toBe(1);
+  });
+
+  it('reclaims a foreign row already sitting on the id the repair would seed', async () => {
+    // The mirror of the case above. A `stock_batches.id` is only by convention
+    // `item|location|batch`, so a foreign row can hold the id the seed writes while its own
+    // columns say something else. Seeding blindly collides on the primary key and aborts — the
+    // same permanent failure, from the other side.
+    const store = await locations.create({ name: 'Store' });
+    const [meter] = await items.createSerialised({ name: 'Meter', count: 1, locationId: store.id });
+
+    await driver.transaction(
+      withCaptureDisabled(
+        withRecomputeDeferred([
+          { sql: 'DELETE FROM stock_batches WHERE item_id = ?;', params: [meter.id] },
+          {
+            sql: `INSERT INTO stock_batches (id, item_id, location_id, batch_key, lot_number, quantity)
+                  VALUES (?, ?, ?, 'LOT-7', 'L-7', 1);`,
+            // The derived home id, on a row whose own lot says otherwise.
+            params: [`${meter.id}|${store.id}|`, meter.id, store.id],
+          },
+        ]),
+      ),
+    );
+
+    // One row, made to agree with the id it was already carrying.
+    expect(await stockRows(meter.id)).toEqual([
+      { id: `${meter.id}|${store.id}|`, location_id: store.id, batch_key: '', quantity: 1 },
+    ]);
     expect((await items.getById(meter.id))?.quantity).toBe(1);
   });
 

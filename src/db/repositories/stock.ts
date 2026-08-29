@@ -129,17 +129,18 @@ function serialisedPlacementRepairStatements(itemId?: string): SqlStatement[] {
       //
       // Unlike every other emptying in this ledger, it is **not** captured as a movement on the
       // merge and restore paths, because those run the whole apply inside `withCaptureDisabled` —
-      // so for the two placements a repair touches, `stock_batches.quantity == Σ stock_deltas`
-      // stops holding. `sideIsComplete` (`features/sync/reconcile.ts`) then declines to replay them
-      // and settles them by last-write-wins instead, and `stock-delta-compaction` leaves their
-      // rows uncompacted.
+      // so for every placement a repair touches, `stock_batches.quantity == Σ stock_deltas` stops
+      // holding. `sideIsComplete` (`features/sync/reconcile.ts`) then declines to replay those
+      // placements and settles them by last-write-wins instead, and `stock-delta-compaction`
+      // leaves their rows uncompacted.
       //
-      // That is the right trade here rather than an oversight. A serialised placement's quantity is
-      // pinned at 1 by the table CHECK, so there is no arithmetic for the delta CRDT to protect:
-      // *where* the unit is, is decided by `items.location_id`, which last-write-wins already
-      // settles correctly and is what this repair reads. Writing deltas by hand to keep the sum
-      // tidy would put a fabricated movement in an append-only ledger the capture triggers are the
-      // sole author of — describing a unit moving that nobody moved.
+      // That is the right trade here rather than an oversight. A serialised item's *total* is
+      // pinned at 1 by `CHECK (tracking_mode <> 'SERIALISED' OR quantity = 1)` on `items`, and it
+      // has one placement, so there is no arithmetic for the delta CRDT to protect: *where* the
+      // unit is, is decided by `items.location_id`, which last-write-wins already settles
+      // correctly and is what this repair reads. Writing deltas by hand to keep the sum tidy would
+      // put a fabricated movement in an append-only ledger the capture triggers are the sole
+      // author of — describing a unit moving that nobody moved.
       //
       // "The one it belongs in" is the **untracked** batch at the item's own location, because a
       // serialised instance is only ever seeded with that one — its lot identity lives on the
@@ -168,16 +169,37 @@ function serialisedPlacementRepairStatements(itemId?: string): SqlStatement[] {
       params: one ? [itemId] : undefined,
     },
     {
-      // Seeding the home row when there is none, which is what the other half of a diverged pair
-      // looks like once the first statement has emptied it.
+      // A foreign row already sitting on the id the seed below would write, rewritten into the
+      // home placement rather than collided with.
       //
-      // Matched on the **natural** key rather than the derived id, for the reason the `item_stock`
-      // arm below gives: a foreign or hand-edited snapshot's `stock_batches.id` need not follow the
-      // `item|location|batch` form, and it is applied with whatever id it carries. An
-      // `ON CONFLICT(id)` here would miss such a row, fall through to an insert, and hit the
-      // table's `UNIQUE (item_id, location_id, batch_key)` instead — aborting every restore, merge,
-      // move and location delete touching that item, permanently. Which is the failure this
-      // function exists to prevent, reintroduced by the way it was written.
+      // Both halves of that matter, because a `stock_batches.id` is only *by convention*
+      // `item|location|batch`: the snapshot and merge applies write whatever id the incoming file
+      // carries. So the home row has to be found by its **natural** key — the reason the
+      // `item_stock` arm below gives for the same choice — and the seed's own derived id has to
+      // survive meeting a row that already holds it. Either mistake ends the same way: a
+      // constraint failure that aborts every restore, merge, move and location delete touching
+      // that item, permanently. Which is the failure this whole function exists to prevent.
+      //
+      // Only reachable when there is no home row under the natural key, so the row being rewritten
+      // cannot be colliding with one; and the id it holds already names this placement, so the
+      // rewrite is the row being made to agree with itself.
+      sql: `UPDATE stock_batches
+               SET location_id = (SELECT i.location_id FROM items i WHERE i.id = stock_batches.item_id),
+                   batch_key = '', batch_number = NULL, lot_number = NULL, expiry_date = NULL,
+                   quantity = 1
+             WHERE ${one ? 'item_id = ? AND ' : ''}EXISTS (
+                     SELECT 1 FROM items i
+                      WHERE i.id = stock_batches.item_id
+                        AND i.tracking_mode = 'SERIALISED'
+                        AND stock_batches.id = i.id || '|' || i.location_id || '|'
+                        AND NOT EXISTS (SELECT 1 FROM stock_batches b
+                                         WHERE b.item_id = i.id AND b.location_id = i.location_id
+                                           AND b.batch_key = ''));`,
+      params: one ? [itemId] : undefined,
+    },
+    {
+      // Seeding the home row when there is still none — the other half of a diverged pair, once
+      // the first statement has emptied what this device had.
       sql: `INSERT INTO stock_batches (id, item_id, location_id, batch_key, quantity)
             SELECT i.id || '|' || i.location_id || '|', i.id, i.location_id, '', 1
               FROM items i
