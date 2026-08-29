@@ -11,6 +11,7 @@ attaching when you report a problem.
 | Section | What it tells you |
 | --- | --- |
 | **About Gubbins** | The **version** you're running and its **build date** — the two facts almost every support question needs. |
+| **Achievements** | A way through to the [[Achievements\|Achievements]] screen — the milestones you have reached as your inventory grows. |
 | **Project & support** | Links to this wiki, the source repository, and the issue tracker. |
 | **Author** | Who makes Gubbins. |
 | **Privacy** | The short version of the local-first promise — see [[Privacy & security\|Privacy-and-Security]]. |

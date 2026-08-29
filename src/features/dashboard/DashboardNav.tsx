@@ -140,12 +140,12 @@ function countBadgeClass(tone: NavCountTone, group: NavGroup, isCta: boolean): s
 /**
  * i18n key for each destination's rich-Markdown hover tooltip — what you'll find behind the card.
  * Keyed by route so it stays aligned with {@link NAV_DESTINATIONS}; the dashboard (`/`) is the
- * current screen and never appears as a tile, and the off-nav routes (`/modules` and `/tags` plus
- * the Reports sub-screens `/catalogue` and `/insurance-schedule`) are reached from their own
- * screens rather than a nav tile — so none of them has an entry.
+ * current screen and never appears as a tile, and the off-nav routes (`/modules`, `/tags` and
+ * `/achievements`, plus the Reports sub-screens `/catalogue` and `/insurance-schedule`) are
+ * reached from their own screens rather than a nav tile — so none of them has an entry.
  */
 const NAV_TOOLTIP_KEYS: Record<
-  Exclude<AppRoutePath, '/' | '/modules' | '/tags' | '/catalogue' | '/insurance-schedule'>,
+  Exclude<AppRoutePath, '/' | '/modules' | '/tags' | '/achievements' | '/catalogue' | '/insurance-schedule'>,
   MessageKey
 > = {
   '/inventory': 'dashboard.nav.tooltip.inventory',

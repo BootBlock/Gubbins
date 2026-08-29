@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { plural } from '@/lib/plural';
 import { Button, LiveRegion, Modal, Tooltip, useBurst, useReportDialogBusy } from '@/components/foundry';
+import { useUnlockAchievement } from '@/features/achievements/useUnlockAchievement';
 import { CycleCountProvider } from '../CycleCountContext';
 import { useLocationCycleCount } from '../useLocationCycleCount';
 import { CountCoverageNotice, coverageSummary } from './CountCoverageNotice';
@@ -72,17 +73,22 @@ function CycleCountBody({
   // count. The result text is announced separately by the LiveRegion below, and the burst is a
   // no-op under reduced motion. Every finish path (clean / variance / empty) sets `applied`.
   const { burst } = useBurst();
+  const unlockAchievement = useUnlockAchievement();
   const celebrated = useRef(false);
   useEffect(() => {
     if (applied !== null) {
       if (!celebrated.current) {
         celebrated.current = true;
         burst();
+        // Records the location-count achievement (#412) on the first authorised count, and does
+        // nothing on every one after. `burst: false` — the line above is already this count's
+        // firework, and the achievement has no business firing a second.
+        unlockAchievement('location-count', { burst: false });
       }
     } else {
       celebrated.current = false;
     }
-  }, [applied, burst]);
+  }, [applied, burst, unlockAchievement]);
 
   // The completion message — null until the count is confirmed. Kept as a derived string so a
   // single always-mounted LiveRegion (below) receives it as mutating children (WCAG 4.1.3).
