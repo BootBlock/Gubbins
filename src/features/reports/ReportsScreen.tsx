@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import {
   AnimatedNumber,
   Button,
+  COUNT_UP_HEADLINE_DURATION_MS,
   buttonVariants,
   LiveRegion,
   Money,
@@ -310,7 +311,8 @@ export function ReportsScreen() {
         tabIndex={-1}
         className="flex flex-1 animate-rise flex-col gap-6 outline-none"
       >
-        {/* Headline value cards — each scroll-reveals with a gentle left-to-right stagger (F3). */}
+        {/* Headline value cards — each scroll-reveals with a gentle left-to-right stagger (F3),
+            then counts in over the long headline roll so the figure visibly settles (issue #448). */}
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Reveal index={0} className="h-full">
             <StatCard
@@ -319,7 +321,13 @@ export function ReportsScreen() {
               loading={value.isLoading}
               value={
                 value.data ? (
-                  <Money value={value.data.totalValue} formatters={f} animate animateOnMount />
+                  <Money
+                    value={value.data.totalValue}
+                    formatters={f}
+                    animate
+                    animateOnMount
+                    durationMs={COUNT_UP_HEADLINE_DURATION_MS}
+                  />
                 ) : (
                   '—'
                 )
@@ -344,6 +352,7 @@ export function ReportsScreen() {
                         vars: { amount: formatConsumed(n, leadConsumption.unit, f, t) },
                       })
                     }
+                    durationMs={COUNT_UP_HEADLINE_DURATION_MS}
                     animateOnMount
                   />
                 ) : (
@@ -363,6 +372,7 @@ export function ReportsScreen() {
                   <AnimatedNumber
                     value={lowStock.data}
                     format={(n) => f.quantity(Math.round(n))}
+                    durationMs={COUNT_UP_HEADLINE_DURATION_MS}
                     animateOnMount
                   />
                 ) : (
@@ -381,7 +391,13 @@ export function ReportsScreen() {
               loading={deadStock.isLoading}
               value={
                 deadStock.data ? (
-                  <Money value={deadStock.data.totalValue} formatters={f} animate animateOnMount />
+                  <Money
+                    value={deadStock.data.totalValue}
+                    formatters={f}
+                    animate
+                    animateOnMount
+                    durationMs={COUNT_UP_HEADLINE_DURATION_MS}
+                  />
                 ) : (
                   '—'
                 )

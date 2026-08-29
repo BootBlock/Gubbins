@@ -63,13 +63,20 @@ describe('Money', () => {
       expect(el.className).not.toContain('animate-count-pop');
     });
 
-    it('carries the settle-pop when motion is permitted', () => {
-      // No `animateOnMount`, so the display seeds at the true value and the initial paint is
-      // deterministic even before any frame runs; the pop class is present.
+    it('carries the settle-pop when a count-in rolls and motion is permitted', () => {
+      render(<Money value={42} animate animateOnMount motionProvider={motion(false)} data-testid="m" />);
+      expect(screen.getByTestId('m').className).toContain('animate-count-pop');
+    });
+
+    // The pop is a settle, so it belongs to a roll. Without `animateOnMount` the display seeds at
+    // the true value and nothing rolls — and since the pop is held back by the roll duration, a
+    // pop here would bounce long after the figure had settled.
+    it('does not pop on a plain mount, where no roll ran', () => {
       render(<Money value={42} animate motionProvider={motion(false)} data-testid="m" />);
       const el = screen.getByTestId('m');
       expect(el.textContent).toBe('£42.00');
-      expect(el.className).toContain('animate-count-pop');
+      expect(el.className).not.toContain('animate-count-pop');
+      expect(el.style.animationDelay).toBe('');
     });
 
     it('still renders an em-dash for a non-finite value when animating', () => {

@@ -1,4 +1,4 @@
-import { Money } from '@/components/foundry';
+import { Bar, Money } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { StockAgingReport } from '../stock-aging';
 
@@ -26,7 +26,6 @@ export function StockAgingChart({
     <ul className="flex flex-col gap-3" data-testid="stock-aging-chart">
       {report.buckets.map((bucket) => {
         const fraction = max > 0 ? bucket.value / max : 0;
-        const widthPercent = Math.max(2, Math.round(fraction * 100));
         const isOldest = bucket.maxDays === null;
         return (
           <li key={bucket.label} className="flex flex-col gap-1">
@@ -37,14 +36,7 @@ export function StockAgingChart({
                 <Money value={bucket.value} formatters={formatters} />
               </span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
-              <div
-                className={`h-full rounded-full transition-[width] duration-500 ease-emphasized ${
-                  isOldest ? 'bg-warning' : 'bg-primary'
-                }`}
-                style={{ width: `${widthPercent}%` }}
-              />
-            </div>
+            <Bar value={fraction} fillClassName={isOldest ? 'bg-warning' : 'bg-primary'} />
           </li>
         );
       })}

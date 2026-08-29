@@ -1,4 +1,4 @@
-import { Money, ShowMore, useProgressiveReveal } from '@/components/foundry';
+import { Bar, Money, ShowMore, useProgressiveReveal } from '@/components/foundry';
 import type { Formatters } from '@/lib/format';
 import type { ValueGroup } from '../reports';
 
@@ -40,7 +40,6 @@ export function ValueBreakdown({
       <ul className="flex flex-col gap-3">
         {groups.slice(0, reveal.limit).map((group) => {
           const fraction = max > 0 ? group.value / max : 0;
-          const widthPercent = Math.max(2, Math.round(fraction * 100));
           return (
             <li key={group.id ?? 'ungrouped'} className="flex flex-col gap-1">
               <div className="flex items-baseline justify-between gap-3 text-sm">
@@ -51,12 +50,7 @@ export function ValueBreakdown({
                   className="shrink-0 text-muted-foreground"
                 />
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
-                <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-500 ease-emphasized"
-                  style={{ width: `${widthPercent}%` }}
-                />
-              </div>
+              <Bar value={fraction} />
             </li>
           );
         })}

@@ -1,8 +1,8 @@
-import { Fragment } from 'react';
+import { Fragment, type CSSProperties } from 'react';
 import { cn } from '@/lib/utils';
 import type { Formatters } from '@/lib/format';
 import { useFormatters } from '@/lib/useFormatters';
-import { useCountUp } from './useCountUp';
+import { COUNT_UP_DURATION_MS, useCountUp, useHasRolled } from './useCountUp';
 import { type MediaQueryProvider } from './useReducedMotion';
 import { useDecorationMotionReduced } from './decoration-motion';
 
@@ -33,7 +33,10 @@ export interface MoneyProps {
   readonly animate?: boolean;
   /** With `animate`, also roll up from 0 on first mount (a "count-in"). Default false. */
   readonly animateOnMount?: boolean;
-  /** Roll duration in milliseconds when animating. Default 650ms. */
+  /**
+   * Roll duration in milliseconds when animating. Defaults to {@link COUNT_UP_DURATION_MS}; pass
+   * `COUNT_UP_HEADLINE_DURATION_MS` for a headline total that counts in as its screen loads.
+   */
   readonly durationMs?: number;
   /** Injectable reduced-motion provider (test seam), forwarded to the decoration-motion gate. */
   readonly motionProvider?: MediaQueryProvider;
@@ -119,7 +122,7 @@ function AnimatedMoney({
   currency,
   fmt,
   animateOnMount,
-  durationMs,
+  durationMs = COUNT_UP_DURATION_MS,
   motionProvider,
   className,
   symbolClassName,
@@ -137,12 +140,19 @@ function AnimatedMoney({
 }) {
   const reduced = useDecorationMotionReduced(motionProvider);
   const display = useCountUp(value, { durationMs, animateOnMount, reduced });
+  // The pop is a settle, so it belongs only to a roll that actually ran. The hook is called
+  // unconditionally — `reduced` gates the result, never the call.
+  const rolled = useHasRolled(Boolean(animateOnMount));
+  const pop = !reduced && rolled;
 
   return (
     <MoneyParts
       key={value}
       parts={fmt.currencyParts(display, currency)}
-      className={cn('inline-block', !reduced && 'animate-count-pop', className)}
+      className={cn('inline-block', pop && 'animate-count-pop', className)}
+      // Hold the settle-pop back by the roll duration so it fires as the figure lands rather than
+      // while it is still climbing (`animate-count-pop` has no fill mode, so the wait paints nothing).
+      style={pop ? { animationDelay: `${durationMs}ms` } : undefined}
       symbolClassName={symbolClassName}
       data-testid={testId}
     />
@@ -157,24 +167,26 @@ function AnimatedMoney({
 function MoneyParts({
   parts,
   className,
+  style,
   symbolClassName,
   'data-testid': testId,
 }: {
   parts: ReturnType<Formatters['currencyParts']>;
   className?: string;
+  style?: CSSProperties;
   symbolClassName?: string;
   'data-testid'?: string;
 }) {
   if (!parts) {
     return (
-      <span className={cn('tabular-nums', className)} data-testid={testId}>
+      <span className={cn('tabular-nums', className)} style={style} data-testid={testId}>
         —
       </span>
     );
   }
 
   return (
-    <span className={cn('tabular-nums', className)} data-testid={testId}>
+    <span className={cn('tabular-nums', className)} style={style} data-testid={testId}>
       {parts.map((part, index) =>
         part.type === 'currency' ? (
           <span key={`${part.type}-${index}`} className={cn('text-money-symbol opacity-80', symbolClassName)}>
