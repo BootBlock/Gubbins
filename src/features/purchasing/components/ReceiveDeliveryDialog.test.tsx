@@ -136,6 +136,22 @@ describe('ReceiveDeliveryDialog — the whole delivery arrived', () => {
     expect(screen.getByTestId('po-delivery-error')).toBeInTheDocument();
   });
 
+  it('keeps a corrected quantity when every row is re-ticked', () => {
+    renderDialog([entry('l1', 'M3 bolt', 50), entry('l2', 'M3 nut', 20)]);
+
+    fireEvent.change(qtyFieldOf('M3 nut'), { target: { value: '5' } });
+    fireEvent.click(screen.getByTestId('po-delivery-clear-all'));
+    fireEvent.click(screen.getByTestId('po-delivery-select-all'));
+
+    // Ticking every row says the delivery arrived, not that the user's correction was wrong.
+    expect((qtyFieldOf('M3 nut') as HTMLInputElement).value).toBe('5');
+    fireEvent.click(screen.getByTestId('po-delivery-save'));
+    expect(submitted().map((r) => [r.lineId, r.quantity])).toEqual([
+      ['l1', 50],
+      ['l2', 5],
+    ]);
+  });
+
   it('re-ticks a row when its quantity is edited, but not merely focused', () => {
     renderDialog([entry('l1', 'M3 bolt', 50)]);
 

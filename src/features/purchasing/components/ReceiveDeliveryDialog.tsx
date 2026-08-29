@@ -1,10 +1,10 @@
 import { useId, useMemo, useState, type FormEvent } from 'react';
 import { Button, Checkbox, FormField, Input, Modal } from '@/components/foundry';
 import { LocationSelect, type LocationOption } from '@/features/inventory/components/LocationSelect';
-import type { BatchIdentity } from '@/features/inventory/batches';
 import type { PurchaseOrderLine, PurchaseOrderLineReceipt, TrackingMode } from '@/db/repositories';
 import { useT } from '@/features/i18n';
-import { recordOnlyReceiptReason } from '@/features/projects/receipts';
+import { batchIdentityFrom } from '@/features/inventory/batches';
+import { recordOnlyReason } from '@/features/projects/receipts';
 import { fromDateInputValue } from '@/lib/date-input';
 import { useFormatters } from '@/lib/useFormatters';
 
@@ -59,11 +59,6 @@ interface RowState {
   readonly quantity: string;
 }
 
-function optionalText(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
-}
-
 /** Units still to arrive on a line, floored at zero. */
 function outstandingOf(line: PurchaseOrderLine): number {
   return Math.max(0, line.orderedQty - line.receivedQty);
@@ -99,11 +94,14 @@ export function ReceiveDeliveryDialog({
     setRows((prev) => new Map(prev).set(lineId, next));
   };
 
+  // Ticking or clearing every row changes only whether each is included — a quantity the user has
+  // already corrected is theirs, and re-filling it would quietly undo the correction.
   const setEveryRow = (include: boolean) => {
-    setRows(() => {
+    setRows((prev) => {
       const next = new Map<string, RowState>();
       for (const entry of lines) {
-        next.set(entry.line.id, { include, quantity: String(outstandingOf(entry.line)) });
+        const row = prev.get(entry.line.id);
+        next.set(entry.line.id, { include, quantity: row?.quantity ?? String(outstandingOf(entry.line)) });
       }
       return next;
     });
@@ -114,7 +112,7 @@ export function ReceiveDeliveryDialog({
   const anyLandsStock = useMemo(
     () =>
       lines.some(
-        (entry) => entry.trackingMode === undefined || recordOnlyReceiptReason(entry.trackingMode) === null,
+        (entry) => entry.trackingMode === undefined || recordOnlyReason(entry.trackingMode) === null,
       ),
     [lines],
   );
@@ -126,16 +124,9 @@ export function ReceiveDeliveryDialog({
     setError(null);
 
     const receipts: PurchaseOrderLineReceipt[] = [];
-    // The shared batch identity, built once. A date alone is enough to make this a tracked lot:
-    // an expiry is what FEFO consumes by and what the expiry alerts read (issue #684). Mirrors
-    // `ReceiveLineDialog`'s own rule.
-    const bn = optionalText(batchNumber);
-    const ln = optionalText(lotNumber);
-    const expiry = fromDateInputValue(expiryDate);
-    const batch: BatchIdentity | undefined =
-      bn !== null || ln !== null || expiry !== null
-        ? { batchNumber: bn, lotNumber: ln, expiryDate: expiry }
-        : undefined;
+    // One batch identity for the whole delivery, built by the same seam every receipt dialog uses,
+    // so what counts as a tracked lot cannot differ between them.
+    const batch = batchIdentityFrom(batchNumber, lotNumber, fromDateInputValue(expiryDate));
 
     for (const entry of lines) {
       const row = rowFor(entry);
@@ -152,8 +143,7 @@ export function ReceiveDeliveryDialog({
       }
       // A record-only line reaches the repository as a bare quantity: it discards the destination
       // and the batch on that path, so sending them would describe a placement that never happened.
-      const recordOnly =
-        entry.trackingMode !== undefined && recordOnlyReceiptReason(entry.trackingMode) !== null;
+      const recordOnly = entry.trackingMode !== undefined && recordOnlyReason(entry.trackingMode) !== null;
       receipts.push(
         recordOnly
           ? { lineId: entry.line.id, quantity: qty }
@@ -262,8 +252,9 @@ export function ReceiveDeliveryDialog({
           {lines.map((entry) => {
             const row = rowFor(entry);
             const outstanding = outstandingOf(entry.line);
-            const reason =
-              entry.trackingMode === undefined ? null : recordOnlyReceiptReason(entry.trackingMode);
+            // The clause is read as a *key*, not as the seam's stored English: this sentence is
+            // translated, and splicing English into it would leave a German reader half a sentence.
+            const reason = entry.trackingMode === undefined ? null : recordOnlyReason(entry.trackingMode);
             return (
               <li
                 key={entry.line.id}
@@ -289,7 +280,9 @@ export function ReceiveDeliveryDialog({
                       <>
                         {' · '}
                         <span data-testid="po-delivery-record-only">
-                          {t('purchasing.orders.receive.recordOnly', { vars: { reason } })}
+                          {t('purchasing.orders.receive.recordOnly', {
+                            vars: { reason: t(reason.messageKey) },
+                          })}
                         </span>
                       </>
                     )}
