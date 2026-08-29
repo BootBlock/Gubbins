@@ -163,8 +163,10 @@ that location. Three ticks in the **Print location label** dialog decide what is
   apart at a glance.
 - **Short code** — the fallback identifier described above.
 
-Clear all three and you get a code-only sticker: still scannable, but nothing on it says which
-location it belongs to until you scan it.
+Clear all three and a QR label becomes a code-only sticker: still scannable, but nothing on it
+says which location it belongs to until you scan it. A **Code 128** label still prints its own
+value — the location name, or the short code where the name is too long — in small characters
+under the bars, so that one is never wordless.
 
 > **⚠️ Heads-up**
 > Each line you turn on takes height from the QR code. Turning them all on for a small die-cut
