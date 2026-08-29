@@ -20,8 +20,9 @@ checks it against the items you already have and tells you when something matche
 - **"An item called … already exists"** — the names are merely *similar*, so it's worth a look.
 
 Both are **advice, not a rule**. Item names don't have to be unique, and two things can legitimately
-share one. The message appears when you leave the field and clears again as soon as you carry on
-typing.
+share one. While you're typing, the message stays out of the way; it appears when you leave the
+field, and clears again as soon as you carry on. A name you didn't type — an item's stored name
+when you open it for editing — is checked straight away.
 
 The [[barcode field|Items]] does the same for a GTIN another item already carries.
 
@@ -103,11 +104,12 @@ Because stock stays put, a duplicate holding real stock is worth counting into t
 - A very large inventory is scanned **oldest first**, up to a limit. When that happens Gubbins says
   how many items it examined out of how many you have, so you know there may be more.
 - Only the first hundred groups are shown at once. Work through them and scan again for the rest.
-- The similar-name pass compares names that share their first three characters, or a whole word of
-  four letters or more. Two names alike in neither are never compared, so it can miss a pair.
-- It also skips a word that a great many items share — `screw`, `cable` — because comparing every
-  pair of those would cost more than the rest of the scan put together. So a pair whose *only*
-  thing in common is a very common word can be missed too.
+- The similar-name pass only compares two names when they share an opening (their first three
+  characters, spaces ignored) or a whole word of four characters or more. Two names alike in
+  neither are never compared, so it can miss a pair.
+- It also gives up on any opening or word shared by **more than 200 items** — `screw`, `cable`,
+  `cab` — because comparing every pair of those would cost more than the rest of the scan put
+  together. A pair whose only thing in common is that popular a word or opening is missed too.
 - Neither limit applies to the exact matches.
 
 ## Related pages

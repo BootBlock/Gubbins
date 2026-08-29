@@ -54,7 +54,6 @@ import { activityKeys } from '@/features/activity/queries';
 import { checkoutKeys } from '@/features/contacts/keys';
 import { bookingKeys } from '@/features/bookings/bookings';
 import { purchaseOrderKeys } from '@/features/purchasing/queries';
-import { supplierKeys } from '@/features/suppliers/queries';
 import { reportKeys } from '@/features/reports/keys';
 import { inventoryKeys } from './queries';
 import { resolveItemTagNames, type BulkEditSpec } from './bulk-edit';
@@ -594,8 +593,11 @@ export function useSoftDeleteItem() {
  * than a prediction, and there is nothing honest to paint on the screen before the transaction
  * says what actually happened. The tool shows the result; the caches are swept afterwards.
  *
- * The sweep is wide on purpose: checkouts, bookings, maintenance, projects, purchase orders and
- * supplier parts can all have moved, and every one of those is read on a screen of its own.
+ * The sweep is wide on purpose. A merge is the one write that re-points rows across a dozen
+ * tables at once, and several of them are read under key roots `invalidateItems` never reaches:
+ * loans, bookings, purchase orders and the maintenance feed each sit outside `items()`. The rest
+ * — an item's own supplier parts, its BOM lines, its relations — are already under `item(id)`,
+ * so the ordinary sweep covers them.
  */
 export function useMergeItems() {
   const client = useQueryClient();
@@ -607,14 +609,15 @@ export function useMergeItems() {
       invalidateItems(client);
       void client.invalidateQueries({ queryKey: inventoryKeys.locations() });
       void client.invalidateQueries({ queryKey: activityKeys.all });
-      // These four live in key namespaces of their own that `invalidateItems` does not reach, and
-      // a merge is the one write that re-points rows in all of them at once. Without the sweep,
-      // an open Loans, Bookings, Purchase-orders or Supplier screen keeps rendering cached rows
-      // naming an item that no longer holds them.
+      // Each of these sits outside the `items()` prefix, so `invalidateItems` cannot reach it.
+      // Without the sweep, an open Loans, Bookings or Purchase-orders screen — and the
+      // maintenance-due badge in the always-mounted nav — keeps naming an item that no longer
+      // holds the row. `maintenance()` is a *sibling* of `items()`, not a child, which is
+      // exactly why it has to be named (issue #623 made the same point for the alert feeds).
       void client.invalidateQueries({ queryKey: checkoutKeys.all });
       void client.invalidateQueries({ queryKey: bookingKeys.all });
       void client.invalidateQueries({ queryKey: purchaseOrderKeys.all });
-      void client.invalidateQueries({ queryKey: supplierKeys.all });
+      void client.invalidateQueries({ queryKey: inventoryKeys.maintenance() });
     },
   });
 }

@@ -471,7 +471,10 @@ function GroupCard({
             >
               {running ? <Spinner /> : <MergeIcon />}
               {t('inventory.dedupe.group.merge', {
-                vars: { count: choice.removeIds.length, name: keeper?.name ?? '' },
+                vars: {
+                  count: choice.removeIds.length,
+                  name: keeper ? itemDisplayName(keeper.name, keeper.serialNo) : '',
+                },
               })}
             </Button>
             <span className="text-xs text-muted-foreground">{t('inventory.dedupe.group.warning')}</span>
