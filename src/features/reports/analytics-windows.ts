@@ -11,7 +11,7 @@
  * analytics, in ascending duration order so the segmented control reads shortest-first
  * (7d on the left) to longest (365d on the right).
  */
-export const ANALYTICS_WINDOWS = [7, 14, 30, 60, 90, 365] as const;
+export const ANALYTICS_WINDOWS = [7, 14, 30, 60, 90, 180, 365] as const;
 
 /** A trailing-window length the analytics controls offer. */
 export type AnalyticsWindow = (typeof ANALYTICS_WINDOWS)[number];

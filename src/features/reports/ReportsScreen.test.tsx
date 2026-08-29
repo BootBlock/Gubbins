@@ -241,15 +241,16 @@ let salesEnabled: boolean | undefined;
 // the panel.
 let movementWindowArg: number | undefined;
 
-vi.mock('./queries', () => ({
+// The selectable windows are re-exported by `./queries` from the dependency-free
+// `./analytics-windows` module, so the mock takes them from the real module rather than
+// restating the list, which would drift the moment a window is added or the normaliser
+// changes.
+vi.mock('./queries', async () => ({
   REPORT_WINDOW_DAYS: 30,
   DEAD_STOCK_SINCE_DAYS: 90,
   REPORT_MOVEMENT_BUCKETS: 15,
   ABC_WINDOW_DAYS: 365,
-  ANALYTICS_WINDOWS: [7, 14, 30, 60, 90, 365],
-  DEFAULT_ANALYTICS_WINDOW: 90,
-  normaliseAnalyticsWindow: (days: unknown) =>
-    [7, 14, 30, 60, 90, 365].includes(days as number) ? (days as number) : 90,
+  ...(await import('./analytics-windows')),
   VALUATION_TREND_POINTS: 12,
   DATA_HYGIENE_STALE_DAYS: 180,
   SPEND_BUCKETS: 15,
@@ -461,6 +462,14 @@ describe('ReportsScreen — advanced analytics (Phase 74)', () => {
     // The default 90-day window is pressed.
     const active = group.querySelector('[aria-pressed="true"]');
     expect(active?.textContent).toContain('90');
+    // The windows issue #116 asks for, shortest-first. Spelled out rather than compared to
+    // `ANALYTICS_WINDOWS`, so the control is pinned to what the user was promised and not
+    // merely to whatever the constant happens to say — a window added to the constant but
+    // dropped, reordered or relabelled on the way to the DOM fails here.
+    const offered = [...group.querySelectorAll('button')].map((b) =>
+      Number((b.textContent ?? '').replace(/[^0-9]/g, '')),
+    );
+    expect(offered).toEqual([7, 14, 30, 60, 90, 180, 365]);
   });
 
   it('announces a failure once the analytics queries error', () => {
