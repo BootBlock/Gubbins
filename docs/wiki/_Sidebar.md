@@ -121,6 +121,7 @@
 - [[Command palette & shortcuts|Command-Palette-and-Shortcuts]]
 - [[Calculations in number fields|Calculations-in-Number-Fields]]
 - [[How long a text field can be|Text-Field-Limits]]
+- [[Achievements]]
 - [[Glossary]]
 - [[FAQ & troubleshooting|FAQ-and-Troubleshooting]]
 - [[Privacy & security|Privacy-and-Security]]

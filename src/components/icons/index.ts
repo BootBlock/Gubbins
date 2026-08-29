@@ -286,6 +286,14 @@ export {
 
   // The hidden lab screen (`/lab`) — testing switches for behaviour that is normally automatic.
   FlaskConical as LabIcon,
+
+  // Achievements (issue #412) — the screen's own glyph, the padlock on one not yet earned, and
+  // the stacked-crates glyph for the "your inventory reached N items" awards. `Lock` is already
+  // exported as `PasswordIcon`; a second alias keeps the call site reading as what it means, the
+  // same way `Star` is both `PreferredIcon` and `FavouriteIcon`.
+  Trophy as AchievementIcon,
+  Lock as LockedIcon,
+  Boxes as CollectionIcon,
 } from 'lucide-react';
 
 export type { LucideIcon, LucideProps } from 'lucide-react';

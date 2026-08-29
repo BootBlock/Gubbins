@@ -255,10 +255,13 @@ export const STORAGE_KEYS = [
   },
   {
     key: 'gubbins:milestones',
-    store: 'useMilestonesStore',
+    store: 'useAchievementsStore',
     storage: 'local',
     eraseGroup: 'local-ui',
     backupIncluded: false,
+    // The key predates the Achievements screen (issue #412), which grew the store from one
+    // milestone boolean into a map of earned achievements. It is deliberately *not* renamed:
+    // a new key would read as empty and silently discard what every install had already earned.
   },
   {
     key: EMOJI_PICKER_SIZE_KEY,

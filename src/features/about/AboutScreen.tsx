@@ -1,6 +1,15 @@
 import { type ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
 import { PageContainer, PageHeader, Surface, buttonVariants, MAIN_CONTENT_ID } from '@/components/foundry';
-import { InfoIcon, LinkIcon, AlertIcon, SecureIcon, ContactsIcon, WikiIcon } from '@/components/icons';
+import {
+  AchievementIcon,
+  InfoIcon,
+  LinkIcon,
+  AlertIcon,
+  SecureIcon,
+  ContactsIcon,
+  WikiIcon,
+} from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { APP_VERSION, APP_RELEASE_DATE } from '@/lib/app-version';
 import { useT } from '@/features/i18n';
@@ -63,6 +72,16 @@ export function AboutScreen() {
               </dd>
             </div>
           </dl>
+        </AboutSection>
+
+        <AboutSection icon={<AchievementIcon />} title={t('about.achievements.title')}>
+          <p className="text-sm text-muted-foreground">{t('about.achievements.body')}</p>
+          <div className="mt-4">
+            <Link to="/achievements" className={cn(buttonVariants({ variant: 'outline' }))}>
+              <AchievementIcon />
+              {t('about.achievements.link')}
+            </Link>
+          </div>
         </AboutSection>
 
         <AboutSection icon={<LinkIcon />} title={t('about.project.title')}>

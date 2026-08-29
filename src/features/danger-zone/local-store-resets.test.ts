@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { STORAGE_KEYS } from '@/lib/storage-keys';
-import { useMilestonesStore } from '@/state/stores/useMilestonesStore';
+import { useAchievementsStore } from '@/state/stores/useAchievementsStore';
 import {
   LOCAL_STORE_RESETS,
   resetErasedLocalState,
@@ -106,13 +106,13 @@ describe('resetLocalStores', () => {
   it('resets a real production store, not just a stand-in', () => {
     // Proves `getInitialState()` returns the defaults (not the rehydrated state) through the real
     // persist middleware, and that the store's actions survive the `replace: true` write.
-    useMilestonesStore.getState().celebrateFirstItem();
-    expect(useMilestonesStore.getState().firstItemCelebrated).toBe(true);
+    useAchievementsStore.getState().unlock('first-item', 1_700_000_000_000);
+    expect(useAchievementsStore.getState().unlocked['first-item']).toBe(1_700_000_000_000);
 
     resetLocalStores(['gubbins:milestones'], localStorage);
 
-    expect(useMilestonesStore.getState().firstItemCelebrated).toBe(false);
-    expect(typeof useMilestonesStore.getState().celebrateFirstItem).toBe('function');
+    expect(useAchievementsStore.getState().unlocked).toEqual({});
+    expect(typeof useAchievementsStore.getState().unlock).toBe('function');
     expect(localStorage.getItem('gubbins:milestones')).toBeNull();
   });
 
