@@ -19,6 +19,13 @@ Setup wires six things:
     the bridge runs with ``GUBBINS_BRIDGE_ALLOW_WRITES=on``;
 and forwards the optional ``/health`` sensor and attention binary-sensor platforms.
 
+Every service is registered once for the domain as a whole, not once per entry, so a call needs a
+way to say *which* bridge it means once more than one is set up. That is the optional
+``config_entry_id`` field on all six, resolved by :func:`_async_resolve_client`: empty keeps
+working while there is exactly one bridge, and is refused rather than guessed at when there are
+two. The voice intent has no such field to offer, so it asks every bridge instead — see
+:mod:`.intent`.
+
 The loan pair is what makes the ``on loan`` / ``overdue`` binary sensors actionable rather than
 merely informative: an automation could previously be told a loan was overdue but had no way to
 close it, and no way to lend anything out in the first place.
@@ -54,6 +61,7 @@ from .api import (
 )
 from .bridge_id import bridge_id_from_health
 from .const import (
+    ATTR_CONFIG_ENTRY_ID,
     CONF_HOST,
     CONF_PORT,
     CONF_TOKEN,
@@ -73,8 +81,17 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
+# The one field every service shares: which configured bridge to send the call to.
+#
+# It is optional, and stays empty in the ordinary single-bridge setup — see the resolution rules
+# in :func:`_async_resolve_client`, which is where "empty" acquires its meaning. Merged into each
+# schema below rather than repeated in all six, so there is one definition of the field and no
+# chance of a service quietly not accepting it.
+_TARGET_FIELDS = {vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string}
+
 _SEARCH_SCHEMA = vol.Schema(
     {
+        **_TARGET_FIELDS,
         vol.Required("query"): cv.string,
         vol.Optional("limit"): vol.All(vol.Coerce(int), vol.Range(min=1, max=25)),
     }
@@ -82,6 +99,7 @@ _SEARCH_SCHEMA = vol.Schema(
 
 _ADJUST_QUANTITY_SCHEMA = vol.Schema(
     {
+        **_TARGET_FIELDS,
         vol.Required("item_id"): cv.string,
         vol.Required("delta"): vol.All(vol.Coerce(int), vol.Range(min=-1_000_000, max=1_000_000)),
         vol.Optional("note"): cv.string,
@@ -94,6 +112,7 @@ _ADJUST_QUANTITY_SCHEMA = vol.Schema(
 # a discrete count can only ever move in whole units.
 _ADJUST_GAUGE_SCHEMA = vol.Schema(
     {
+        **_TARGET_FIELDS,
         vol.Required("item_id"): cv.string,
         vol.Required("delta"): vol.All(vol.Coerce(float), vol.Range(min=-1_000_000, max=1_000_000)),
         vol.Optional("note"): cv.string,
@@ -111,6 +130,7 @@ _ADJUST_GAUGE_SCHEMA = vol.Schema(
 # a `yyyy-MM-dd` string typed into YAML and the date object the UI's date selector produces.
 _CHECK_OUT_SCHEMA = vol.Schema(
     {
+        **_TARGET_FIELDS,
         vol.Required("item_id"): cv.string,
         vol.Optional("contact_name"): cv.string,
         vol.Optional("contact_id"): cv.string,
@@ -129,6 +149,7 @@ _CHECK_OUT_SCHEMA = vol.Schema(
 # an id only once there is more than one to choose between.
 _CHECK_IN_SCHEMA = vol.Schema(
     {
+        **_TARGET_FIELDS,
         vol.Required("item_id"): cv.string,
         vol.Optional("checkout_id"): cv.string,
         vol.Optional("note"): cv.string,
@@ -141,6 +162,7 @@ _CHECK_IN_SCHEMA = vol.Schema(
 # app writes its own ledger note describing the move, so there is no `note` to add here.
 _TRANSFER_STOCK_SCHEMA = vol.Schema(
     {
+        **_TARGET_FIELDS,
         vol.Required("item_id"): cv.string,
         vol.Required("from_location_id"): cv.string,
         vol.Required("to_location_id"): cv.string,
@@ -272,11 +294,59 @@ def _iso_day(value: date | None) -> str | None:
     return (value.date() if isinstance(value, datetime) else value).isoformat()
 
 
-def _first_client(hass: HomeAssistant) -> GubbinsClient | None:
-    """Return any configured client (single-bridge is the common case)."""
-    for client in hass.data.get(DOMAIN, {}).values():
-        return client
-    return None
+def _entry_title(hass: HomeAssistant, entry_id: str) -> str:
+    """Name a loaded entry the way the user sees it, falling back to its id."""
+    entry = hass.config_entries.async_get_entry(entry_id)
+    return entry.title if entry is not None else entry_id
+
+
+def _async_resolve_client(hass: HomeAssistant, call: ServiceCall) -> GubbinsClient:
+    """Return the bridge client this service call is aimed at, or explain why there is none.
+
+    Two bridges — a home vault and a workshop one — are a supported setup rather than a misuse:
+    each config entry is keyed on the bridge's own identity and brings its own device and its own
+    sensors. The services, though, are registered once for the domain, so a call carries no target
+    of its own. ``config_entry_id`` is that target.
+
+    The rules, in order:
+
+    * **Named** — the call names an entry, and that entry's client is used. An id that is not a
+      loaded Gubbins bridge is an error naming what went wrong, never a fallback to another one:
+      the write services move stock, and applying a workshop change to the home vault is exactly
+      the failure this field exists to prevent.
+    * **Empty, one bridge** — the single loaded bridge is used. This is the common setup, and
+      every automation written before the field existed keeps working unchanged.
+    * **Empty, several bridges** — the call is refused, listing the bridges by name. There is no
+      right answer to guess at, and guessing wrong writes to the wrong inventory silently: the
+      bridge accepts the change and returns a perfectly valid item, just the wrong one's.
+    """
+    clients: dict[str, GubbinsClient] = hass.data.get(DOMAIN, {})
+    entry_id = call.data.get(ATTR_CONFIG_ENTRY_ID)
+
+    if entry_id is not None:
+        client = clients.get(entry_id)
+        if client is not None:
+            return client
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            raise HomeAssistantError(
+                f"'{entry_id}' is not a Gubbins bridge. Pick one in the Bridge field, or leave "
+                "it empty when only one bridge is set up."
+            )
+        raise HomeAssistantError(
+            f"The Gubbins bridge '{entry.title}' is not loaded, so nothing was sent to it. "
+            "Check it under Settings, Devices & services."
+        )
+
+    if not clients:
+        raise HomeAssistantError("No Gubbins bridge is configured")
+    if len(clients) > 1:
+        names = ", ".join(sorted(_entry_title(hass, known) for known in clients))
+        raise HomeAssistantError(
+            f"More than one Gubbins bridge is set up ({names}), so this call has nowhere "
+            "unambiguous to go. Name the one you mean in the Bridge field."
+        )
+    return next(iter(clients.values()))
 
 
 def _async_register_search_service(hass: HomeAssistant) -> None:
@@ -285,9 +355,7 @@ def _async_register_search_service(hass: HomeAssistant) -> None:
         return
 
     async def _handle_search(call: ServiceCall) -> ServiceResponse:
-        client = _first_client(hass)
-        if client is None:
-            raise HomeAssistantError("No Gubbins bridge is configured")
+        client = _async_resolve_client(hass, call)
         try:
             payload = await client.search(call.data["query"], call.data.get("limit"))
         except GubbinsConnectionError as err:
@@ -452,9 +520,7 @@ def _async_register_write_service(
         return
 
     async def _handle_write(call: ServiceCall) -> ServiceResponse:
-        client = _first_client(hass)
-        if client is None:
-            raise HomeAssistantError("No Gubbins bridge is configured")
+        client = _async_resolve_client(hass, call)
         try:
             return await write(client, call)
         except GubbinsWritesDisabledError as err:

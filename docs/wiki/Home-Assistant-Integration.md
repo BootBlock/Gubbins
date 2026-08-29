@@ -148,6 +148,28 @@ its own entry in Home Assistant, and neither is set in stone.
 > MQTT discovery, webhooks, reading a scale — is plain Home Assistant configuration and has no such
 > requirement.
 
+## More than one bridge
+
+You can set up **two or more bridges** — a household vault and a workshop one, say. Each is a
+separate entry with its own device and its own sensors, and the two inventories stay entirely
+apart.
+
+Every Gubbins action takes an optional **Bridge** field naming which one the call is for. With a
+single bridge you can leave it empty, and anything you built before this existed carries on
+working unchanged. With two or more, name the bridge you mean: an action that names none is
+refused, listing your bridges by name, rather than going to whichever one happened to start first.
+
+> **⚠️ Heads-up**
+> This matters most for the change actions below. Sending a workshop adjustment to the household
+> vault *succeeds*: the wrong item comes back, updated, and nothing tells you. Naming the bridge is
+> what prevents it.
+
+Spoken lookups have nowhere to put a bridge name, so they ask **all** of them and answer from
+wherever the item actually is. Found on one, and you get that bridge's answer exactly as before;
+found on both, and you get both, each behind the name you gave the bridge. A bridge that can't be
+reached doesn't drown out one that answered. The event a lookup raises now names the bridge it came
+from too, so an automation that lights up a bin knows whose bin it is.
+
 ## Optional write-back
 
 If you choose to enable it, Home Assistant can also *change* things through the bridge — a peer

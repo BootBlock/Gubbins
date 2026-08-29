@@ -1,3 +1,12 @@
+# Which bridge a call is for: every service below takes an optional config_entry_id.
+#
+# More than one Gubbins bridge is a supported setup — a home vault and a workshop one, say — and
+# each gets its own config entry, device and sensors. These services, though, are registered once
+# for the domain, so a call has to say which bridge it means. Leave the field empty and the single
+# configured bridge is used, exactly as before; with two set up, a call that names neither is
+# refused rather than sent to whichever happened to load first. That matters most for the five
+# write services: applying a workshop change to the home vault succeeds, and looks like a success.
+#
 # Read-only search against the Gubbins bridge. Returns the matched items as response
 # data (use response_variable in a script/automation, or "Call service" in Developer
 # Tools to see the result). It never modifies inventory.
@@ -8,6 +17,12 @@
 # place without going through the voice intent.
 search:
   fields:
+    config_entry_id:
+      required: false
+      example: "01JABCDEF0123456789ABCDEFG"
+      selector:
+        config_entry:
+          integration: gubbins
     query:
       required: true
       example: "ESP32"
@@ -38,6 +53,12 @@ search:
 # This moves a number only — to record WHO has something, use check_out / check_in below.
 adjust_quantity:
   fields:
+    config_entry_id:
+      required: false
+      example: "01JABCDEF0123456789ABCDEFG"
+      selector:
+        config_entry:
+          integration: gubbins
     item_id:
       required: true
       example: "item-esp32"
@@ -71,6 +92,12 @@ adjust_quantity:
 # weight in Home Assistant, send the difference here.
 adjust_gauge:
   fields:
+    config_entry_id:
+      required: false
+      example: "01JABCDEF0123456789ABCDEFG"
+      selector:
+        config_entry:
+          integration: gubbins
     item_id:
       required: true
       example: "item-pla-filament"
@@ -107,6 +134,12 @@ adjust_gauge:
 # exact loan later, though you rarely need to.
 check_out:
   fields:
+    config_entry_id:
+      required: false
+      example: "01JABCDEF0123456789ABCDEFG"
+      selector:
+        config_entry:
+          integration: gubbins
     item_id:
       required: true
       example: "item-esp32"
@@ -167,6 +200,12 @@ check_out:
 # Same GUBBINS_BRIDGE_ALLOW_WRITES=on opt-in and checkouts permission as check_out.
 check_in:
   fields:
+    config_entry_id:
+      required: false
+      example: "01JABCDEF0123456789ABCDEFG"
+      selector:
+        config_entry:
+          integration: gubbins
     item_id:
       required: true
       example: "item-esp32"
@@ -197,6 +236,12 @@ check_in:
 # permission as adjust_quantity. Location ids come from the app or /api/v1/locations.
 transfer_stock:
   fields:
+    config_entry_id:
+      required: false
+      example: "01JABCDEF0123456789ABCDEFG"
+      selector:
+        config_entry:
+          integration: gubbins
     item_id:
       required: true
       example: "item-esp32"

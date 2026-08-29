@@ -23,6 +23,15 @@ INTENT_WHERE_IS = "GubbinsWhereIs"
 # It is never fired for a lookup that matched nothing. See homeassistant/README.md.
 EVENT_ITEM_LOCATED = "gubbins_item_located"
 
+# Optional field on every service: which configured bridge the call is meant for.
+#
+# It exists because more than one bridge is a supported setup — the config flow keys an entry on
+# the bridge's own identity, so a home vault and a workshop one both set up cleanly — while the
+# services are registered once for the domain and so have nothing to aim at on their own. Leaving
+# it empty stays correct, and stays the norm, while exactly one bridge is set up; with two, a call
+# that does not name one is refused rather than silently applied to whichever loaded first.
+ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+
 # Service that exposes a raw search to automations/dashboards.
 SERVICE_SEARCH = "search"
 

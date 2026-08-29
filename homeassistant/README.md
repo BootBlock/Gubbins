@@ -397,10 +397,12 @@ answer is unaffected.
 | `location_ids` | list of string | Every resolved location id, flattened and deduped. |
 | `matches` | list | One entry per item: `item_id`, `item_name`, and `placements`. |
 | `matches[].placements` | list | `location_id`, `location_name`, `quantity` per place the item sits. |
+| `config_entry_id` | string | Which configured bridge answered. Only interesting with more than one set up — see step 9. |
 
 ```yaml
 # Example event data (synthetic)
 query: "ESP32"
+config_entry_id: "01JABCDEF0123456789ABCDEFG"
 item_ids: ["item-esp32"]
 location_ids: ["loc-bin-42", "loc-shelf-2"]
 matches:
@@ -468,6 +470,48 @@ lit restarts the timer rather than queueing.
 > **💡 Tip** — if you'd rather not maintain the mapping in YAML, an entity named after the
 > location (`light.<location_name | slugify>`) works too:
 > `{{ trigger.event.data.matches[0].placements[0].location_name | slugify }}`.
+
+### 9. (Optional) More than one bridge — the `config_entry_id` field
+
+Two bridges are a supported setup: add a household one and a workshop one and each gets its own
+config entry, its own device and its own sensors. The **services**, though, belong to the
+integration as a whole rather than to one entry, so a call has to say which bridge it means.
+
+Every service in steps 5–7 therefore takes an optional `config_entry_id` — shown as **Bridge** in
+Developer Tools, with a picker listing the bridges you have set up.
+
+```yaml
+# Take one off the workshop shelf, not the household one.
+action: gubbins.adjust_quantity
+data:
+  config_entry_id: "01JABCDEF0123456789ABCDEFG"   # the workshop bridge
+  item_id: "item-esp32"
+  delta: -1
+```
+
+The rules:
+
+- **One bridge set up** — leave it out. Nothing above needs it, and every automation written
+  before the field existed keeps working exactly as it did.
+- **Two or more** — name one. A call that names none is **refused**, with an error listing your
+  bridges by name, rather than being sent to whichever entry loaded first.
+- **A bridge that is named but not loaded** is an error too. It never falls back to another one:
+  applying a workshop change to the household inventory succeeds, returns a perfectly valid item,
+  and gives you nothing to notice it by.
+
+Find an entry id under *Settings → Devices & services → Gubbins Inventory*: open the entry and it
+is the last path segment of the URL. In Developer Tools you can just pick the bridge by name.
+
+**Voice lookups have no such field** — nobody says *"where are my drill bits, on the workshop
+bridge"* — so they ask **every** bridge at once and answer from wherever the item actually is:
+
+- Found on one bridge → that bridge's answer, worded exactly as it is with a single bridge.
+- Found on both → both answers, each behind the name you gave the bridge (*"Workshop: …"*).
+- Found on neither → the same "couldn't find it" answer as before. A bridge that is unreachable
+  doesn't drown out a bridge that answered.
+
+The `gubbins_item_located` event (step 8) is fired **once per bridge that matched**, each carrying
+its own `config_entry_id`, so an automation that flashes a bin's light knows whose bin it is.
 
 ---
 
