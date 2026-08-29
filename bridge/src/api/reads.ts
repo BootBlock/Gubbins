@@ -16,7 +16,7 @@ import type { ServerResponse } from 'node:http';
 import { ItemRepository } from '@/db/repositories/ItemRepository.ts';
 import { LocationRepository } from '@/db/repositories/LocationRepository.ts';
 import { CategoryRepository } from '@/db/repositories/CategoryRepository.ts';
-import type { Item, LocationTreeNode, Page } from '@/db/repositories/types';
+import type { Cursor, Item, LocationTreeNode, Page } from '@/db/repositories/types';
 import type { ItemSort } from '@/db/repositories/item/sql.ts';
 import type { SearchAST } from '@/db/search/ast.ts';
 import { SearchAstError } from '@/db/search/parseASTtoSQL.ts';
@@ -360,10 +360,29 @@ export function readItemListFilters(url: URL): ItemQueryFilters {
 }
 
 /**
+ * How a multi-page read walks past the page it just read (issue #533).
+ *
+ * Present ⇒ the next page is fetched by **seeking** past `after` (the previous page's
+ * `endCursor`), so a walk to the end of a result set costs the same per page however deep it
+ * gets; absent ⇒ the historical `LIMIT ? OFFSET ?`, which SQLite serves by producing and
+ * discarding every row before the offset. `after` is itself absent on a walk's first page —
+ * there is no previous page to seek past — but passing the walk still selects the keyset
+ * ordering, which the first page must already be in for the cursors it hands back to be
+ * seekable.
+ */
+export interface ItemWalk {
+  readonly after?: Cursor;
+}
+
+/**
  * Fetch one page of items, single-sourcing the `$filter`-vs-`list` split every item query uses:
  * with a `$filter` the compiled `ast` is the **sole** row filter (location/category/$search are
  * ignored); without one, the plain `list` honours those scope filters. May throw
  * `SearchAstError` when the AST is invalid for a field — the caller maps that to a `400`.
+ *
+ * `walk` opts the page into the keyset walk described by {@link ItemWalk}; `offset` is then the
+ * absolute index of the page's first row rather than a SQL `OFFSET` (both arrive back as
+ * `Page.offset` either way).
  */
 export function itemPage(
   items: ItemRepository,
@@ -372,10 +391,25 @@ export function itemPage(
   sort: readonly ItemSort[] | undefined,
   limit: number,
   offset: number,
+  walk?: ItemWalk,
 ): Promise<Page<Item>> {
-  return ast !== undefined
-    ? items.searchByAst(ast, { limit, offset, includeInactive: filters.includeInactive, sort })
-    : items.list({ ...filters, limit, offset, sort });
+  if (ast !== undefined) {
+    return items.searchByAst(ast, {
+      limit,
+      offset,
+      includeInactive: filters.includeInactive,
+      sort,
+      ...(walk !== undefined ? { seek: walk } : {}),
+    });
+  }
+  // The list's own seek is bidirectional and positions rows in a virtualised list, so it wants a
+  // direction and the page's absolute start index as well as the cursor. A walk is forward-only
+  // and its `startIndex` is the running row count the caller already passes as `offset`.
+  const seek =
+    walk?.after !== undefined
+      ? { seek: { cursor: walk.after, direction: 'forward' as const, startIndex: offset } }
+      : {};
+  return items.list({ ...filters, limit, offset, sort, ...seek });
 }
 
 /** The `$count` twin of {@link itemPage}: the grand total under the same filter, no paging. */

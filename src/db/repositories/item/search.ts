@@ -17,7 +17,8 @@ import { buildFtsMatch } from '../../search/fts';
 import type { SearchAST } from '../../search/ast';
 import type { SqlValue } from '../../rpc/driver';
 import { rowToItem } from '../mappers';
-import type { Item, ItemRow, Page, PageParams } from '../types';
+import type { Cursor, Item, ItemRow, Page, PageParams } from '../types';
+import { buildSeekPredicate, extractCursor, renderOrderBy, resolveItemOrder } from './list-order';
 import {
   capabilityMatchScore,
   itemOrderByClause,
@@ -37,6 +38,30 @@ export interface SearchByAstParams extends PageParams, AstScopeParams {
    * relevance ordering.
    */
   readonly sort?: readonly ItemSort[];
+  /**
+   * Page by a forward keyset (seek) walk instead of `LIMIT ? OFFSET ?` (issue #533) — the same
+   * mechanism `ItemCoreRepository.list` offers, for the one caller that walks a filtered result
+   * set to its end rather than serving one page of it: the bridge's CSV export.
+   *
+   * Present ⇒ keyset, absent ⇒ offset. It has to be the *option* that selects the walk rather
+   * than the cursor, because seeking is only correct against the ordering the cursor was cut
+   * from — so the first page (no `after`) must already run that ordering, and every page after
+   * it seeks past the previous page's `endCursor`.
+   */
+  readonly seek?: AstSeek;
+}
+
+/**
+ * A forward keyset walk over an AST search (issue #533). `after` is the previous page's
+ * `endCursor`; omit it for the first page.
+ *
+ * Forward-only, unlike the list's bidirectional {@link import('./core').ItemSeek}: the caller is
+ * an export streaming a result set from its start to its end, and a scroll-up has no meaning
+ * there. It also carries no `startIndex` — nothing positions these rows in a virtualised list —
+ * so `Page.offset` stays at the running row count the caller passes as `offset`.
+ */
+export interface AstSeek {
+  readonly after?: Cursor;
 }
 
 /** The scope every AST read shares — the tree, plus where the caller says to look. */
@@ -121,36 +146,71 @@ export function withSearch<TBase extends Constructor<ItemCoreRepository>>(Base: 
      * translated by the single parameterised {@link parseASTtoSQL} utility (§5.1) and
      * scoped to active inventory unless `includeInactive` is set or the tree filters on
      * `active` itself ({@link activeScope}). Throws `SearchAstError` on an invalid/over-deep tree.
+     *
+     * `params.seek` swaps the `OFFSET` for a keyset walk (issue #533); see {@link AstSeek} for
+     * what that changes about the ordering, and why only a full-result-set walk asks for it.
      */
     async searchByAst(ast: SearchAST, params: SearchByAstParams = {}): Promise<Page<Item>> {
       const { limit, offset } = this.resolvePage(params);
       const [where, whereParams] = parseASTtoSQL(ast);
       const active = activeScope(ast, params.includeInactive);
       const [location, locationParams] = locationScope(ast, params.locationId);
+      const seek = params.seek;
 
       // Weighted-capability "best match" ranking (spec §4, §5.1): when the query
       // filters on one or more `capability:<key>` fields, order results by the summed
       // weight of *those* capabilities each item carries — heaviest matches first —
       // before the stable alphabetical tie-break. A query with no capability conditions
       // keeps the plain alphabetical order untouched (zero behavioural change).
-      const capabilityKeys = collectCapabilityKeys(ast);
+      //
+      // A keyset walk cannot rank: `match_score` is a projected expression, not a stored column,
+      // so no cursor can be cut from it and no seek predicate can compare against it. A walk
+      // therefore takes the list's own total order below instead — which is what its one caller
+      // wants anyway, since an export returns every matching row and "best first" ranks nothing.
+      const capabilityKeys = seek === undefined ? collectCapabilityKeys(ast) : [];
       const rankSelect = capabilityKeys.length > 0 ? `, ${capabilityMatchScore(capabilityKeys.length)}` : '';
       const rankParams = capabilityKeys.length > 0 ? capabilityKeys : [];
       const rankOrder = capabilityKeys.length > 0 ? 'match_score DESC, ' : '';
 
-      // An explicit sort replaces the relevance ordering entirely; otherwise keep the
+      // The keyset walk orders by the list's total-order spec — the one `buildSeekPredicate` cuts
+      // its cursors from, and the same order `list` (the unfiltered CSV's path) already returns.
+      // An explicit sort otherwise replaces the relevance ordering entirely; without one, keep the
       // capability-rank-then-alphabetical default (zero behavioural change when unsorted).
+      const seekTerms = seek !== undefined ? resolveItemOrder(params.sort) : undefined;
       const order =
-        itemOrderByClause(params.sort) ??
-        `${rankOrder}name COLLATE NOCASE ASC, serial_no ASC, created_at ASC`;
+        seekTerms !== undefined
+          ? renderOrderBy(seekTerms)
+          : (itemOrderByClause(params.sort) ??
+            `${rankOrder}name COLLATE NOCASE ASC, serial_no ASC, created_at ASC`);
+
+      // Seeking past a cursor is an extra WHERE conjunct and no `OFFSET`; the first page of a walk
+      // has no cursor yet, so it is the same statement with nothing to seek past.
+      const predicate =
+        seekTerms !== undefined && seek?.after !== undefined
+          ? buildSeekPredicate(seekTerms, seek.after)
+          : undefined;
+      const seekClause = predicate !== undefined ? ` AND (${predicate.sql})` : '';
+      const pageClause = seek !== undefined ? 'LIMIT ?' : 'LIMIT ? OFFSET ?';
 
       const rows = await this.driver.query<ItemRow>(
-        `SELECT ${ITEM_READ_COLUMNS}${rankSelect} FROM items WHERE (${where})${active}${location}
+        `SELECT ${ITEM_READ_COLUMNS}${rankSelect} FROM items WHERE (${where})${active}${location}${seekClause}
          ORDER BY ${order}
-         LIMIT ? OFFSET ?;`,
-        [...rankParams, ...whereParams, ...locationParams, limit, offset],
+         ${pageClause};`,
+        [
+          ...rankParams,
+          ...whereParams,
+          ...locationParams,
+          ...(predicate?.params ?? []),
+          limit,
+          ...(seek !== undefined ? [] : [offset]),
+        ],
       );
-      return this.toPage(rows.map(rowToItem), limit, offset);
+      const page = this.toPage(rows.map(rowToItem), limit, offset);
+      // Only a keyset read can hand back a usable cursor — an offset read's ordering is not the
+      // total order the cursor is defined against, so it leaves `endCursor` absent (as `Page`
+      // documents) rather than minting one that cannot be seeked with.
+      if (seekTerms === undefined || rows.length === 0) return page;
+      return { ...page, endCursor: extractCursor(rows[rows.length - 1]!, seekTerms) };
     }
 
     /** Count items matching a {@link SearchAST} (for result headers). */

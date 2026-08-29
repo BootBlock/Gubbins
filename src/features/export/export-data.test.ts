@@ -6,6 +6,8 @@ import {
   buildCatalogCsv,
   buildItemsCsv,
   buildItemsExport,
+  itemsCsvHeader,
+  itemsCsvRow,
   buildJsonExport,
   buildProjectMasterNote,
   buildProjectVault,
@@ -16,6 +18,7 @@ import {
   type VaultItem,
   type VaultLocation,
 } from './export-data';
+import { DELIMITED_ROW_SEPARATOR } from './tabular-export';
 
 function makeItem(overrides: Partial<Item> = {}): Item {
   return {
@@ -106,6 +109,26 @@ describe('export-data builders', () => {
     expect(parsed.items[0].locationId).toBe(parsed.locations[0].id);
     // The note has to say the array is there, or nobody opening the file knows to look.
     expect(parsed.note).toMatch(/locationId/);
+  });
+
+  /**
+   * The bridge's `items.csv` streams the export a page at a time, writing the header once and then
+   * a row per item (issue #533), so the same file has two producers. This drives both and compares
+   * the bytes rather than trusting that they agree: a change to the column list, the quoting, the
+   * formula neutralisation or the row separator that reaches one and not the other fails here.
+   *
+   * The rows are chosen to exercise every branch that could differ — a delimiter, an embedded
+   * quote, a newline, a formula trigger, a blank unlimited quantity, and an absent optional field.
+   */
+  it('serialises identically row-by-row (the streamed export) and whole-string', () => {
+    const items = [
+      makeItem({ id: 'a', name: 'Cap, 10µF', description: 'a "good" one' }),
+      makeItem({ id: 'b', name: 'Bolt', description: '=1+cmd|"/c calc"!A1' }),
+      makeItem({ id: 'c', name: 'Multi\nline', notes: 'second\r\nline', unitCost: null }),
+      makeItem({ id: 'd', name: 'Tap water', quantity: 999, isUnlimited: true }),
+    ];
+    const streamed = [itemsCsvHeader(), ...items.map(itemsCsvRow)].join(DELIMITED_ROW_SEPARATOR);
+    expect(streamed).toBe(buildItemsCsv(items));
   });
 
   it('builds CSV with RFC-4180 quoting', () => {

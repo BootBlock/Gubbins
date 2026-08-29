@@ -843,9 +843,16 @@ in
 column shape and RFC-4180 quoting as the app's own catalogue export (`id, name, description,
 notes, trackingMode, quantity, isUnlimited, mpn, manufacturer, unitCost`; an unlimited-supply
 row's quantity cell is blank), reused verbatim so the two never
-drift. Unlike the JSON list it returns **all** matching rows (up to a hard cap of 100,000), not a
-single page, and it honours the same `$filter`/`$search`/`$orderby`/`location`/`category`/
-`includeInactive` scope.
+drift. Unlike the JSON list it returns **all** matching rows, not a single page, and it honours the
+same `$filter`/`$search`/`$orderby`/`location`/`category`/`includeInactive` scope. There is no row
+cap: the response is streamed a page at a time as the rows are read, so neither the row set nor the
+document is ever held whole, however large the inventory.
+
+Like the calendar and the syndication feeds, it is answered
+[conditionally](#conditional-requests-etag--304) — the response carries an `ETag` and a
+`Last-Modified`, and a refresh that sends either one back is answered `304 Not Modified` while the
+snapshot is unchanged. That is what makes a workbook set to refresh on
+open cheap to serve.
 
 > The Gubbins **app** already exports far richer CSVs (a round-trippable catalogue with custom-field
 > columns, plus ten analytics reports) from its **Export Wizard** — use that for a one-off download.
@@ -987,10 +994,11 @@ scrape_configs:
 
 ### Conditional requests (ETag / 304)
 
-The three **polled** surfaces — `calendar.ics`, the `activity.*` feeds and `/metrics` — are all
-projections of the loaded snapshot, and a subscriber refetches them on a timer whether or not
-anything has changed. So each response carries validators, and a poll that sends them back gets a
-bodyless **`304 Not Modified`** without the projection ever running:
+The **polled** surfaces — `calendar.ics`, the `activity.*` feeds, `/metrics` and the
+[CSV export](#csv-export) — are all projections of the loaded snapshot, and a subscriber (or a
+workbook set to refresh on open) refetches them whether or not anything has changed. So each
+response carries validators, and a poll that sends them back gets a bodyless
+**`304 Not Modified`** without the projection ever running:
 
 ```bash
 curl -sD- -o/dev/null -H "Authorization: Bearer $TOKEN" "$BASE/calendar.ics"

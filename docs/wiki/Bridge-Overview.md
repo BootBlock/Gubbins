@@ -17,7 +17,9 @@ expose:
 
 - A **read-only query API** — search and read your items over HTTP.
 - A **spreadsheet and dashboard connection** — a refreshable CSV pull, or a proper **OData feed**
-  that Excel, Power Query and Power BI can connect to and browse like any other data source.
+  that Excel, Power Query and Power BI can connect to and browse like any other data source. The
+  CSV pull returns *every* matching item however large your inventory is, and a refresh that finds
+  nothing has changed since last time finishes without re-sending the file.
 - A **[[calendar feed|Webhooks-MQTT-and-iCal]]** (iCal) of due-backs, bookings, maintenance and
   warranties.
 - **[[Webhooks]]** — calls a URL of your choosing when something changes.
