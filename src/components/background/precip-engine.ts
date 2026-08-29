@@ -103,6 +103,17 @@
  *    has its own gently undulating capacity ({@link snowMoundCapacity}) and stops taking snow as
  *    it approaches it ({@link snowSettleChance}), so a long control gathers a rolling crest and
  *    the flakes it turns away fall on past instead of levelling the top into a hard white line.
+ *  - **Snow blows away when you tap it (issue #418).** Tap or click a drift and that part of it
+ *    is swept off in a plume of flung flakes, as a snow blower would take it. Only the tapped
+ *    part goes: the bite is scaled out of the depth field by a smooth falloff
+ *    ({@link snowBlowFalloff}), so it is bare under the pointer and eases back to untouched at
+ *    the rim, and because the mound's opacity rides its depth the shoulders thin and fade rather
+ *    than ending on a cut edge. The plume is sized from the snow removed
+ *    ({@link snowBlowFlakeCount}), up to its pool's ceiling, and is ballistic — gravity, drag,
+ *    and the ambient wind it is handed over to as it slows. Every flake is one `drawImage` of a
+ *    sprite the falling field already rasterised, so the burst adds no path, gradient or pixel
+ *    work to the overlay. Nothing about the gesture is intercepted: the listener is passive, so
+ *    the control under the pointer gets its click as usual.
  *  - **Rain splashes.** A near drop hitting a control top is consumed by a brief **splash** — an
  *    expanding ripple with a crown of kicked-up droplets — playing pre-rendered animation frames.
  *    Splashes are low and wide: the surface is seen nearly edge-on (a strongly foreshortened
@@ -717,6 +728,57 @@ const SNOW_JOIN_STEP = SETTLE.snow.slopeMax * COLUMN_WIDTH;
 const SNOW_CLIFF_STEP = SNOW_JOIN_STEP * 3;
 
 /**
+ * Snow-blower blast (issue #418): tapping a drift on a control's top blows that part of it away
+ * in a plume of flung flakes. Two halves, both deliberately cheap:
+ *
+ *  - **The bite.** The tap scales the depth field down around the tapped point by a smooth
+ *    falloff ({@link snowBlowFalloff}) rather than clearing a span outright — full clearance at
+ *    the centre easing back to untouched at the rim. That is what keeps the remaining drift soft:
+ *    the mound's own alpha ramps with depth, so the shoulders of the bite thin out and fade
+ *    instead of ending on a cut edge. The swept centre does fall under
+ *    {@link SETTLE.snow.minVisibleDepth} and stop being painted, splitting the drift's run in
+ *    two — but each new end tapers to that same fraction of a pixel at the bottom of the alpha
+ *    ramp, so what the split leaves is a fading wisp rather than a wall.
+ *  - **The plume.** The snow taken out is thrown back as particles: a fan flung up and outward
+ *    from the tap, then ballistic — gravity, a drag term and the ambient wind, integrated with
+ *    one Euler step each. No collisions, no re-settling; they fade out as they fall away.
+ */
+const BLOW = {
+  /** Radius of the bite (css px): a fingertip-sized scoop, not the whole control's drift. */
+  radius: 46,
+  /** How far above the crest / below the control's top edge a tap still counts as "on the drift". */
+  grabAbove: 18,
+  grabBelow: 14,
+  /** Columns either side of the tap searched for a drift, so a near miss still catches one. */
+  grabCols: 3,
+  /** Minimum gap between blasts (s), so a double-tap can't stack two full plumes. */
+  cooldown: 0.1,
+  /** Flung-flake pool size — a burst should look like a blower's plume, not a sprinkle. */
+  maxParticles: 280,
+  /** Flakes thrown per css px of depth removed (the pool caps the total). */
+  flakesPerPx: 6,
+  /** Launch speed (css px/s) at the rim of the bite → at its centre, times {@link speedJitter}. */
+  speed: [180, 700] as const,
+  speedJitter: [0.6, 1.25] as const,
+  /** Launch angle above the horizontal (rad): a low, wide fan rather than a fountain. */
+  angle: [0.18, 1.15] as const,
+  /**
+   * Downward acceleration (css px/s²) and the drag coefficient (per s). Drag pulls a flake
+   * toward the air around it, so it is what both slows the plume and hands the flakes over to
+   * the ambient wind as they lose their launch speed.
+   */
+  gravity: 900,
+  drag: 2.4,
+  /** Lifetime range (s) — long enough to arc, short enough to stay a burst. */
+  life: [0.45, 1.05] as const,
+  /** Draw scale and peak opacity of a flung flake. */
+  scale: [0.55, 1.25] as const,
+  alpha: 0.9,
+  /** Tumble rate range (rad/s), signed at spawn. */
+  spin: [1.5, 7] as const,
+} as const;
+
+/**
  * Splash sprite geometry (css px): frame size and the y of the impact line within the frame.
  * Deliberately low and wide: control tops are seen almost edge-on, so the ripple ellipse is
  * strongly foreshortened, and a drop hitting a rigid surface throws a low, wide crown (thin
@@ -788,6 +850,27 @@ interface Splash {
   /** Draw scale, fixed at spawn from the landing drop's depth. */
   scale: number;
   /** Which pre-rendered frame set this splash plays. */
+  variant: number;
+}
+
+/**
+ * One flake thrown clear by a blast (issue #418). Pooled like {@link Splash}: `t >= life` marks a
+ * free slot, so a burst allocates nothing. Ballistic and non-interacting — it never re-settles.
+ */
+interface Blown {
+  x: number;
+  y: number;
+  /** Velocity (css px/s). */
+  vx: number;
+  vy: number;
+  /** Elapsed / total lifetime (s). */
+  t: number;
+  life: number;
+  /** Draw scale and current rotation, and the tumble rate carrying it (rad, rad/s). */
+  scale: number;
+  angle: number;
+  spin: number;
+  /** Which snow sprite this flake is drawn with. */
   variant: number;
 }
 
@@ -903,6 +986,32 @@ export function snowSettleChance(depth: number, capacity: number): number {
 export function snowUnderCatchChance(warm: number): number {
   const u = SETTLE.snow.under;
   return clamp(u.chance * (1 + u.warmBoost * warm), 0, 1);
+}
+
+/**
+ * How much of a column's settled snow a blast at horizontal distance `d` takes (issue #418):
+ * 1 at the tap (that column is swept bare), easing to 0 at {@link BLOW.radius} and beyond.
+ *
+ * The curve is smooth at *both* ends, which is the whole point: zero slope at the rim means the
+ * bite blends into the untouched drift with no step to catch the eye, and zero slope at the
+ * centre keeps the swept patch from ending in a spike. Depth carries the mound's opacity with it,
+ * so the shoulders thin out and fade rather than ending on a cut edge. Pure and exported for
+ * unit tests.
+ */
+export function snowBlowFalloff(d: number, radius: number = BLOW.radius): number {
+  if (radius <= 0) return 0;
+  const q = clamp(Math.abs(d) / radius, 0, 1);
+  return 1 - smooth01(q);
+}
+
+/**
+ * How many flakes a blast throws for `cleared` css px of removed depth — the plume is made of
+ * the snow that was actually taken, so a deep drift erupts and a thin dusting only puffs. Capped
+ * at the pool size. Pure and exported for unit tests.
+ */
+export function snowBlowFlakeCount(cleared: number): number {
+  if (!(cleared > 0)) return 0;
+  return Math.min(BLOW.maxParticles, Math.max(1, Math.round(cleared * BLOW.flakesPerPx)));
 }
 
 /** Resolve a CSS custom property on `<html>` to its computed value, with a fallback. */
@@ -1417,6 +1526,28 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
         }))
       : [];
 
+  /**
+   * Fixed pool of flakes thrown clear by a blast (issue #418), allocated once for the snow
+   * interaction layer; a slot with `t >= life` is free. Rain has no drifts to blow away.
+   */
+  const blown: Blown[] =
+    interact && kind === 'snow'
+      ? Array.from({ length: BLOW.maxParticles }, () => ({
+          x: 0,
+          y: 0,
+          vx: 0,
+          vy: 0,
+          t: 0,
+          life: 0,
+          scale: 1,
+          angle: 0,
+          spin: 0,
+          variant: SNOW_GRAIN,
+        }))
+      : [];
+  /** Engine time of the last blast, for the {@link BLOW.cooldown} rate limit. */
+  let lastBlowAt = -Infinity;
+
   function toSprite(c: HTMLCanvasElement): Sprite {
     return { canvas: c, halfW: c.width / dpr / 2, halfH: c.height / dpr / 2 };
   }
@@ -1776,6 +1907,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       moundVisible = false;
       moundDirty = false;
       for (const s of splashes) s.t = s.life;
+      // A plume is a burst thrown from a place that no longer exists after the reflow — expire it
+      // with the drift it came out of rather than letting it arc on over the new layout.
+      for (const b of blown) b.t = b.life;
     }
   }
 
@@ -1849,6 +1983,20 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   }
   function underDepthAt(c: number): number {
     return underDepths[c] ?? 0;
+  }
+
+  /**
+   * Are the adjacent columns `a` and `b` one continuous drift surface? The single definition of
+   * "the same drift", so the two places that need it cannot drift apart: {@link renderMounds}
+   * extends a mound run through it, and a blast ({@link blowAt}) stops at it. Depth is
+   * deliberately not part of it — whether a column *holds* snow is a separate question, and the
+   * two callers answer it differently (a run needs visible snow to paint; a blast reaches across
+   * a bare stretch of the same control).
+   */
+  function joinsSurface(a: number, b: number): boolean {
+    const ta = topAt(a);
+    const tb = topAt(b);
+    return ta !== NO_SURFACE && tb !== NO_SURFACE && Math.abs(ta - tb) <= SNOW_JOIN_STEP;
   }
 
   /**
@@ -2050,6 +2198,167 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   }
 
   /**
+   * The drift column a tap at (x, y) lands on, or -1 for a tap that missed the snow (issue #418).
+   * A drift is only a few px deep, so the test is generous vertically — anywhere from a little
+   * above the crest to a little below the control's own top edge counts — and searches a couple
+   * of columns either side, so a tap that lands on a thin patch still catches the drift beside it.
+   */
+  function blowTargetCol(x: number, y: number): number {
+    const cx = surfaceCol(x);
+    if (cx < 0) return -1;
+    let best = -1;
+    let bestDist = Infinity;
+    for (let c = cx - BLOW.grabCols; c <= cx + BLOW.grabCols; c++) {
+      if (c < 0 || c >= surfTops.length) continue;
+      const top = topAt(c);
+      if (top === NO_SURFACE || depthAt(c) < SETTLE.snow.minVisibleDepth) continue;
+      if (y < top - depthAt(c) - BLOW.grabAbove || y > top + BLOW.grabBelow) continue;
+      const d = Math.abs(crestX(c) - x);
+      if (d < bestDist) {
+        bestDist = d;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Throw one flake clear of the blast into a free pool slot; returns false when the pool is
+   * spent. It leaves at the angle the blower's plume would: up and out, away from the tap, fastest
+   * where the blast is strongest.
+   */
+  function throwFlake(px: number, py: number, power: number, originX: number): boolean {
+    for (const b of blown) {
+      if (b.t < b.life) continue;
+      const dx = px - originX;
+      const side = dx === 0 ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(dx);
+      const theta = rand(BLOW.angle[0], BLOW.angle[1]);
+      const speed =
+        lerp(BLOW.speed[0], BLOW.speed[1], power) * rand(BLOW.speedJitter[0], BLOW.speedJitter[1]);
+      b.x = px;
+      b.y = py;
+      b.vx = side * Math.cos(theta) * speed;
+      b.vy = -Math.sin(theta) * speed;
+      b.t = 0;
+      b.life = rand(BLOW.life[0], BLOW.life[1]);
+      b.scale = rand(BLOW.scale[0], BLOW.scale[1]);
+      b.angle = rand(0, Math.PI * 2);
+      b.spin = rand(BLOW.spin[0], BLOW.spin[1]) * (Math.random() < 0.5 ? -1 : 1);
+      // Grains and crystals mixed: a plume of one identical sprite reads as a texture, not as snow.
+      b.variant = Math.random() < 0.55 ? SNOW_GRAIN : Math.random() < 0.5 ? 1 : 2;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Blow the tapped part of a drift away (issue #418). The bite is scaled out of the depth field
+   * by {@link snowBlowFalloff} — swept bare under the tap, easing back to untouched at the rim —
+   * and the snow it took is thrown back as a plume of flung flakes.
+   *
+   * The blast is confined to the drift actually tapped: it walks out from the hit column only
+   * while {@link joinsSurface} holds — the one definition of "the same drift", shared with the
+   * mound renderer — so clearing the snow off one button never clears the button beside it. The
+   * face plaster and the underside fringe within reach go with it: they are the same drift, and
+   * leaving them hanging beside a swept top would read as a bug.
+   *
+   * Returns whether anything was actually blown, so the caller only starts the cooldown on a hit.
+   */
+  function blowAt(x: number, y: number): boolean {
+    const hit = blowTargetCol(x, y);
+    if (hit < 0) return false;
+    const span = Math.ceil(BLOW.radius / COLUMN_WIDTH);
+    let first = hit;
+    while (first - 1 >= 0 && hit - (first - 1) <= span && joinsSurface(first - 1, first)) {
+      first--;
+    }
+    let last = hit;
+    while (last + 1 < surfTops.length && last + 1 - hit <= span && joinsSurface(last, last + 1)) {
+      last++;
+    }
+    // First pass measures the bite without taking it, because the plume's size is a share-out of
+    // the total: each column throws its own fraction of the snow the whole blast removed.
+    let cleared = 0;
+    for (let c = first; c <= last; c++) cleared += depthAt(c) * snowBlowFalloff(crestX(c) - x);
+    if (cleared <= 0) return false;
+    const budget = snowBlowFlakeCount(cleared);
+    let thrown = 0;
+    for (let c = first; c <= last; c++) {
+      const f = snowBlowFalloff(crestX(c) - x);
+      if (f <= 0) continue;
+      const top = topAt(c);
+      const before = depthAt(c);
+      const removed = before * f;
+      depths[c] = before - removed;
+      const li = c * 2;
+      sideDepths[li] = (sideDepths[li] ?? 0) * (1 - f);
+      sideDepths[li + 1] = (sideDepths[li + 1] ?? 0) * (1 - f);
+      underDepths[c] = underDepthAt(c) * (1 - f);
+      if (removed <= 0) continue;
+      // This column's share of the plume, rounded stochastically — a fraction of a flake still
+      // sometimes throws one, so the thin rim of the bite contributes instead of vanishing.
+      const share = (removed / cleared) * budget;
+      const n = Math.floor(share) + (Math.random() < share % 1 ? 1 : 0);
+      for (let i = 0; i < n && thrown < budget; i++) {
+        // Launched from the slice of snow that was actually removed: between the crest that was
+        // there and the one left behind.
+        const px = crestX(c) + rand(-COLUMN_WIDTH / 2, COLUMN_WIDTH / 2);
+        const py = top - before + removed * Math.random();
+        if (!throwFlake(px, py, f, x)) break;
+        thrown++;
+      }
+    }
+    // The bite must show at once — waiting out the render throttle would leave the snow sitting
+    // there for a fraction of a second while its own plume flies away from it.
+    moundDirty = true;
+    lastMoundRender = -Infinity;
+    return true;
+  }
+
+  /** Is any blown flake still in flight? (Plain loop — runs every frame, must not allocate.) */
+  function anyBlownActive(): boolean {
+    for (const b of blown) if (b.t < b.life) return true;
+    return false;
+  }
+
+  /**
+   * Advance and blit the plume. The physics is one Euler step per flake: gravity down, and a drag
+   * term pulling it toward the air around it — which is what bleeds off the launch speed and then
+   * hands the flake to the ambient wind, so the plume drifts away with the weather instead of
+   * falling in still air. No collisions and no re-settling: blown snow is gone.
+   */
+  function drawBlown(dt: number): void {
+    const windVx = frameGust * TUNING.snow.wind + frameStormWind * TUNING.snow.storm.wind;
+    for (const b of blown) {
+      if (b.t >= b.life) continue;
+      b.t += dt;
+      if (b.t >= b.life) continue;
+      b.vx += (windVx - b.vx) * BLOW.drag * dt;
+      b.vy += (BLOW.gravity - b.vy * BLOW.drag) * dt;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.angle += b.spin * dt;
+      // Off the bottom or out the side: free the slot early rather than integrating an unseen flake.
+      if (b.y - vertMargin > cssHeight || b.x < -edgeMargin || b.x > cssWidth + edgeMargin) {
+        b.t = b.life;
+        continue;
+      }
+      const s = sprites[b.variant];
+      if (!s) continue;
+      const q = b.t / b.life;
+      // Holds its brightness while the plume still reads as one, then thins away.
+      octx!.globalAlpha = clamp(BLOW.alpha * (1 - q * q), 0, 1);
+      const w = s.halfW * 2 * b.scale;
+      const h = s.halfH * 2 * b.scale;
+      octx!.save();
+      octx!.translate(b.x, b.y);
+      octx!.rotate(b.angle);
+      octx!.drawImage(s.canvas, -w / 2, -h / 2, w, h);
+      octx!.restore();
+    }
+  }
+
+  /**
    * Re-render the mound layer into its offscreen cache. This is the only place the interaction
    * layer builds paths, and it runs at most every {@link SETTLE.snow.renderInterval} seconds and
    * only when something changed; every frame in between reuses the cache with a single blit.
@@ -2071,12 +2380,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       // Extend the run while the surface stays continuous (same-drift steps, so a corner arc's
       // descent belongs to its control's run) and holds visible snow.
       let end = c;
-      while (
-        end + 1 < n &&
-        topAt(end + 1) !== NO_SURFACE &&
-        depthAt(end + 1) >= t.minVisibleDepth &&
-        Math.abs(topAt(end + 1) - topAt(end)) <= SNOW_JOIN_STEP
-      ) {
+      while (end + 1 < n && depthAt(end + 1) >= t.minVisibleDepth && joinsSurface(end, end + 1)) {
         end++;
       }
       moundVisible = true;
@@ -2341,7 +2645,8 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   }
 
   /**
-   * Paint the interaction overlay: the cached mound layer plus any in-flight splashes.
+   * Paint the interaction overlay: the cached mound layer, plus any in-flight splashes and any
+   * plume still flying from a blast.
    *
    * Settled snow keeps this layer live for as long as it lasts — but "live" is not the same as
    * "changing". Once the mound cache has been rendered and the pointer is not lifting a control,
@@ -2351,15 +2656,18 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
    * is settled — which is exactly when the user is scrolling (issue #419).
    *
    * So the pass tracks what the overlay currently shows — the mound generation and the hover lift
-   * it was drawn with — and returns early when nothing has moved. A splash is animation by
-   * definition, so it always redraws, and it parks `drawnMoundGen` at `-1` so the frame after the
-   * last splash still repaints once to clear it away.
+   * it was drawn with — and returns early when nothing has moved. A splash, and a blast's plume,
+   * are animation by definition, so they always redraw, and they park `drawnMoundGen` at `-1` so
+   * the frame after the last of them still repaints once to clear it away.
    */
   function drawOverlay(dt: number): void {
     if (moundDirty && elapsed - lastMoundRender >= SETTLE.snow.renderInterval) renderMounds();
     const hasMound = moundVisible && moundCanvas !== null;
     const splashing = anySplashActive();
-    if (!hasMound && !splashing) {
+    // A blast can sweep a drift away entirely, so its plume has to keep the layer alive on its
+    // own — otherwise the flakes it threw would be cleared away on the very frame they left.
+    const blowing = anyBlownActive();
+    if (!hasMound && !splashing && !blowing) {
       // Nothing to draw: clear once after the last visible frame, then skip the whole pass.
       if (!overlayClean) {
         octx!.clearRect(0, 0, cssWidth, cssHeight);
@@ -2380,6 +2688,7 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     const c1 = lifted ? h!.c1 : -1;
     if (
       !splashing &&
+      !blowing &&
       !overlayClean &&
       drawnMoundGen === moundGen &&
       drawnDy === dy &&
@@ -2392,8 +2701,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     overlayClean = false;
     if (hasMound) blitMounds(dy, c0, c1);
     drawSplashes(dt);
+    if (blowing) drawBlown(dt);
     octx!.globalAlpha = 1;
-    drawnMoundGen = splashing ? -1 : moundGen;
+    drawnMoundGen = splashing || blowing ? -1 : moundGen;
     drawnDy = dy;
     drawnC0 = c0;
     drawnC1 = c1;
@@ -2909,6 +3219,23 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     }
   }
 
+  /**
+   * A tap or click anywhere in the page (issue #418): if it landed on a drift, blow that part of
+   * it away. Listened for on the document in the capture phase and marked passive, so the effect
+   * observes the gesture without taking any part in it — the control under the pointer receives
+   * its own click exactly as it would with no snow on it. A tap that misses the snow does nothing
+   * at all, and starts no cooldown.
+   */
+  function onPointerDown(e: PointerEvent): void {
+    if (stopped) return;
+    // Primary contact only: a secondary click is a context menu, and a second finger in a pinch
+    // is not a tap on anything.
+    if (e.isPrimary === false || e.button > 0) return;
+    if (elapsed - lastBlowAt < BLOW.cooldown) return;
+    // The canvases are fixed to the viewport, so client coordinates are already the layer's own.
+    if (blowAt(e.clientX, e.clientY)) lastBlowAt = elapsed;
+  }
+
   function onResize(): void {
     if (resizeQueued || stopped) return;
     resizeQueued = true;
@@ -2931,6 +3258,12 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
     document.addEventListener('visibilitychange', onVisibility);
   }
   addEventListener('resize', onResize);
+  // Only the snow interaction layer has drifts to blow away; rain and a static frame have none,
+  // so neither installs the listener at all.
+  const blowable = interact && kind === 'snow' && !reduced;
+  if (blowable) {
+    document.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true });
+  }
 
   return {
     refresh() {
@@ -2948,6 +3281,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
       cancelAnimationFrame(rafId);
       removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
+      if (blowable) {
+        document.removeEventListener('pointerdown', onPointerDown, { capture: true });
+      }
       surfaces?.stop();
     },
   };

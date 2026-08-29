@@ -63,7 +63,11 @@ Gubbins has some gentle visual polish that you can dial up or down:
   control's side, or drifting out beneath its bottom edge, now and then sticks there too,
   plastering the windward face or clinging under the lip (wet, clumpy snow sticks the most;
   scroll or move things around and it's all knocked off, ready to build again) — while **rain**
-  splashes off the tops of controls in small ripples as drops strike them. Snow also has weather of its own: mostly it drifts gently —
+  splashes off the tops of controls in small ripples as drops strike them. You can clear a drift
+  yourself: tap or click one and that part of it blows away in a burst of flakes, thrown up and
+  out as a snow blower would throw it. Only the piece you touched goes — the snow either side
+  thins away softly rather than ending in a straight edge — and the button or card underneath
+  still does whatever it normally does when you press it. Snow also has weather of its own: mostly it drifts gently —
   with the occasional gust or a passing swirl catching the flakes — but from time to time an event
   passes through: a **blizzard** whips the snow near-horizontal and thickens the air; a sudden
   **squall** dumps a dense burst and clears again; a spell of sparkling **diamond dust** hangs
