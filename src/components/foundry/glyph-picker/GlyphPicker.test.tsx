@@ -14,6 +14,13 @@ function setup(props: Partial<React.ComponentProps<typeof GlyphPicker>> = {}) {
 
 const search = () => screen.getByRole('combobox', { name: 'Search icons' });
 
+// Every test here types into the search box a character at a time, and each keystroke
+// re-filters and re-renders the whole Lucide catalogue — real work the picker really does,
+// and the reason this file holds the suite's second- and third-slowest bodies (3.8s and 3.4s
+// idle). That is inside the 15s default until the machine is busy, at which point it is not,
+// so the file takes a budget of its own rather than each test carrying one.
+vi.setConfig({ testTimeout: 30_000 });
+
 describe('GlyphPicker', () => {
   it('filters the catalogue as the user types', async () => {
     const { user } = setup();

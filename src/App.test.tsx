@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, cleanup, screen } from '@testing-library/react';
+// Imported at module scope rather than with `await import('./App')` inside the test body.
+// App's graph is large by design (the Foundry barrel, the scraping provider, inventory
+// components, alerts) and a dynamic import charges every millisecond of loading it to the
+// *test's* timeout, where the suite's own parallel transform load lands on top: the body
+// measured 3.3s idle and timed out intermittently under a loaded machine. Loaded here the
+// same work is import time, which no per-test budget bounds, and the body measures ~55ms.
+// `vi.mock` is hoisted above this import, so the three seams below still apply.
+import { App } from './App';
 
 /**
  * Regression guard for the GitHub Pages first-visit deadlock (spec §2.2.6).
@@ -53,39 +61,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-/**
- * Generous timeout, deliberately: the first line of this test imports the **real** App
- * module, and App's graph is large by design (the Foundry barrel, the scraping provider,
- * inventory components, alerts). That import alone measures ~2s on an idle machine, leaving
- * almost no headroom under Vitest's 5s default once the suite runs files in parallel and
- * transform time balloons — which surfaced as an intermittent
- * "Test timed out in 5000ms" on this test and nowhere else.
- *
- * Trimming the import graph instead would mean mocking away the very composition under test
- * (only three seams are mocked above, each for a stated reason), so the honest fix is to let
- * a legitimately slow test take the time it needs. This is still far below any plausible
- * genuine hang, so a real deadlock regression would still fail rather than pass slowly.
- */
-const SLOW_IMPORT_TIMEOUT_MS = 30_000;
-
 describe('App composition (regression: GitHub Pages first-visit COI deadlock)', () => {
-  it(
-    'mounts PwaUpdatePrompt even when BootGate can never leave its unsupported state',
-    async () => {
-      const { App } = await import('./App');
-      render(<App />);
+  it('mounts PwaUpdatePrompt even when BootGate can never leave its unsupported state', async () => {
+    render(<App />);
 
-      // Confirm we are genuinely stuck on the boot gate's unsupported branch — the exact
-      // state a fresh GitHub Pages visit starts in before isolation is established. Asserted
-      // via the screen's testid, not its copy: which *cause* that screen diagnoses (and so
-      // what it says) depends on the environment, and is support-diagnosis.test.ts's business.
-      expect(await screen.findByTestId('boot-unsupported')).toBeInTheDocument();
+    // Confirm we are genuinely stuck on the boot gate's unsupported branch — the exact
+    // state a fresh GitHub Pages visit starts in before isolation is established. Asserted
+    // via the screen's testid, not its copy: which *cause* that screen diagnoses (and so
+    // what it says) depends on the environment, and is support-diagnosis.test.ts's business.
+    expect(await screen.findByTestId('boot-unsupported')).toBeInTheDocument();
 
-      // PwaUpdatePrompt — the only thing that registers the service worker — must still
-      // have mounted. If this ever fails, PwaUpdatePrompt has been nested back inside
-      // <BootGate> (or something else gates it), reintroducing the deadlock.
-      expect(pwaMountSpy).toHaveBeenCalled();
-    },
-    SLOW_IMPORT_TIMEOUT_MS,
-  );
+    // PwaUpdatePrompt — the only thing that registers the service worker — must still
+    // have mounted. If this ever fails, PwaUpdatePrompt has been nested back inside
+    // <BootGate> (or something else gates it), reintroducing the deadlock.
+    expect(pwaMountSpy).toHaveBeenCalled();
+  });
 });
