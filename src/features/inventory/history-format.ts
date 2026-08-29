@@ -111,6 +111,11 @@ export interface HistoryEntryView {
    * note as "Changed unit cost, barcode." — a list of exactly the fields below it, so a row that
    * showed both would say everything twice. A `MERGE_OVERWRITTEN` note explains *why* the values
    * moved ("Two devices edited this item…"), which nothing else carries, so it is kept.
+   *
+   * It is also kept when the entry names a field this build does not know. The change list can
+   * only show that field by its raw camelCase name, while the note — written by the peer that
+   * knew what the field was called — names it in prose. Dropping the note there would make the
+   * row *less* legible than before the values were shown at all.
    */
   readonly noteRepeatsChanges: boolean;
 }
@@ -164,7 +169,10 @@ export function describeHistoryEntry(entry: ItemHistoryEntry): HistoryEntryView 
     delta: movement === null ? null : signedDelta(movement),
     tone: movement === null ? 'neutral' : movement > 0 ? 'positive' : 'negative',
     changes,
-    noteRepeatsChanges: entry.action === 'ATTRIBUTES_CHANGED' && changes.length > 0,
+    noteRepeatsChanges:
+      entry.action === 'ATTRIBUTES_CHANGED' &&
+      changes.length > 0 &&
+      changes.every((change) => FIELD_ORDER.has(change.field)),
   };
 }
 

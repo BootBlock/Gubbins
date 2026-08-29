@@ -31,9 +31,11 @@ Editing an item's details is recorded too, as a single **Details changed** entry
 **the value before and the value after**, one line per field, so the entry answers *“what was this
 item's cost in March?”* and not merely *“something about the cost moved”*:
 
-> **Details changed**
-> Unit cost £4.00 → £5.50
-> Barcode Not set → 5012345678900
+```text
+Details changed
+Unit cost   £4.00 → £5.50
+Barcode     Not set → 5012345678900
+```
 
 Each value is shown the way you entered it: a price in your currency, a date in your usual format,
 a category by name, a weight or a measurement in your chosen units. A field that was empty reads

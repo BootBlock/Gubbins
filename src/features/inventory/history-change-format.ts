@@ -13,9 +13,14 @@
  * the digits, which a pre-formatted string cannot.
  *
  * Pure — no React, no DOM, no clock. The locale-bound bits arrive as a {@link Formatters} bundle
- * and the copy as already-translated strings, exactly as `bulk-edit.ts` takes its lookups.
+ * and the caller's copy as already-translated strings, exactly as `bulk-edit.ts` takes its
+ * lookups. The two enum kinds are the exception: they render through the app-wide
+ * `TRACKING_MODE_LABELS` / `CONDITION_LABELS`, which are not yet routed through `t()`. Reading a
+ * tracking mode differently here from every other screen that names one would be the worse of the
+ * two faults, so this follows those maps until they are converted.
  */
 import type { Condition, TrackingMode } from '@/db/repositories';
+import { fromDateInputValue } from '@/lib/date-input';
 import type { Formatters } from '@/lib/format';
 import { auditedItemField, type ItemFieldValueKind } from './audited-item-fields';
 import type { HistoryChangeValue, HistoryFieldChange } from './history-format';
@@ -49,16 +54,17 @@ export interface ChangeRowView {
 const text = (value: string): ChangeValueView => ({ kind: 'text', text: value });
 
 /**
- * A day-grained ISO calendar date (`YYYY-MM-DD`) as UTC midnight, or `null` if it is not one.
+ * A day-grained ISO calendar date (`YYYY-MM-DD`) as the instant the app stores it at, or `null`
+ * when the value is not one.
  *
- * Parsed here rather than with `Date.parse` on the whole string so a malformed value from a peer
- * degrades to its raw text instead of to "Invalid Date".
+ * The **guard** is local; the **conversion** is not. `fromDateInputValue` owns which instant a
+ * bare calendar day means (`lib/date-input.ts` says never to re-derive it), so a date rendered
+ * here lands on the same day as the editor that saved it. What the seam cannot do is reject a
+ * peer's malformed value: `Date.parse('4 March')` yields a real, wrong instant, so the shape is
+ * checked first and anything else degrades to its raw text.
  */
 function isoDateToUtcMs(value: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const ms = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return Number.isFinite(ms) ? ms : null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? fromDateInputValue(value) : null;
 }
 
 /**

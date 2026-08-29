@@ -13,8 +13,11 @@
  * `{field, from, to}` shape the edit path writes, so one reader handles both.
  *
  * The set of fields it audits, and the prose that names each one, come from the shared
- * `audited-item-fields` registry — the same one `ItemRepository.update` and the Activity Log read,
- * so a merge cannot record a field the edit path leaves silent, or name it differently.
+ * `audited-item-fields` registry, which the Activity Log reads too, so the two entries a user sees
+ * name the same field the same way. `ItemRepository.update` cannot read it — the db layer holds no
+ * feature-layer imports — so it passes its own labels inline; what holds the two *sets* together is
+ * `merge-audit-drift.test.ts`, which drives every mutable field the edit path takes and compares
+ * what it audited against this registry.
  *
  * Pure and database-free — the reconcile engine builds the records, `applyPlan` writes them.
  */

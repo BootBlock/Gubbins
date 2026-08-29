@@ -202,4 +202,22 @@ describe('noteRepeatsChanges — whether the note still says anything the values
     const view = describeHistoryEntry(entry({ action: 'ATTRIBUTES_CHANGED', note: 'Changed notes.' }));
     expect(view.noteRepeatsChanges).toBe(false);
   });
+
+  it('is false when a field is one this build cannot name, so the peer’s prose is kept', () => {
+    // The list can only show `thermalRating` by its raw camelCase name; the note written by the
+    // peer that knew what the field was called is the only readable naming of it in the row.
+    const view = describeHistoryEntry(
+      entry({
+        action: 'ATTRIBUTES_CHANGED',
+        note: 'Changed unit cost, thermal rating.',
+        metadata: {
+          changes: [
+            { field: 'unitCost', from: 4, to: 5 },
+            { field: 'thermalRating', from: null, to: '85C' },
+          ],
+        },
+      }),
+    );
+    expect(view.noteRepeatsChanges).toBe(false);
+  });
 });
