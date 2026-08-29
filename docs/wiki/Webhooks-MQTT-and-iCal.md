@@ -65,6 +65,18 @@ availability at this sensor in your own Home Assistant config.
 > subtler case where the bridge is up and answering, but from a copy of your data it can no longer
 > refresh.
 
+Delete a location and its topic goes with it — the bridge clears what it published, so the sensor
+disappears from Home Assistant rather than sitting there for ever showing the count it had on the
+day you removed the shelf. That holds even if you delete the location while the bridge is switched
+off: it keeps a note of what it last published and tidies up on the next start.
+
+> **ℹ️ Note**
+> That note is a small file next to the bridge, so a bridge in a container wants it on a mounted
+> volume like its other saved state — the ready-made Docker and systemd setups already do this. If
+> the bridge can't write it, everything still publishes normally; the only thing you'd notice is a
+> location deleted while the bridge was off keeping its old entity until you delete it in Home
+> Assistant yourself.
+
 > **⚠️ Heads-up — if you already had MQTT publishing switched on**
 > Locations' [[custom fields|Custom-Fields-and-Capabilities]] were added to what MQTT publishes,
 > and they don't have a switch of their own — turning on MQTT publishing is what enables them. So

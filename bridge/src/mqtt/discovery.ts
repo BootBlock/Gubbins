@@ -218,3 +218,35 @@ export function buildDiscoveryConfigs(state: InventoryState, options: DiscoveryO
 
   return configs;
 }
+
+/**
+ * The device-level entities {@link buildDiscoveryConfigs} always emits, as `[component, objectId]`
+ * pairs — the fixed half of the discovery tree, independent of any location.
+ *
+ * It exists so a *retraction* can name every config topic a previous run published without having
+ * that run's {@link InventoryState} to hand (issue #565): the ids are the only part of a config a
+ * blanking publish needs. `discovery.test.ts` drives both sides and fails if the two ever diverge —
+ * see `names exactly the topics buildDiscoveryConfigs emits, in the same order`.
+ */
+const DEVICE_ENTITY_IDS: readonly (readonly [component: string, objectId: string])[] = [
+  ['sensor', 'items_total'],
+  ['sensor', 'low_stock_items'],
+  ['sensor', 'out_of_stock_items'],
+  ['sensor', 'locations_total'],
+  ['binary_sensor', 'low_stock'],
+  ['binary_sensor', 'snapshot_stale'],
+];
+
+/**
+ * Every retained discovery config topic a run with these locations publishes, in emission order
+ * (device entities first, then one sensor per location). Used both to describe the current tree
+ * and to blank an abandoned one.
+ */
+export function discoveryConfigTopics(discoveryPrefix: string, locationIds: readonly string[]): string[] {
+  return [
+    ...DEVICE_ENTITY_IDS.map(([component, objectId]) =>
+      discoveryConfigTopic(discoveryPrefix, component, objectId),
+    ),
+    ...locationIds.map((id) => discoveryConfigTopic(discoveryPrefix, 'sensor', locationSensorObjectId(id))),
+  ];
+}

@@ -52,12 +52,14 @@ services:
       # Point the left-hand side at the folder the app syncs to, and keep it read-only:
       # the bridge only needs to read the snapshot for its default read-only surfaces.
       - ${GUBBINS_SNAPSHOT_DIR:-./bridge/local}:/data:ro
-      # The bridge's stable identity, so a recreated container is still the same bridge to Home
-      # Assistant rather than a new one. Nothing secret lives here. See bridge/README.md.
+      # The bridge's own runtime state: the stable identity, so a recreated container is still the
+      # same bridge to Home Assistant rather than a new one, and what it last published to MQTT, so
+      # a location deleted while it was down is still cleared off the broker. Nothing secret lives
+      # here. See bridge/README.md.
       - bridge-state:/state
     restart: unless-stopped
 
 volumes:
-  # Named rather than a host path: it only ever holds the bridge's own identity file, which
-  # belongs to this installation and needs no backing up alongside your inventory.
+  # Named rather than a host path: it only ever holds the bridge's own runtime state, which belongs
+  # to this installation and needs no backing up alongside your inventory.
   bridge-state:

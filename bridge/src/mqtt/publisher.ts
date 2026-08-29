@@ -30,6 +30,11 @@ import {
   type SocketFactory,
 } from './client.ts';
 import { buildDiscoveryConfigs, discoveryConfigTopic, locationSensorObjectId } from './discovery.ts';
+import {
+  planRetainedRestore,
+  RETAINED_LOCATIONS_VERSION,
+  type RetainedLocationsStore,
+} from './retained-locations.ts';
 import { projectInventoryState, type InventoryState } from './state.ts';
 import {
   AVAILABILITY_OFFLINE,
@@ -55,6 +60,13 @@ export interface MqttPublisherOptions {
   readonly discoveryPrefix: string;
   /** Bridge version, surfaced as the HA device software version (carries no secret). */
   readonly version: string;
+  /**
+   * Where the set of location ids this bridge has retained topics for is remembered across
+   * restarts (issue #565). Omit it and the publisher keeps that set in memory only, which means a
+   * location deleted while the bridge was stopped is never retracted — its state topic and Home
+   * Assistant entity stay on the broker for good. `serve.ts` supplies the file-backed store.
+   */
+  readonly retainedStore?: RetainedLocationsStore;
   /** Injectable client factory (defaults to the real {@link createMqttClient}). */
   readonly createClient?: (options: MqttClientOptions) => MqttClient;
   /** Injectable socket factory forwarded to the default client (tests inject a fake socket). */
@@ -98,9 +110,36 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   // Signature of the location set last published as discovery configs -- so we only re-emit the
   // discovery layout when a location is added/removed/renamed, not on every state refresh.
   let discoverySignature: string | null = null;
+  // What a previous run of this bridge left retained on the broker, under which prefixes (issue
+  // #565). The publish-only client cannot subscribe, so the broker can never be asked — without
+  // this the "before" side of the removal diff would start empty on every start.
+  // `topics.base`, not `options.prefix`: the topics were published under the resolved prefix, and
+  // that is what a later run has to compare against.
+  const restored = planRetainedRestore(options.retainedStore?.load(), {
+    prefix: topics.base,
+    discoveryPrefix: options.discoveryPrefix,
+    discovery: options.discovery,
+  });
   // The location ids we currently have RETAINED topics for, so a removed location's retained state
   // (and its HA discovery entity) can be cleared rather than lingering on the broker as a ghost.
-  let publishedLocationIds: readonly string[] = [];
+  // Seeded from the previous run, so a location deleted while the bridge was stopped is still in
+  // the diff's "before" side and gets retracted on the first publish after the restart.
+  let publishedLocationIds: readonly string[] = restored.seedLocationIds;
+  // Whether discovery configs may already exist under the current discovery prefix. Sticky, and
+  // independent of `options.discovery`: turning the flag off does not remove what it published, so
+  // a later removal must still retract that location's config.
+  let discoveryPublished = restored.discoveryPublished;
+  // Blanked once at startup, below — retained topics under a prefix this run no longer uses.
+  let staleTopics: readonly string[] = restored.staleTopics;
+  // The record last handed to the store, so a reconnect's re-publish doesn't rewrite an identical file.
+  let rememberedSignature: string | null = null;
+  // Retractions the client only BUFFERED, because the broker was not reachable when they were made.
+  // They are re-issued on the next connect and, until then, the record keeps naming the topics:
+  // persisting "those are retracted now" and dying before the connect would lose the only memory of
+  // a dead topic, which is the very failure this file exists to prevent. Re-issuing rather than
+  // trusting the buffer matters because that buffer is bounded and drops its OLDEST entries — which
+  // are exactly these, enqueued at start before any state publish.
+  let pendingRetractions: string[] = [];
 
   const client = createClient({
     endpoint: options.endpoint,
@@ -118,6 +157,13 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   /** On each (re)connect: announce online and re-publish the last-known retained state. */
   function handleConnect(): void {
     client.publish(topics.status, AVAILABILITY_ONLINE, true);
+    // Re-issue anything that was only buffered while the broker was away. A blank publish to a
+    // topic that is already blank costs nothing, and this is the only way to be certain the
+    // retraction reached the broker rather than being evicted from a full buffer.
+    const retractionsSettled = pendingRetractions.length > 0;
+    const reissue = pendingRetractions;
+    pendingRetractions = [];
+    for (const topic of reissue) retract(topic);
     if (lastState !== null) {
       // Force discovery re-emission on a fresh connection (the broker may have lost retained state).
       discoverySignature = null;
@@ -126,6 +172,8 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     // Re-announce staleness after the state: a broker that lost retained topics needs the current
     // verdict back even when no reload has happened since the disconnect (issue #394).
     if (lastHealth !== null) client.publish(topics.snapshotState, snapshotHealthPayload(lastHealth), true);
+    // Reached with no state to re-publish when the first connect happened before the first reload.
+    if (retractionsSettled) rememberPublished();
   }
 
   /** Publish the retained state topics for a projected state, plus discovery when the layout changed. */
@@ -136,6 +184,8 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     }
     clearRemovedLocations(state);
     if (options.discovery) publishDiscoveryIfChanged(state);
+    // After the discovery pass, so the record reflects whether configs are out there.
+    rememberPublished();
   }
 
   /**
@@ -152,16 +202,60 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
       // reads its attributes from that same state topic, so clearing the state first would hand
       // Home Assistant an empty payload to run `json_attributes_template` over — an avoidable
       // parse warning in the log for an entity that is about to disappear anyway.
-      if (options.discovery) {
-        client.publish(
-          discoveryConfigTopic(options.discoveryPrefix, 'sensor', locationSensorObjectId(id)),
-          '',
-          true,
-        );
+      if (options.discovery || discoveryPublished) {
+        retract(discoveryConfigTopic(options.discoveryPrefix, 'sensor', locationSensorObjectId(id)));
       }
-      client.publish(topics.locationState(id), '', true);
+      retract(topics.locationState(id));
     }
     publishedLocationIds = state.locations.map((l) => l.id);
+  }
+
+  /**
+   * Blank one retained topic — the MQTT idiom for "forget this". A publish made while the broker is
+   * unreachable is only buffered, so it is noted as pending until a connect flushes it.
+   */
+  function retract(topic: string): void {
+    if (!client.publish(topic, '', true)) pendingRetractions.push(topic);
+  }
+
+  /**
+   * Persist what is now retained, so the next process can pick the diff up where this one left off.
+   * Best-effort by contract — the store swallows its own failures, because a bridge that cannot
+   * write this file must still publish.
+   *
+   * Held back entirely while a retraction is still buffered. The record would otherwise drop a dead
+   * topic from its "before" side before the blanking publish had left the process — and a restart
+   * in that window (a broker that is down at boot is ordinary) would strand the topic on the broker
+   * with nothing left that remembers it. A record that is one generation behind only costs a
+   * repeated, idempotent blanking publish.
+   */
+  function rememberPublished(): void {
+    if (options.retainedStore === undefined || pendingRetractions.length > 0) return;
+    // Reconnects re-publish the whole snapshot, so skip the write when nothing actually moved.
+    const record = {
+      version: RETAINED_LOCATIONS_VERSION,
+      prefix: topics.base,
+      discoveryPrefix: options.discoveryPrefix,
+      locationIds: publishedLocationIds,
+      discoveryPublished,
+    };
+    const signature = JSON.stringify(record);
+    if (signature === rememberedSignature) return;
+    rememberedSignature = signature;
+    options.retainedStore.save(record);
+  }
+
+  /**
+   * Blank whatever an earlier run left under a prefix this one has stopped using, once, at start.
+   * The publishes need no wait: made before the connection is up they are buffered and flushed on
+   * connect, and {@link rememberPublished} holds the record at its old contents until that happens,
+   * so a start that never reaches the broker leaves the sweep to be repeated rather than forgotten.
+   */
+  function clearStaleScope(): void {
+    if (staleTopics.length === 0) return;
+    for (const topic of staleTopics) retract(topic);
+    staleTopics = [];
+    rememberPublished();
   }
 
   /** Re-publish the HA discovery configs only when the location layout has changed since last time. */
@@ -169,6 +263,7 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
     const signature = JSON.stringify(state.locations.map((l) => [l.id, l.name]));
     if (signature === discoverySignature) return;
     discoverySignature = signature;
+    discoveryPublished = true;
     const configs = buildDiscoveryConfigs(state, {
       prefix: options.prefix,
       discoveryPrefix: options.discoveryPrefix,
@@ -180,6 +275,7 @@ export function createMqttPublisher(options: MqttPublisherOptions): MqttPublishe
   return {
     start(): void {
       client.start();
+      clearStaleScope();
     },
 
     async publishState(driver: IDatabaseDriver, generatedAt: string | null): Promise<void> {

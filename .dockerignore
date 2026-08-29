@@ -74,6 +74,10 @@ public/ocr/
 # in would make every container built from the image claim to be the same bridge.
 **/bridge-id
 
+# What the bridge last published to MQTT — machine-local runtime state for one installation, so
+# baking one in would have a fresh container retract another installation's topics.
+**/mqtt-retained.json
+
 # Real inventory data must never enter an image (config points at a mounted snapshot).
 **/local/
 **/*.sqlite

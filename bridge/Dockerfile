@@ -27,7 +27,9 @@
 # The `/state` volume keeps the bridge's stable identity (README.md -> "The bridge's stable
 # identity") across a **recreated** container, so consumers such as Home Assistant go on
 # recognising it as the same bridge. Leave the volume off and the identity lives only as long as
-# the container does: a fresh `docker run` then looks like a different bridge.
+# the container does: a fresh `docker run` then looks like a different bridge — and a location
+# deleted while the container was down keeps its retained MQTT topic (README.md -> "Deleting a
+# location clears its topic"), which is remembered in the same volume.
 #
 FROM node:24-slim
 
@@ -54,6 +56,9 @@ COPY package.json ./package.json
 # making the same bridge look like a new one. Mount a volume here to survive a recreate.
 RUN mkdir -p /state && chown node:node /state
 ENV GUBBINS_BRIDGE_ID_FILE=/state/bridge-id
+# Same volume, same reason: what the bridge published to MQTT last time. Without it a location
+# deleted while the container was down keeps its retained topic and its Home Assistant entity.
+ENV GUBBINS_BRIDGE_MQTT_STATE_FILE=/state/mqtt-retained.json
 
 # Run as the image's built-in unprivileged user, never root.
 USER node

@@ -68,6 +68,12 @@ __pycache__/
 bridge/bridge-id
 /bridge-id
 
+# What the bridge last published to MQTT (issue #565) — machine-local runtime state, so a location
+# deleted while the bridge is stopped is still cleared off the broker. Location ids and topic
+# prefixes only, but it belongs to one installation.
+bridge/mqtt-retained.json
+/mqtt-retained.json
+
 # Data artefacts — a real database, dump, backup, or exported snapshot carries live inventory
 # data and must never enter this public repo (see the no-secrets rule in CLAUDE.md). These are
 # exactly the files a developer drops in the repo root while testing the backup/restore and

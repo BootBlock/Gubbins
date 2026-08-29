@@ -78,6 +78,10 @@
  *   GUBBINS_BRIDGE_MQTT_DISCOVERY (optional) — also emit Home Assistant MQTT-discovery configs so
  *                                  HA auto-creates entities with no custom component. Off by default.
  *   GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX (optional) — HA discovery prefix (default `homeassistant`).
+ *   GUBBINS_BRIDGE_MQTT_STATE_FILE (optional) — where the bridge remembers which retained topics it
+ *                                  published, so a location deleted while it was stopped is still
+ *                                  cleared off the broker; defaults to `mqtt-retained.json` in the
+ *                                  working directory.
  *   GUBBINS_BRIDGE_HA            (optional) — opt into reading Home Assistant entity state (the
  *                                 "count by weight" scale reading). Off by default; outbound-only.
  *   GUBBINS_BRIDGE_HA_URL        (required when HA on, unless _HA_DISCOVERY finds one) — base URL
@@ -285,6 +289,16 @@ export interface BridgeConfig {
   /** HA discovery prefix (`GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX`, default `homeassistant`). */
   readonly mqttDiscoveryPrefix: string;
   /**
+   * Where the bridge remembers which retained topics it published (`GUBBINS_BRIDGE_MQTT_STATE_FILE`);
+   * `undefined` falls back to {@link DEFAULT_MQTT_STATE_FILE} in the working directory. Point it at a
+   * mounted path when the bridge runs in a container that is recreated rather than restarted —
+   * without the file, a location deleted while the bridge was stopped keeps its retained state topic
+   * and its Home Assistant entity for good (issue #565).
+   *
+   * **Not a secret**: it holds location ids and topic prefixes, values already on the wire.
+   */
+  readonly mqttStateFile: string | undefined;
+  /**
    * Whether the operator opted into **reading Home Assistant entity state** (`GUBBINS_BRIDGE_HA=on`)
    * — the inbound path that lets "count by weight" pull a live reading off a scale entity.
    * **Off by default.** Like MQTT this is an *outbound client* (the bridge calls HA; no new inbound
@@ -379,6 +393,7 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
   const mqttClientId = (env.GUBBINS_BRIDGE_MQTT_CLIENT_ID ?? '').trim() || 'gubbins-bridge';
   const mqttDiscovery = parseBool(env.GUBBINS_BRIDGE_MQTT_DISCOVERY, false, 'GUBBINS_BRIDGE_MQTT_DISCOVERY');
   const mqttDiscoveryPrefix = (env.GUBBINS_BRIDGE_MQTT_DISCOVERY_PREFIX ?? '').trim() || 'homeassistant';
+  const mqttStateFile = (env.GUBBINS_BRIDGE_MQTT_STATE_FILE ?? '').trim() || undefined;
   const homeAssistant = parseBool(env.GUBBINS_BRIDGE_HA, false, 'GUBBINS_BRIDGE_HA');
   const homeAssistantUrl = (env.GUBBINS_BRIDGE_HA_URL ?? '').trim() || undefined;
   const homeAssistantToken = (env.GUBBINS_BRIDGE_HA_TOKEN ?? '').trim() || undefined;
@@ -443,6 +458,7 @@ export function loadConfig(env: Env = process.env): BridgeConfig {
     mqttClientId,
     mqttDiscovery,
     mqttDiscoveryPrefix,
+    mqttStateFile,
     homeAssistant,
     homeAssistantUrl,
     homeAssistantToken,
