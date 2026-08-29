@@ -4,7 +4,8 @@ import { useT } from '@/features/i18n';
 import { COLOUR_FORMATS, contrastingInk, formatColour, parseColour, type ColourFormat } from '@/lib/colour';
 import { cn } from '@/lib/utils';
 import { Input } from './input';
-import { Menu, MenuAction } from './menu';
+import { Menu } from './menu';
+import { MenuAction } from './menu-action';
 import type { MessageKey } from '@/features/i18n';
 
 /** The translated name of each notation, for the "Show as" menu. */
