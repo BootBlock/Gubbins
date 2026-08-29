@@ -22,6 +22,9 @@ vi.mock('@/lib/env/support-diagnosis', async (importOriginal) => ({
 /** Signals for a page a service worker is controlling — i.e. isolation is not coming back. */
 const SETTLED = { serviceWorkerApi: true, serviceWorkerActive: true, serviceWorkerControlling: true };
 
+/** A registration that has not reached `active`, so the answer could still change (issue #260). */
+const UNSETTLED = { serviceWorkerApi: true, serviceWorkerActive: false, serviceWorkerControlling: false };
+
 const acquireDatabaseTabLock = vi.fn(() =>
   Promise.resolve({ acquired: true, handle: { release: () => {} } }),
 );
@@ -31,6 +34,11 @@ vi.mock('@/db/tab-lock', () => ({
 
 const bootDatabase = vi.fn(() => Promise.resolve({ driver: {}, migration: { from: 0, to: 1, applied: [] } }));
 const countStoredItems = vi.fn(() => Promise.resolve(0));
+const detectDbStorageLayout = vi.fn(() => Promise.resolve('none' as 'none' | 'opfs' | 'sahpool'));
+vi.mock('@/db/db-storage', () => ({
+  detectDbStorageLayout: () => detectDbStorageLayout(),
+}));
+
 vi.mock('@/db/client', () => ({
   bootDatabase: () => bootDatabase(),
   countStoredItems: () => countStoredItems(),
@@ -49,10 +57,12 @@ vi.mock('@/state/stores/useStorageStore', () => ({
 
 import { useDatabaseBoot } from './useDatabaseBoot';
 import { readDbPresence, writeDbPresence } from '@/db/db-presence';
+import { waiveIsolation } from '@/lib/env/isolation-waiver';
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  sessionStorage.clear();
   useLabStore.getState().resetLab();
   checkCriticalSupport.mockClear().mockReturnValue({ supported: true, missing: [] });
   checkIsolationSupport.mockClear().mockReturnValue({ supported: true, missing: [] });
@@ -62,6 +72,7 @@ afterEach(() => {
   acquireDatabaseTabLock.mockClear();
   bootDatabase.mockClear().mockResolvedValue({ driver: {}, migration: { from: 0, to: 1, applied: [] } });
   countStoredItems.mockClear().mockResolvedValue(0);
+  detectDbStorageLayout.mockClear().mockResolvedValue('none');
 });
 
 /**
@@ -102,7 +113,7 @@ describe('useDatabaseBoot — cross-origin isolation is preferred, not required'
     diagnoseCriticalSupport.mockResolvedValue({
       cause: 'isolation-blocked',
       missing: [],
-      signals: { serviceWorkerApi: true, serviceWorkerActive: false, serviceWorkerControlling: false },
+      signals: UNSETTLED,
     });
 
     const { result } = renderHook(() => useDatabaseBoot());
@@ -145,6 +156,179 @@ describe('useDatabaseBoot — cross-origin isolation is preferred, not required'
 
     await waitFor(() => expect(result.current.status).toBe('unsupported'));
     expect(bootDatabase).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The gate used to answer from a single reading of an unfinished boot, and park on the screen it
+ * produced (issue #260). Nothing then re-checked: recovery rested entirely on `coi-bootstrap.js`
+ * reloading on `controllerchange`, and a session that had already spent its reload budget was
+ * left on the boot screen until the tab was closed.
+ */
+describe('useDatabaseBoot — the wait for isolation has to end somewhere', () => {
+  it('boots on the fallback once the wait shows isolation is not coming after all', async () => {
+    // The recovery the one-shot reload could not give: the worker took control, no reload
+    // followed, and the reading the gate re-takes is now final.
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport
+      .mockResolvedValueOnce({ cause: 'isolation-pending', missing: [], signals: UNSETTLED })
+      .mockResolvedValue({ cause: 'isolation-blocked', missing: [], signals: SETTLED });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(bootDatabase).toHaveBeenCalledTimes(1);
+    // Re-read rather than re-used: parking on the first reading is the defect.
+    expect(diagnoseCriticalSupport).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers the fallback to the user when the wait ends with the question still open', async () => {
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() =>
+      expect(result.current).toMatchObject({ status: 'unsupported', isolationWaivable: true }),
+    );
+    // Still not booted: the choice is the user's, because the fallback database this would
+    // create is the one the origin must keep opening afterwards.
+    expect(bootDatabase).not.toHaveBeenCalled();
+  });
+
+  it('does not offer the fallback for a cause the fallback would not fix', async () => {
+    // Blocked site data leaves nowhere to write at all, so "carry on without isolation" would
+    // be an offer the gate cannot keep.
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'site-data-blocked',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() =>
+      expect(result.current).toMatchObject({ status: 'unsupported', isolationWaivable: false }),
+    );
+  });
+
+  it('does not wait at all for an origin already living on the fallback store', async () => {
+    // The store it must keep opening is already chosen, so there is nothing for the wait to
+    // decide — holding this user on a spinner would be a delay that changes nothing.
+    detectDbStorageLayout.mockResolvedValue('sahpool');
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    // The reading it booted on is the one that stops a fresh origin dead, and the single
+    // diagnosis proves no wait happened — a wait always re-reads on the way out.
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(diagnoseCriticalSupport).toHaveBeenCalledTimes(1);
+  });
+
+  it('never offers the fallback where the database is in the primary store', async () => {
+    // The offer would be one the gate cannot keep: a plain OPFS database is unreachable from
+    // the fallback VFS, which refuses rather than opening a second, empty one beside it. Taking
+    // it would trade this screen's guidance for a database error the user cannot act on.
+    detectDbStorageLayout.mockResolvedValue('opfs');
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() =>
+      expect(result.current).toMatchObject({ status: 'unsupported', isolationWaivable: false }),
+    );
+  });
+
+  it('ignores a waiver where the database is in the primary store', async () => {
+    // A waiver made on some other screen must not carry this origin past the wait: the boot it
+    // would let through cannot open the database it has.
+    waiveIsolation();
+    detectDbStorageLayout.mockResolvedValue('opfs');
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('unsupported'));
+    expect(bootDatabase).not.toHaveBeenCalled();
+  });
+
+  it('still stops a fallback origin for a cause that is not about isolation', async () => {
+    // Skipping the wait must not skip the *diagnosis*: a blocked script is a blocked script
+    // whichever store this origin's database lives in, and the screen for it is the only place
+    // that says so.
+    detectDbStorageLayout.mockResolvedValue('sahpool');
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'scripts-blocked',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('unsupported'));
+    expect(bootDatabase).not.toHaveBeenCalled();
+  });
+
+  it('does not strand the boot when the store cannot be read at all', async () => {
+    // `readPlainDatabaseFile` rethrows anything that is not "absent" — a file locked by another
+    // tab, an I/O error — and this call sits outside the try/catch that guards the open. An
+    // escaping rejection would leave the gate on the starting screen with no reload, no
+    // diagnosis and no offer: the exact dead end this change exists to remove.
+    detectDbStorageLayout.mockRejectedValue(
+      new DOMException('The file is locked.', 'NoModificationAllowedError'),
+    );
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    // Read as `opfs`, the conservative answer: the screen appears, and the offer to open the
+    // fallback — which could not reach a plain-OPFS database — is withheld.
+    await waitFor(() =>
+      expect(result.current).toMatchObject({ status: 'unsupported', isolationWaivable: false }),
+    );
+  });
+
+  it('boots straight through once the user has waived the wait', async () => {
+    // The waiver is the answer to the screen above, so a second boot must not ask again.
+    waiveIsolation();
+    checkIsolationSupport.mockReturnValue({ supported: false, missing: ['SharedArrayBuffer'] });
+    diagnoseCriticalSupport.mockResolvedValue({
+      cause: 'isolation-pending',
+      missing: [],
+      signals: UNSETTLED,
+    });
+
+    const { result } = renderHook(() => useDatabaseBoot());
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(diagnoseCriticalSupport).not.toHaveBeenCalled();
   });
 });
 

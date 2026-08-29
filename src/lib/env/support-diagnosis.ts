@@ -172,6 +172,63 @@ export function isolationIsSettled(signals: SupportSignals): boolean {
   return !signals.serviceWorkerApi || signals.serviceWorkerControlling;
 }
 
+/**
+ * Whether isolation could still arrive if the gate kept waiting (issue #260).
+ *
+ * Two readings mean "not yet" rather than "no": `isolation-pending` (a worker is active but has
+ * not taken control, so its headers apply only from the next navigation) and an
+ * `isolation-blocked` whose worker has not reached `active` — which is equally what a slow first
+ * install looks like. Everything else is either settled or a different problem entirely, and
+ * waiting on it would only delay the guidance the screen already has for it.
+ *
+ * Pure, so the gate's decision to wait is unit-testable rather than re-derived from live signals.
+ */
+export function isolationMayStillArrive(cause: SupportCause, signals: SupportSignals): boolean {
+  if (cause !== 'isolation-pending' && cause !== 'isolation-blocked') return false;
+  return !isolationIsSettled(signals);
+}
+
+/**
+ * How long the boot gate waits for a service worker to take control before it stops waiting
+ * (issue #260).
+ *
+ * `isolationIsSettled` can only change when a worker starts controlling this document, and the
+ * one thing that makes that happen is out of the page's hands. A first visit reaches control in
+ * well under a second; the budget here is sized for a slow first install over a poor connection,
+ * not for the median case, because the cost of waiting is a spinner and the cost of giving up
+ * early is an origin pinned to the fallback VFS for good.
+ */
+export const ISOLATION_CONTROL_WAIT_MS = 20_000;
+
+/**
+ * Resolve once a service worker controls this document, or once `timeoutMs` has passed —
+ * whichever comes first. Never rejects: the caller re-reads the signals either way.
+ *
+ * `controllerchange` normally ends with `public/coi-bootstrap.js` reloading the page, so on a
+ * healthy first visit nothing here gets to resolve at all. It matters in exactly the case that
+ * issue #260 is about: the reload budget is spent, the navigation never came back isolated, and
+ * the gate has to notice that the question has now *settled* instead of waiting for ever.
+ */
+export function waitForServiceWorkerControl(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      resolve();
+      return;
+    }
+    if (navigator.serviceWorker.controller != null) {
+      resolve();
+      return;
+    }
+    const settle = () => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('controllerchange', settle);
+      resolve();
+    };
+    const timer = setTimeout(settle, timeoutMs);
+    navigator.serviceWorker.addEventListener('controllerchange', settle);
+  });
+}
+
 /** The throwaway key the storage probe writes; removed again immediately. */
 const STORAGE_PROBE_KEY = 'gubbins-support-probe';
 

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DataLossScreen, MultiTabScreen, UnsupportedScreen } from './BootScreens';
-import { TAB_LOCK_OVERRIDE_KEY } from '@/lib/storage-keys';
+import { ISOLATION_WAIVER_KEY, TAB_LOCK_OVERRIDE_KEY } from '@/lib/storage-keys';
 import type { SupportCause, SupportDiagnosis } from '@/lib/env/support-diagnosis';
 
 /**
@@ -86,6 +86,37 @@ describe('UnsupportedScreen', () => {
     expect(report).toHaveTextContent('coiBootstrapRan: true');
     expect(report).toHaveTextContent('serviceWorkerControlling: false');
     expect(report).toHaveTextContent('missing: Cross-Origin Isolation (COOP/COEP), SharedArrayBuffer');
+  });
+
+  it.each([undefined, false] as const)(
+    'keeps the fallback offer off the screen while the wait may still resolve (%s)',
+    (waivable) => {
+      // Offered too early it is a trap: the fallback database it would create is the one this
+      // origin has to keep opening, so it must not be dangled in front of a boot that is simply
+      // taking its time — nor in front of a cause the fallback would not fix. Both the explicit
+      // `false` and the default are pinned, since the gate passes the flag on every render and
+      // the default is what every other caller gets.
+      render(<UnsupportedScreen diagnosis={diagnosis('isolation-pending')} isolationWaivable={waivable} />);
+      expect(screen.queryByTestId('boot-waive-isolation')).not.toBeInTheDocument();
+      expect(screen.queryByText(/slightly slower store/)).not.toBeInTheDocument();
+    },
+  );
+
+  it('offers a way out once waiting can achieve nothing more, and records it before reloading', async () => {
+    // Issue #260: `isolation-pending` used to be a screen with no exit but closing the tab.
+    const reload = vi.fn();
+    vi.spyOn(window, 'location', 'get').mockReturnValue({
+      ...window.location,
+      reload,
+    } as unknown as Location);
+
+    render(<UnsupportedScreen diagnosis={diagnosis('isolation-pending')} isolationWaivable />);
+    await userEvent.click(screen.getByRole('button', { name: 'Start without it' }));
+
+    // Persisted first, for the same reason as the tab-lock override: the fresh boot is what
+    // reads it, so it must not depend on anything else in this one.
+    expect(sessionStorage.getItem(ISOLATION_WAIVER_KEY)).toBe('1');
+    expect(reload).toHaveBeenCalled();
   });
 
   it('links the shared boot-screen footer to the public project home', () => {

@@ -29,7 +29,7 @@ export function BootGate({ children }: { children: ReactNode }) {
     case 'starting':
       return <StartingScreen />;
     case 'unsupported':
-      return <UnsupportedScreen diagnosis={state.diagnosis} />;
+      return <UnsupportedScreen diagnosis={state.diagnosis} isolationWaivable={state.isolationWaivable} />;
     case 'multi-tab':
       return <MultiTabScreen reason={state.reason} whenReleased={state.whenReleased} />;
     case 'error':

@@ -28,7 +28,8 @@ data never ends up split between the two.
 > **ℹ️ Note**
 > On your **first visit**, Gubbins may pause on a **“Preparing secure storage…”** screen for a
 > moment while it sets up its private storage. That's normal, happens only once, and the page
-> carries on by itself.
+> carries on by itself. If it can't get any further, the screen offers **Start without it**, which
+> opens your data on the fallback engine instead — everything works the same.
 
 If Gubbins can't start, it says *why* on that screen rather than simply blaming your browser —
 because usually the browser is fine and something else is withholding the storage it needs. The

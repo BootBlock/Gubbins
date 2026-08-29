@@ -18,8 +18,13 @@ import { checkCriticalSupport, checkIsolationSupport } from '@/lib/env/feature-d
 import {
   diagnoseCriticalSupport,
   isolationIsSettled,
+  isolationMayStillArrive,
+  waitForServiceWorkerControl,
+  ISOLATION_CONTROL_WAIT_MS,
   type SupportDiagnosis,
 } from '@/lib/env/support-diagnosis';
+import { isolationWaived } from '@/lib/env/isolation-waiver';
+import { detectDbStorageLayout } from '@/db/db-storage';
 import { acquireDatabaseTabLock, type TabLockDenial } from '@/db/tab-lock';
 import { bootDatabase, countStoredItems, type DbBootResult } from '@/db/client';
 import { DbError } from '@/db/errors';
@@ -37,7 +42,19 @@ import {
 
 export type BootState =
   | { readonly status: 'starting' }
-  | { readonly status: 'unsupported'; readonly diagnosis: SupportDiagnosis }
+  | {
+      readonly status: 'unsupported';
+      readonly diagnosis: SupportDiagnosis;
+      /**
+       * The gate is out of ways to reach isolation on its own, so the user may choose to open
+       * the database on the fallback VFS instead of waiting further (issue #260). False for
+       * every other verdict, where continuing would not help: there is nothing to fall back
+       * *to* without OPFS, a blocked script or blocked site data is not the user's to waive,
+       * and an origin whose database already sits in the *primary* store cannot be opened on
+       * the fallback at all — that one would be an offer the gate could not keep.
+       */
+      readonly isolationWaivable: boolean;
+    }
   | {
       readonly status: 'multi-tab';
       readonly reason: TabLockDenial;
@@ -83,7 +100,11 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   // rather than seeing a verdict that changes a moment later.
   const support = checkCriticalSupport();
   if (!support.supported) {
-    commit({ status: 'unsupported', diagnosis: await diagnoseCriticalSupport(support.missing) });
+    commit({
+      status: 'unsupported',
+      diagnosis: await diagnoseCriticalSupport(support.missing),
+      isolationWaivable: false,
+    });
     return;
   }
 
@@ -92,14 +113,77 @@ async function runBoot(isMounted: () => boolean, setState: (state: BootState) =>
   // one diagnosis that means isolation is genuinely not coming — and only once that is *settled*
   // (`isolationIsSettled`), because the choice is effectively permanent: the fallback database
   // this boot would create is the one the origin must keep opening afterwards. Every other cause
-  // still stops here, including `isolation-pending` — the normal first visit, waiting on the
-  // service worker that supplies the COOP/COEP headers, which resolves itself on reload.
+  // still stops here.
   const isolation = checkIsolationSupport();
   if (!isolation.supported) {
-    const diagnosis = await diagnoseCriticalSupport(isolation.missing);
-    if (diagnosis.cause !== 'isolation-blocked' || !isolationIsSettled(diagnosis.signals)) {
-      commit({ status: 'unsupported', diagnosis });
-      return;
+    // What is already on disk answers half of this before any diagnosis can, so ask it first
+    // (issue #260). It decides two things and nothing else: whether waiting can still change
+    // the outcome, and whether the user may be offered a way past the wait.
+    //
+    //  - `sahpool` — this origin's database is already in the fallback store, and
+    //    `detectDbStorageLayout` will keep opening it there. There is nothing left for isolation
+    //    to decide, so the wait is skipped and an un-settled isolation reading is no reason to
+    //    stop. Any *other* cause still stops here, exactly as it would on a fresh origin.
+    //  - `opfs` — the database is a plain OPFS file, which the fallback cannot reach at all:
+    //    `openConnection` refuses rather than opening a second, empty one beside it. Waiting is
+    //    still right, but "carry on without isolation" is an offer this gate could not keep, so
+    //    it is never made — and a waiver left over from another screen is not honoured either.
+    //  - `none` — nothing on disk, so the choice is genuinely open and genuinely permanent.
+    //
+    // A failure to read reads as `opfs`, the conservative answer: a file that is *there* and
+    // unreadable (locked by another tab, an I/O error) is a plain-OPFS database, and treating it
+    // as one costs at worst a wait this boot did not need. Letting the rejection escape would
+    // strand the gate on the starting screen with no exit at all — the failure this whole
+    // change exists to remove.
+    const layout = await detectDbStorageLayout().catch(() => 'opfs' as const);
+    if (!isMounted()) return;
+    const choiceIsOpen = layout === 'none';
+
+    // A waiver stops the boot asking again, diagnosis and all. That goes further than the
+    // `sahpool` skip below, which still runs the diagnosis so a non-isolation cause can stop
+    // the boot — and it is deliberate: this user was shown the screen and chose to carry on,
+    // and re-deriving a verdict they have already answered would cost them the service-worker
+    // probe's few seconds on every reload of the tab. Blocked site data cannot reach here in
+    // any case, since it is what makes `isolationWaived()` false.
+    if (!(choiceIsOpen && isolationWaived())) {
+      let diagnosis = await diagnoseCriticalSupport(isolation.missing);
+
+      // Watch the answer settle, rather than commit to the first reading (issue #260). The
+      // un-settled causes — `isolation-pending`, and an `isolation-blocked` whose worker has
+      // not reached `active` — both describe a boot still in motion, and a gate that answers
+      // from either of them is answering a question that is still open. Nothing here can make
+      // *this* document isolated, since only a fresh navigation can; the point of waiting is
+      // that once a worker controls the page and isolation still has not arrived, the answer
+      // is final and the fallback VFS is the right one to open.
+      if (layout !== 'sahpool' && isolationMayStillArrive(diagnosis.cause, diagnosis.signals)) {
+        commit({ status: 'unsupported', diagnosis, isolationWaivable: false });
+        await waitForServiceWorkerControl(ISOLATION_CONTROL_WAIT_MS);
+        if (!isMounted()) return;
+        diagnosis = await diagnoseCriticalSupport(checkIsolationSupport().missing);
+      }
+
+      // Isolation may be given up on once the answer is final — or, on an origin already living
+      // in the fallback store, once it is clear the question is only about isolation, since the
+      // store it must keep opening is chosen either way. Every other cause is a genuine stop
+      // with its own guidance, whatever the layout says.
+      const aboutIsolation =
+        diagnosis.cause === 'isolation-pending' || diagnosis.cause === 'isolation-blocked';
+      const settledAndBlocked =
+        diagnosis.cause === 'isolation-blocked' && isolationIsSettled(diagnosis.signals);
+
+      if (!settledAndBlocked && !(layout === 'sahpool' && aboutIsolation)) {
+        // One wait, then the decision goes to the user. A worker could still take control a
+        // minute from now, so this is not proof that it never will — it is the point past which
+        // holding a spinner up costs more than it can win. The offer is made only where the
+        // fallback could actually be opened, and only where choosing it is still the user's to
+        // make.
+        commit({
+          status: 'unsupported',
+          diagnosis,
+          isolationWaivable: choiceIsOpen && isolationMayStillArrive(diagnosis.cause, diagnosis.signals),
+        });
+        return;
+      }
     }
   }
 

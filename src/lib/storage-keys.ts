@@ -109,6 +109,13 @@ export const LAST_ORPHAN_SWEEP_KEY = 'gubbins:last-orphan-sweep';
 export const DB_PRESENCE_KEY = 'gubbins:db-presence';
 
 /**
+ * Records that the user chose to stop waiting for cross-origin isolation and open the database
+ * on the fallback VFS (see `lib/env/isolation-waiver.ts`). Defined here for the same reason as
+ * the keys above — it is written directly rather than through a Zustand `persist` name.
+ */
+export const ISOLATION_WAIVER_KEY = 'gubbins:isolation-waiver';
+
+/**
  * Every `gubbins:` key, in rough order of how user-visible it is. Keep this list exhaustive:
  * the coverage test compares it against the literals in `src/`.
  *
@@ -346,6 +353,14 @@ export const STORAGE_KEYS = [
     eraseGroup: null,
     backupIncluded: false,
     note: 'sessionStorage, not localStorage — the single-tab guard fails closed, and this records the user overriding it for *this* tab. It must die with the tab, or one override would disarm the guard permanently.',
+  },
+  {
+    key: ISOLATION_WAIVER_KEY,
+    store: 'lib/env/isolation-waiver',
+    storage: 'session',
+    eraseGroup: null,
+    backupIncluded: false,
+    note: 'sessionStorage, not localStorage — the user telling *this* tab to stop waiting for cross-origin isolation (issue #260). It must die with the tab: the waiver answers one stuck boot, and a permanent one would keep future tabs off the primary VFS long after the worker started behaving.',
   },
   {
     key: 'gubbins:db-tab',

@@ -62,6 +62,12 @@ That's the one-time setup Gubbins does on your first visit, and it normally fini
 a moment. If it lingers, press **Reload**. If it then reports a different cause, follow the advice
 it gives — see [[Supported browsers|Installing-Gubbins]].
 
+If waiting can't get any further, Gubbins stops waiting and offers **Start without it** below the
+Reload button. That opens your data in a slightly slower store that doesn't need the setup at all.
+Everything works exactly the same; the only difference is in how the data is written to your
+device. It's there for browsers and setups where the background helper never starts — see
+[[How your data is stored|How-Your-Data-Is-Stored]].
+
 **Gubbins says it's already open elsewhere, or that it can't check for other tabs.**
 Your data can only be open in one tab or window at a time — that's what keeps two copies of Gubbins
 from writing over each other. If it says Gubbins is **already open elsewhere**, close the other tab

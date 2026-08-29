@@ -188,6 +188,8 @@
   "boot.unsupported.isolation.step1": "Private Fenster und Inkognito-Fenster schalten Hintergrunddienste ab. Versuchen Sie es in einem normalen Fenster.",
   "boot.unsupported.isolation.step2": "Ein Inhaltsblocker oder eine Datenschutz-Erweiterung könnte ihn blockieren — erlauben Sie diese Website und laden Sie neu.",
   "boot.unsupported.isolation.step3": "Antivirensoftware, ein VPN oder ein Firmen- oder Schulnetzwerk können Seiten so verändern, dass dies verhindert wird.",
+  "boot.unsupported.waive.note": "Gubbins kann auch ohne diesen Helfer starten und Ihre Daten stattdessen in einem etwas langsameren Speicher ablegen. Es funktioniert alles genauso; der Unterschied liegt nur darin, wie die Daten geschrieben werden.",
+  "boot.unsupported.waive.action": "Ohne den Helfer starten",
   "boot.unsupported.browser.title": "Browser nicht unterstützt",
   "boot.unsupported.browser.lede": "Alles andere auf diesem Gerät ist in Ordnung, es sieht also tatsächlich nach dem Browser aus: Ihm fehlt der private, sichere Speicher, den Gubbins braucht, um Ihre Daten zu schützen.",
   "boot.unsupported.browser.step1": "Versuchen Sie es mit der neuesten Version von Chrome, Edge oder Firefox.",

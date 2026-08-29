@@ -7,6 +7,8 @@ import {
   collectSupportSignals,
   diagnoseSupport,
   isolationIsSettled,
+  isolationMayStillArrive,
+  waitForServiceWorkerControl,
   type SupportSignals,
 } from './support-diagnosis';
 
@@ -179,6 +181,115 @@ describe('isolationIsSettled', () => {
         signals({ ...NOT_ISOLATED, serviceWorkerActive: false, serviceWorkerControlling: false }),
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * The gate waits on exactly the readings that can still change (issue #260), and on no others:
+ * waiting out a cause with its own guidance would only delay that guidance reaching the reader.
+ */
+describe('isolationMayStillArrive', () => {
+  it('waits while the worker is active but has not taken control', () => {
+    expect(
+      isolationMayStillArrive(
+        'isolation-pending',
+        signals({ ...NOT_ISOLATED, serviceWorkerControlling: false }),
+      ),
+    ).toBe(true);
+  });
+
+  it('waits while a registration exists but has not reached active — a slow first install', () => {
+    expect(
+      isolationMayStillArrive(
+        'isolation-blocked',
+        signals({ ...NOT_ISOLATED, serviceWorkerActive: false, serviceWorkerControlling: false }),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not wait once a worker controls the page without isolation arriving', () => {
+    expect(isolationMayStillArrive('isolation-blocked', signals({ ...NOT_ISOLATED }))).toBe(false);
+  });
+
+  it('does not wait where there is no service-worker API to wait for', () => {
+    expect(
+      isolationMayStillArrive(
+        'isolation-blocked',
+        signals({
+          ...NOT_ISOLATED,
+          serviceWorkerApi: false,
+          serviceWorkerActive: false,
+          serviceWorkerControlling: false,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it.each(['insecure-context', 'scripts-blocked', 'site-data-blocked', 'browser-unsupported'] as const)(
+    'does not wait on %s, which no service worker could resolve',
+    (cause) => {
+      // Every one of these has its own guidance on the screen; the un-settled signals here are
+      // beside the point, and holding the reader on a spinner would only postpone the advice.
+      expect(
+        isolationMayStillArrive(
+          cause,
+          signals({ ...NOT_ISOLATED, serviceWorkerActive: false, serviceWorkerControlling: false }),
+        ),
+      ).toBe(false);
+    },
+  );
+});
+
+describe('waitForServiceWorkerControl', () => {
+  /** A `navigator.serviceWorker` that records its listeners so a test can fire the event. */
+  function stubWorker(controller: unknown = null) {
+    const listeners = new Set<() => void>();
+    vi.stubGlobal('navigator', {
+      cookieEnabled: true,
+      serviceWorker: {
+        controller,
+        addEventListener: (_type: string, fn: () => void) => listeners.add(fn),
+        removeEventListener: (_type: string, fn: () => void) => listeners.delete(fn),
+      },
+    });
+    return { takeControl: () => listeners.forEach((fn) => fn()), listeners };
+  }
+
+  it('resolves as soon as a worker takes control', async () => {
+    const worker = stubWorker();
+    const waited = waitForServiceWorkerControl(60_000);
+    worker.takeControl();
+    await expect(waited).resolves.toBeUndefined();
+  });
+
+  it('gives up after the budget, so a worker that never arrives cannot hold the boot for ever', async () => {
+    vi.useFakeTimers();
+    stubWorker();
+    const waited = waitForServiceWorkerControl(5_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(waited).resolves.toBeUndefined();
+  });
+
+  it('drops its listener and its timer once it has settled', async () => {
+    vi.useFakeTimers();
+    const worker = stubWorker();
+    const waited = waitForServiceWorkerControl(5_000);
+    worker.takeControl();
+    await waited;
+    // Left armed, the timer would fire seconds after the answer was known, and the listener
+    // would resolve an already-settled promise on every later controller change.
+    expect(worker.listeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('returns at once when a worker is already controlling the page', async () => {
+    stubWorker({});
+    await expect(waitForServiceWorkerControl(60_000)).resolves.toBeUndefined();
+  });
+
+  it('returns at once where the API is absent, rather than waiting out a budget for nothing', async () => {
+    vi.stubGlobal('navigator', { cookieEnabled: true });
+    await expect(waitForServiceWorkerControl(60_000)).resolves.toBeUndefined();
   });
 });
 
