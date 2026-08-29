@@ -52,6 +52,7 @@ import type { Formatters } from '@/lib/format';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { PAGE_SIZE_BOUNDS, PAGE_SIZE_PRESETS } from '@/features/settings/settings';
 import { listRowCount, resolveListRow } from '@/features/inventory/list-window';
+import { HistoryChangeList } from '@/features/inventory/components/HistoryChangeList';
 import { describeHistoryEntry, HISTORY_TONE_BADGE } from '@/features/inventory/history-format';
 import {
   describeLocationHistoryEntry,
@@ -177,7 +178,10 @@ function ActivityRow({ entry, fmt }: { entry: ActivityFeedEntry; fmt: Formatters
             </span>
           ) : null}
         </div>
-        {view.detail ? <p className="truncate text-xs text-muted-foreground">{view.detail}</p> : null}
+        {view.detail && !view.noteRepeatsChanges ? (
+          <p className="truncate text-xs text-muted-foreground">{view.detail}</p>
+        ) : null}
+        {view.changes.length > 0 ? <HistoryChangeList changes={view.changes} /> : null}
       </div>
       <time
         dateTime={new Date(entry.createdAt).toISOString()}

@@ -15,6 +15,7 @@ import { clearedByLabel } from '../history-clear-label';
 import { describeHistoryEntry, HISTORY_TONE_BADGE } from '../history-format';
 import { listRowCount, resolveListRow } from '../list-window';
 import { useClearItemHistory } from '../mutations';
+import { HistoryChangeList } from './HistoryChangeList';
 import { readItemHistoryPage, useItemHistory } from '../queries';
 
 /** Estimated entry height — also the height of a not-yet-resident placeholder. */
@@ -141,9 +142,10 @@ export function ActivityLog({ itemId, itemName }: { itemId: string; itemName: st
                                 </span>
                               ) : null}
                             </div>
-                            {view.detail ? (
+                            {view.detail && !view.noteRepeatsChanges ? (
                               <p className="truncate text-xs text-muted-foreground">{view.detail}</p>
                             ) : null}
+                            {view.changes.length > 0 ? <HistoryChangeList changes={view.changes} /> : null}
                           </div>
                           <time
                             dateTime={new Date(entry.createdAt).toISOString()}
