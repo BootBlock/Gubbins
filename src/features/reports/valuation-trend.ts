@@ -12,6 +12,7 @@
  * (`quantity_delta × effectiveUnitCost`), so this module needs no cost seam of its own — the cost
  * precedence has already been resolved upstream when the delta was recorded.
  */
+import { startOfUtcDay } from '@/lib/calendar-days';
 import { inTimeWindowEndInclusive } from './window-membership';
 
 /**
@@ -78,8 +79,9 @@ export interface ValuationTrendReport {
   readonly changeValue: number;
   /**
    * In-window manual revaluations, aggregated per calendar day and ordered oldest first (issue
-   * #481). Empty when none were recorded — or when the only value changes were `unit_cost` edits,
-   * which the schema keeps no log of and so can never be marked.
+   * #481). Empty when none were recorded. Only the `revaluations` log is read: a `unit_cost` edit
+   * is recorded in the item's own `item_history` (`ATTRIBUTES_CHANGED`, with the before/after
+   * figures) but is not a revaluation, so it is never marked here.
    */
   readonly revaluations: readonly RevaluationMark[];
 }
@@ -121,9 +123,10 @@ export interface ValuationTrendReport {
  *
  * **Revaluation marks (issue #481).** Any `revaluations` passed in are folded into
  * {@link ValuationTrendReport.revaluations} — one {@link RevaluationMark} per calendar day, counted,
- * oldest first — using the *same* end-inclusive window rule as the ledger events, so a mark can
- * never sit outside the drawn line. They annotate the line and never alter it: no value here is
- * derived from a revaluation, which is what keeps the right-hand endpoint on the headline.
+ * oldest first — admitted by the *same* end-inclusive window rule as the ledger events, so only a
+ * revaluation the line actually spans can produce a mark. They annotate the line and never alter
+ * it: no value here is derived from a revaluation, which is what keeps the right-hand endpoint on
+ * the headline.
  *
  * @param currentValue The present total inventory value (the anchor the line is reconstructed from).
  * @param events       The value-tagged ledger entries; order is irrelevant (sorted internally).
@@ -188,23 +191,26 @@ export function buildValuationTrend(
   };
 }
 
-/** Milliseconds in a calendar day — the grain revaluation marks are aggregated to. */
-const DAY_MS = 86_400_000;
-
 /**
  * Group in-window revaluations into one counted {@link RevaluationMark} per calendar day, oldest
  * first (issue #481).
  *
  * **Why a day.** The revaluation editor writes `revalued_at` at **midnight UTC** through the
- * `lib/date-input` seam, so the stored instant already carries no time of day; flooring to the
- * UTC day is therefore not a loss of precision but a statement of the precision that exists, and
- * it lands each mark on exactly the day `Formatters.calendarDate` will render for it. It also
- * bounds the marks by the window length rather than by how many items were revalued at once.
+ * `lib/date-input` seam, so a revaluation recorded from the UI carries no time of day at all, and
+ * a day is the finest resolution a sparkline of this width could show anyway. Flooring lands each
+ * mark on exactly the day `Formatters.calendarDate` will render for it, and bounds the marks by
+ * the window length rather than by how many items were revalued at once. The flooring itself is
+ * {@link startOfUtcDay} — the seam every day-grained stored value is snapped with — rather than a
+ * local `Math.floor(ms / 86_400_000)`.
  *
- * **Why the same window rule as the events.** {@link inTimeWindowEndInclusive} is what decides
- * which ledger entries move the line, so reusing it is what guarantees a mark can only ever fall
- * on a span the line actually covers. A non-finite instant is dropped rather than bucketed to
- * `NaN`.
+ * **Why the window rule is applied to the raw instant.** {@link inTimeWindowEndInclusive} decides
+ * which ledger entries move the line, so admitting marks by the same rule is what keeps a mark
+ * tied to a revaluation the line actually spans. Note the flooring happens *after* it, and
+ * `recordRevaluation` accepts a wall-clock `revaluedAt` (it defaults to `Date.now()`), so a
+ * revaluation a few hours into the window's first day floors to a `mark.at` slightly *before*
+ * `windowStart`. That is deliberate — the mark names the true day — and the sparkline clamps such
+ * a mark onto its left edge rather than drawing it off the strip. A non-finite instant is dropped
+ * rather than bucketed to `NaN`.
  */
 function aggregateRevaluations(
   revaluations: readonly RevaluationEvent[],
@@ -216,7 +222,7 @@ function aggregateRevaluations(
     const at = revaluation.revaluedAt;
     if (!Number.isFinite(at)) continue;
     if (!inTimeWindowEndInclusive(at, windowStart, windowEnd)) continue;
-    const day = Math.floor(at / DAY_MS) * DAY_MS;
+    const day = startOfUtcDay(at);
     byDay.set(day, (byDay.get(day) ?? 0) + 1);
   }
   return [...byDay.entries()].sort((a, b) => a[0] - b[0]).map(([at, count]) => ({ at, count }));

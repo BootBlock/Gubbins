@@ -1854,7 +1854,7 @@
   "reports.valuationTrend.revaluations.one": "{count} manuelle Neubewertung ist unter der Linie markiert, am {dates}.",
   "reports.valuationTrend.revaluations.other": "{count} manuelle Neubewertungen sind unter der Linie markiert, am {dates}.",
   "reports.valuationTrend.revaluationsMore": "und {count} weitere",
-  "reports.valuationTrend.revaluationsNote": "Nur manuelle Neubewertungen werden markiert. Eine Änderung der Stückkosten eines Artikels wird nicht als datierter Punkt erfasst — ein Tag ohne Markierung ist also kein Tag ohne Änderung.",
+  "reports.valuationTrend.revaluationsNote": "Nur manuelle Neubewertungen werden markiert. Eine Änderung der Stückkosten eines Artikels wird im Verlauf des Artikels erfasst, nicht in diesem Verlaufsdiagramm — ein Tag ohne Markierung ist also kein Tag ohne Änderung.",
   "reports.valuationTrend.revaluationMark.one": "{count} Neubewertung erfasst am {date}",
   "reports.valuationTrend.revaluationMark.other": "{count} Neubewertungen erfasst am {date}",
   "sync.bridge.build.heading": "Ihre Bridge ist veraltet",

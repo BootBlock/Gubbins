@@ -1854,7 +1854,7 @@
   "reports.valuationTrend.revaluations.one": "{count} manual revaluation is marked below the line, on {dates}.",
   "reports.valuationTrend.revaluations.other": "{count} manual revaluations are marked below the line, on {dates}.",
   "reports.valuationTrend.revaluationsMore": "and {count} more",
-  "reports.valuationTrend.revaluationsNote": "Only manual revaluations are marked. Changing an item’s unit cost is not recorded as a dated point, so a day without a mark is not a day nothing changed.",
+  "reports.valuationTrend.revaluationsNote": "Only manual revaluations are marked. A change to an item’s unit cost is recorded in that item’s own history, not on this trend, so a day without a mark is not a day nothing changed.",
   "reports.valuationTrend.revaluationMark.one": "{count} revaluation recorded on {date}",
   "reports.valuationTrend.revaluationMark.other": "{count} revaluations recorded on {date}",
   "sync.bridge.build.heading": "Your bridge is out of date",

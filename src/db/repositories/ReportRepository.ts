@@ -1940,8 +1940,9 @@ export class ReportRepository extends BaseRepository {
    *
    * What the report *does* carry is where each manual revaluation was recorded
    * (`ValuationTrendReport.revaluations`, issue #481): the instants only, aggregated per day, so
-   * the sparkline can mark "a value was reset here" without a single point moving. Only manual
-   * revaluations can be marked — a `unit_cost` edit is not logged as a dated point, so an unmarked
+   * the sparkline can mark "a value was reset here" without a single point moving. Only the
+   * `revaluations` log is read: a `unit_cost` edit does leave a dated `ATTRIBUTES_CHANGED` row on
+   * the item's own history, but it is not a revaluation and is not marked here — so an unmarked
    * day is not a day nothing changed, and the UI says so. Active, non-parent items only. `now`
    * defaults to the wall clock.
    */
@@ -2015,7 +2016,7 @@ export class ReportRepository extends BaseRepository {
     }));
 
     // Manual revaluation points inside the same window, on the same items the line values, so a
-    // mark can only ever fall where the line is drawn. Only the instant is read: the marks
+    // mark only ever names a change the line actually spans. Only the instant is read: the marks
     // annotate the line and never re-price it (issue #481) — repricing history from this log is
     // exactly what #399 declined, because it would pull the right-hand endpoint off the headline.
     const revaluationRows = await this.driver.query<{ revalued_at: number }>(

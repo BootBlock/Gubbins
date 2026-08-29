@@ -30,10 +30,11 @@ const LISTED_DATES = 4;
  * **Revaluation marks (issue #481).** What the caption could only describe, the ticks along the
  * bottom edge now point at: each one stands on a day a value was manually reset. They are
  * annotation, not data — no point on the line moves, so the promise above and the headline anchor
- * are both untouched. They are drawn inside the `aria-hidden` strip, so the sentence beneath
- * carries the same information in text, including the caveat that a `unit_cost` edit is not
- * logged as a dated point and so cannot be marked at all. An absent mark means "nothing was
- * *recorded* here", never "nothing changed here".
+ * are both untouched. They sit inside the `aria-hidden` strip, so the sentence beneath carries
+ * the count and the marked dates in text (the per-day breakdown stays in the pointer tooltips,
+ * and a long list is truncated), along with the caveat the data requires: only the revaluation
+ * log is marked, so an absent tick means "no revaluation was *recorded* here", never "nothing
+ * changed here".
  */
 export function ValuationSparkline({
   report,

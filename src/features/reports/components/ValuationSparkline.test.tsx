@@ -74,18 +74,17 @@ describe('ValuationSparkline', () => {
 
   it('puts a tick on the same horizontal scale as the line itself (issue #481)', () => {
     // The ticks and the polyline share one `xAt` mapping. Drive both and compare rather than
-    // restating the formula: a mark on the window's first instant must land on the line's first
-    // point, and one on its last instant on the line's last point. Re-splitting the two mappings
-    // is exactly the regression this catches.
+    // restating the formula: a mark placed on a sample's instant must land on that sample's own x.
+    // Probing both ends *and* both interior samples is what makes this catch a mapping that
+    // diverges only in the middle — a wrong span denominator still agrees at 0 and 1.
+    const start = DAY_MS * 10;
     render(
       <ValuationSparkline
         report={report({
-          windowStart: DAY_MS * 10,
-          windowEnd: DAY_MS * 14,
-          revaluations: [
-            { at: DAY_MS * 10, count: 1 },
-            { at: DAY_MS * 14, count: 1 },
-          ],
+          windowStart: start,
+          windowEnd: start + 3 * DAY_MS,
+          // The fixture's four points are evenly spaced, so sample i sits at start + i × DAY_MS.
+          revaluations: [0, 1, 2, 3].map((i) => ({ at: start + i * DAY_MS, count: 1 })),
         })}
         formatters={formatters}
       />,
@@ -95,7 +94,7 @@ describe('ValuationSparkline', () => {
       .querySelector('polyline')!
       .getAttribute('points')!
       .split(' ');
-    const lineXs = [polyline[0]!.split(',')[0], polyline[polyline.length - 1]!.split(',')[0]];
+    const lineXs = polyline.map((point) => point.split(',')[0]);
     const tickXs = screen.getAllByTestId('valuation-revaluation-mark').map((tick) => tick.getAttribute('x1'));
 
     expect(tickXs).toEqual(lineXs);

@@ -38,13 +38,13 @@ through your stock movements, valuing each one by the same rules — so the two 
 
 Small ticks along the bottom of the trend mark the days you
 [[recorded a revaluation|Current-Value-and-Revaluation]]. Hover one to see the date and how many were
-recorded that day, or read the same thing in the sentence below the chart. The ticks are annotation
-only — they don't move the line, so it still ends exactly on the headline total.
+recorded that day; the sentence below the chart gives the total and the dates in text. The ticks are
+annotation only — they don't move the line, so it still ends exactly on the headline total.
 
 > **⚠️ Heads-up**
-> **Only revaluations are marked.** Changing an item's **unit cost** isn't recorded as a dated point,
-> so it leaves no tick. A day without a mark isn't a day nothing changed — it's a day nothing was
-> *recorded* as a revaluation.
+> **Only revaluations are marked.** Changing an item's **unit cost** is recorded on that item's own
+> history, not on this trend, so it leaves no tick. A day without a mark isn't a day nothing changed
+> — it's a day nothing was *recorded as a revaluation*.
 
 ## Gauges are valued by what they hold
 
