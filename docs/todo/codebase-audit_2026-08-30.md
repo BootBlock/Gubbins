@@ -1,6 +1,6 @@
 # Full codebase audit — phased plan and findings register
 
-> **Status:** 🟢 ACTIVE — Phase 0 (baseline and tooling) in progress.
+> **Status:** 🟢 ACTIVE — Phase 0 complete; Phase 1 (database engine and migrations) is next.
 
 This is the single source of truth for a whole-repository audit of Gubbins. Its purpose is to find
 every **genuine** mechanical, functional, performance and prompt defect in the codebase and log each
@@ -423,7 +423,7 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 
 | Phase | Title | Scope (paths) | Status | Cand. | Filed | Rejected | Unverif. |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0 | Baseline, build, tooling, CI and repository configuration | `package.json`, `package-lock.json`, `tsconfig*.json`, `vite*.config.ts`, `vitest.*.ts`, `eslint.config.js`, `prettier.config.js`, `components.json`, `index.html`, `public/`, `scripts/`, `.githooks/`, `.github/`, `Dockerfile`, `docker/`, `docker-compose.yml`, `Run.bat`, `Run.ps1`, `hacs.json`, `.gitignore`, `.gitattributes`, `.dockerignore`, `.editorconfig`, `.env.example`, `.git-blame-ignore-revs`, `.nvmrc`, `.prettierignore`, `vitest.timeouts.ts`, `LICENSE`, `bridge/{package.json,Dockerfile,tsconfig.json,vitest.config.ts,*.mjs}`, `extension/{build.mjs,tsconfig.json,manifest.json}` | **in progress** | | | | |
+| 0 | Baseline, build, tooling, CI and repository configuration | `package.json`, `package-lock.json`, `tsconfig*.json`, `vite*.config.ts`, `vitest.*.ts`, `eslint.config.js`, `prettier.config.js`, `components.json`, `index.html`, `public/`, `scripts/`, `.githooks/`, `.github/`, `Dockerfile`, `docker/`, `docker-compose.yml`, `Run.bat`, `Run.ps1`, `hacs.json`, `.gitignore`, `.gitattributes`, `.dockerignore`, `.editorconfig`, `.env.example`, `.git-blame-ignore-revs`, `.nvmrc`, `.prettierignore`, `vitest.timeouts.ts`, `LICENSE`, `bridge/{package.json,Dockerfile,tsconfig.json,vitest.config.ts,*.mjs}`, `extension/{build.mjs,tsconfig.json,manifest.json}` | complete | 54 | 31 | 11 | 3 |
 | 1 | Database engine, driver, migrations and shared repository seams | `src/db/*.ts`, `src/db/worker/`, `src/db/rpc/`, `src/db/migrations/`, `src/db/search/`, `src/db/repositories/{base,mappers,constants,like,tombstone,text-limits,name-lookup,location-count,receipt-guard,reservations,stock,stock-batches,supplier-cost-sql,checkout-plan,gauge,location-history,index}.ts`, `src/db/repositories/types/`, `src/test/` | not started | | | | |
 | 2 | The item repository family | `src/db/repositories/ItemRepository.ts`, `src/db/repositories/item/`, `ItemRepository.*.test.ts`, `serialised-placement.test.ts`, `batched-item-reads.test.ts`, `*-parity.test.ts` | not started | | | | |
 | 3 | Every other repository | remaining `src/db/repositories/*Repository.ts` and their tests, `src/db/repositories/project/`, `permissions.enforcement.test.ts`, `wishlist.test.ts`, `revaluation.test.ts`, `item-relations.test.ts`, `tare-presets.test.ts`, `test-record.test.ts` | not started | | | | |
@@ -447,6 +447,13 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 Coverage check: every top-level path in the repository appears in exactly one phase's scope above
 (`dist/` and `node_modules/` are build output and are not audited; `extension/dist/` likewise).
 Phase 0 adds any path this table missed before it starts, and records the addition in §13.
+
+Phase 0 ran that check. All 12 top-level directories and all 30 top-level files are covered. Four
+paths below the top level were named by no phase and are now assigned: `bridge/.env.example` and
+`bridge/.gitignore` (Phase 0), `src/vite-env.d.ts` (Phase 5), and `docs/todo/done/` (Phase 15, as a
+reference read — archived plans are decision sources under §4.1, not audit targets). Two deliberate
+overlaps are left as they are: `bridge/loader.mjs` sits in both Phase 0 (`bridge/*.mjs`) and Phase 12,
+and `.github/ISSUE_TEMPLATE/` sits in both Phase 0 (mechanics) and Phase 15 (text quality).
 
 ## 9. Phases
 
@@ -1197,10 +1204,64 @@ the old one.
 
 ### Phase 0 — Baseline, build, tooling, CI and repository configuration
 
-Pinned SHA: _not started_
+Pinned SHA: `9924e6a7faab7bb59748b59398f8f615eb43c72f`
 
 | ID | Class | Where | Claim | Verdict | Issue | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| P0-1 | Mechanical | `.github/workflows/e2e.yml:98-104` | The failure screenshot is a dotfile, which `upload-artifact` excludes by default, so the step goes green having uploaded nothing | confirmed | #720 | Both runs logged `No files were found`; `artifacts` returns `total_count: 0`. The screenshot is also taken at a fixed point, not at the failure |
+| P0-2 | Functional | `.github/workflows/e2e.yml` | The nightly has failed on 100% of its runs, contradicting #600's closing claim | confirmed (narrowed) | #735 | The 11 step failures are CI-environmental — none reproduces locally. The 4 page errors do, on a machine where every step passes. Filed as the page-error defect only |
+| P0-3 | Functional | `bridge/Dockerfile`, `.github/workflows/docker.yml:220-224` | No workflow builds the bridge image; `docker compose config` validates schema only | confirmed | #721 | Proved `docker compose config` passes with the Dockerfile deleted. Two commits touching `bridge/Dockerfile` triggered no `docker.yml` run |
+| P0-4 | Functional | `.github/dependabot.yml` | No `docker` ecosystem, so three base images on mutable tags are never reviewed | confirmed | #723 | Filed `enhancement`: nothing claims the images are pinned. Zero docker-ecosystem Dependabot alerts exist |
+| P0-5 | Mechanical | `.github/workflows/docker.yml:10-33` | The `paths:` filter omits files three of the workflow's own assertions depend on | confirmed (OCR leg only) | #722 | `index.html` leg is inside #599; `src/sw.ts` leg **rejected** — `vite.config.ts:205` fixes the emitted name and *is* in the filter |
+| P0-6 | Prompt | `.github/workflows/e2e.yml:8` | The "~25 minutes" figure is ~2.5× the measured runner cost, and justifies not gating merges | rejected | — | Line 45 labels it "the ~25-minute **local** run", which is accurate. Not gating is documented as deliberate in #600, so this is a feature request (§1) |
+| P0-7 | Mechanical | `.github/workflows/tests.yml:181-185`, `scripts/lockfile.mjs:43-44` | "Keep in step with X" comments with no test behind them | confirmed | #724 | Mutation: raising the bridge floor in both tested places leaves 1191 tests green while CI still boots 22.18.0. `e2e.yml`/`deploy.yml` leg is a duplicate of #262 |
+| P0-8 | Mechanical | `.github/workflows/tests.yml:52-68` | Under `workflow_call` from Deploy the secret-scan base collapses to `HEAD~1` | confirmed | #725 | Real deploy log shows `EVENT: workflow_dispatch`, `PUSH_BEFORE:` empty. Deploying `main` is covered by accident (merge commits); an unmerged branch tip is not |
+| P0-9 | Prompt | `.github/ISSUE_TEMPLATE/bug_report.yml:46` | The version placeholder shows a date-shaped format the app never used | rejected | — | Field is optional and its description already points at the About screen, which renders `0.32.0` literally. Below the consequence bar |
+| P0-10 | Functional | `scripts/secret-detect.mjs:22,29-38` | The detector misses most shapes CLAUDE.md names, including the bridge's own documented `.env` syntax | confirmed | #733 | 26 of 36 probed shapes missed. Narrowed by GitHub push protection, but `secret_scanning_non_provider_patterns` is disabled |
+| P0-11 | Functional | `scripts/secret-scan.mjs:57` | The CI scan diffs endpoints, so add-then-remove within one push is invisible | confirmed | #734 | Reproduced on a scratch branch: scan exits 0, blob still in history |
+| P0-12 | Prompt | `.githooks/pre-commit:11-13` | The comment claims CI catches a `--no-verify` commit "before it lands"; `main` is unprotected | confirmed | #725 | Folded into P0-8's issue rather than filed alone — same region, same fix |
+| P0-13 | Mechanical | `.githooks/pre-push:57` | An unresolvable `remote_oid` makes the hook run no checks and exit 0 silently | confirmed (narrowed) | #727 | Only reachable via `--force`: git rejects an ordinary push before the object can matter. Sub-claim about the `:40-42` comment **rejected** — it scopes itself correctly |
+| P0-14 | Mechanical | `.githooks/pre-commit:43-61` | Prettier and ESLint read the working tree, not the index | confirmed | #726 | The candidate's own recipe was falsified (it goes red); the real false negative is the reverse direction, proved against the committed blob |
+| P0-15 | Mechanical | `scripts/check-bundle-size.mjs:11,20` | The reporter counts a different file set from the precache it claims to mirror | confirmed | #719 | Found independently by the lead and a finder. 5 files / 108.32 KiB precached and uncounted; `sw.js` counted and not precached |
+| P0-16 | Mechanical | `scripts/check-bundle-size.mjs:48-53` | A bare `catch` reports every failure as "dist/ not found" and exits 0 | duplicate #283 | — | #283 already names every exit path being `process.exit(0)` |
+| P0-17 | Functional | `scripts/lockfile.mjs:147-156` | `lock:check` cannot detect the `libc` stripping its own docstring describes | confirmed | #728 | Mutation: stripping all 14 `libc` arrays still prints "Lockfile OK". Latent today because the wasm32 fault co-occurs and *is* caught |
+| P0-18 | Prompt | `scripts/lockfile.mjs:148` | `stdio: 'ignore'` discards npm's diagnosis, and the failure branch asserts a cause it destroyed the evidence for | confirmed | #728 | Filed with P0-17: same file, same function, one fix |
+| P0-19 | Mechanical | `scripts/browser-smoke.mjs:546-554` | The first-run-chooser step cannot fail | confirmed | #743 | The only one of 125 step bodies with no assertion. The helper is correct; the step's name is the defect |
+| P0-20 | Mechanical | `scripts/browser-smoke.mjs:2262,2286-2288` | The QR decode assertion is silently skipped where `BarcodeDetector` is absent | confirmed | #743 | Absent on both local channels, headed and headless — it has never run anywhere. Not a coverage hole: `scanner.test.ts:482-525` round-trips the encoder through a real decoder |
+| P0-21 | Functional | `scripts/wiki-check.mjs:91-100` | Images are matched by basename only, in both directions | confirmed | #744 | Three faces reproduced: false negative on a nested path, false positive on a correct one, and a directory reported as an orphaned image |
+| P0-22 | Functional | `scripts/wiki-check.mjs` | Nothing checks a page is reachable from `_Sidebar.md` | rejected | — | The docstring's check 4 promises only that sidebar links *resolve*, which the code delivers. No claim to falsify. 98 pages / 96 sidebar targets / 0 unreachable. Belongs in the open wiki programme |
+| P0-23 | Functional | `.github/workflows/tests.yml` | No push or PR check runs the production build | duplicate #599 | — | — |
+| P0-24 | Functional | `scripts/setup-ocr-assets.mjs:74-77,198-201` | The models are fetched unpinned with no checksum, and `--require` accepts any non-empty file | confirmed (reframed) | #729 | 7 bytes of ASCII passes the gate. Reproducibility is fine in practice — upstream has one commit, 2017-09-14 — so filed as hardening, not a live break |
+| P0-25 | Prompt | `scripts/wiki-screenshots.mjs:30` | The mandated screenshot script hard-codes Edge with no override | confirmed | #745 | Filed with P0-26. Its docstring declares the dependency and Playwright's error names its own remedy, so `cosmetic` |
+| P0-26 | Mechanical | `scripts/generate-icons.mjs:95` | A literal `replace` silently emits cropped icons and reports the size it was asked for | confirmed | #745 | Mutation: reordering the SVG attributes yields a top-left crop at the right pixel dimensions, exit 0. Self-catching at review since the PNGs are tracked |
+| P0-27 | Mechanical | `scripts/browser-smoke.mjs:4438` | The screenshot path is cwd-relative | confirmed | #720 | Folded into P0-1's issue |
+| P0-28 | Functional | `scripts/browser-smoke.mjs:4617-4632` | The PWA block skips silently when `dist/` is absent and the run reports success | unverifiable | — | Not demonstrated this phase; `e2e.yml` builds first so CI is unaffected. See §11 |
+| P0-29 | Mechanical | `tsconfig.node.json:25` | Only `vite.config.ts` of the four root config `.ts` files is in any TypeScript program | rejected | — | Fact true, harm limb disproved: both worktree configs use `as` casts, which erase the check anyway; a probe tsconfig including all four compiles clean. Residue folded into P0-31 |
+| P0-30 | Mechanical | `.prettierignore` | `npm run format` rewrites files inside other agents' worktrees | confirmed | #740 | ESLint and Vitest both exclude the path deliberately, with comments. Measured: 54.6 s of 78.6 s spent on other trees |
+| P0-31 | Prompt | `vitest.worktree.config.ts:5-9` | The docstring's reason for the file existing is no longer true | confirmed | #742 | Root config collects the same 800 files from inside a worktree; the two file lists `diff` empty. The claim is repeated in `CLAUDE.md`, `AGENTS.md` and the verify skill |
+| P0-32 | Mechanical | `public/recovery.js` | The pre-mount escape hatch is covered by no tsconfig, no ESLint config and no test | confirmed | #741 | Mutation introducing a guaranteed `ReferenceError` leaves type-check and lint green. Its sibling `coi-bootstrap.js` *is* tested from disk |
+| P0-33 | Mechanical | `eslint.config.js:54-57,227-233` | `no-undef` is off and no `.mjs` is in any TypeScript program | rejected | — | Forcing the rule on gives 94 errors, 100% false positives (browser globals inside `page.evaluate`), and zero real hits. The proposed sharpening onto `secret-scan.mjs` was disproved: it has no cold branches |
+| P0-34 | Prompt | `eslint.config.js:29` | The ignore-list comment mis-describes `public/**` as generated | confirmed | #741 | Folded into P0-32's issue — same root cause, same fix |
+| P0-35 | Mechanical | `.prettierignore:24-25` | `**/fixtures/**` excludes two ordinary modules and misses the byte-exact golden | unverifiable | — | Not verified this phase. See §11 |
+| P0-36 | Mechanical | `bridge/Dockerfile:34-45` | The bridge image ships no `node_modules` but the bridge imports `zustand` | confirmed | #736 | Severity `unusable`. Reproduced by the lead independently. Built and run from three historical trees — it has never worked |
+| P0-37 | Mechanical | `.dockerignore:83-104`, `src/lib/docker-context-ignore.test.ts` | SQLite sidecars reach the published image layer while the `.sqlite` is excluded | confirmed | #737 | `strings` recovered every row from a copied `-wal` while the excluded `.sqlite` held 4096 bytes of nothing. The guard test compares the two pattern lists, so a shape in neither is never sampled |
+| P0-38 | Mechanical | `bridge/serve.mjs:24`, `bridge/mcp.mjs:27` | The documented quick start never loads `bridge/.env` | confirmed | #738 | Severity `unusable`. Run A (as documented) refuses to start; run B from `bridge/` reads both values from the same file |
+| P0-39 | Mechanical | `docker/nginx.conf.in:64` | `always` puts `immutable` on a 404, so a missing asset is cached for a year | confirmed | #739 | A real browser honours it across reload and restart; only `cache: 'reload'` escapes. One poisoned URL fails the whole service-worker `addAll` |
+| P0-40 | Functional | `docker/nginx.conf.in:91-97` | Under a sub-path the catch-all answers the whole origin | rejected | — | Documented intent contradicts it: `/healthz` sits at the origin root deliberately, and every deployment doc puts a reverse proxy in front. No doc invites sharing the origin |
+| P0-41 | Prompt | `Run.ps1:204`, `index.html:459` | Both tell users to install Node 20 | confirmed | #746 | On Node 20 `npm ci` and `npm run dev` work; `npm run build` dies on `registerHooks` with an error naming no version. Not in #262's list |
+| P0-42 | Mechanical | `Run.ps1:211` | The documented first-touch path runs bare `npm install` | confirmed | #747 | A real install strips all 14 `libc` arrays and drops `@emnapi/*`; `npm ci --dry-run` then refuses the result |
+| P0-43 | Functional | `docker/nginx.conf.in:46-47` | The manifest is served as `application/octet-stream` and the `gzip_types` entry is dead | rejected | #748 | Confirmed factually; no consumer cares — Chromium parses it, `ERRORS: []`. The one-line `types` fix is noted as a rider on #748 |
+| P0-44 | Prompt | `docker/nginx.conf.in:88-90,73` | The comment explaining the repeated `Cache-Control` describes a mechanism that does not exist | confirmed | #748 | Marker headers show a deep link is answered by the regex location. Line 94 *is* load-bearing — for `recovery.js`, `404.html`, `50x.html`, `icons/`, `ocr/` |
+| P0-45 | Functional | `hacs.json`, `custom_components/gubbins/manifest.json` | Nothing runs `hacs/action` or `hassfest` | confirmed | #749 | Filed `enhancement`: the repo claims HACS compatibility, never that anything validates it. #674 is the precedent that already shipped |
+| P0-46 | Functional | `Run.ps1:75` | `$BasePath` duplicates `DEFAULT_BASE_PATH` untested | rejected | — | Audiences are disjoint: every documented use of `GUBBINS_BASE_PATH` is a Docker build arg; `Run.ps1` is the double-click quick start. No parity comment either, so the "mirrors X" rule does not fire. See §11 |
+| P0-47 | Mechanical | `package-lock.json:3` | The lockfile records `0.31.0` against `package.json`'s `0.32.0` | rejected | #728 | No consumer found: nothing in the repo reads it, and GitHub's SBOM names the root from the branch (`versionInfo: main`). Recorded as a rider comment on #728 |
+| P0-48 | Functional | `package.json:89` | `typescript: "^6.0.3"` is wider than `typescript-eslint`'s `<6.1.0` peer cap | rejected | — | Premise dead: TypeScript's `latest` is 7.0.2 and the 6.x line ends at 6.0.3, so the caret cannot reach the cap. The live boundary is #186's. See §11 |
+| P0-49 | Mechanical | `.gitignore` | `.claude/worktrees/`, `.claude/settings.local.json` and `.tanstack/` are ignored by nothing tracked | confirmed | #730 | Hidden only by `.git/info/exclude` and a per-user ignore, neither written by anything in the repo. A worktree stages as one gitlink with a warning, not a second tree — hence `cosmetic` |
+| P0-50 | Mechanical | `.gitignore:77-91`, `.dockerignore:81-88` | The data-artefact rules miss every compressed or renamed dump | confirmed | #731 | A staged `.gz` produces zero added lines, so neither the hook nor CI can see inside it. `inventory.csv` and `backup.bak` dropped from the claim as wrong |
+| P0-51 | Mechanical | `.gitignore:102-106` | `id_rsa` / `id_rsa.*` is narrower than the `id_rsa*` CLAUDE.md states | rejected | #731 | The detector flags a PEM/OpenSSH body regardless, and CI runs it. Folded into #731 as a one-line rider rather than filed |
+| P0-52 | Functional | `.editorconfig:5-11` | 2-space indent applies to the 4-space Python integration | confirmed | #732 | The 2- and 6-space outliers in the histogram are all docstring prose, not code. `.editorconfig` is the only style declaration reaching those files |
+| P0-53 | Prompt | `.env.example:3-4` | Claims to be the "single tracked template" when `bridge/.env.example` also exists and holds the credentials | unverifiable | — | Not verified this phase. See §11 |
+| P0-54 | Mechanical | `scripts/lockfile.mjs:43`, `Dockerfile:35`, `bridge/Dockerfile:34` | Three more Node declarations #262 does not name | confirmed | #724 | The `lockfile.mjs` one carries a parity comment and is filed with P0-7; the two Dockerfiles are values, recorded for #262 |
 
 ### Phase 1 — Database engine, driver, migrations and shared repository seams
 
@@ -1337,6 +1398,16 @@ audit; Phase 19 puts the list to the maintainer.
 
 | From | Where | Observation | What would settle it |
 | --- | --- | --- | --- |
+| Phase 0 | `scripts/browser-smoke.mjs:4617-4632` | When `dist/index.html` is absent the PWA update-handshake block skips, pushes no result, and the run still exits 0 reporting every step passed. `e2e.yml` builds first, so CI is unaffected; the documented local `npm run test:e2e` is not. | Run `npm run test:e2e` with no `dist/` present and read the summary line and exit code. |
+| Phase 0 | `.prettierignore:24-25` | `**/fixtures/**` appears to protect the wrong files in both directions: it excludes `bridge/src/fixtures/{test-identity,virtual-snapshot}.ts`, which are ordinary hand-written modules, and does not match `src/db/migrations/__fixtures__/`, which holds the golden `scripts/regen-schema-snapshot.mjs` calls byte-for-byte. | `prettier --file-info` on both paths, then check whether `npm run format` rewrites the golden. |
+| Phase 0 | `.env.example:3-4` | The header calls itself "the single tracked template" when `bridge/.env.example` is also tracked and is the one documenting the roughly 35 `GUBBINS_BRIDGE_*` variables, including the credentials. | Read the two files side by side and decide whether the root file's scope sentence should be narrowed. |
+| Phase 0 | `Run.ps1:75` | `$BasePath = '/Gubbins/'` is an untested duplicate of `DEFAULT_BASE_PATH` (`src/base-path.ts:14`). Rejected as a finding because the audiences are disjoint and it carries no parity comment, so the "mirrors X" rule does not fire — but it is a literal that would need changing in two places. | A decision on whether the launcher should ever honour `GUBBINS_BASE_PATH`. |
+| Phase 0 | `package.json:89` | When `typescript-eslint` widens its peer range for TypeScript 7, `package.json`'s `^6.0.3` must move to `^7` in the same change or resolution silently stays on 6.0.3. That is #186's work; worth a line in its body. | Nothing — it is a note for whoever actions #186. |
+| Phase 0 | repository settings | `secret_scanning_non_provider_patterns` is **disabled**. Enabling it is a settings toggle that closes a good part of #733's residue (connection strings, generic auth headers, private keys) with no code change. The settings side belongs to #454. | The maintainer's decision. |
+| Phase 0 | repository settings | `main` has no branch protection and the active ruleset carries no required status checks, so `tests.yml` is advisory on pushes and `deploy.yml`'s `ci` job is the only enforced gate. This is context for #725, #726 and #727 rather than a defect in a file; the settings side belongs to #454. | The maintainer's decision. |
+| Phase 0 | `.github/workflows/e2e.yml` | The nightly's 11 step failures do not reproduce locally (125/125 steps pass on this machine), so they are specific to the hosted runner. Not filed — no defect was demonstrated in the app or the suite. | Re-running the suite on `ubuntu-latest` with a raised `SMOKE_TIMEOUT_SCALE`, or profiling the runner. |
+| Phase 0 | `scripts/browser-smoke.mjs:2262` | Whether `BarcodeDetector` is absent in Playwright's bundled Chromium on `ubuntu-latest`. It is absent on both local channels, headed and headless, which is enough to confirm #743; the Linux answer is inference. | One `workflow_dispatch` step evaluating `'BarcodeDetector' in window` on the runner. |
+| Phase 0 | `hacs.json`, `custom_components/gubbins/` | Three HACS checks could not be settled by reading: the `description` / `topics` / `issues` / `archived` checks (they read repository settings), whether hassfest's `translations` plugin accepts the 13 KB `strings.json`, and the precise per-category matrix `hacs/action` applies. | Running `hacs/action` and `hassfest` once — which is what #749 asks for. |
 
 ## 12. Baselines
 
@@ -1345,22 +1416,24 @@ different result records both, with the SHA.
 
 ### 12.1 Gates (Phase 0)
 
+All run in the primary checkout, which was clean at the pinned SHA `9924e6a7`.
+
 | Gate | Command | Result at SHA | Notes |
 | --- | --- | --- | --- |
-| Type-check | `npm run type-check` | | |
-| Lint | `npm run lint` | | |
-| Format | `npm run format:check` | | |
-| Unit suite | `npm run test:run` | | files / tests / duration |
-| Bridge suite | `npm run test:bridge` | | |
-| Bridge smoke | `npm run smoke:bridge` | | |
-| Build | `npm run build` | | precache entries / KiB |
-| Bundle check | `npm run check:bundle` | | |
-| Browser smoke | `npm run test:e2e` | | steps / console errors |
-| Wiki check | `npm run wiki:check` | | |
-| Lockfile | `npm run lock:check` | | needs Docker |
-| Extension build | `npm run build:extension` | | |
-| `npm audit` | `npm audit` | | |
-| `npm outdated` | `npm outdated` | | |
+| Type-check | `npm run type-check` | pass | all three tsconfigs (app, bridge, extension) |
+| Lint | `npm run lint` | pass | exit 0 with **38 warnings**; `eslint .` carries no `--max-warnings`, so the accepted baseline is unpinned. 37 are `react-refresh/only-export-components`; the 38th is an unused `eslint-disable` at `LookupMatchDialog.tsx:74` |
+| Format | `npm run format:check` | pass | "All matched files use Prettier code style" |
+| Unit suite | `npm run test:run` | pass | 800 files / 12448 tests / 82.34 s. One intermittent failure under full-suite load (`CategoryLookupPanel.test.tsx:429`) passed in isolation in 2.24 s and on a clean re-run |
+| Bridge suite | `npm run test:bridge` | pass | 79 files / 1191 tests / 7.73 s |
+| Bridge smoke | `npm run smoke:bridge` | pass | both `mcp.mjs` and `serve.mjs` boot; 6 tools; `/health` reports `itemCount=4` |
+| Build | `npm run build` | pass | precache **209 entries (6197.30 KiB)**, of which 205 unique URLs — 4 icons are listed twice and `src/sw.ts` de-duplicates them deliberately. Two chunks exceed Vite's 500 kB warning |
+| Bundle check | `npm run check:bundle` | pass | reports `6108.38 KiB across 201 precache files`, which is **wrong** — see #719 |
+| Browser smoke | `npm run test:e2e` | **fail (exit 1)** | 125/125 steps passed, 0 console errors, **4 page errors** (`AbortError: Transition was skipped`, one per browser context). Driven against a dev server on port 5231. See #735 |
+| Wiki check | `npm run wiki:check` | pass | 98 pages, 44 images |
+| Lockfile | `npm run lock:check` | pass | "Lockfile OK — `npm ci` accepts it". **Needs no Docker** — `--check` only runs `npm ci --dry-run`; the "needs Docker" note above was wrong and is corrected here |
+| Extension build | `npm run build:extension` | pass | built to `extension/dist` |
+| `npm audit` | `npm audit` | pass | 0 vulnerabilities |
+| `npm outdated` | `npm outdated` | 20 behind | none blocking; `typescript` 6.0.3 vs 7.0.2 and `eslint` are the #186 / #401 boundaries |
 
 ### 12.2 Performance (Phase 18)
 
@@ -1372,3 +1445,4 @@ different result records both, with the SHA.
 | Date | Phase | Change |
 | --- | --- | --- |
 | 2026-08-30 | — | Plan written. Twenty phases (0–19) partition every tracked path; no phase started. |
+| 2026-08-30 | 0 | Phase 0 run and landed at pinned SHA `9924e6a7`. 54 candidates: 38 confirmed, 11 rejected, 3 unverifiable, 2 duplicates of existing issues. The 38 confirmed became 31 issues (#719–#749) — seven were folded into a sibling issue rather than filed alone, because they shared a root cause and a fix. §12.1 baselines recorded — every gate passes except `npm run test:e2e`, which is itself finding #735. Coverage check run: four sub-top-level paths assigned (see §8), two deliberate overlaps left. Corrected §12's claim that `lock:check` needs Docker. |
