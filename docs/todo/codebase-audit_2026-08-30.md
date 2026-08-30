@@ -1,6 +1,6 @@
 # Full codebase audit — phased plan and findings register
 
-> **Status:** 🟢 ACTIVE — Phase 0 complete; Phase 1 (database engine and migrations) is next.
+> **Status:** 🟢 ACTIVE — Phase 0 complete; Phase 1 (database engine and migrations) in progress.
 
 This is the single source of truth for a whole-repository audit of Gubbins. Its purpose is to find
 every **genuine** mechanical, functional, performance and prompt defect in the codebase and log each
@@ -424,7 +424,7 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 | Phase | Title | Scope (paths) | Status | Cand. | Filed | Rejected | Unverif. |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 0 | Baseline, build, tooling, CI and repository configuration | `package.json`, `package-lock.json`, `tsconfig*.json`, `vite*.config.ts`, `vitest.*.ts`, `eslint.config.js`, `prettier.config.js`, `components.json`, `index.html`, `public/`, `scripts/`, `.githooks/`, `.github/`, `Dockerfile`, `docker/`, `docker-compose.yml`, `Run.bat`, `Run.ps1`, `hacs.json`, `.gitignore`, `.gitattributes`, `.dockerignore`, `.editorconfig`, `.env.example`, `.git-blame-ignore-revs`, `.nvmrc`, `.prettierignore`, `vitest.timeouts.ts`, `LICENSE`, `bridge/{package.json,Dockerfile,tsconfig.json,vitest.config.ts,*.mjs}`, `extension/{build.mjs,tsconfig.json,manifest.json}` | complete | 54 | 31 | 11 | 3 |
-| 1 | Database engine, driver, migrations and shared repository seams | `src/db/*.ts`, `src/db/worker/`, `src/db/rpc/`, `src/db/migrations/`, `src/db/search/`, `src/db/repositories/{base,mappers,constants,like,tombstone,text-limits,name-lookup,location-count,receipt-guard,reservations,stock,stock-batches,supplier-cost-sql,checkout-plan,gauge,location-history,index}.ts`, `src/db/repositories/types/`, `src/test/` | not started | | | | |
+| 1 | Database engine, driver, migrations and shared repository seams | `src/db/*.ts`, `src/db/worker/`, `src/db/rpc/`, `src/db/migrations/`, `src/db/search/`, `src/db/repositories/{base,mappers,constants,like,tombstone,text-limits,name-lookup,location-count,receipt-guard,reservations,stock,stock-batches,supplier-cost-sql,checkout-plan,gauge,location-history,index}.ts`, `src/db/repositories/types/`, `src/test/` | **in progress** | | | | |
 | 2 | The item repository family | `src/db/repositories/ItemRepository.ts`, `src/db/repositories/item/`, `ItemRepository.*.test.ts`, `serialised-placement.test.ts`, `batched-item-reads.test.ts`, `*-parity.test.ts` | not started | | | | |
 | 3 | Every other repository | remaining `src/db/repositories/*Repository.ts` and their tests, `src/db/repositories/project/`, `permissions.enforcement.test.ts`, `wishlist.test.ts`, `revaluation.test.ts`, `item-relations.test.ts`, `tare-presets.test.ts`, `test-record.test.ts` | not started | | | | |
 | 4 | Data integrity: sync, backup, archive, storage, danger zone | `src/features/sync/`, `backup/`, `archive/`, `storage/`, `danger-zone/`, `clock-skew/`, `events/`, `src/lib/{save-file,download,read-all-pages}.ts` | not started | | | | |
