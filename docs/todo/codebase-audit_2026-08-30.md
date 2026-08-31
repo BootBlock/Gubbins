@@ -1,6 +1,6 @@
 # Full codebase audit — phased plan and findings register
 
-> **Status:** 🟢 ACTIVE — Phases 0–3 complete; Phase 4 (data integrity) is next.
+> **Status:** 🟢 ACTIVE — Phases 0–3 complete; Phase 4 (data integrity) is in progress.
 
 This is the single source of truth for a whole-repository audit of Gubbins. Its purpose is to find
 every **genuine** mechanical, functional, performance and prompt defect in the codebase and log each
@@ -427,7 +427,7 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 | 1 | Database engine, driver, migrations and shared repository seams | `src/db/*.ts`, `src/db/worker/`, `src/db/rpc/`, `src/db/migrations/`, `src/db/search/`, `src/db/repositories/{base,mappers,constants,like,tombstone,text-limits,name-lookup,location-count,receipt-guard,reservations,stock,stock-batches,supplier-cost-sql,checkout-plan,gauge,location-history,index}.ts`, `src/db/repositories/types/`, `src/test/` | complete | 77 | 34 | 30 | 1 |
 | 2 | The item repository family | `src/db/repositories/ItemRepository.ts`, `src/db/repositories/item/`, `ItemRepository.*.test.ts`, `serialised-placement.test.ts`, `batched-item-reads.test.ts`, `*-parity.test.ts` | complete | 56 | 33 | 10 | 1 |
 | 3 | Every other repository | remaining `src/db/repositories/*Repository.ts` and their tests, `src/db/repositories/project/`, `permissions.enforcement.test.ts`, `wishlist.test.ts`, `revaluation.test.ts`, `item-relations.test.ts`, `tare-presets.test.ts`, `test-record.test.ts` | complete | 110 | 52 | 33 | 3 |
-| 4 | Data integrity: sync, backup, archive, storage, danger zone | `src/features/sync/`, `backup/`, `archive/`, `storage/`, `danger-zone/`, `clock-skew/`, `events/`, `src/lib/{save-file,download,read-all-pages}.ts` | not started | | | | |
+| 4 | Data integrity: sync, backup, archive, storage, danger zone | `src/features/sync/`, `backup/`, `archive/`, `storage/`, `danger-zone/`, `clock-skew/`, `events/`, `src/lib/{save-file,download,read-all-pages}.ts` | **in progress** | | | | |
 | 5 | App shell, platform and shared libraries | `src/{main,App,sw,csp,base-path}.ts(x)`, `src/app/`, `src/routes/`, `src/routeTree.gen.ts`, `src/state/`, `src/lib/` (all), `src/lib/env/`, `src/styles/index.css`, `src/features/{errors,hotkeys,modules,i18n,not-found,lab,about,achievements}/`, `src/components/{OfflineIndicator,PwaUpdatePrompt,useConfirmSaved}.tsx`, `public/recovery.js`, `public/coi-bootstrap.js` (runtime behaviour) | not started | | | | |
 | 6 | Foundry primitives and shared components | `src/components/foundry/`, `src/components/background/`, `src/components/nav/`, `src/components/icons/`, `src/components/Brand*.tsx` | not started | | | | |
 | 7 | Inventory domain logic | `src/features/inventory/*.ts(x)` (top level), `dedupe/`, `importers/`, `labels/`, `ocr/`, `regions/` | not started | | | | |
