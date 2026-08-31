@@ -97,6 +97,9 @@ export function IntegrationStep() {
               <span className="text-foreground">not</span> a valid custom repository and gives a "structure is
               not compliant" error.
             </Banner>
+            <Banner tone="info" icon={<InfoIcon />} heading={t('homeAssistant.install.hacsVersion.heading')}>
+              {t('homeAssistant.install.hacsVersion.body')}
+            </Banner>
             <ContinueNote>the UI setup — go to the next step to add and connect it.</ContinueNote>
           </StepCard>
         </BranchPanel>

@@ -16,9 +16,18 @@ brackets that with a release marker:
    re-deploy of the *same* commit is idempotent and allowed.
 2. **After the deploy succeeds**, it pushes an annotated tag `v<version>` at the deployed
    commit.
+3. **Then it publishes that tag as a GitHub release**, titled `Gubbins <version>` with
+   auto-generated notes. This step is separate from the tagging above so that re-running the
+   workflow back-fills a release for a tag that somehow has none.
 
 So a tag means "this commit reached production", never "someone tried". `git tag` is the
 release history, and the newest tag names the build currently being served.
+
+Step 3 is not decoration. HACS reads a repository's version from GitHub's **releases** API and
+nowhere else; a repository it finds no releases for is tracked by the head of its default branch
+instead, so every commit to `main` reports an update to every Home Assistant user who installed
+the integration (issue #718). Do not drop or reorder that step — releases are what keeps the
+Home Assistant side pinned to versions somebody chose to publish.
 
 ### Nothing untested reaches production
 
@@ -57,8 +66,14 @@ one:
 2. Run **Deploy to GitHub Pages** against that tag.
 
 Because the tag already points at that commit, the pre-build check passes and the deploy is a
-straight republish. Users pick it up on their next update check; users who are actively broken
-can force it with the recovery routes below.
+straight republish. The release for that tag already exists too, so the release step finds it and
+does nothing. Users pick it up on their next update check; users who are actively broken can force
+it with the recovery routes below.
+
+A rollback moves the Pages site only. GitHub still marks the *newest* release as latest, which is
+what HACS offers for the Home Assistant integration — so a rollback prompted by a broken
+`custom_components/gubbins/` needs the bad release marking as a pre-release (or deleting) by hand
+as well.
 
 > **Data-corrupting deploys are not mitigated beyond "don't ship one."** A build that writes bad
 > rows into the local database has already done so by the time it is rolled back. The migration

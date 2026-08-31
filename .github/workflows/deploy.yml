@@ -135,7 +135,9 @@ jobs:
   # Record what was published (issue #276). Runs only after the deploy actually succeeded, so a
   # tag means "this commit reached production", not "someone tried". That gives the rollback
   # story its missing first half: `git tag` lists every release, `v<version>` names the commit
-  # serving right now, and re-running this workflow against the previous tag redeploys it.
+  # serving right now, and re-running this workflow against the previous tag redeploys it. The tag
+  # is then published as a GitHub release, because that is the only version signal HACS reads for
+  # the Home Assistant integration (issue #718).
   tag:
     needs: [build, deploy]
     runs-on: ubuntu-latest
@@ -161,3 +163,35 @@ jobs:
           git tag -a "$TAG" -m "Gubbins $VERSION — deployed to GitHub Pages by run $GITHUB_RUN_ID."
           git push origin "refs/tags/$TAG"
           echo "Recorded release $TAG at $GITHUB_SHA."
+
+      # Publish that tag as a GitHub *release* (issue #718). A bare tag is invisible to the
+      # releases API, and that API is the only place HACS looks: a repository with no releases
+      # is tracked by its default branch instead, and HACS then compares the commit it installed
+      # against the head of `main`. Every commit pushed here therefore told every Home Assistant
+      # user that the Gubbins integration had an update — several times a day, for changes that
+      # never touched `custom_components/gubbins/`. With releases present, HACS tracks the latest
+      # release tag, so an update appears when a version is actually published.
+      #
+      # A separate step from the tagging above, not an extra line inside it: the tag step returns
+      # early when the tag already exists, and a tag with no release is exactly the state this
+      # needs to repair. Keeping them apart lets a re-run back-fill one.
+      - name: Publish the tag as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG is already published — nothing to do."
+            exit 0
+          fi
+          # --verify-tag fails when the tag is missing rather than creating one; without it `gh`
+          # would silently tag the default branch's head, which is not necessarily the commit
+          # this run deployed. --generate-notes writes GitHub's own commit/PR summary for the
+          # range since the previous release, so the notes have no second source to drift from.
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Gubbins $VERSION" \
+            --generate-notes
+          echo "Published release $TAG."

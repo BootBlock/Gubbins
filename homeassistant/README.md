@@ -72,6 +72,13 @@ URL) — and choose category **Integration**, then install **Gubbins Inventory**
 > compliant"* error — HACS always scans the repository root for
 > `custom_components/<domain>/manifest.json`.
 
+> **Updates follow published releases, not every commit.** HACS offers an update when a new
+> Gubbins **release** is published, so you are only prompted for versions that were deployed on
+> purpose. If HACS instead shows you a seven-character code such as `a1b2c3d` where a version
+> number belongs, it is following the repository's default branch and will report an update after
+> *any* commit — including ones that never touch the integration. Fix it by redownloading
+> **Gubbins Inventory** in HACS and choosing the newest **version**.
+
 **Manual copy (no HACS).** Copy the integration folder from the repository root into your
 Home Assistant configuration directory so you end up with:
 
@@ -770,6 +777,14 @@ To exercise the mDNS / zeroconf path end-to-end (HA isn't unit-testable here):
 
 HACS requires the integration and its `hacs.json` at the **repository root**, so they live
 there; the voice sentences and this guide stay under `homeassistant/`.
+
+`hacs.json` sets `hide_default_branch`, HACS's own declaration that `main` is not a download
+target. JSON carries no comments, so the reason is recorded here: HACS tracks a repository by its
+published releases *or*, failing that, by the head of its default branch. A download pinned to
+the branch reports an update after every commit — including the many that never touch
+`custom_components/gubbins/`. Every deploy publishes a release (see
+[`../.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)), so a version is always
+there to pick instead.
 
 ```
 (repository root)
