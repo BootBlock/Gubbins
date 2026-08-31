@@ -2219,6 +2219,8 @@
   "contacts.gettingStarted.bodyPurpose": "Contacts are the people and organisations your inventory touches — the folks you lend items to and borrow from. Give something to a colleague, a client or a friend, and a contact is what ties that loan back to a name, so you always know who currently has it.",
   "contacts.gettingStarted.bodyHowTo": "You don't need to set anything up first: add a contact below, or simply check an item out to someone new and Gubbins creates the contact automatically. From here you can see everything out on loan at a glance, get an alert when something's overdue, and check items back in with one tap — contacts can also reserve items ahead of time through bookings.",
   "homeAssistant.install.minVersion": "The custom integration needs Home Assistant 2025.2 or newer. The no-code YAML recipe has no such requirement.",
+  "homeAssistant.install.hacsVersion.heading": "Pick a version, not the default branch",
+  "homeAssistant.install.hacsVersion.body": "HACS offers an update whenever the version it tracks changes, so download a numbered Gubbins version and you are only told about published releases. If HACS shows a short code of letters and digits where a version number belongs, it is following the repository's main branch instead and will report an update after every change to it. Redownload Gubbins Inventory and choose the newest version to stop that.",
   "alerts.showAll": "Show all ({count} hidden)",
   "alerts.empty.allHidden": "Every alert is snoozed or dismissed. Choose “Show all” above to bring them back.",
   "alerts.dismiss.buttonLabel": "Dismiss alert: {title}",
