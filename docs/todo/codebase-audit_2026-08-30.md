@@ -431,7 +431,7 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 | 5 | App shell, platform and shared libraries | `src/{main,App,sw,csp,base-path}.ts(x)`, `src/app/`, `src/routes/`, `src/routeTree.gen.ts`, `src/state/`, `src/lib/` (all), `src/lib/env/`, `src/styles/index.css`, `src/features/{errors,hotkeys,modules,i18n,not-found,lab,about,achievements}/`, `src/components/{OfflineIndicator,PwaUpdatePrompt,useConfirmSaved}.tsx`, `public/recovery.js`, `public/coi-bootstrap.js` (runtime behaviour) | complete | 112 | 55 | 31 | 1 |
 | 6 | Foundry primitives and shared components | `src/components/foundry/`, `src/components/background/`, `src/components/nav/`, `src/components/icons/`, `src/components/Brand*.tsx` | complete | 79 | 32 | 20 | 1 |
 | 7 | Inventory domain logic | `src/features/inventory/*.ts(x)` (top level), `dedupe/`, `importers/`, `labels/`, `ocr/`, `regions/` | complete | 88 | 69 | 5 | 0 |
-| 8 | Inventory components | `src/features/inventory/components/` | not started | | | | |
+| 8 | Inventory components | `src/features/inventory/components/` | **in progress** | | | | |
 | 9 | Commerce, projects and reporting | `src/features/{purchasing,suppliers,sales,projects,lifecycle,reports,dashboard,export,import}/` | not started | | | | |
 | 10 | Capture and discovery | `src/features/{search,command-palette,scanner,scraping,lookups,share,images}/` | not started | | | | |
 | 11 | People, time and configuration screens | `src/features/{users,contacts,bookings,calendar,alerts,activity,maintenance,tags,settings,home-assistant,webhooks}/` | not started | | | | |
