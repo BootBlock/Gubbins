@@ -1,6 +1,6 @@
 # Full codebase audit — phased plan and findings register
 
-> **Status:** 🟢 ACTIVE — Phases 0–10 complete; Phase 11 (People, time and configuration screens) is next.
+> **Status:** 🟢 ACTIVE — Phases 0–10 complete; Phase 11 (People, time and configuration screens) is in progress.
 
 This is the single source of truth for a whole-repository audit of Gubbins. Its purpose is to find
 every **genuine** mechanical, functional, performance and prompt defect in the codebase and log each
@@ -434,7 +434,7 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 | 8 | Inventory components | `src/features/inventory/components/` | complete | 123 | 72 | 22 | 0 |
 | 9 | Commerce, projects and reporting | `src/features/{purchasing,suppliers,sales,projects,lifecycle,reports,dashboard,export,import}/` | complete | 80 | 59 | 16 | 0 |
 | 10 | Capture and discovery | `src/features/{search,command-palette,scanner,scraping,lookups,share,images}/` | complete | 112 | 74 | 21 | 1 |
-| 11 | People, time and configuration screens | `src/features/{users,contacts,bookings,calendar,alerts,activity,maintenance,tags,settings,home-assistant,webhooks}/` | not started | | | | |
+| 11 | People, time and configuration screens | `src/features/{users,contacts,bookings,calendar,alerts,activity,maintenance,tags,settings,home-assistant,webhooks}/` | in progress | | | | |
 | 12 | Bridge core and HTTP API | `bridge/src/*.ts` (top level), `bridge/src/api/`, `bridge/src/fixtures/`, `bridge/openapi.yaml`, `bridge/loader.mjs`, `bridge/README.md` | not started | | | | |
 | 13 | Bridge integrations | `bridge/src/{events,feeds,ical,mqtt,mdns,mcp,homeassistant}/`, `bridge/webhooks.example.json`, `bridge/gubbins-bridge.service`, `bridge/scripts/` | not started | | | | |
 | 14 | Satellites: browser extension and Home Assistant component | `extension/src/`, `extension/README.md`, `custom_components/gubbins/`, `homeassistant/`, `README-HA.md` | not started | | | | |
