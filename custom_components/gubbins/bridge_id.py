@@ -59,10 +59,30 @@ def bridge_id_from_health(payload: Any) -> str | None:
 
 
 def bridge_id_from_txt(properties: Any) -> str | None:
-    """Pull the stable id out of an mDNS advertisement's TXT records, or ``None``."""
+    """Pull the stable id out of an mDNS advertisement's TXT records, or ``None``.
+
+    Held to a stricter rule than :func:`bridge_id_from_health`, because this value is
+    **unauthenticated**: an mDNS advertisement is a datagram anyone on the LAN can send, whereas
+    ``/health`` answered with a bridge id only because a valid token was presented to get it.
+
+    The stricter rule is that an advertised id may not contain a colon, which keeps it out of the
+    :func:`address_unique_id` namespace. The two must stay disjoint. An address key is minted from
+    a host and a port — facts any LAN peer can learn by scanning, or guess from the default port —
+    so if an advertisement could carry ``id=<a configured bridge's host>:<port>``, it would match
+    that entry's unique id outright. Matching is what lets a discovery *relocate* an entry, and a
+    relocated entry sends its stored bearer token to the new address on its very next poll. Keeping
+    the namespaces apart restores the property the relocation rule assumes: that claiming to be an
+    existing entry requires knowing that bridge's own identifier, not merely where it listens.
+
+    Nothing legitimate is refused. The bridge mints a UUID (``randomUUID``) or derives
+    ``<host label>-<port>``, and neither uses a colon; an operator who pins ``GUBBINS_BRIDGE_ID``
+    to one is simply not followed across a move over discovery, which is the pre-identity
+    behaviour rather than a failure.
+    """
     if not isinstance(properties, dict):
         return None
-    return valid_bridge_id(properties.get("id"))
+    candidate = valid_bridge_id(properties.get("id"))
+    return None if candidate is None or ":" in candidate else candidate
 
 
 def address_unique_id(host: str, port: int) -> str:
@@ -70,6 +90,9 @@ def address_unique_id(host: str, port: int) -> str:
 
     Kept as a named function because it is a *fallback*, not the scheme: everything that reads it
     should be visible from one place if it ever needs removing.
+
+    The ``:`` is load-bearing, not cosmetic: it is what keeps this namespace disjoint from the ids
+    :func:`bridge_id_from_txt` will accept. See that function for why the two must not meet.
     """
     return f"{host}:{port}"
 
