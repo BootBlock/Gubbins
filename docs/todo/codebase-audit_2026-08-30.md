@@ -1,6 +1,6 @@
 # Full codebase audit — phased plan and findings register
 
-> **Status:** 🟢 ACTIVE — Phases 0–11 complete; Phase 12 (Bridge core and HTTP API) is next.
+> **Status:** 🟢 ACTIVE — Phases 0–11 complete; Phase 12 (Bridge core and HTTP API) is in progress.
 
 This is the single source of truth for a whole-repository audit of Gubbins. Its purpose is to find
 every **genuine** mechanical, functional, performance and prompt defect in the codebase and log each
@@ -435,7 +435,7 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 | 9 | Commerce, projects and reporting | `src/features/{purchasing,suppliers,sales,projects,lifecycle,reports,dashboard,export,import}/` | complete | 80 | 59 | 16 | 0 |
 | 10 | Capture and discovery | `src/features/{search,command-palette,scanner,scraping,lookups,share,images}/` | complete | 112 | 74 | 21 | 1 |
 | 11 | People, time and configuration screens | `src/features/{users,contacts,bookings,calendar,alerts,activity,maintenance,tags,settings,home-assistant,webhooks}/` | complete | 120 | 56 | 25 | 1 |
-| 12 | Bridge core and HTTP API | `bridge/src/*.ts` (top level), `bridge/src/api/`, `bridge/src/fixtures/`, `bridge/openapi.yaml`, `bridge/loader.mjs`, `bridge/README.md` | not started | | | | |
+| 12 | Bridge core and HTTP API | `bridge/src/*.ts` (top level), `bridge/src/api/`, `bridge/src/fixtures/`, `bridge/openapi.yaml`, `bridge/loader.mjs`, `bridge/README.md` | in progress | | | | |
 | 13 | Bridge integrations | `bridge/src/{events,feeds,ical,mqtt,mdns,mcp,homeassistant}/`, `bridge/webhooks.example.json`, `bridge/gubbins-bridge.service`, `bridge/scripts/` | not started | | | | |
 | 14 | Satellites: browser extension and Home Assistant component | `extension/src/`, `extension/README.md`, `custom_components/gubbins/`, `homeassistant/`, `README-HA.md` | not started | | | | |
 | 15 | Prompt and guidance surface | MCP tool text in `bridge/src/mcp/tools.ts`, `bridge/src/spoken.ts` output, HA sentences and `strings.json`/`translations/`, OpenAPI and OData descriptions, `src/features/i18n/catalogs/*.json` (text quality), `CLAUDE.md`, `AGENTS.md`, `.claude/skills/`, `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`, `docs/dev/`, live `docs/todo/*.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/modular-ui-plan.md` | not started | | | | |
@@ -2450,7 +2450,7 @@ Pinned SHA: `2b48ca708411e8da973b4f0cc5f377fe349214d3`
 
 ### Phase 12 — Bridge core and HTTP API
 
-Pinned SHA: _not started_
+Pinned SHA: `41f919088feb0bfe80f281f50f72c3341f7eb835`
 
 | ID | Class | Where | Claim | Verdict | Issue | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
