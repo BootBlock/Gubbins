@@ -1,6 +1,6 @@
 # Full codebase audit — phased plan and findings register
 
-> **Status:** 🟢 ACTIVE — Phases 0–17 complete; Phase 18 (Runtime performance at scale) is next.
+> **Status:** 🟢 ACTIVE — Phases 0–18 complete; Phase 19 (Close-out) is next.
 
 This is the single source of truth for a whole-repository audit of Gubbins. Its purpose is to find
 every **genuine** mechanical, functional, performance and prompt defect in the codebase and log each
@@ -441,7 +441,7 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 | 15 | Prompt and guidance surface | MCP tool text in `bridge/src/mcp/tools.ts`, `bridge/src/spoken.ts` output, HA sentences and `strings.json`/`translations/`, OpenAPI and OData descriptions, `src/features/i18n/catalogs/*.json` (text quality), `CLAUDE.md`, `AGENTS.md`, `.claude/skills/`, `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`, `docs/dev/`, live `docs/todo/*.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/modular-ui-plan.md` | complete | 74 | 27 | 30 | 0 |
 | 16 | Wiki parity | `docs/wiki/` (every page, every image) against the app at the pinned commit; `docs/todo/wiki_2026-07-11.md` page map | complete | 391 | 73 | 85 | 0 |
 | 17 | Cross-cutting static sweeps | the whole repository: every §7 row; dead code and unused exports; duplicate implementations of an existing seam; TODO/FIXME/HACK; test-suite quality; dependency licences and `npm audit` | complete | 43 | 20 | 9 | 0 |
-| 18 | Runtime performance at scale | the running app and bridge with a seeded large vault; ties to #112 | not started | | | | |
+| 18 | Runtime performance at scale | the running app and bridge with a seeded large vault; ties to #112 | complete | 20 | 4 | 10 | 1 |
 | 19 | Close-out | this document; every issue filed by the audit | not started | | | | |
 
 Coverage check: every top-level path in the repository appears in exactly one phase's scope above
@@ -2948,10 +2948,35 @@ Pinned SHA: `3864f22dc81ff9685610cce925189780e4b9b406`
 
 ### Phase 18 — Runtime performance at scale
 
-Pinned SHA: _not started_
+Pinned SHA: `b1cd0c132e7c1a4ae8b8071f6584b88cd5724cc2`
+
+Every measurement this phase took is in §12.2, whether or not it produced a finding. The rows below
+are the candidates. A row whose verdict is **rejected** is one the numbers disproved, and those are
+the rows most worth reading: this phase spent as much of its effort ruling things out as filing
+them, because roughly a hundred `performance` issues were already open before it started.
 
 | ID | Class | Where | Claim | Verdict | Issue | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
+| P18-1 | Performance | `src/features/sync/backup.ts:187` | The whole vault is serialised as one JSON string, so sync, backup and bridge writes stop working outright above a catalogue size | **confirmed** | #1572 | Ceiling located between **60,000 items** (416,473,425 chars, 77.6% of V8's 536,870,888) and **80,000** (`RangeError: Invalid string length`), on a vault with 18% thumbnail coverage. Four app call sites — the shared-folder sync, the Drive sync, the bridge push and the backup export — plus the bridge's own write and push. The bridge's read side fails on the same file. Below the ceiling, `buildLocalSnapshot` still peaks at **2.7 GiB** at 60k. Distinct from #907 (the Drive *create* path's second copy) and #911 (the Safe Mode rescue export's own code path); #173's closure records that this call is also still on the main thread |
+| P18-2 | Performance | `src/features/alerts/useAlerts.ts:201-205`; `src/db/repositories/item/feeds.ts:428-455` | The custom-field due-date alert lane reads every custom-field value on every screen, even when no definition carries a due date | **confirmed** | #1573 | 225.4 ms at 100k returning **0 rows**; 1,523.6 ms once one definition has a due lead; the precondition that would skip it costs 0.026 ms (**8,769x**). Largest of the nav badge's five lanes at every size. The lane's only gate is the `custom-fields` module, which has no `defaultOff` |
+| P18-3 | Performance | `src/db/repositories/ReportRepository.ts:2050`, `:1625` | `dataHygiene` returns a row per item and `listReorderShortfall` has no `LIMIT` — the repository-side residue #528's closure recorded as still open | **confirmed** | #1574 | `dataHygiene` 620.51 ms at 100k; its statement returns 18,621 rows for 18,621 active items at the 20k seed, and the method returns three numbers and some sections. `listReorderShortfall` carries no `LIMIT` at all. `deadStock`'s half of the same sentence is already #854 |
+| P18-4 | Performance | `src/features/inventory/InventoryScreen.tsx`; `src/db/rpc/worker-driver.ts:157-180` | Opening the Inventory screen issues thirteen queries at once down one worker connection, so at 100,000 items nothing appears for about fifteen seconds | **confirmed** | #1575 | Warm, unthrottled, production build. Independent of the filter (13 matching rows costs the same as 93,014), independent of a cold read (a second and third visit cost the same), and specific to this screen (About 2,008 ms, Settings 2,143 ms, Alerts 1,890 ms, Dashboard 1,920 ms against Inventory's 15,229 ms). The worker port was wrapped from a Playwright init script, so the burst is observed rather than inferred: `SELECT COUNT(*) FROM items WHERE is_active = 1` takes 9,492 ms to come back. The same set of statements costs under 300 ms driven directly |
+| P18-5 | Performance | `src/db/repositories/item/list-order.ts`; `item/sql.ts` | The item list's `ORDER BY` has no usable index, so every page sorts the whole active catalogue | **duplicate #764** | — | Confirmed at 100k and quantified further: **81% of a page is the sort** (`items.id` only, 26.07 ms of 32.01 ms), against under 4% for the thumbnail subquery. All sixteen sort combinations and the default order plan identically. Posted as a measured comment on #764 rather than re-filed |
+| P18-6 | Performance | `src/db/repositories/item/status-filter.ts`; `attention-sql.ts` | The OR-combined status filters cost two orders of magnitude more than an unfiltered read | **duplicate #806** | — | The full 1k/20k/100k table is in §12.2: all eight combined are **259.2x** a plain `COUNT(*)` at 100k, and *expiring* is still the worst single filter. #806 already tabulates every status at 50k and 200k; posted as a comment |
+| P18-7 | Performance | `bridge/src/write.ts:496`; `bridge/src/hydrate.ts` | A bridge write costs the whole inventory, and stops working entirely at a large one | **duplicate #712** | — | Measured alone: median **9,408 ms** at 20,000 items, which is past Home Assistant's ten-second timeout — the condition #531 was closed on, back at a larger catalogue. The first write inflates the snapshot 105.4 MB → 132.9 MB because the bridge writes it pretty-printed, so every later write reads the larger file. At 100k the bridge cannot read the snapshot at all. Posted as a comment |
+| P18-8 | Performance | `src/features/inventory/components/ImportDataDialog.tsx:90-99` | Opening the Import dialog reads the whole catalogue by deep `OFFSET`, and the cost grows with the square of the catalogue | **duplicate #1115** | — | #1115 records 1,053 ms at 5,000 items and describes the growth as linear. Measured here: 46 ms at 1,000 items and **69,596 ms at 20,000** — twenty times the catalogue for 1,513 times the wall clock, because `includeInactive: true` drops the active predicate and each page scans and sorts the whole table. Posted as a comment correcting the growth |
+| P18-9 | Performance | `src/features/inventory/mutations.ts:654-720` | Bulk edit is a per-item loop | **duplicate #145** | — | 3,632 ms for 1,000 selected items at 4.8 statements each, against **11 ms** for the same rows as one transaction of plain `UPDATE`s — 330x. Posted as a comment |
+| P18-10 | Performance | `src/db/repositories/item/sql.ts` (`ITEM_READ_COLUMNS`) | The list projection carries a thumbnail BLOB and two more correlated subqueries for every row it sorts, so a page reads far more than it renders | **rejected** | — | Disproved by measurement. SQLite evaluates the SELECT-list subqueries only for the rows it returns, not for the 93,014 it sorts: removing the thumbnail subquery saves 3.75 ms of a 32.01 ms page at 100k (under 4%), and removing all three saves 16%. The 99 MiB of thumbnails across the active set is never read for one page. #855's separate claim — that **one oversized** row is expensive — is unaffected and stands |
+| P18-11 | Performance | `src/features/inventory/InventoryScreen.tsx:310-321` | The quick-search box hits the database on every keystroke | **rejected** | — | It is debounced at 250 ms, and the commit is deliberate about push-vs-replace history. The per-keystroke cost that does exist is in the *pickers* (#808) and the Visual Builder value box (#1230), neither of which this box shares |
+| P18-12 | Performance | `src/features/search/parse-text-query.ts` | The plain-English search compiles to an OR of per-column FTS subqueries and scans every active item | **rejected** | — | Not this path. `parseTextQuery` emits one `items.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)` per term, ANDed, and the plan drives from the FTS rowid set (`SEARCH items USING INDEX idx_items_is_active (is_active=? AND rowid=?)`). #1211's shape belongs to `interpretNaturalLanguage` in `nl-query.ts`, a different entry point, and is unaffected by this |
+| P18-13 | Performance | `src/db/repositories/item/feeds.ts` (the dashboard feeds) | The attention feeds still pull a thumbnail BLOB per row to render text | **rejected** | — | Fixed. `listLowStock` and `listExpiringWithin` mention `thumbnail_blob` nowhere in the statements they issue, at any size. #529 is closed and stayed closed |
+| P18-14 | Performance | `src/db/repositories/item/core.ts` (`getManyById` and the sibling window reads) | The card list's window reads are an N+1 through the worker | **rejected** | — | The batching holds. `getManyById` is one statement against N, and 2.3–3.2x faster than the per-item loop at windows of 20, 50 and 200, at every seed. `getTrackingModes`, `listRelationsForItems` and `getAvailability` are one or two statements each for a whole window |
+| P18-15 | Performance | `src/db/repositories/supplier-cost-sql.ts:65-71` | The shared preferred-supplier price fallback is a correlated subquery with its own `ORDER BY`, so every valuation read pays a per-row sort | **rejected** | — | Real but small. Replacing it with a constant in the real captured statements saves 8–26% of the read: 1.09x on `inventoryValue`, 1.22x on `deadStock`, 1.34x on `insuranceScheduleSummary`, 1.35x on `partsCatalogueSummary`. Not a defect on its own; recorded in §12.2 so a future index on `supplier_parts(item_id, is_preferred, updated_at)` can be judged against a number |
+| P18-16 | Performance | `src/components/background/precip-engine.ts` | The background weather engines cost frames while the app is idle | **rejected** | — | The shipped default is `backgroundEffect: 'none'`, so an idle app paints nothing: zero long tasks and no heap growth over 10 s and 60 s, on the Dashboard and on Inventory. With Snow switched on it still produces zero long tasks, though it does create **two** 1400x950 canvases, which is the shape #993 describes |
+| P18-17 | Performance | `src/features/inventory/components/ItemList.tsx` | Scrolling the item list janks under throttling | **rejected** | — | Measured with long-animation-frame attribution at 20k / 4x: idle produces zero long frames, and twelve scroll steps produce 15, totalling 1,466 ms with 623 ms blocking — 463 ms in a `DIV.onscroll` listener, 196 ms in a `setTimeout` callback, 807 ms of style, layout and paint. Frames of 90–142 ms are jank, but the list is virtualised with `overscan: 6` and its card body is memoised, and the cost does not grow with the catalogue (1k and 20k are the same). No defect named; the numbers are in §12.2 |
+| P18-18 | Performance | the app, over time | Something drifts while the app sits open, or across repeated dialog cycles | **rejected** | — | 200 add-dialog open/close cycles move the heap by at most +26.9 MiB and it is collected back within the idle that follows, at every seed and both throttling rates; two runs ended *below* where they started. A 30-minute idle on the Inventory screen at 20,000 items moved the heap by **0.2 MiB** (24.2 → 24.4 MiB) with zero long tasks |
+| P18-19 | Performance | `src/db/repositories/ReportRepository.ts:732` (`locationStats`) | The location summary card's "with sub-locations" scope runs two whole-vault passes | **rejected** | — | 1,741 ms at 100k against 187 ms for the location alone, and the two statements do different work (totals, then the category breakdown) rather than repeating one. But the subtree scope is an explicit toggle the user turns on — `useLocationStats(location.id, hasChildren && scope === 'subtree')` — and defaults off, so it is a cost someone asks for. Recorded, not filed |
+| P18-20 | Performance | `bridge/src/mqtt/publisher.ts` | MQTT discovery at 5,000 locations floods the broker | **unverifiable** | — | Measured: **10,009 retained messages, 5.16 MiB, published in 0.6 s** at 5,002 locations, of which 5,004 are `homeassistant/sensor/gubbins/…` discovery configs. What cannot be settled here is the consequence — whether a real Home Assistant instance handles 5,004 new entities acceptably, and what a broker's retained store does with 5 MiB. Carried to §11 |
 
 ## 11. Carry-over: unverifiable candidates and out-of-scope observations
 
@@ -3086,6 +3111,12 @@ audit; Phase 19 puts the list to the maintainer.
 | Phase 15 | `bridge/src/mcp/tools.ts:385-386` | `gubbins_check_out` presents four borrower routes as equally available, while only `contactName` and `locationId` are reachable from within MCP, and there is no `projectName` twin to `contactName`. There is also no `/projects/:id` route in the app, so a *user* cannot read a project id off the URL bar to hand over. Recorded under §10 P15-M5's rejection as a feature request, not a text defect. | A maintainer's call on whether a contacts/projects read tool, or a `projectName` argument, is wanted. |
 | **Phase 17 — ⚠️ TRUST BOUNDARY, DELIBERATELY NOT FILED** | `reconcile.ts:579`; `snapshot.ts:1104`, `:584`, `:1268-1273`; `tombstone.ts:220,228`; `v1-initial.ts:302-309`; `snapshot-integrity.ts:51`; `unique-keys.ts:147` | **A snapshot tombstone naming a built-in `roles` row strands every device on a shared sync, permanently, and a brand-new device cannot pair.** Confirmed and demonstrated (§10 P17-6), `unusable`. Built-in roles are **editable**, so — unlike the protected `locations` and `users` rows, which `TABLE_FILTER` keeps out of the local snapshot — they travel in every snapshot. A remote tombstone naming one therefore becomes `DELETE FROM roles WHERE id = ?`, `trg_roles_protect_builtin_delete` raises ABORT, and **the whole merge transaction rolls back**. Not self-healing: the same remote snapshot produces the same plan every time, and `writeSyncMeta` is never reached. The 180-day tombstone-TTL clone *succeeds* and then **copies the poison tombstone into the local table**, so the recovered device republishes it. A factory reset or a brand-new device is equally blocked, because the baseline re-seeds the built-in roles. The Danger Zone's "Sync links & pending deletions" clears only *local* tombstones, and Safe Mode touches only the local database — **there is no route out.** The precondition is a crafted, corrupt or foreign snapshot, which `tombstone.ts:214-219` names as inside the project's own threat model ("a backup file, a peer's snapshot in a shared sync folder, or a bridge push"), and **the shipped providers are a shared folder and a shared Drive folder**. The gap is precise: the project already holds the protected-row-id fact twice (`ALWAYS_PRESENT_ROW_IDS`, `isProtectedRole`) and consults neither on the tombstone-delete path. | **A maintainer decision, not a verification gap.** Nothing further is needed to establish it. What is needed is a decision on **disclosure**: whether this is fixed quietly first and filed afterwards, filed as a normal `security`-labelled issue, or handled under `SECURITY.md`'s private route. Filing it publicly would publish a working denial-of-service recipe against every shared-folder sync before a fix exists, which is why Phase 17 withheld it, following the precedent Phases 12, 13 and 14 set. |
 | Phase 17 | `index.html:61-64` | The root element's fixed `#0b0b0f` background means CSS background propagation gives the **canvas** that colour in every appearance mode, so the area outside `body`'s box stays near-black in Light. The mechanism is confirmed — `getComputedStyle` gives `rootBg: rgb(11,11,15)` against `bodyBg: oklch(0.99 0.003 280)` with `htmlClass: ""` — but **where it is visible could not be driven here**: it shows as elastic / rubber-band overscroll on iOS and macOS Safari, which headless Chromium does not render. The `theme-color` and manifest limb of the same finding **was** certain and is filed as #1563. | An iOS or macOS Safari device, Appearance set to Light, rubber-banding a long Inventory list. |
+| Phase 18 | the whole phase | Every figure was taken on a desktop i9-13900K with 64 GB of RAM, under CDP CPU throttling at 4x where a browser was involved. Throttling stands in for a slow CPU. It does not stand in for slow storage, a small heap, or a browser that kills a tab at a few hundred megabytes — and three of this phase's results are ones where the device, not the CPU, decides the outcome: a 2.7 GiB peak while building a snapshot at 60,000 items, a 625 MB database opened over OPFS, and a 6.05 MiB precache installed on a first visit | The same probes on a real low-end Android device, which is the end of #112's range the audit could not reach |
+| Phase 18 | `bridge/src/mqtt/publisher.ts` | MQTT discovery publishes **10,009 retained messages (5.16 MiB) in 0.6 s** at 5,002 locations, 5,004 of them Home Assistant discovery configs — one sensor entity per location. The publish itself is fast and the bridge is not the bottleneck; what is unknown is what happens at the other end | A real Home Assistant instance and a real broker: whether 5,004 new entities are acceptable, and what a broker's retained store does with 5 MiB that is replayed to every subscriber |
+| Phase 18 | `bridge/src/hydrate.ts` | When the snapshot cannot be read at all, the bridge logs `Snapshot reload failed (1 in a row)` and then **binds its port and answers requests anyway**, so a consumer sees a running bridge with no data rather than a refusal. That is a question about the failure mode, not about performance, and Phase 12 audited this surface | A decision on whether a bridge with an unreadable source should serve or refuse. `GUBBINS_BRIDGE_STALE_AFTER_FAILURES` already exists and may already be the intended answer |
+| Phase 18 | `src/features/alerts/useAlerts.ts` | The custom-field due-date lane's 1,523 ms figure at 100,000 items came from giving one seeded `DATE` definition a 30-day lead and dating a seventh of its values. A real vault's due-dated fields may be far fewer or far more. Only the **empty** case — 225 ms to return nothing — is a property of the shipped default, and that is what #1571 is filed on | A vault with real due-dated custom fields |
+| Phase 18 | `src/features/inventory/InventoryScreen.tsx` | #1575 demonstrates that the Inventory screen's fifteen-second wait is thirteen queries serialising on one worker connection, and rules out the list query, the sort, the cold read and the alert lanes. What it does not establish is why each of those statements costs so much more inside sqlite-wasm over OPFS than the same statement costs against the same database in Node — the whole set is under 300 ms there | A profile of the database worker itself, attributing the time between the statement arriving and the rows leaving |
+| Phase 18 | `bridge/src/api/odata-filter.ts` | `$filter=startswith(name,'Brass') and quantity gt 5` answers **400** at every seed size, while each half answers 200 on its own. Noticed while measuring the OData routes; not pursued, because Phase 18's remit is cost rather than correctness and #362 already holds the OData surface's gaps | Reading the filter parser against the OData grammar for conjunctions of a string function and a comparison |
 
 ## 12. Baselines
 
@@ -3128,8 +3159,339 @@ SHA `3864f22d` from the primary checkout. §6's rule is that a re-run with a dif
 
 ### 12.2 Performance (Phase 18)
 
-| Surface | Seed | Throttle | Measurement | Plan / trace summary |
+**Hardware.** Windows 11 Pro (26100), Intel Core i9-13900K (24 cores / 32 threads), 64 GB RAM,
+NVMe SSD; Node v25.2.1; Microsoft Edge via Playwright (`channel: 'msedge'`), headless. This is a
+desktop — the opposite end of #112's range from the target — so every figure is a floor, and the
+ratios rather than the milliseconds carry the claims.
+
+**Method.** Three vaults were built from the shipped schema
+(`src/db/migrations/__fixtures__/schema-baseline.snapshot.json`, executed table → view → index →
+trigger, every index and all 66 triggers present) and seeded in chronological order, with **no
+`ANALYZE` and no `PRAGMA optimize`**. Every database figure comes from calling the **real
+repository method** and capturing the statement it issued at the driver seam; no query was retyped.
+Timings are the median of three to seven runs after warm-ups. Browser figures were taken against
+the **production build** (`npm run build`, served by `vite preview` with the cross-origin isolation
+headers), with the seeded vault streamed into OPFS at `/gubbins.sqlite3` before boot, under CDP CPU
+throttling at 4x and again unthrottled. The bridge figures come from the real `node bridge/serve.mjs`
+over HTTP.
+
+**The seeds.** Per 1,000 items: 50 locations, ~1.15 stock rows, one default batch per stock row,
+~4 history rows, ~2 custom-field values, 18% of items with a ~6 KiB thumbnail, ~0.3 supplier parts
+(3 price-history rows each), 10 purchase-order lines, 6.7 checkouts (a third open), 20 maintenance
+schedules (a third due), 4 bookings, 25 test records. Fixed: 40 categories, 60 tags, 60 suppliers,
+120 contacts, 24 projects x 60 BOM lines, 30 field definitions, the 8 built-in roles, 6 users, 1 API
+token. `item_stock.id` and `stock_batches.id` are derived as the schema derives them
+(`item|location`, `item|location|batchKey`) — a random id there makes every later batch write fail
+on the UNIQUE index, which is how the fixture was found to be wrong the first time.
+
+| Seed | items | active | locations | history rows | field values | thumbnails | `.sqlite` | `gubbins-sync.json` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1k | 1,000 | 927 | 52 | 4,021 | 1,978 | 167 | 7.2 MB | 5.9 MB |
+| 20k | 20,000 | 18,621 | 1,002 | 79,954 | 40,462 | 3,584 | 118.7 MB | 105.4 MB |
+| 100k | 100,000 | 93,014 | 5,002 | 399,832 | 202,293 | 18,122 | 625.4 MB | 525.8 MB |
+
+#### The inventory list (real `ItemRepository`, Node)
+
+| Read | 1k | 20k | 100k | Plan at every size |
 | --- | --- | --- | --- | --- |
+| first page, `LIMIT 50` | 0.99 ms | 7.56 ms | 37.75 ms | `SEARCH items USING INDEX idx_items_is_active` + `USE TEMP B-TREE FOR ORDER BY` |
+| page 2, keyset | 1.01 ms | 7.46 ms | 40.62 ms | identical |
+| `count()` | 0.02 ms | 0.37 ms | 0.90 ms | — |
+| `applicableStatuses()` whole vault | 1.39 ms | 42.28 ms | 243.33 ms | one pass, 8 conditional `SUM(CASE …)` |
+| `applicableStatuses()` one location | 0.10 ms | 9.12 ms | 24.25 ms | — |
+
+**Deep paging at 100k**, `LIMIT 50` at absolute depth D. The keyset path is flat; the offset path,
+which the numbered-page view mode keeps deliberately (#172), is not:
+
+| depth | offset path | keyset path | penalty |
+| --- | --- | --- | --- |
+| 0 | 48.56 ms | 43.68 ms | 1.11x |
+| 1,000 | 87.68 ms | 51.93 ms | 1.69x |
+| 10,000 | 969.76 ms | 46.31 ms | 20.94x |
+| 50,000 | 3,366.82 ms | (flat) | — |
+| 90,000 | 3,683.63 ms | (flat) | — |
+
+**Every sort plans the same way** — `USE TEMP B-TREE FOR ORDER BY` — at every size, for all sixteen
+field/direction combinations and for the default order. That is #764, and taking the projection
+apart shows it is nearly all of the cost:
+
+| arm (same `WHERE`, same `ORDER BY`, same `LIMIT 50`) | 1k | 20k | 100k | share at 100k |
+| --- | --- | --- | --- | --- |
+| as shipped (`items.*` + 3 correlated subqueries) | 0.99 ms | 7.56 ms | 32.01 ms | 100% |
+| `items.*` only | 0.50 ms | 5.40 ms | 26.74 ms | 84% |
+| + `has_variants` + `earliest_batch_expiry`, no thumbnail | 0.66 ms | 6.42 ms | 28.26 ms | 88% |
+| `items.id` only — the sort alone | 0.17 ms | 5.02 ms | 26.07 ms | **81%** |
+
+Rows the sorter must hold for one 50-row page: 927 / 18,621 / 93,014. The thumbnail subquery is 12%
+of a page at 1k and under 4% at 100k, so the projection is **not** where the cost is.
+
+**Status filters at 100k**, against an unfiltered page of 37.75 ms and a plain `COUNT(*)` of 0.90 ms.
+`count()` is the honest ceiling because a page can stop early:
+
+| status | page 50 | `count()` | vs plain COUNT(*) | matches |
+| --- | --- | --- | --- | --- |
+| low-stock | 33.07 ms | 33.52 ms | 37.2x | 2,671 |
+| out-of-stock | 26.27 ms | 26.60 ms | 29.5x | 2 |
+| on-order | 52.98 ms | 52.02 ms | 57.7x | 2,001 |
+| expiring | 104.41 ms | 95.37 ms | 105.8x | 4,132 |
+| warranty | 26.63 ms | 24.69 ms | 27.4x | 1,663 |
+| on-loan | 38.13 ms | 53.51 ms | 59.4x | 204 |
+| overdue | 37.00 ms | 35.12 ms | 39.0x | 187 |
+| maintenance-due | 41.20 ms | 37.96 ms | 42.1x | 421 |
+| **all eight, OR-combined** | 273.49 ms | 233.55 ms | **259.2x** | 10,514 |
+
+#### Search (real `ItemRepository`, Node, 100k)
+
+Plain-English search through the real `parseTextQuery` drives from FTS
+(`items.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)`), one MATCH per term:
+one word 14.78 ms, two words 4.77 ms, three words 2.42 ms, a prefix 13.04 ms, a term matching
+nothing 0.06 ms, a single letter 28.03 ms. Visual Builder: one `CONTAINS` 14.90 ms, one `SUBSTRING`
+(the OData `contains()`, a `LIKE '%…%'` scan) 31.09 ms, three ANDed 6.31 ms, a nested OR 17.92 ms,
+a negated group 46.57 ms. `searchByRelevance`: "Brass" 23.91 ms, "Brass Bracket" 3.90 ms, a single
+"B" 132.70 ms. A barcode lookup 24.24 ms.
+
+#### Item detail (real repositories, Node)
+
+Flat at every size. Opening an item at 100,000 items costs **13 statements and about 0.3 ms** in
+total: `getById` 0.02, `getSectionPresence` 0.01, `listStock` 0.01, `listAliases` 0.01,
+`listRelations` 0.01, `listRevaluations` 0.01, `listTestRecords` 0.02, `getAvailability` 0.02,
+supplier parts 0.02, checkouts 0.03, maintenance 0.01, the item's history page 0.12 ms. The batched
+window reads hold up: `getManyById` is one statement against N, and 2.3–3.2x faster than the loop at
+every window size (20 / 50 / 200). The global activity feed page is 0.11 ms over 399,832 ledger
+rows; `countHistoryFeed` is 5.28 ms.
+
+#### The dashboard (real repositories, Node)
+
+| Widget read | 1k | 20k | 100k |
+| --- | --- | --- | --- |
+| inventory-totals: `inventoryValue` | 1.93 ms | 66.85 ms | 434.33 ms |
+| expiring: `listExpiringWithin(30, 100)` | 0.82 ms | 19.05 ms | 98.38 ms |
+| expiring: `countExpiringWithin(30)` | 0.42 ms | 17.81 ms | 90.94 ms |
+| low-stock: `listLowStock(100)` | 0.33 ms | 8.81 ms | 53.01 ms |
+| low-stock: `lowStockCount` | 0.11 ms | 6.57 ms | 28.41 ms |
+| maintenance: `listDue(100)` | 0.18 ms | 6.44 ms | 35.34 ms |
+| maintenance: `countDue` | 0.08 ms | 5.87 ms | 33.17 ms |
+| budget-alerts: `listBudgetAlerts` | 1.65 ms | 6.47 ms | 10.29 ms |
+| in-transit: `listInTransit(100)` | 0.54 ms | 1.78 ms | 2.32 ms |
+| recent-activity: `getHistoryFeed(50)` | 0.10 ms | 0.11 ms | 0.10 ms |
+| **whole board, every widget once** | **6 ms / 16 statements** | **140 ms / 16 statements** | **788 ms / 16 statements** |
+
+The hide-healthy probe runs seven of those feeds whatever is on the board: 4 ms at 1k, 200 ms at
+100k. One item write's refetch at 100k: **771 ms** for any edit (`invalidateItems`) against **623 ms**
+for a quantity stepper (`invalidateItemStock`) — the #166 split saves 149 ms, and 109 ms of that is
+the filter-bar chips (231 ms for both halves against 122 ms for the stock half alone). No dashboard
+feed carries a thumbnail BLOB any more (#529 is fixed).
+
+#### Reports (real `ReportRepository`, Node)
+
+| Report | 1k | 20k | 100k |
+| --- | --- | --- | --- |
+| `inventoryValue` | 1.85 ms | 70.78 ms | 497.35 ms |
+| `locationStats` one location | 1.05 ms | 33.16 ms | 186.77 ms |
+| `locationStats` with sub-locations | 4.30 ms | 69.51 ms | 1,741.31 ms |
+| `consumptionRate(30d)` | 0.09 ms | 5.57 ms | 69.69 ms |
+| `movement(30d, 15)` | 0.20 ms | 5.50 ms | 48.86 ms |
+| `deadStock(180d)` | 2.05 ms | 60.71 ms | 350.85 ms |
+| `abcAnalysis(365d)` | 2.11 ms | 62.01 ms | 333.01 ms |
+| `turnover(90d)` | 2.45 ms | 96.57 ms | 370.39 ms |
+| `stockAging` | 2.95 ms | 100.22 ms | 463.04 ms |
+| `valuationTrend(90d, 12)` | 1.99 ms | 86.83 ms | 337.51 ms |
+| `dataHygiene` | 3.55 ms | 126.35 ms | 620.51 ms |
+| `spendAnalytics(90d, 15)` | 0.18 ms | 6.09 ms | 29.33 ms |
+| `salesAnalytics(90d, 15)` | 0.18 ms | 21.74 ms | 134.60 ms |
+| `listReorderShortfall` (no `LIMIT`) | 0.13 ms | 10.13 ms | 35.44 ms |
+| `insuranceScheduleSummary` | 1.66 ms | 61.82 ms | 301.76 ms |
+| `partsCatalogueSummary(all)` | 1.8 ms | 54.9 ms | 349.8 ms |
+| **whole screen, every report once** | **26 ms / 29 stmts** | **1,124 ms** | **5,670 ms** |
+| the five reads #528 left **ungated** on mount | — | — | **882.74 ms** |
+
+`dataHygiene` and `deadStock` each return one row per active item (18,621 rows at the 20k seed) and
+reduce them in JavaScript; `listReorderShortfall` carries no `LIMIT`. A paged schedule or catalogue
+page is cheap by comparison (24–27 ms at 100k), with or without photos.
+
+The shared preferred-supplier fallback (`preferredSupplierCostSql`, a correlated subquery with its
+own `ORDER BY`, so every plan shows `USE TEMP B-TREE FOR ORDER BY` inside it) is 8–26% of the reads
+that use it — 1.09x on `inventoryValue`, 1.35x on `partsCatalogueSummary`. Real, not dominant.
+
+#### Alert lanes and the agenda (real repositories, Node)
+
+`AppNav` mounts `useAlerts()`, so five whole-vault feeds are live on **every** screen:
+
+| Lane | 1k | 20k | 100k | rows at 100k |
+| --- | --- | --- | --- | --- |
+| low stock | 0.4 ms | 7.8 ms | 30.9 ms | 100 |
+| expiring | 0.8 ms | 17.0 ms | 84.3 ms | 100 |
+| maintenance due | 0.2 ms | 6.4 ms | 31.9 ms | 100 |
+| warranty expiring | 0.3 ms | 5.6 ms | 24.8 ms | 100 |
+| custom-field due dates | 1.5 ms | 30.4 ms | **225.4 ms** | **0** |
+| **all five** | **2 ms** | **58 ms** | **278 ms** | |
+
+The field-due lane costs 225 ms for nothing in a default vault; a precondition that would skip it
+costs 0.026 ms (8,769x). Given one due-dated definition it costs 1,523.6 ms and returns 1,300 rows.
+What a write forces the nav to re-read at 100k: 153 ms for a stepper tap, 317 ms for any other item
+edit. Upcoming-agenda lanes at 100k: checkouts due 0.5, bookings 2.3, maintenance 31.5, warranty
+25.4, expiring (90d) 93.6, reorder-now 31.4 ms.
+
+#### Sync, backup, restore and archive (the app's own modules, Node)
+
+| Step | 1k | 20k | 100k |
+| --- | --- | --- | --- |
+| `buildLocalSnapshot` | 43 ms | 1,277 ms | 19,559 ms |
+| rows in it | 8,691 | 137,044 | 677,130 |
+| peak heap after the build | 47.2 MiB | 403.2 MiB | 1,854.7 MiB |
+| `snapshotToBackupJson` | 18 ms / 7.5 MiB | 360 ms / 132.9 MiB | **RangeError: Invalid string length** |
+| `parseBackupJson` | 12 ms | 208 ms | n/a |
+| `runMigrations` into an empty database | 51 ms | 49 ms | 49 ms |
+| `restoreSnapshot` | 148 ms (58,723 rows/s) | 2,640 ms (51,911 rows/s) | n/a |
+| `reconcile` two identical snapshots | 30 ms | 617 ms | 3,416 ms |
+| `reconcile` with 2% of items divergent | 17 ms | 357 ms | 2,343 ms |
+| zip the snapshot (the weekly archive) | 81 ms, 7.5 → 0.4 MiB | 1,531 ms, 132.9 → 6.1 MiB | n/a |
+
+**Where the serialiser's ceiling is** (V8 refuses a string past 536,870,888 characters):
+
+| items | `buildLocalSnapshot` | peak heap | `snapshotToBackupJson` |
+| --- | --- | --- | --- |
+| 40,000 | 5,034 ms | 1,159 MiB | OK — 278,037,042 chars (265.2 MiB), 51.8% of the ceiling |
+| 60,000 | 8,813 ms | 2,697 MiB | OK — 416,473,425 chars (397.2 MiB), 77.6% of the ceiling |
+| 80,000 | 14,125 ms | 2,695 MiB | **FAILED** |
+| 100,000 | 19,559 ms | 1,855 MiB | **FAILED** |
+
+#### Import and bulk edit (the app's own pipeline, Node)
+
+A 10,000-row CSV import through `buildImportPlanFromRows` + `applyCatalogImportPlan`: the plan is
+64–87 ms, and the apply is 2,288 ms against the 1k vault and 3,033 ms against the 20k one — 3,297 to
+4,371 rows per second through `createMany`, one statement per row inside one transaction.
+
+Opening the Import dialog first reads the whole catalogue as `loadAllItems` writes it
+(`repo.list({ limit: 100, offset, includeInactive: true })` until `hasMore` is false):
+
+| | round trips | ms per trip | total |
+| --- | --- | --- | --- |
+| 1,000 items | 11 (+41 category trips) | 4 ms | 46 ms |
+| 20,000 items | 201 (+41) | 346 ms | **69,596 ms** |
+
+Twenty times the catalogue costs 1,513 times the wall clock, because each page is an `OFFSET`
+further into an unindexed sort of the whole table (`SCAN items` + `USE TEMP B-TREE FOR ORDER BY`,
+since `includeInactive` drops the active predicate).
+
+Bulk edit, replaying the real `useBulkEditItems` loop (category + condition + location) on the 20k
+vault: 10 items 38 ms, 100 items 357 ms, 1,000 items 3,632 ms — 4.8 statements per item, flat. The
+same 1,000 rows as one transaction of plain `UPDATE`s: **11 ms**.
+
+#### The bridge (the real `node bridge/serve.mjs`, over HTTP)
+
+| | 1k | 20k | 100k |
+| --- | --- | --- | --- |
+| hydrate from the JSON snapshot | 901 ms | 3,511 ms | **fails — `Invalid string length`** |
+| hydrate from a raw `.sqlite` source | — | — | 768 ms |
+
+Read routes at 100,000 items, median of five, served from the `.sqlite` source:
+
+| route | ms | payload |
+| --- | --- | --- |
+| `/health` | 3.0 | 0.3 KiB |
+| `/api/v1/status` | 227.2 | 0.2 KiB |
+| `/api/v1/items?limit=25` | 46.4 | 8.1 KiB |
+| `/api/v1/items?limit=100` | 50.7 | 32.1 KiB |
+| `/api/v1/items?limit=100&include=all` | 381.0 | 131.6 KiB |
+| `/api/v1/items?search=Brass&limit=25` | 45.2 | 8.1 KiB |
+| `/api/v1/items.csv` | **40,773.3** | 14,113.1 KiB |
+| `/api/v1/locations` | 3.2 | 8.6 KiB |
+| `/api/v1/categories` | 1.6 | 3.3 KiB |
+| `/api/v1/capabilities` | 23.7 | 0.1 KiB |
+| `/api/v1/search?q=…` | 5.7 | 1.1 KiB |
+| `/api/v1/where?q=…` | 5.9 | 1.7 KiB |
+| `/api/v1/calendar.ics` | 2,826.5 | 1,854.0 KiB |
+| `/api/v1/activity.json?limit=50` | 2.4 | 23.3 KiB |
+| `/api/v1/activity.rss` | 3.3 | 15.9 KiB |
+| `/metrics` | 323.4 | 697.0 KiB |
+| `/api/v1/odata/$metadata` | 2.1 | 24.3 KiB |
+| `/api/v1/odata/items?$top=25` | 46.9 | 8.1 KiB |
+| `/api/v1/odata/items?$filter=contains(name,'Brass')&$top=25` | 46.0 | 8.1 KiB |
+| `/api/v1/odata/items?$filter=quantity gt 20&$top=25` | 46.7 | 8.2 KiB |
+| `/api/v1/odata/items?$count=true&$top=1` | 53.9 | 0.4 KiB |
+| `/api/v1/odata/items/$count` | 2.8 | 0.0 KiB |
+| `/api/v1/odata/items?$orderby=name&$top=100` | 64.4 | 32.1 KiB |
+| `/api/v1/odata/locations?$top=100` | 3.8 | 17.3 KiB |
+
+`$filter=startswith(name,'Brass') and quantity gt 5` answers **400** at every size — recorded as an
+observation, not measured further; the OData surface's gaps are #362.
+
+**Writes** (`POST /api/v1/items/{id}/adjust-quantity`, ten in a row, nothing else running):
+
+| | 1k | 20k |
+| --- | --- | --- |
+| hydrate on start | 1,024 ms | 3,833 ms |
+| first write | 339 ms | 4,527 ms |
+| median of ten | 496 ms | **9,408 ms** |
+| two issued together (single-flight) | — | 19,496 ms |
+
+The first write rewrites the file pretty-printed, so the snapshot grows 105.4 MB → 132.9 MB and
+every later write reads the larger one. A domain reject (a quantity delta on a SERIALISED item)
+answers 422 with a clear message, as documented.
+
+**SSE**: 20 subscribers attached, one write; 40 stream chunks delivered, the first 1,413 ms after
+the write returned.
+
+**MQTT discovery** against a stub broker: 2,009 retained messages / 1.03 MiB at 1,002 locations;
+**10,009 retained messages / 5.16 MiB, published in 0.6 s**, at 5,002 locations — 5,004 of them
+`homeassistant/sensor/gubbins/…` discovery configs.
+
+#### The browser (production build, Edge, OPFS)
+
+| | 1k / 1x | 1k / 4x | 20k / 1x | 20k / 4x | 100k / 1x | 100k / 4x |
+| --- | --- | --- | --- | --- | --- | --- |
+| boot to "Add item" | 665 ms | 2,507 ms | 600 ms | 1,918 ms | 719 ms | 3,751 ms |
+| long tasks during boot | 1 | 6 | 0 | 3 | 1 | 6 |
+| TBT during boot | 1 ms | 760 ms | 0 ms | 249 ms | 8 ms | 1,261 ms |
+| first contentful paint | 84 ms | 616 ms | 99 ms | 293 ms | 114 ms | 1,273 ms |
+| **first item card after that** | 28 ms | 119 ms | 2,891 ms | 1,876 ms | **39,302 ms** | **28,052 ms** |
+| scroll, 12 wheel steps: long tasks | 0 | 32 | 0 | 30 | 1 | 12 |
+| scroll: total blocking | 0 ms | 2,867 ms | 0 ms | 2,514 ms | 0 ms | 1,294 ms |
+| item detail open | 2,551 ms | 2,898 ms | 2,560 ms | 3,355 ms | 2,573 ms | 3,959 ms |
+| 200 add-dialog open/close cycles | 28.6 s | 83.7 s | — | 89.1 s | 31.1 s | 108.0 s |
+| heap across those cycles | +26.9 MiB | −29.2 MiB | +11.7 MiB | −20.8 MiB | +18.9 MiB | +16.8 MiB |
+| heap after the idle that follows | −24.6 MiB | −0.2 MiB | −9.1 MiB | −15.6 MiB | −8.3 MiB | −16.4 MiB |
+
+Nothing drifts while the app sits still. Thirty minutes idle on the Inventory screen at 20,000
+items moved the heap from **24.2 MiB to 24.4 MiB** and produced **zero** long tasks. The dialog
+cycles above are the same story: the heap rises while the cycles run and is collected back
+within the idle that follows, and two of the six runs ended below where they started.
+
+**The first item card is the outlier, and it is not the list query.** Repeating it warm, in one
+session against one already-open database at 100,000 items: unfiltered 14,869 ms; filtered to 4,636
+matches 12,509 ms; filtered to 13 matches 15,020 ms; scoped to one location (23 matches) 14,658 ms.
+A second and third visit cost the same as the first (17,207 ms, 15,123 ms; 15,693 ms after a
+reload). Every other screen sharing the same navigation settles in about two seconds — About 2,008
+ms, Settings 2,143 ms, Alerts 1,890 ms, Dashboard 1,920 ms, against Inventory's 15,229 ms.
+
+Wrapping the worker port shows why: the screen issues **thirteen queries in the same millisecond**
+and they serialise on the one connection, so `SELECT COUNT(*) FROM items WHERE is_active = 1` takes
+9,492 ms to come back. Driven directly against the same database outside the browser, the whole set
+costs under 300 ms.
+
+**Scroll attribution** (long-animation-frame entries, 20k, 4x): idle produces **zero** long frames;
+twelve scroll steps produce 15, totalling 1,466 ms with 623 ms blocking — 659 ms of script (463 ms
+in a `DIV.onscroll` listener and 196 ms in a `setTimeout` callback, both in the `foundry` chunk) and
+807 ms of style, layout and paint.
+
+**Background effects.** The shipped default is `none`, so an idle app paints nothing: zero long
+tasks and no heap growth over 10 s and over 60 s. Switching Snow on creates **two** 1400x950
+canvases (which is #993's shape) and still produces zero long tasks; the heap moves 26.1 → 28.4 MiB
+over two minutes and settles.
+
+**Bundle and precache**, from `npm run build` at the pinned commit:
+
+- precache **209 entries, 6,198.67 KiB** (the shipped `check:bundle` says 6,109.75 KiB across 201
+  files — that discrepancy is #719);
+- in the browser the installed precache holds **205 entries, 6.05 MiB**;
+- two chunks exceed Vite's 500 kB warning: `repositories` 500.33 kB and `glyph-registry` 469.40 kB;
+- the critical path — the entry script plus everything `index.html` `modulepreload`s — is **82 files
+  and 1,805.8 KiB** of JavaScript plus a single 137.8 KiB stylesheet, before the 844.5 KiB SQLite
+  wasm and the 368.1 KiB database worker the first query needs;
+- the largest assets: `sqlite3.wasm` 844.5, `repositories` 488.6, `glyph-registry` 458.4,
+  `barcode-decode.worker` 442.1, `inventory` 377.0, `database.worker` 368.1, `index` 312.1,
+  `use-search-escape` 278.8, `de` (the German catalogue) 240.7, `foundry` 210.6 KiB.
 
 ## 13. Change log
 
@@ -3155,3 +3517,4 @@ SHA `3864f22d` from the primary checkout. §6's rule is that a re-run with a dif
 | 2026-09-04 | 16 | Phase 16 run and landed at pinned SHA `48554ede`. **389 candidates: 282 confirmed, 76 rejected, 9 verified negative, 21 duplicates of existing issues, 0 unverifiable, 1 referred to Phase 17.** The confirmed findings became **72 issues (#1479–#1550)** plus 8 comments on existing issues (#263, #264, #269, #1073, #1289, #1293, #1480, #1518) — claims were grouped one issue per page, following the verifiers' own recommendations, so a page with six wrong claims is one issue listing six. Fourteen finder units and thirteen verifier passes ran, grouped by the wiki sidebar's sections; the coverage unit was verified by the lead. Every screenshot claim was checked by regenerating all 44 committed images from the committed `scripts/wiki-screenshots.mjs` against a dev server at the pinned commit and comparing pixel-wise, which separated genuine staleness from seeded-data noise. Notable: the broken-link finding (#1479) was proved against the **live published wiki** with `curl`, not just the source, because `npm run wiki:check` matches `[[…]]` per line and skips an anchor-only target — so 33 links pass a green check and render dead. Three findings reached beyond the wiki into code comments and one docstring that restate the same false claim (#1534, #1535, #1545). Two existing issues were found to have gone stale themselves and were corrected by comment rather than duplicated (#263's two counts, #269's evidence), and #264 appears already fixed by `02adb5d2`. Four carry-over entries added to §11. **Correction to this plan:** §9's Phase 16 prompt says "all 99 pages under `docs/wiki/`"; there are 98 `.md` files (96 content pages plus `_Sidebar` and `_Footer`). `ls docs/wiki` returns 99 entries because `images/` is a directory. Counts here are taken from the verifiers' verdict tables, one row per candidate. |
 | 2026-09-04 | 16 | Phase 16 follow-up, at the same pinned SHA. A driver agent dispatched during the phase returned after it had landed, with two candidates no verifier had reached. Both were re-checked against the code and confirmed, taking the phase to **391 candidates, 284 confirmed and 73 issues (#1479–#1551)**. The new issue is #1551: the role editor's **Everything under &lt;area&gt;** shortcut is documented as covering actions added by a future release, and `toggleSubject` only ever writes today's keys as an explicit set — `wrong-data`, and silent until a later version adds an action the role then lacks. The second was folded into #1531 as a comment: it corrects that issue's suggested direction, since the app *does* explain the **untracked** case (`Convert to Bulk to loan out…`) and explains the **consumable gauge** case nowhere. |
 | 2026-09-04 | 17 | Phase 17 run and landed at pinned SHA `3864f22d`. **43 candidates: 33 confirmed, 9 rejected, 1 duplicate of an existing issue (#556), 0 unverifiable.** The register carries **44 rows**, because one candidate (P17-23) took different verdicts on different limbs. Thirteen finder sweeps raised 42; the forty-third was found during verification, when a verifier disproved three quarters of another candidate's largest cluster and the mis-typing behind it turned out to be a finding of its own (P17-43). The 33 confirmed became **20 issues (#1552–#1571)** plus **5 comments** on existing issues (#941, #956, #228, #1268, #783) — the rest were folded into a sibling sharing a root cause, most of them into #1569, which collects six false statements about the codebase into one edit. **One confirmed finding was deliberately not filed** (P17-6, `unusable`): a snapshot tombstone naming a built-in role id strands every device on a shared sync permanently, the tombstone-TTL clone republishes it, and a brand-new device cannot pair. It is recorded in §10 with its demonstration and carried to §11 as a disclosure decision for the maintainer, following the precedent Phases 12, 13 and 14 set. One **limb** of a confirmed finding (P17-9's root canvas, visible only as Safari overscroll) also went to §11 as unverifiable here, while its certain limb was filed. The rejections carry the phase's other half: six of the nine turned on a consequence that does not follow rather than on a fact that is wrong, and the two largest — the "no seam has a source-scanning guard" sweep and the 170-file fixture sweep — were rejected after their supporting claims were driven and found inert, the latter being the fourth re-finding of a mechanism the register has already rejected three times. The `waitFor` ceiling candidate (P17-33) was settled by measurement rather than argument: the mechanism reproduces, and raising the ceiling changes the failure rate not at all. Also in this change: §7's price-rendering grep was corrected (it found 2 of 8 real hits), §11's location for the `SettingRow` docstring claim was corrected and one of its clauses dropped, three §11 carry-overs were resolved, §12 gained a Phase 17 re-run recording an `npm audit` regression from 0 to 2 high and a clean whole-graph licence sweep, and one §11 row that had been joined onto the row above it — and therefore did not render — was split, with no wording changed. |
+| 2026-09-04 | 18 | Phase 18 run and landed at pinned SHA `b1cd0c13`. **20 candidates: 4 confirmed, 10 rejected, 5 duplicates of open issues (#764, #806, #712, #1115, #145), 1 unverifiable.** The 4 confirmed became **4 issues (#1572–#1575)**; the 5 duplicates became measured comments on those issues rather than re-filings. The phase's product is mostly its **baseline**: §12.2 now records every surface the focus list names, at 1,000 / 20,000 / 100,000 items, taken from the real repositories with the statements captured at the driver seam, and from the production build driven in Edge over OPFS at 4x throttling and unthrottled. Three seeded vaults were built from the shipped schema with no statistics collected; the fixture had to be corrected once, when random `item_stock` ids made every batch write fail on the UNIQUE index — the schema derives those ids as `item|location`, and the recompute trigger's `ON CONFLICT(id)` depends on it. Ten of the rejections are numbers that disproved a suspicion, and they are the phase's other product: the list projection is not the cost (the sort is 81% of a page), the quick-search box is debounced, `parseTextQuery` drives from FTS, the dashboard feeds carry no thumbnails, the batched window reads hold up, nothing leaks over 200 dialog cycles or thirty idle minutes, and the background effects are off by default. |
