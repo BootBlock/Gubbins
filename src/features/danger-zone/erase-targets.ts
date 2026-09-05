@@ -83,12 +83,23 @@ function localKeysFor(group: LocalEraseGroupId & EraseTargetId): readonly string
 export type EraseSection = 'inventory' | 'organisation' | 'projects' | 'contacts' | 'local';
 
 /**
- * The tables whose rows own a full-resolution OPFS file — the two `full_res_opfs_path` columns
- * in the schema. Named as a union rather than left as free SQL so the executor's reads stay
- * literal statements the `db/query-row-shape.test.ts` guard can prepare and check, and so adding
- * a third image-owning table fails to compile until the executor handles it.
+ * The tables whose rows own a full-resolution OPFS file — every table in the schema with a
+ * `full_res_opfs_path` column.
+ *
+ * Named as a fixed set rather than left as free SQL so the executor's reads stay literal
+ * statements the `db/query-row-shape.test.ts` guard can prepare and check, and so a member added
+ * here fails to compile until `readImagePaths` handles it.
+ *
+ * The list is a claim about the schema, and nothing in the type system holds the two together, so
+ * `erase-image-files.test.ts` reads the real migrated schema and requires the tables carrying a
+ * `full_res_opfs_path` column to be exactly these. Add a third one and that test goes red — which
+ * is also the reminder that `features/maintenance/db-maintenance-actions.ts` keeps its own list
+ * for the orphan sweep.
  */
-export type ImageOwningTable = 'item_images' | 'location_photos';
+export const IMAGE_OWNING_TABLES = ['item_images', 'location_photos'] as const;
+
+/** One of {@link IMAGE_OWNING_TABLES}. */
+export type ImageOwningTable = (typeof IMAGE_OWNING_TABLES)[number];
 
 /** A single erasable target: its catalog metadata plus, for DB targets, its SQL builder. */
 export interface EraseTarget {
@@ -155,7 +166,8 @@ export interface EraseTarget {
    * The executor reads the paths **before** the transaction (the rows that name them are what it
    * deletes) and removes the files **after** it commits. `erase-image-files.test.ts` drives every
    * target that sets this and requires the files deleted to be precisely those whose rows
-   * disappeared — the claim above, tested rather than asserted in prose.
+   * disappeared — the claim above, tested rather than asserted in prose. The same test holds
+   * {@link IMAGE_OWNING_TABLES} to the tables the schema actually gives a `full_res_opfs_path`.
    */
   readonly imageTable?: ImageOwningTable;
   /** IndexedDB database names the executor deletes after the DB transaction. */

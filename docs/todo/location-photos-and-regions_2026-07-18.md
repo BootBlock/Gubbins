@@ -169,9 +169,14 @@ Other call sites that assume item-only image ownership, each audited:
 
 - `build-backup.ts:52` / `restore-backup.ts` — filename-based via `readAllImages()`, so photos
   ride along for free; verified by test rather than changed.
-- `erase-actions.ts:102`, `safe-mode-actions.ts:169` — `removeImagesDirectory()` wipes the
-  whole directory. Correct for "erase all photos", but the confirmation copy must now say it
-  takes location photos too.
+- `safe-mode-actions.ts` — `removeImagesDirectory()` wipes the whole directory. That stays
+  correct: the Safe-Mode hard reset deletes the database file first, so no photo row survives
+  for a directory wipe to strand.
+- `erase-actions.ts` did the same, and that was **wrong** for a per-kind target — erasing item
+  photos destroyed every location photo's full-resolution file, and erasing location photos
+  destroyed every item photo's (issue #820). Each target now names the photo table it empties
+  (`EraseTarget.imageTable`) and the executor deletes only those rows' files. The confirmation
+  copy therefore says each entry leaves the other kind alone; do **not** widen it back.
 - **`erase-targets.ts` is the real per-table erase registry** and needs genuine work: the
   `item-photos` target (`:205-220`) with its `countSql` and `tombstoneSelect`, the items
   target's cascade tombstone list (`:176-190`), and the `locations` target (`:383-389`), which

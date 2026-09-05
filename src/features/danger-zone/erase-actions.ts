@@ -241,7 +241,8 @@ export async function eraseTargets(
  *
  * Written as a `switch` over literal statements rather than SQL carried on the target, so
  * `db/query-row-shape.test.ts` can prepare each one and check `full_res_opfs_path` really is a
- * column it returns. A third image-owning table fails to compile here until it is handled.
+ * column it returns. A member added to `IMAGE_OWNING_TABLES` fails to compile here until it is
+ * handled, and `erase-image-files.test.ts` is what makes the schema add that member.
  */
 async function readImagePaths(db: IDatabaseDriver, table: ImageOwningTable): Promise<string[]> {
   switch (table) {

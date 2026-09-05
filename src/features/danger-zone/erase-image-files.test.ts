@@ -21,7 +21,7 @@ import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { eraseTargets, type ErasePorts } from './erase-actions';
-import { ERASE_TARGETS, type EraseTargetId } from './erase-targets';
+import { ERASE_TARGETS, IMAGE_OWNING_TABLES, type EraseTargetId } from './erase-targets';
 
 /** A minimal Storage stand-in; the image targets touch none of it. */
 function fakeStorage(): Storage {
@@ -151,5 +151,30 @@ describe('erasing photos deletes the files those rows owned, and no others', () 
 
     expect(await storedPaths(driver)).toEqual(new Set());
     expect(deletedPaths().sort()).toEqual([ITEM_PATH, LOCATION_PATH].sort());
+  });
+});
+
+/**
+ * `IMAGE_OWNING_TABLES` is a claim about the schema, and no type holds the two together: a new
+ * table with a `full_res_opfs_path` column would compile everywhere and be silently skipped by
+ * the erase, stranding its files. Ask the real migrated schema instead.
+ */
+describe('IMAGE_OWNING_TABLES names every table the schema gives a full-resolution path', () => {
+  it('matches the columns the migrations actually create', async () => {
+    const driver = createMemoryDriver();
+    try {
+      await runMigrations(driver, migrations);
+      const rows = await driver.query<{ name: string }>(
+        `SELECT m.name AS name
+           FROM sqlite_master m
+           JOIN pragma_table_info(m.name) c
+          WHERE m.type = 'table' AND c.name = 'full_res_opfs_path'
+          ORDER BY m.name;`,
+      );
+
+      expect(rows.map((row) => row.name)).toEqual([...IMAGE_OWNING_TABLES].sort());
+    } finally {
+      await driver.close();
+    }
   });
 });
