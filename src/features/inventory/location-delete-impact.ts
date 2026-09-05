@@ -10,6 +10,9 @@
  * alongside "items move to Unassigned", which loses nothing) or overstate it (every item in the
  * subtree read as destroyed, which it is not). Naming them separately is what lets the copy be
  * proportionate to what actually goes.
+ *
+ * One consequence sits on both sides, and deliberately so: an open loan out to the location has
+ * its units restored (a move) while the checkout row that recorded it is cascaded away (a loss).
  */
 import type { LocationDeleteImpact } from '@/db/repositories';
 import type { MessageKey } from '@/features/i18n';
@@ -65,6 +68,9 @@ export function summariseLocationDelete(
   add(destroys, 'inventory.locations.delete.destroys.regions', impact.regions);
   add(destroys, 'inventory.locations.delete.destroys.tags', impact.tags);
   add(destroys, 'inventory.locations.delete.destroys.fields', impact.fieldValues);
+  // The borrower `location_id` cascades, so a loan to this location loses its record even though
+  // the units themselves come back — which is why loans appear on *both* sides of the dialog.
+  add(destroys, 'inventory.locations.delete.destroys.loans', impact.loanRecords);
 
   return { moves, destroys };
 }

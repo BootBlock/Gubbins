@@ -225,6 +225,7 @@ interface LocationDeleteImpactRow {
   readonly regions: number;
   readonly tags: number;
   readonly field_values: number;
+  readonly loan_records: number;
 }
 
 export class LocationRepository extends BaseRepository {
@@ -627,6 +628,11 @@ export class LocationRepository extends BaseRepository {
    * view is maintained `WHERE is_active = 1`, so a location holding only removed items reads as
    * empty there while {@link delete} re-homes them regardless.
    *
+   * What holds this to {@link delete} is `LocationRepository.delete-impact.test.ts`, which counts
+   * the attached rows, reads this impact, runs the real delete and counts again — and which reads
+   * the *schema* for the tables that cascade off a location, so a new cascade fails the build
+   * rather than going quietly uncounted.
+   *
    * An id that no longer names a location yields an all-zero impact rather than an error — there
    * is genuinely nothing to destroy, which is what the caller needs to hear.
    */
@@ -655,8 +661,9 @@ export class LocationRepository extends BaseRepository {
             JOIN location_photos p ON p.id = r.photo_id
            WHERE p.location_id = ?) AS regions,
          (SELECT COUNT(*) FROM location_tags WHERE location_id = ?) AS tags,
-         (SELECT COUNT(*) FROM location_field_values WHERE location_id = ?) AS field_values;`,
-      [id, id, id, id, id, id, id, id, id],
+         (SELECT COUNT(*) FROM location_field_values WHERE location_id = ?) AS field_values,
+         (SELECT COUNT(*) FROM checkouts WHERE location_id = ?) AS loan_records;`,
+      [id, id, id, id, id, id, id, id, id, id],
     );
     const parent = location?.parentId ? await this.getById(location.parentId) : undefined;
     return {
@@ -670,6 +677,7 @@ export class LocationRepository extends BaseRepository {
       regions: Number(row?.regions ?? 0),
       tags: Number(row?.tags ?? 0),
       fieldValues: Number(row?.field_values ?? 0),
+      loanRecords: Number(row?.loan_records ?? 0),
     };
   }
 

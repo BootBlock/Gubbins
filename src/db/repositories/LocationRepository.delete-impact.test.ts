@@ -2,12 +2,19 @@
  * Parity between what {@link LocationRepository.getDeleteImpact} *claims* a delete will do and what
  * {@link LocationRepository.delete} actually does (issue #823).
  *
- * The impact read is a promise made to the user at the one moment they cannot take it back, so it
- * is not enough to assert the counts in isolation: the doc comment on `LocationDeleteImpact` says
- * "these rows are destroyed", and prose cannot hold that together with the SQL that destroys them.
- * So every test here drives *both* sides — it counts the rows, reads the impact, runs the real
- * delete against the real schema, and counts again. Add a cascade the impact does not name, or
- * narrow one of its sub-selects, and the before/after arithmetic disagrees.
+ * The impact read is a promise made to the user at the one moment they cannot take it back, and
+ * `LocationDeleteImpact` enumerates in prose what "cannot come back". Prose cannot hold that
+ * together with the SQL that destroys the rows, so every test here drives *both* sides: it counts
+ * the rows, reads the impact, runs the real delete against the real schema, and counts again.
+ * Narrow one of the impact's sub-selects and the before/after arithmetic disagrees.
+ *
+ * The list of tables compared is **read out of the schema**, not written down here (see
+ * {@link directCascadeTables}). That is what makes the claim more than "the numbers match": add a
+ * table with an `ON DELETE CASCADE` foreign key to `locations` and it appears in that set, so
+ * `names every table that cascades directly off a location` fails until the impact names it too.
+ * The reach of that is honest rather than total — SQLite reports only *direct* references, so the
+ * two tables that cascade through a chain (`location_regions` via `location_photos`, `item_regions`
+ * via `location_regions`) are still counted by hand in {@link chainedRowCounts}.
  *
  * The scenario is the one from the issue: a Garage that homes nothing the sidebar can see, but that
  * carries a whole photographed, region-mapped, tagged branch.
@@ -17,6 +24,7 @@ import { createMemoryDriver, type MemoryDriver } from '@/test/drivers/memory-dri
 import { runMigrations } from '@/db/migrations/engine';
 import { migrations } from '@/db/migrations';
 import { LocationRepository } from './LocationRepository';
+import type { LocationDeleteImpact } from './types';
 import { LocationPhotoRepository } from './LocationPhotoRepository';
 import { ItemRepository } from './ItemRepository';
 import { CategoryRepository } from './CategoryRepository';
@@ -48,33 +56,62 @@ describe('LocationRepository.getDeleteImpact', () => {
     await driver.close();
   });
 
-  /** How many rows each cascaded table holds for one location — the "what is destroyed" tally. */
-  async function attachedRowCounts(locationId: string) {
-    const row = await driver.queryOne<{
-      photos: number;
-      regions: number;
-      placements: number;
-      tags: number;
-      field_values: number;
-    }>(
+  /**
+   * Which {@link LocationDeleteImpact} field counts each table that cascades *directly* off a
+   * location. The keys are checked against the schema below, so this map cannot quietly fall
+   * behind a new cascading table — the test fails naming the table nothing counts.
+   */
+  const CASCADE_FIELD = {
+    location_photos: 'photos',
+    location_tags: 'tags',
+    location_field_values: 'fieldValues',
+    checkouts: 'loanRecords',
+  } as const satisfies Record<string, keyof LocationDeleteImpact>;
+
+  /**
+   * Every table SQLite says holds an `ON DELETE CASCADE` foreign key to `locations`, read from the
+   * live schema. `checkouts` appears once, for its borrower `location_id`: the `source_location_id`
+   * reference on the same table is a plain (non-cascading) one and is correctly left out.
+   */
+  async function directCascadeTables(): Promise<{ table: string; column: string }[]> {
+    const rows = await driver.query<{ table_name: string; column_name: string }>(
+      `SELECT m.name AS table_name, fk."from" AS column_name
+         FROM sqlite_master m
+         JOIN pragma_foreign_key_list(m.name) fk
+        WHERE m.type = 'table' AND fk."table" = 'locations' AND fk.on_delete = 'CASCADE'
+        ORDER BY m.name;`,
+    );
+    return rows.map((r) => ({ table: r.table_name, column: r.column_name }));
+  }
+
+  /** How many rows each directly-cascading table holds for one location. */
+  async function directRowCounts(locationId: string): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    for (const { table, column } of await directCascadeTables()) {
+      const row = await driver.queryOne<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?;`,
+        [locationId],
+      );
+      counts[table] = Number(row?.n ?? 0);
+    }
+    return counts;
+  }
+
+  /**
+   * The two tables that cascade through a chain rather than straight off `locations`, so
+   * {@link directCascadeTables} cannot see them. Listed by hand, and said so.
+   */
+  async function chainedRowCounts(locationId: string) {
+    const row = await driver.queryOne<{ regions: number; placements: number }>(
       `SELECT
-         (SELECT COUNT(*) FROM location_photos WHERE location_id = ?) AS photos,
          (SELECT COUNT(*) FROM location_regions r
             JOIN location_photos p ON p.id = r.photo_id WHERE p.location_id = ?) AS regions,
          (SELECT COUNT(*) FROM item_regions ir
             JOIN location_regions r ON r.id = ir.region_id
-            JOIN location_photos p ON p.id = r.photo_id WHERE p.location_id = ?) AS placements,
-         (SELECT COUNT(*) FROM location_tags WHERE location_id = ?) AS tags,
-         (SELECT COUNT(*) FROM location_field_values WHERE location_id = ?) AS field_values;`,
-      [locationId, locationId, locationId, locationId, locationId],
+            JOIN location_photos p ON p.id = r.photo_id WHERE p.location_id = ?) AS placements;`,
+      [locationId, locationId],
     );
-    return {
-      photos: Number(row?.photos ?? 0),
-      regions: Number(row?.regions ?? 0),
-      placements: Number(row?.placements ?? 0),
-      tags: Number(row?.tags ?? 0),
-      fieldValues: Number(row?.field_values ?? 0),
-    };
+    return { regions: Number(row?.regions ?? 0), placements: Number(row?.placements ?? 0) };
   }
 
   /**
@@ -150,25 +187,61 @@ describe('LocationRepository.getDeleteImpact', () => {
       regions: 1,
       tags: 1,
       fieldValues: 1,
+      loanRecords: 1,
     });
+  });
+
+  it('names every table that cascades directly off a location', async () => {
+    // The guard behind this file's parity claim: a new `ON DELETE CASCADE` reference to
+    // `locations` turns up here, and fails until `LocationDeleteImpact` counts it too.
+    const tables = (await directCascadeTables()).map((t) => t.table);
+    expect([...new Set(tables)].sort()).toEqual(Object.keys(CASCADE_FIELD).sort());
+  });
+
+  it('counts a location whose only loans have already been returned', async () => {
+    // `openLoansHere` is 0 — nothing to check back in — but the checkout rows still name the
+    // location, and the borrower FK cascades, so the record of the loan goes with it.
+    const van = await locations.create({ name: 'Van' });
+    const drill = await items.create({ name: 'Drill', locationId: van.id, quantity: 1 });
+    const loan = await checkouts.checkout({ itemId: drill.id, locationId: van.id });
+    await checkouts.checkIn(loan.id);
+
+    const impact = await locations.getDeleteImpact(van.id);
+    expect(impact.openLoansHere).toBe(0);
+    expect(impact.loanRecords).toBe(1);
+
+    await locations.delete(van.id);
+    expect((await directRowCounts(van.id)).checkouts).toBe(0);
   });
 
   it('destroys exactly the rows it said it would, and nothing it said would move', async () => {
     const { workshop, garage, shelf, sockets, brokenDrill, ladder } = await garageScenario();
 
-    const before = await attachedRowCounts(garage.id);
+    const beforeDirect = await directRowCounts(garage.id);
+    const beforeChained = await chainedRowCounts(garage.id);
     const impact = await locations.getDeleteImpact(garage.id);
-    expect(before).toEqual({ photos: 1, regions: 1, placements: 1, tags: 1, fieldValues: 1 });
+    expect(beforeDirect).toEqual({
+      location_photos: 1,
+      location_tags: 1,
+      location_field_values: 1,
+      checkouts: 1,
+    });
+    expect(beforeChained).toEqual({ regions: 1, placements: 1 });
 
     await locations.delete(garage.id);
 
-    // Destroyed: every count the impact reported under "destroys" is exactly the drop.
-    const after = await attachedRowCounts(garage.id);
-    expect(after).toEqual({ photos: 0, regions: 0, placements: 0, tags: 0, fieldValues: 0 });
-    expect(before.photos - after.photos).toBe(impact.photos);
-    expect(before.regions - after.regions).toBe(impact.regions);
-    expect(before.tags - after.tags).toBe(impact.tags);
-    expect(before.fieldValues - after.fieldValues).toBe(impact.fieldValues);
+    // Destroyed: every count the impact reported under "destroys" is exactly the drop, for every
+    // cascading table the schema knows about rather than for a list written down beside it.
+    const afterDirect = await directRowCounts(garage.id);
+    const afterChained = await chainedRowCounts(garage.id);
+    for (const [table, field] of Object.entries(CASCADE_FIELD)) {
+      expect(afterDirect[table], `${table} should be gone`).toBe(0);
+      expect(beforeDirect[table]! - afterDirect[table]!, `${table} drop vs impact.${field}`).toBe(
+        impact[field],
+      );
+    }
+    expect(afterChained).toEqual({ regions: 0, placements: 0 });
+    expect(beforeChained.regions - afterChained.regions).toBe(impact.regions);
 
     // Moved, not lost: the removed item re-homes, the parked stock re-homes with its total
     // intact, and the child is promoted with its own contents untouched.
@@ -179,13 +252,7 @@ describe('LocationRepository.getDeleteImpact', () => {
     expect(ladderStock.reduce((sum, p) => sum + p.quantity, 0)).toBe(3);
     expect(ladderStock.find((p) => p.locationId === UNASSIGNED_LOCATION_ID)?.quantity).toBe(2);
     // The shelf's own photos/tags/fields were never in scope: it was promoted, not deleted.
-    expect(await attachedRowCounts(shelf.id)).toEqual({
-      photos: 0,
-      regions: 0,
-      placements: 0,
-      tags: 0,
-      fieldValues: 0,
-    });
+    expect(await chainedRowCounts(shelf.id)).toEqual({ regions: 0, placements: 0 });
   });
 
   it('reports nothing at all for a location that holds nothing', async () => {
@@ -201,6 +268,7 @@ describe('LocationRepository.getDeleteImpact', () => {
       regions: 0,
       tags: 0,
       fieldValues: 0,
+      loanRecords: 0,
     });
   });
 

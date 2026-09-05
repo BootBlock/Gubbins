@@ -13,6 +13,7 @@ const NOTHING: LocationDeleteImpact = {
   regions: 0,
   tags: 0,
   fieldValues: 0,
+  loanRecords: 0,
 };
 
 const keys = (lines: readonly { key: string }[]) => lines.map((l) => l.key);
@@ -77,5 +78,20 @@ describe('summariseLocationDelete', () => {
       'inventory.locations.delete.moves.stock',
       'inventory.locations.delete.moves.loans',
     ]);
+  });
+
+  it('puts an open loan on both sides — the units return, the record does not', () => {
+    const summary = summariseLocationDelete({ ...NOTHING, openLoansHere: 1, loanRecords: 1 }, 'X');
+    expect(keys(summary.moves)).toEqual(['inventory.locations.delete.moves.loans']);
+    expect(keys(summary.destroys)).toEqual(['inventory.locations.delete.destroys.loans']);
+  });
+
+  it('names a returned loan’s record even when nothing is out on loan now', () => {
+    const summary = summariseLocationDelete({ ...NOTHING, loanRecords: 3 }, 'X');
+    expect(summary.moves).toEqual([]);
+    expect(summary.destroys[0]).toEqual({
+      key: 'inventory.locations.delete.destroys.loans',
+      vars: { count: 3 },
+    });
   });
 });

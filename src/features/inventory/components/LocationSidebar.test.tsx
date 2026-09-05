@@ -93,6 +93,7 @@ const impactState = vi.hoisted(() => ({
     regions: 0,
     tags: 0,
     fieldValues: 0,
+    loanRecords: 0,
   },
 }));
 /** Reset the stubbed impact to "holds nothing", then apply the overrides this test cares about. */
@@ -110,6 +111,7 @@ function locationHolds(overrides: Partial<(typeof impactState)['data']> = {}) {
     regions: 0,
     tags: 0,
     fieldValues: 0,
+    loanRecords: 0,
     ...overrides,
   };
 }
@@ -392,7 +394,9 @@ describe('LocationSidebar — accessible APG tree', () => {
     expect(spies.del).not.toHaveBeenCalled();
     const dialog = screen.getByRole('dialog', { name: 'Delete location?' });
     expect(dialog.textContent).toContain('1 photo of this location.');
-    expect(dialog.textContent).toContain('1 region marked on those photos');
+    expect(dialog.textContent).toContain(
+      '1 region marked on those photos, and the record of which items sit in it.',
+    );
     expect(dialog.textContent).toContain('1 tag on this location.');
     fireEvent.click(screen.getByTestId('confirm-delete-location'));
     expect(spies.del).toHaveBeenCalledWith('drawer', expect.anything());

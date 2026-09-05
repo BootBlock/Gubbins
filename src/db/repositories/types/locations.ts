@@ -166,22 +166,27 @@ export interface LocationTreeNode extends LocationWithCount {
  * puts in front of the user before they commit to it.
  *
  * Split deliberately into what *moves* and what is *destroyed*, because the delete does both and
- * they carry very different weight. Items, stock and loans are re-homed or checked in with nothing
- * lost, and child locations are promoted to this one's parent with their own contents intact. What
- * cannot come back is everything that hangs off the location row itself and cascades with it: its
- * photos, the regions drawn on those photos, the item placements pinned to those regions, its tags
- * and its custom-field values.
+ * they carry very different weight. Items and stock are re-homed with nothing lost, an open loan's
+ * units are restored, and child locations are promoted to this one's parent with their own
+ * contents intact. What cannot come back is everything that hangs off the location row itself and
+ * cascades with it: its photos, the regions drawn on those photos, the item placements pinned to
+ * those regions, its tags, its custom-field values, and every checkout row that named it as the
+ * borrower — the units come back, the record of the loan does not.
  *
  * `itemsHere` is counted from `items` rather than the `location_item_counts` view the sidebar
  * renders: that view is maintained `WHERE is_active = 1`, so a location holding only removed items
  * reads as empty there while the delete re-homes them regardless.
+ *
+ * `LocationRepository.delete-impact.test.ts` holds these counts to what the delete really does: it
+ * reads the schema for the tables that cascade off a location, so a new one fails the build until
+ * this shape names it too.
  */
 export interface LocationDeleteImpact {
   /** Items homed directly here — active or not — which the delete re-homes to Unassigned. */
   readonly itemsHere: number;
   /** On-hand units sitting at this location (whoever they belong to), re-homed to Unassigned. */
   readonly stockUnitsHere: number;
-  /** Open loans out *to* this location as the borrower, which the delete checks back in. */
+  /** Open loans out *to* this location as the borrower, whose units the delete restores. */
   readonly openLoansHere: number;
   /** Direct child locations, promoted to this location's parent. */
   readonly childLocations: number;
@@ -197,6 +202,12 @@ export interface LocationDeleteImpact {
   readonly tags: number;
   /** Custom-field values held on this location, inheritable ones included. Destroyed. */
   readonly fieldValues: number;
+  /**
+   * Checkout rows naming this location as the borrower — the open ones counted by
+   * {@link openLoansHere} *and* every loan to it that has already come back. Destroyed: the
+   * borrower `location_id` cascades, so restoring the units does not save the record of the loan.
+   */
+  readonly loanRecords: number;
 }
 
 export interface CreateLocationInput {

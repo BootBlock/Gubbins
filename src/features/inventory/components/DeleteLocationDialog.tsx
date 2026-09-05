@@ -12,7 +12,7 @@
  * than in the sidebar is what keeps the query scoped to the moments the dialog is on screen.
  */
 import { useRef } from 'react';
-import { Banner, Button, Modal, Spinner } from '@/components/foundry';
+import { Banner, Button, LiveRegion, Modal, Spinner } from '@/components/foundry';
 import { DeleteIcon } from '@/components/icons';
 import { useT } from '@/features/i18n';
 import { useLocationDeleteImpact } from '../queries';
@@ -57,8 +57,10 @@ export function DeleteLocationDialog({
       <div className="flex flex-col gap-4">
         {/* The counts land a moment after the dialog opens, and the confirm button is held
             until they do — so a screen-reader user is told what arrived rather than being left
-            with a description that no longer says everything the dialog does. */}
-        <div className="text-sm" aria-live="polite" data-testid="delete-location-impact">
+            with a description that no longer says everything the dialog does. The region is
+            mounted with the dialog and only its children change, which is what `LiveRegion`
+            exists to get right. */}
+        <LiveRegion className="text-sm" data-testid="delete-location-impact">
           {impact.isPending ? (
             <p className="text-muted-foreground">{t('inventory.locations.delete.checking')}</p>
           ) : null}
@@ -92,7 +94,7 @@ export function DeleteLocationDialog({
               </ul>
             </>
           ) : null}
-        </div>
+        </LiveRegion>
         <div className="flex justify-end gap-2">
           <Button ref={cancelRef} variant="ghost" onClick={onCancel} disabled={busy}>
             {t('inventory.locations.delete.cancel')}

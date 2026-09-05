@@ -96,11 +96,15 @@ and the question tells you what the deletion will actually do.
 The dialog separates the two halves, because a deletion does both:
 
 - **Kept, but moved.** Items homed in the location, and any stock stored there, move to
-  **Unassigned**. Anything lent *to* the location is checked back in. Sub-locations are moved up to
-  the deleted location's own parent, with everything inside them untouched.
-- **Deleted for good.** The location's [[photos and the regions drawn on them|Location-Photos-and-Regions]],
-  the items pinned to those regions, its tags and its [[custom field values|Custom-Fields-and-Capabilities]]
-  go with it. These cannot be recovered.
+  **Unassigned**. Anything lent *to* the location is checked back in, so its units return to stock.
+  Sub-locations are moved up to the deleted location's own parent, with everything inside them
+  untouched.
+- **Deleted for good.** The location's [[photos and the regions drawn on them|Location-Photos-and-Regions]]
+  go with it, and so does the record of which items sat in each region — the items themselves are
+  fine, but you would have to photograph the place and mark it up again.
+  Its tags and its [[custom field values|Custom-Fields-and-Capabilities]] go too, along with every
+  [[loan|Loans-Check-Out-and-In]] that named this location as the borrower: the borrowed units are
+  returned to stock first, but the record of the loan is not kept. None of this can be recovered.
 
 > **⚠️ Heads-up**
 > Deleting a location cannot be undone, and it is carried to your other devices by
