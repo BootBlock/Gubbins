@@ -26,6 +26,7 @@ import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
   Location,
+  LocationDeleteImpact,
   LocationHistoryEntry,
   LocationHistoryWithActorRow,
   LocationRow,
@@ -212,6 +213,19 @@ const PARENT_MOVE_CYCLE_GUARD = `NOT EXISTS (
   )
   SELECT 1 FROM ancestors WHERE id = ?
 )`;
+
+/** The one row {@link LocationRepository.getDeleteImpact} projects. */
+interface LocationDeleteImpactRow {
+  readonly items_here: number;
+  readonly stock_units_here: number;
+  readonly open_loans_here: number;
+  readonly child_locations: number;
+  readonly items_below: number;
+  readonly photos: number;
+  readonly regions: number;
+  readonly tags: number;
+  readonly field_values: number;
+}
 
 export class LocationRepository extends BaseRepository {
   async getById(id: string): Promise<Location | undefined> {
@@ -598,6 +612,65 @@ export class LocationRepository extends BaseRepository {
     const { sql, params } = markCountedStatement(id, at);
     await this.driver.execute(sql, params ?? []);
     return (await this.getById(id))!;
+  }
+
+  /**
+   * What deleting `id` would do, in numbers — the read behind the delete confirmation (issue #823).
+   *
+   * Every tally is scoped to *this* location's own row, because that is what the `DELETE` removes:
+   * its children are promoted rather than deleted, so their photos, regions, tags and field values
+   * are untouched. `itemsBelow` is the one exception, and it is context rather than consequence —
+   * it says how much of the collection sits under a location that reads as empty, which is exactly
+   * the case a direct item count answered wrongly.
+   *
+   * Counted from `items` rather than the `location_item_counts` view the sidebar renders: that
+   * view is maintained `WHERE is_active = 1`, so a location holding only removed items reads as
+   * empty there while {@link delete} re-homes them regardless.
+   *
+   * An id that no longer names a location yields an all-zero impact rather than an error — there
+   * is genuinely nothing to destroy, which is what the caller needs to hear.
+   */
+  async getDeleteImpact(id: string): Promise<LocationDeleteImpact> {
+    const location = await this.getById(id);
+    // One round trip. The recursive arm walks *down* from the location (the mirror of
+    // `PARENT_MOVE_CYCLE_GUARD`, which walks up), with `UNION` rather than `UNION ALL` so a
+    // corrupt parent chain terminates instead of looping. Written out here rather than held in a
+    // module constant so `query-row-shape.test.ts` can prepare it and check this row interface
+    // against the columns SQLite will really return. Every `?` binds the same location id, so a
+    // bind list that falls out of step with the statement is a driver error, not a wrong answer.
+    const row = await this.driver.queryOne<LocationDeleteImpactRow>(
+      `WITH RECURSIVE below(id) AS (
+         SELECT id FROM locations WHERE parent_id = ?
+         UNION
+         SELECT l.id FROM locations l JOIN below b ON l.parent_id = b.id
+       )
+       SELECT
+         (SELECT COUNT(*) FROM items WHERE location_id = ?) AS items_here,
+         (SELECT COALESCE(SUM(quantity), 0) FROM item_stock WHERE location_id = ?) AS stock_units_here,
+         (SELECT COUNT(*) FROM checkouts WHERE location_id = ? AND returned_at IS NULL) AS open_loans_here,
+         (SELECT COUNT(*) FROM locations WHERE parent_id = ?) AS child_locations,
+         (SELECT COUNT(*) FROM items WHERE location_id IN (SELECT id FROM below)) AS items_below,
+         (SELECT COUNT(*) FROM location_photos WHERE location_id = ?) AS photos,
+         (SELECT COUNT(*) FROM location_regions r
+            JOIN location_photos p ON p.id = r.photo_id
+           WHERE p.location_id = ?) AS regions,
+         (SELECT COUNT(*) FROM location_tags WHERE location_id = ?) AS tags,
+         (SELECT COUNT(*) FROM location_field_values WHERE location_id = ?) AS field_values;`,
+      [id, id, id, id, id, id, id, id, id],
+    );
+    const parent = location?.parentId ? await this.getById(location.parentId) : undefined;
+    return {
+      itemsHere: Number(row?.items_here ?? 0),
+      stockUnitsHere: Number(row?.stock_units_here ?? 0),
+      openLoansHere: Number(row?.open_loans_here ?? 0),
+      childLocations: Number(row?.child_locations ?? 0),
+      itemsBelow: Number(row?.items_below ?? 0),
+      promotedToName: parent?.name ?? null,
+      photos: Number(row?.photos ?? 0),
+      regions: Number(row?.regions ?? 0),
+      tags: Number(row?.tags ?? 0),
+      fieldValues: Number(row?.field_values ?? 0),
+    };
   }
 
   /**

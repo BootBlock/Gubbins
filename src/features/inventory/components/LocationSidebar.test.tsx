@@ -77,14 +77,52 @@ const exportSpies = vi.hoisted(() => ({
   })),
   download: vi.fn(),
 }));
+// The delete confirmation reads what the delete would destroy (issue #823). Stub that one read so
+// the test stays free of a QueryClient, and let each test say what the location holds.
+const impactState = vi.hoisted(() => ({
+  isPending: false,
+  isError: false,
+  data: {
+    itemsHere: 0,
+    stockUnitsHere: 0,
+    openLoansHere: 0,
+    childLocations: 0,
+    itemsBelow: 0,
+    promotedToName: null as string | null,
+    photos: 0,
+    regions: 0,
+    tags: 0,
+    fieldValues: 0,
+  },
+}));
+/** Reset the stubbed impact to "holds nothing", then apply the overrides this test cares about. */
+function locationHolds(overrides: Partial<(typeof impactState)['data']> = {}) {
+  impactState.isPending = false;
+  impactState.isError = false;
+  impactState.data = {
+    itemsHere: 0,
+    stockUnitsHere: 0,
+    openLoansHere: 0,
+    childLocations: 0,
+    itemsBelow: 0,
+    promotedToName: null,
+    photos: 0,
+    regions: 0,
+    tags: 0,
+    fieldValues: 0,
+    ...overrides,
+  };
+}
 vi.mock('../queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../queries')>()),
   readLocationsPage: exportSpies.readPage,
+  useLocationDeleteImpact: () => impactState,
 }));
 vi.mock('@/features/export/download', () => ({ download: exportSpies.download }));
 
 afterEach(() => {
   cleanup();
+  locationHolds();
   useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
   // The search-box visibility preference is a persisted module singleton; hand it back to the
   // shipped default so one test's pinning can't decide whether another's box is on screen.
@@ -341,19 +379,58 @@ describe('LocationSidebar — accessible APG tree', () => {
     expect(screen.getByRole('button', { name: 'Print label for Workshop' })).toBeTruthy();
   });
 
-  it('deletes an empty location immediately, with no confirmation prompt', () => {
+  it('still asks before deleting a location that holds no items of its own (#823)', () => {
+    // The Drawer reads as empty — `itemCount` 0 — but carries a photo, a region drawn on it and a
+    // tag, all of which the delete destroys. This exact case used to go on one unconfirmed click.
+    locationHolds({ photos: 1, regions: 1, tags: 1 });
     renderSidebar();
-    // Reveal the empty Drawer (itemCount 0), open its Edit dialog, and delete from there.
     const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
     cabinet.focus();
     fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
     fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
     fireEvent.click(screen.getByTestId('edit-location-delete'));
-    expect(spies.del).toHaveBeenCalledWith('drawer');
-    expect(screen.queryByRole('dialog', { name: 'Delete location?' })).toBeNull();
+    expect(spies.del).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'Delete location?' });
+    expect(dialog.textContent).toContain('1 photo of this location.');
+    expect(dialog.textContent).toContain('1 region marked on those photos');
+    expect(dialog.textContent).toContain('1 tag on this location.');
+    fireEvent.click(screen.getByTestId('confirm-delete-location'));
+    expect(spies.del).toHaveBeenCalledWith('drawer', expect.anything());
+  });
+
+  it('names the sub-locations and the items below a location that homes nothing itself (#823)', () => {
+    locationHolds({ childLocations: 1, itemsBelow: 40, promotedToName: 'Workshop' });
+    renderSidebar();
+    const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
+    cabinet.focus();
+    fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    const dialog = screen.getByRole('dialog', { name: 'Delete location?' });
+    expect(dialog.textContent).toContain('1 sub-location moves to Workshop');
+    expect(dialog.textContent).toContain('40 items stored in those sub-locations are unaffected.');
+  });
+
+  it('holds the confirm button until the impact read has settled (#823)', () => {
+    impactState.isPending = true;
+    renderSidebar();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    expect(screen.getByTestId('confirm-delete-location')).toHaveProperty('disabled', true);
+    // A failed read releases it — the cascade happens whether or not the counts could be read, so
+    // the dialog says so rather than locking the user out of a delete they asked for.
+    impactState.isPending = false;
+    impactState.isError = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
+    fireEvent.click(screen.getByTestId('edit-location-delete'));
+    const dialog = screen.getByRole('dialog', { name: 'Delete location?' });
+    expect(dialog.textContent).toContain('check what this location holds');
+    expect(screen.getByTestId('confirm-delete-location')).toHaveProperty('disabled', false);
   });
 
   it('asks for confirmation before deleting a location that still holds items', () => {
+    locationHolds({ itemsHere: 5, stockUnitsHere: 12 });
     renderSidebar();
     // Deletion lives in the Edit dialog now — open it, then click Delete location.
     fireEvent.click(screen.getByRole('button', { name: 'Edit Workshop' }));
@@ -361,7 +438,8 @@ describe('LocationSidebar — accessible APG tree', () => {
     // Nothing deleted yet — the confirmation dialog stands in the way.
     expect(spies.del).not.toHaveBeenCalled();
     const dialog = screen.getByRole('dialog', { name: 'Delete location?' });
-    expect(dialog.textContent).toContain('5 items');
+    expect(dialog.textContent).toContain('5 items homed here move to Unassigned.');
+    expect(dialog.textContent).toContain('12 units of stock stored here move to Unassigned.');
     fireEvent.click(screen.getByTestId('confirm-delete-location'));
     expect(spies.del).toHaveBeenCalledWith('workshop', expect.anything());
   });
@@ -375,7 +453,7 @@ describe('LocationSidebar — accessible APG tree', () => {
     expect(screen.queryByRole('dialog', { name: 'Delete location?' })).toBeNull();
   });
 
-  it('the Delete key also routes a non-empty location through confirmation', () => {
+  it('the Delete key also routes a location through confirmation', () => {
     renderSidebar();
     const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
     workshop.focus();
@@ -1091,15 +1169,17 @@ describe('LocationSidebar — the selection never outlives its row (issue #713)'
   }
 
   it('falls back to All items when the selected location is deleted', () => {
-    // Drawer is empty, so the Edit dialog deletes it outright — and it is the location the item
-    // list is currently scoped to, so that filter has to go with it.
+    // Drawer is the location the item list is currently scoped to, so that filter has to go with
+    // it — once the confirmation is taken, and not before.
     const { onSelect } = renderSelected('drawer');
     const cabinet = screen.getByRole('treeitem', { name: 'Cabinet' });
     cabinet.focus();
     fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
     fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
     fireEvent.click(screen.getByTestId('edit-location-delete'));
-    expect(spies.del).toHaveBeenCalledWith('drawer');
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-delete-location'));
+    expect(spies.del).toHaveBeenCalledWith('drawer', expect.anything());
     expect(onSelect).toHaveBeenCalledWith(null);
   });
 
@@ -1120,7 +1200,8 @@ describe('LocationSidebar — the selection never outlives its row (issue #713)'
     fireEvent.keyDown(cabinet, { key: 'ArrowRight' });
     fireEvent.click(screen.getByRole('button', { name: 'Edit Drawer' }));
     fireEvent.click(screen.getByTestId('edit-location-delete'));
-    expect(spies.del).toHaveBeenCalledWith('drawer');
+    fireEvent.click(screen.getByTestId('confirm-delete-location'));
+    expect(spies.del).toHaveBeenCalledWith('drawer', expect.anything());
     expect(onSelect).not.toHaveBeenCalled();
   });
 

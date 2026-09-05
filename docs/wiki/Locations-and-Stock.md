@@ -87,6 +87,32 @@ sub-location cards and on the group headings when the inventory is grouped by lo
 purely a visual cue — it changes nothing about how the location behaves. The location *pickers*
 show the colour swatch rather than the icon.
 
+## Deleting a location
+
+**Delete location** sits in a location's **Edit** dialog, beside **Archive**. Pressing <kbd>Delete</kbd>
+on a selected location in the tree does the same thing. Either way Gubbins asks first, every time,
+and the question tells you what the deletion will actually do.
+
+The dialog separates the two halves, because a deletion does both:
+
+- **Kept, but moved.** Items homed in the location, and any stock stored there, move to
+  **Unassigned**. Anything lent *to* the location is checked back in. Sub-locations are moved up to
+  the deleted location's own parent, with everything inside them untouched.
+- **Deleted for good.** The location's [[photos and the regions drawn on them|Location-Photos-and-Regions]],
+  the items pinned to those regions, its tags and its [[custom field values|Custom-Fields-and-Capabilities]]
+  go with it. These cannot be recovered.
+
+> **⚠️ Heads-up**
+> Deleting a location cannot be undone, and it is carried to your other devices by
+> [[sync|Cloud-Sync]]. If you only want a place out of the way, **archive** it instead — that hides
+> it from the tree and keeps everything about it.
+
+A location that reads as empty in the tree may still hold a great deal: sub-locations, photographed
+shelves, tags and recorded details. That is why the confirmation names them before you commit.
+
+The deletion itself is recorded in [[the location's history|#a-locations-history]], and the record
+outlives the location — read it from the **Activity** screen's **Locations** view.
+
 ## Finding a location
 
 Above the tree is a **search box**. Type into it and the tree narrows to the locations that

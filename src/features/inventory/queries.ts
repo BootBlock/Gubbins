@@ -144,6 +144,9 @@ export const inventoryKeys = {
   locationHistory: (id: string) => [...inventoryKeys.locations(), 'history', id] as const,
   /** How many locations exist — the Dashboard's tally, which wants the number and no rows. */
   locationCount: () => [...inventoryKeys.locations(), 'count'] as const,
+  /** What deleting one location would destroy and move (issue #823) — the confirmation's read.
+   *  Under locations() so any location write re-reads it by prefix. */
+  locationDeleteImpact: (id: string) => [...inventoryKeys.locations(), 'delete-impact', id] as const,
   // Phase 3 — categories, custom fields, tags, images & attachments.
   categories: () => [...inventoryKeys.all, 'categories'] as const,
   categoryList: () => [...inventoryKeys.categories(), 'list'] as const,
@@ -938,6 +941,22 @@ export function useLocations() {
       const rows = await getLocationRepository().listAll();
       return { rows, limit: rows.length, offset: 0, hasMore: false };
     },
+  });
+}
+
+/**
+ * What deleting one location would do — the numbers the delete confirmation reads (issue #823).
+ *
+ * Deliberately fetched only while the confirmation is on screen (`enabled` follows the id), and
+ * deliberately **not** derived from the sidebar's tree: the tree carries an *active* item count and
+ * nothing at all about the photos, regions, tags and custom-field values the delete destroys, which
+ * is precisely how an empty-looking location came to delete on one unconfirmed click.
+ */
+export function useLocationDeleteImpact(id: string | undefined) {
+  return useQuery({
+    queryKey: inventoryKeys.locationDeleteImpact(id ?? ''),
+    enabled: Boolean(id),
+    queryFn: () => getLocationRepository().getDeleteImpact(id!),
   });
 }
 

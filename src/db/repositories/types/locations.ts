@@ -161,6 +161,44 @@ export interface LocationTreeNode extends LocationWithCount {
   readonly children: LocationTreeNode[];
 }
 
+/**
+ * What deleting one location would actually do (issue #823) — the numbers the delete confirmation
+ * puts in front of the user before they commit to it.
+ *
+ * Split deliberately into what *moves* and what is *destroyed*, because the delete does both and
+ * they carry very different weight. Items, stock and loans are re-homed or checked in with nothing
+ * lost, and child locations are promoted to this one's parent with their own contents intact. What
+ * cannot come back is everything that hangs off the location row itself and cascades with it: its
+ * photos, the regions drawn on those photos, the item placements pinned to those regions, its tags
+ * and its custom-field values.
+ *
+ * `itemsHere` is counted from `items` rather than the `location_item_counts` view the sidebar
+ * renders: that view is maintained `WHERE is_active = 1`, so a location holding only removed items
+ * reads as empty there while the delete re-homes them regardless.
+ */
+export interface LocationDeleteImpact {
+  /** Items homed directly here — active or not — which the delete re-homes to Unassigned. */
+  readonly itemsHere: number;
+  /** On-hand units sitting at this location (whoever they belong to), re-homed to Unassigned. */
+  readonly stockUnitsHere: number;
+  /** Open loans out *to* this location as the borrower, which the delete checks back in. */
+  readonly openLoansHere: number;
+  /** Direct child locations, promoted to this location's parent. */
+  readonly childLocations: number;
+  /** Items homed anywhere below this location. They stay put; their location just moves. */
+  readonly itemsBelow: number;
+  /** The parent those children are promoted to, or null for the top level. */
+  readonly promotedToName: string | null;
+  /** Photos of this location. Destroyed. */
+  readonly photos: number;
+  /** Regions drawn on those photos. Destroyed, along with the item placements pinned to them. */
+  readonly regions: number;
+  /** Tags on this location. Destroyed (the tags themselves survive; this location's use of them does not). */
+  readonly tags: number;
+  /** Custom-field values held on this location, inheritable ones included. Destroyed. */
+  readonly fieldValues: number;
+}
+
 export interface CreateLocationInput {
   readonly name: string;
   readonly parentId?: string | null;
