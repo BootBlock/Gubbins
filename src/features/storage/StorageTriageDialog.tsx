@@ -12,6 +12,7 @@
  * through the storage hooks; a Toast confirms each reclaim.
  */
 import { useMemo, useState } from 'react';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { Button, Modal, Select, Spinner, Tooltip, useToast } from '@/components/foundry';
 import { useConfirmSaved } from '@/components/useConfirmSaved';
 import { prepareSave } from '@/lib/save-file';
@@ -96,6 +97,19 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
   const breakdown = useStorageBreakdown();
   const pruneCount = usePruneCandidateCount(pruneCutoffMs);
   const downgradeCount = useDowngradeCandidateCount(downgradeCutoffMs);
+  /**
+   * The candidate figures, but only once they are *facts* — `null` while a count is still in
+   * flight or has failed (issue #898). Everything below reads these rather than the query's
+   * `data`, so an unknown count can never be spent as a zero: `data ?? 0` greyed the workflow
+   * out with "0 entries affected" beside it, which reads as "nothing to reclaim" to the one
+   * user who is here precisely because there is.
+   */
+  const pruneReady = pruneCount.isSuccess ? pruneCount.data : null;
+  const downgradeReady = downgradeCount.isSuccess ? downgradeCount.data : null;
+  // "There is nothing to reclaim" and "we do not know what there is to reclaim" both leave the
+  // button unusable, but only the first is something we know — hence the explicit `!== null`.
+  const canPrune = pruneReady !== null && pruneReady > 0;
+  const canDowngrade = downgradeReady !== null && downgradeReady > 0;
 
   const prune = useArchiveAndPruneHistory(now);
   const downgrade = useDowngradeImages(now);
@@ -268,13 +282,26 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                   options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
                 />
               </label>
-              <span className="text-sm text-muted-foreground">
-                {pruneCount.data ?? 0} {plural(pruneCount.data ?? 0, 'entry', 'entries')} affected
-              </span>
-              {confirming === 'prune' ? (
+              <CandidateCount
+                query={pruneCount}
+                testIdPrefix="prune"
+                label={(count) => t('storage.triage.pruneCount', { vars: { count } })}
+                errorText={t('storage.triage.pruneCountFailed')}
+              />
+              {/*
+               * The window Select stays live underneath an open confirmation, and changing it
+               * re-keys the count query — so the figure this question names can stop being known,
+               * or become a real zero, while the question is still on screen. The confirmation
+               * answers to the same `canPrune` the button does, rather than merely to the figure
+               * being known: a confirmation is the last place a guessed zero may stand in for an
+               * unknown one, and the last place a live Confirm may offer work there is none of.
+               * Falling back to the button (disabled, with the row above saying why) is the only
+               * honest move, and the question returns by itself once the new window has counted.
+               */}
+              {confirming === 'prune' && canPrune ? (
                 <ConfirmRow
                   testIdPrefix="prune"
-                  message={`Permanently delete ${pruneCount.data ?? 0} ${plural(pruneCount.data ?? 0, 'entry', 'entries')} once the archive is saved?`}
+                  message={`Permanently delete ${pruneReady} ${plural(pruneReady, 'entry', 'entries')} once the archive is saved?`}
                   onConfirm={() => void onPrune()}
                   onCancel={() => setConfirming(null)}
                   pending={prune.isPending}
@@ -289,7 +316,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                       data-testid="prune-history"
                       variant="outline"
                       onClick={() => setConfirming('prune')}
-                      disabled={prune.isPending || choosingArchiveDestination || (pruneCount.data ?? 0) === 0}
+                      disabled={prune.isPending || choosingArchiveDestination || !canPrune}
                     >
                       {prune.isPending || choosingArchiveDestination ? <Spinner /> : <DownloadIcon />}
                       Archive &amp; purge
@@ -328,13 +355,17 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                   options={WINDOW_MONTH_OPTIONS.map((m) => ({ value: String(m), label: monthsLabel(m) }))}
                 />
               </label>
-              <span className="text-sm text-muted-foreground">
-                {downgradeCount.data ?? 0} {plural(downgradeCount.data ?? 0, 'image')} affected
-              </span>
-              {confirming === 'downgrade' ? (
+              <CandidateCount
+                query={downgradeCount}
+                testIdPrefix="downgrade"
+                label={(count) => t('storage.triage.downgradeCount', { vars: { count } })}
+                errorText={t('storage.triage.downgradeCountFailed')}
+              />
+              {/* Same reasoning as the prune confirmation above. */}
+              {confirming === 'downgrade' && canDowngrade ? (
                 <ConfirmRow
                   testIdPrefix="downgrade"
-                  message={`Drop full-resolution data for ${downgradeCount.data ?? 0} ${plural(downgradeCount.data ?? 0, 'image')}? Thumbnails are kept.`}
+                  message={`Drop full-resolution data for ${downgradeReady} ${plural(downgradeReady, 'image')}? Thumbnails are kept.`}
                   onConfirm={onDowngrade}
                   onCancel={() => setConfirming(null)}
                   pending={downgrade.isPending}
@@ -349,7 +380,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                       data-testid="downgrade-images"
                       variant="outline"
                       onClick={() => setConfirming('downgrade')}
-                      disabled={downgrade.isPending || (downgradeCount.data ?? 0) === 0}
+                      disabled={downgrade.isPending || !canDowngrade}
                     >
                       {downgrade.isPending ? <Spinner /> : <SuccessIcon />}
                       Downgrade
@@ -367,6 +398,73 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
        */}
       {confirmSavedDialog}
     </Modal>
+  );
+}
+
+/**
+ * The candidate figure a reclaim decision rests on, in whichever of its three states the query is
+ * actually in (issue #898).
+ *
+ * Rendering `data ?? 0` collapsed all three into one: a count still in flight, and a count whose
+ * query had failed, both read out as a confident "0 entries affected" beside a button greyed out
+ * for what looks like the same reason. Nothing said the figure was unknown, nothing offered to try
+ * again, and the healthy sibling section stayed live — so a user sent here by a storage banner was
+ * told, with every appearance of certainty, that there was nothing here to free. The breakdown
+ * above has always branched on its own query state; these rows now do the same, and a failure
+ * carries the retry that a permanently dead button never could.
+ */
+function CandidateCount({
+  query,
+  testIdPrefix,
+  label,
+  errorText,
+}: {
+  readonly query: UseQueryResult<number>;
+  readonly testIdPrefix: string;
+  /**
+   * Rendered only on the success branch, and handed the settled figure — so a caller no longer
+   * has to reach for a `?? 0` placeholder to satisfy a string it does not have yet.
+   */
+  readonly label: (count: number) => string;
+  readonly errorText: string;
+}) {
+  const t = useT();
+  if (query.isPending) {
+    return (
+      <span
+        className="flex items-center gap-2 text-sm text-muted-foreground"
+        data-testid={`${testIdPrefix}-count-pending`}
+      >
+        {/* Decorative: the spinner's own `role="status"` would announce a bare "Loading" next to
+            text that already says so, and would fire again on every change of the window. */}
+        <Spinner decorative />
+        {t('storage.triage.countPending')}
+      </span>
+    );
+  }
+  if (query.isError) {
+    return (
+      <span className="flex flex-wrap items-center gap-2">
+        <span role="alert" className="text-sm text-destructive" data-testid={`${testIdPrefix}-count-error`}>
+          {errorText}
+        </span>
+        <Button
+          data-testid={`${testIdPrefix}-count-retry`}
+          variant="outline"
+          size="sm"
+          onClick={() => void query.refetch()}
+          disabled={query.isFetching}
+        >
+          {query.isFetching ? <Spinner decorative /> : null}
+          {t('storage.triage.countRetry')}
+        </Button>
+      </span>
+    );
+  }
+  return (
+    <span className="text-sm text-muted-foreground" data-testid={`${testIdPrefix}-count`}>
+      {label(query.data)}
+    </span>
   );
 }
 

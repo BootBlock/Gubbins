@@ -19,8 +19,11 @@ vi.mock('./hooks', () => ({
       imagesMeasured: true,
     },
   }),
-  usePruneCandidateCount: () => ({ data: 5 }),
-  useDowngradeCandidateCount: () => ({ data: 3 }),
+  // A settled query's real shape, because the dialog gates each workflow on `isSuccess` rather
+  // than on `data` alone (issue #898): a bare `{ data: 5 }` stub would render both buttons
+  // *disabled*, which this file's presence-only assertions would not have caught.
+  usePruneCandidateCount: () => ({ data: 5, isPending: false, isError: false, isSuccess: true }),
+  useDowngradeCandidateCount: () => ({ data: 3, isPending: false, isError: false, isSuccess: true }),
   useArchiveAndPruneHistory: () => ({ isPending: false, mutate: vi.fn() }),
   useDowngradeImages: () => ({ isPending: false, mutate: vi.fn() }),
 }));
