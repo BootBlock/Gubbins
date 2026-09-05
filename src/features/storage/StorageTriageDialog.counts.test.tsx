@@ -141,6 +141,25 @@ describe('StorageTriageDialog — a candidate count that is not a fact yet', () 
     expect(document.body.textContent).toContain('Permanently delete 40 entries');
   });
 
+  it('does not bring the confirmation back when the new window turns out to have nothing', async () => {
+    countHistoryBefore.mockResolvedValue(5);
+    renderDialog();
+    await screen.findByTestId('prune-count');
+    fireEvent.click(screen.getByTestId('prune-history'));
+
+    countHistoryBefore.mockResolvedValue(0);
+    act(() => {
+      usePreferencesStore.setState({ pruneWindowMonths: 3 });
+    });
+
+    // A live Confirm for nothing is the mirror of the greyed-out button this issue is about: it
+    // offers work there is none of, and would walk the user through a save picker for an empty
+    // archive. The confirmation replaces the button, so nothing else would be there to refuse.
+    await waitFor(() => expect(screen.getByTestId('prune-count').textContent).toContain('0 entries'));
+    expect(screen.queryByTestId('prune-confirm')).toBeNull();
+    expect(screen.getByTestId('prune-history').hasAttribute('disabled')).toBe(true);
+  });
+
   it('still disables the workflow when the count genuinely is zero', async () => {
     countHistoryBefore.mockResolvedValue(0);
     renderDialog();

@@ -290,12 +290,15 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               />
               {/*
                * The window Select stays live underneath an open confirmation, and changing it
-               * re-keys the count query — so the figure this question names can stop being known
-               * while the question is still on screen. Falling back to the button (disabled, with
-               * the row above saying why) is the only honest move: a confirmation is the last
-               * place a guessed zero may stand in for an unknown one.
+               * re-keys the count query — so the figure this question names can stop being known,
+               * or become a real zero, while the question is still on screen. The confirmation
+               * answers to the same `canPrune` the button does, rather than merely to the figure
+               * being known: a confirmation is the last place a guessed zero may stand in for an
+               * unknown one, and the last place a live Confirm may offer work there is none of.
+               * Falling back to the button (disabled, with the row above saying why) is the only
+               * honest move, and the question returns by itself once the new window has counted.
                */}
-              {confirming === 'prune' && pruneReady !== null ? (
+              {confirming === 'prune' && canPrune ? (
                 <ConfirmRow
                   testIdPrefix="prune"
                   message={`Permanently delete ${pruneReady} ${plural(pruneReady, 'entry', 'entries')} once the archive is saved?`}
@@ -359,7 +362,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                 errorText={t('storage.triage.downgradeCountFailed')}
               />
               {/* Same reasoning as the prune confirmation above. */}
-              {confirming === 'downgrade' && downgradeReady !== null ? (
+              {confirming === 'downgrade' && canDowngrade ? (
                 <ConfirmRow
                   testIdPrefix="downgrade"
                   message={`Drop full-resolution data for ${downgradeReady} ${plural(downgradeReady, 'image')}? Thumbnails are kept.`}
@@ -419,8 +422,8 @@ function CandidateCount({
   readonly query: UseQueryResult<number>;
   readonly testIdPrefix: string;
   /**
-   * Rendered only on the success branch, and handed the settled figure — so a caller cannot
-   * reach for a `?? 0` placeholder to satisfy a string it does not have yet.
+   * Rendered only on the success branch, and handed the settled figure — so a caller no longer
+   * has to reach for a `?? 0` placeholder to satisfy a string it does not have yet.
    */
   readonly label: (count: number) => string;
   readonly errorText: string;
