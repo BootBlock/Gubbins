@@ -69,7 +69,7 @@ always has been.
 | Entry | What goes |
 | --- | --- |
 | **All items** | Every item and everything attached to it — photos, history, tag links, custom field values, capabilities, checkouts, maintenance schedules, stock and supplier parts. Project BOM and purchase-order lines survive, but lose their link to the deleted items. |
-| **Item photos** | Every photo, thumbnails and full-resolution files. The items stay. |
+| **Item photos** | Every item photo, thumbnails and full-resolution files. The items stay, and [[location photos\|Location-Photos-and-Regions]] are not touched. |
 | **Activity history** | The [[activity log\|Activity-Log]] for every item. Current state is kept; only the audit trail goes. |
 | **Checkout & loan records** | Every [[checkout/loan\|Loans-Check-Out-and-In]] record. Items and contacts stay. |
 | **Maintenance schedules** | Every [[maintenance and calibration\|Maintenance-and-Servicing]] schedule. The items stay. |
@@ -85,6 +85,14 @@ always has been.
 | **Custom field dictionary** | Every custom field *definition*, and with it the values stored against items **and** locations. This removes the vocabulary itself, not just the values. |
 | **Empty custom locations** | Your empty custom [[locations\|Locations-and-Stock]] only. Built-in system locations, and any location still holding items or stock, are kept — empty those first if you want the location gone. |
 | **Location history** | The record of what has been done to your [[locations\|Locations-and-Stock]] — renames, moves, archiving and deletions. The locations themselves, and everything stored in them, are kept. |
+| **Location photos** | Every [[location photo\|Location-Photos-and-Regions]], thumbnails and full-resolution files, and the regions drawn on them. The locations stay, and so do the items placed in a region — they are only unplaced. |
+
+> **⚠️ Heads-up**
+> **Item photos** and **Location photos** are separate entries, and each one removes only its own
+> photos — erasing one leaves the other kind untouched. Full-resolution files are never copied to
+> the cloud, so [[cloud sync|Cloud-Sync]] cannot bring one back from another device even where the
+> photo record itself returns. Take a [[backup|Backup-and-Restore]] first if you may want them
+> again.
 
 > **ℹ️ Note**
 > **Custom field values** and **Custom field dictionary** are deliberately different. The first

@@ -58,16 +58,17 @@ function fakeStorage(initial: Record<string, string> = {}): Storage {
 /** Ports whose every side effect is a spy, so "nothing happened" is assertable. */
 function spyPorts(authority: Authority, local = fakeStorage({ 'gubbins:layout': '{}' })) {
   const transaction = vi.fn(async () => undefined);
-  const removeImagesDirectory = vi.fn(async () => undefined);
+  const query = vi.fn(async () => []);
+  const deleteImageFiles = vi.fn(async () => undefined);
   const deleteIdb = vi.fn(async () => undefined);
   const ports: ErasePorts = {
-    db: { transaction } as unknown as IDatabaseDriver,
-    removeImagesDirectory,
+    db: { transaction, query } as unknown as IDatabaseDriver,
+    deleteImageFiles,
     local,
     deleteIdb,
     authority: () => authority,
   };
-  return { ports, transaction, removeImagesDirectory, deleteIdb, local };
+  return { ports, transaction, query, deleteImageFiles, deleteIdb, local };
 }
 
 describe('the erase catalog declares what it needs', () => {
@@ -124,12 +125,14 @@ describe('eraseTargets refuses what the repositories refuse', () => {
     const viewer = builtinAuthority(VIEWER_ROLE_ID);
     expect(mayEraseTarget(viewer, 'items')).toBe(false);
 
-    const { ports, transaction, removeImagesDirectory } = spyPorts(viewer);
+    const { ports, transaction, query, deleteImageFiles } = spyPorts(viewer);
     await expect(eraseTargets(['items'], { tombstone: false }, ports)).rejects.toMatchObject({
       code: 'PERMISSION_DENIED',
     });
     expect(transaction).not.toHaveBeenCalled();
-    expect(removeImagesDirectory).not.toHaveBeenCalled();
+    // Not even the read that precedes it: the guard runs before the executor touches the driver.
+    expect(query).not.toHaveBeenCalled();
+    expect(deleteImageFiles).not.toHaveBeenCalled();
   });
 
   it('refuses a Stocker, who may write items but not delete them', () => {

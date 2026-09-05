@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setStorageOutcomeObserver } from '@/features/storage/exhaustion';
-import { saveImageFile, writeImageFiles, type OpfsImageFile } from './opfs-images';
+import { deleteImageFiles, saveImageFile, writeImageFiles, type OpfsImageFile } from './opfs-images';
 
 type FailurePoint = 'write' | 'close' | null;
 
@@ -281,5 +281,75 @@ describe('writeImageFiles', () => {
     fakeOpfs({ noDirectory: true });
 
     expect(await writeImageFiles([])).toEqual({ failed: [] });
+  });
+});
+
+/**
+ * The batch delete behind the Danger Zone's photo erase (issue #820). Erasing item photos must
+ * take their full-resolution files and nothing else, so the executor hands this the exact paths
+ * of the rows it removed — and it must open the shared `images/` directory once, not once per
+ * photo, because a large library clears thousands of them in a single confirm.
+ */
+describe('deleteImageFiles', () => {
+  /** Stub OPFS with an images directory that records every removal it is asked for. */
+  function fakeImagesDirectory(opts: { missing?: readonly string[] } = {}) {
+    const removed: string[] = [];
+    let directoryHandles = 0;
+    const dir = {
+      removeEntry: async (name: string) => {
+        if (opts.missing?.includes(name)) {
+          throw new DOMException('A requested file could not be found.', 'NotFoundError');
+        }
+        removed.push(name);
+      },
+    };
+    const root = {
+      getDirectoryHandle: async () => {
+        directoryHandles += 1;
+        return dir;
+      },
+    };
+    vi.stubGlobal('navigator', { storage: { getDirectory: () => Promise.resolve(root) } });
+    return {
+      removed,
+      get directoryHandles() {
+        return directoryHandles;
+      },
+    };
+  }
+
+  it('deletes exactly the named files, resolving the directory once', async () => {
+    const opfs = fakeImagesDirectory();
+
+    await deleteImageFiles(['images/a.webp', 'images/b.webp', 'images/c.webp']);
+
+    expect(opfs.removed).toEqual(['a.webp', 'b.webp', 'c.webp']);
+    expect(opfs.directoryHandles).toBe(1);
+  });
+
+  it('carries on past a file that is already gone', async () => {
+    const opfs = fakeImagesDirectory({ missing: ['b.webp'] });
+
+    await deleteImageFiles(['images/a.webp', 'images/b.webp', 'images/c.webp']);
+
+    expect(opfs.removed).toEqual(['a.webp', 'c.webp']);
+  });
+
+  it('touches OPFS at all only when there is something to delete', async () => {
+    const opfs = fakeImagesDirectory();
+
+    await deleteImageFiles([]);
+
+    expect(opfs.directoryHandles).toBe(0);
+  });
+
+  it('is a harmless no-op when OPFS is unavailable', async () => {
+    vi.stubGlobal('navigator', {
+      storage: {
+        getDirectory: () => Promise.reject(new Error('OPFS unavailable')),
+      },
+    });
+
+    await expect(deleteImageFiles(['images/a.webp'])).resolves.toBeUndefined();
   });
 });

@@ -82,6 +82,14 @@ function localKeysFor(group: LocalEraseGroupId & EraseTargetId): readonly string
 /** Grouping for the Danger-Zone UI (one collapsible section per id). */
 export type EraseSection = 'inventory' | 'organisation' | 'projects' | 'contacts' | 'local';
 
+/**
+ * The tables whose rows own a full-resolution OPFS file — the two `full_res_opfs_path` columns
+ * in the schema. Named as a union rather than left as free SQL so the executor's reads stay
+ * literal statements the `db/query-row-shape.test.ts` guard can prepare and check, and so adding
+ * a third image-owning table fails to compile until the executor handles it.
+ */
+export type ImageOwningTable = 'item_images' | 'location_photos';
+
 /** A single erasable target: its catalog metadata plus, for DB targets, its SQL builder. */
 export interface EraseTarget {
   readonly id: EraseTargetId;
@@ -128,8 +136,28 @@ export interface EraseTarget {
    * (issue #381): the running store still holds the value and its next write would restore it.
    */
   readonly prefFields?: readonly string[];
-  /** When true, the executor removes the whole OPFS `images/` directory. */
-  readonly clearsImages?: boolean;
+  /**
+   * The photo table this target's {@link EraseTarget.buildStatements} empties, so the executor
+   * can delete those rows' full-resolution OPFS files — and no others (issue #820).
+   *
+   * Item photos and location photos share one flat OPFS `images/` directory, so a target that
+   * removed the *directory* took the other kind's originals with it: the surviving rows kept
+   * their thumbnails and still rendered, while the original was gone for good, because a
+   * full-resolution file is not carried in the sync artefact and so cannot come back from a
+   * peer. The maintenance orphan sweep is careful about the shared directory for the same
+   * reason (`features/maintenance/db-maintenance-actions.ts`).
+   *
+   * Only a target that empties the table outright names it here. A target that deletes *some*
+   * of its rows — `locations`, which cascades the photos of the empty locations it removes —
+   * leaves those files for the maintenance orphan sweep, exactly as it did before: unreferenced
+   * files waste space, but they destroy nothing.
+   *
+   * The executor reads the paths **before** the transaction (the rows that name them are what it
+   * deletes) and removes the files **after** it commits. `erase-image-files.test.ts` drives every
+   * target that sets this and requires the files deleted to be precisely those whose rows
+   * disappeared — the claim above, tested rather than asserted in prose.
+   */
+  readonly imageTable?: ImageOwningTable;
   /** IndexedDB database names the executor deletes after the DB transaction. */
   readonly clearsIdb?: readonly string[];
   /**
@@ -208,7 +236,8 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     tooltip:
       'Deletes every item and everything attached to it — photos, history, tag links, custom field values, capabilities, checkouts, maintenance schedules, stock and supplier parts. Project BOM and purchase-order lines are kept but unlinked from the deleted items. (The Tags category itself is kept — only the per-item tag links go.)',
     scope: 'db',
-    clearsImages: true,
+    // Cascades every `item_images` row; location photos belong to their own target.
+    imageTable: 'item_images',
     includes: [
       'item-photos',
       'item-history',
@@ -260,7 +289,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     tooltip:
       'Removes every item photo (thumbnails and full-resolution files) while keeping the items themselves.',
     scope: 'db',
-    clearsImages: true,
+    imageTable: 'item_images',
     countSql: 'SELECT COUNT(*) AS n FROM item_images',
     buildStatements: ({ tombstone }) => {
       const statements: SqlStatement[] = [];
@@ -277,7 +306,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     tooltip:
       'Removes every location photo (thumbnails and full-resolution files) and the regions drawn on them, while keeping the locations themselves. Items placed in a region are kept — they are only unplaced.',
     scope: 'db',
-    clearsImages: true,
+    imageTable: 'location_photos',
     countSql: 'SELECT COUNT(*) AS n FROM location_photos',
     buildStatements: ({ tombstone }) => {
       const statements: SqlStatement[] = [];
