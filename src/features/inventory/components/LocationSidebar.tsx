@@ -6,7 +6,6 @@ import {
   type Virtualizer,
 } from '@tanstack/react-virtual';
 
-import { plural } from '@/lib/plural';
 import { cn } from '@/lib/utils';
 import {
   Button,
@@ -14,12 +13,10 @@ import {
   Input,
   InputClearButton,
   LiveRegion,
-  Modal,
-  Spinner,
   Tooltip,
   useSearchEscapeToClear,
 } from '@/components/foundry';
-import { AddIcon, DeleteIcon, PackageIcon, SearchIcon, TagIcon } from '@/components/icons';
+import { AddIcon, PackageIcon, SearchIcon, TagIcon } from '@/components/icons';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
 import { useFeature } from '@/features/modules/useFeature';
 import { usePermission } from '@/features/users/usePermission';
@@ -59,6 +56,7 @@ import { useUndoToast } from '../useUndoToast';
 import { LocationTreeItem } from './LocationTreeItem';
 import { LocationIcon } from './LocationIcon';
 import { CreateLocationDialog } from './CreateLocationDialog';
+import { DeleteLocationDialog } from './DeleteLocationDialog';
 import { EditLocationDialog } from './EditLocationDialog';
 import { PrintLocationLabelDialog } from './PrintLocationLabelDialog';
 
@@ -689,11 +687,11 @@ export function LocationSidebar({
           locations={flat}
           onDelete={() => {
             // Deletion moved out of the cramped hover row into this considered context. Close
-            // the dialog, then route through the same confirm-or-delete flow as the keyboard
-            // `Delete` key (a non-empty location still prompts before re-parenting its items).
+            // the dialog, then route through the same confirmation as the keyboard `Delete` key
+            // (every location prompts, and the dialog names what the delete destroys — #823).
             const loc = editLocation;
             setEditLocation(null);
-            requestDelete(loc.id, loc.name, loc.itemCount);
+            requestDelete(loc.id, loc.name);
           }}
           onToggleArchive={() => {
             // Archiving/restoring also moved off the hover row into the dialog footer, beside
@@ -718,32 +716,17 @@ export function LocationSidebar({
         />
       ) : null}
 
-      <Modal
-        open={confirmDelete !== null}
-        onClose={() => setConfirmDelete(null)}
-        title="Delete location?"
-        description={
-          confirmDelete
-            ? `"${confirmDelete.name}" still holds ${confirmDelete.itemCount} ${plural(confirmDelete.itemCount, 'item')}. Deleting it will move ${confirmDelete.itemCount === 1 ? 'it' : 'them'} to Unassigned.`
-            : undefined
-        }
-        busy={deleteLocation.isPending}
-      >
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setConfirmDelete(null)} disabled={deleteLocation.isPending}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={confirmDeleteNow}
-            disabled={deleteLocation.isPending}
-            data-testid="confirm-delete-location"
-          >
-            {deleteLocation.isPending ? <Spinner /> : <DeleteIcon />}
-            Delete location
-          </Button>
-        </div>
-      </Modal>
+      {/* Mounted only while a delete is pending confirmation, so the impact read it runs is
+          scoped to exactly those moments (issue #823). */}
+      {confirmDelete ? (
+        <DeleteLocationDialog
+          id={confirmDelete.id}
+          name={confirmDelete.name}
+          busy={deleteLocation.isPending}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={confirmDeleteNow}
+        />
+      ) : null}
 
       {/* Announce drag-and-drop moves (pointer-only, so no other status reaches AT). */}
       <LiveRegion visuallyHidden data-testid="location-move-live-region">

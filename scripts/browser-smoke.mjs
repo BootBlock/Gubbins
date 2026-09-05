@@ -992,11 +992,27 @@ try {
       // The Edit dialog is tall (every location field plus its read-only metadata), so its
       // footer Delete button can fall below the default fold — but the Modal now caps its height
       // and scrolls its body internally, so the button is reachable at the default viewport.
-      // Scroll it into view, then click; the location is empty, so deleting it re-parents nothing
-      // and needs no confirm — the row simply disappears from the tree.
       const deleteButton = editDialog.getByTestId('edit-location-delete');
       await deleteButton.scrollIntoViewIfNeeded();
       await deleteButton.click();
+
+      // Every location delete confirms, empty or not (issue #823): the write is a hard delete
+      // with no undo, and it destroys the location's photos, regions, tags and custom-field
+      // values along with it. This one holds nothing, so the dialog says exactly that.
+      const confirmDialog = page.getByRole('dialog', { name: 'Delete location?' });
+      await confirmDialog.waitFor({ state: 'visible', timeout: ms(5000) });
+      const impact = confirmDialog.getByTestId('delete-location-impact');
+      await impact.waitFor({ state: 'visible', timeout: ms(5000) });
+      let impactText = '';
+      for (let i = 0; i < attempts(40); i += 1) {
+        impactText = (await impact.textContent()) ?? '';
+        if (!impactText.includes('Checking what this location holds')) break;
+        await page.waitForTimeout(100);
+      }
+      if (!impactText.includes('holds nothing')) {
+        throw new Error(`the delete confirmation did not report an empty location: ${impactText}`);
+      }
+      await confirmDialog.getByTestId('confirm-delete-location').click();
       await row.waitFor({ state: 'detached', timeout: ms(5000) });
 
       // Creating a location selects it, so the location just deleted was the one the item list

@@ -74,14 +74,11 @@ export function useLocationSidebar({
   // the one being renamed inline (F2). They are deliberately separate affordances.
   const [editLocation, setEditLocation] = useState<LocationWithCount | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  // A non-empty location pending a delete confirmation. Empty locations delete
-  // straight away; only a location that still holds items prompts first, since
-  // deleting it silently re-parents those items to Unassigned (spec §4).
-  const [confirmDelete, setConfirmDelete] = useState<{
-    id: string;
-    name: string;
-    itemCount: number;
-  } | null>(null);
+  // The location pending a delete confirmation, if any. *Every* delete prompts (issue #823):
+  // the write is a hard delete with no undo, and it destroys the location's photos, the regions
+  // drawn on them, its tags and its custom-field values along with it — none of which the item
+  // count that used to gate this dialog could see. The dialog reads the real impact itself.
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const deleteLocation = useDeleteLocation();
   const updateLocation = useUpdateLocation();
   // `useUpdateLocation` has no hook-level reporter (the Edit dialog surfaces its own errors), so
@@ -173,15 +170,16 @@ export function useLocationSidebar({
     if (selectedId === deletedId) onSelect(null);
   };
 
-  // Either delete an empty location outright, or open the confirmation dialog when
-  // it still holds items (so re-parenting them to Unassigned is never a surprise).
-  const requestDelete = (id: string, name: string, itemCount: number) => {
-    if (itemCount > 0) {
-      setConfirmDelete({ id, name, itemCount });
-      return;
-    }
-    retreatToAllItems(id);
-    deleteLocation.mutate(id);
+  /**
+   * Open the delete confirmation. Unconditional (issue #823): a location that homes no items of
+   * its own can still hold sub-locations, photos, drawn regions, tags and custom-field values, and
+   * everything hanging off its row goes for good. There is no undo, no toast action and no
+   * rollback, so
+   * the dialog is the only thing standing between the click and the loss — and it is the dialog,
+   * not this hook, that reads what is actually at stake.
+   */
+  const requestDelete = (id: string, name: string) => {
+    setConfirmDelete({ id, name });
   };
 
   const confirmDeleteNow = () => {
@@ -237,7 +235,7 @@ export function useLocationSidebar({
         break;
       case 'delete': {
         const target = flat.find((loc) => loc.id === action.id);
-        if (target) requestDelete(target.id, target.name, target.itemCount);
+        if (target) requestDelete(target.id, target.name);
         break;
       }
       default:
