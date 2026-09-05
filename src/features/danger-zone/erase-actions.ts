@@ -17,8 +17,9 @@
  * order, for determinism) behind a single `PRAGMA defer_foreign_keys = ON;` and run through one
  * `driver.transaction(...)`. Deferring FK enforcement to commit lets the `items` self-reference
  * and the cross-table cascade/unlink deletes resolve regardless of statement order. The
- * non-transactional cleanup (OPFS dir, IndexedDB, localStorage) runs only *after* the DB commit
- * succeeds, so a rolled-back transaction never leaves orphaned files behind.
+ * non-transactional cleanup (OPFS files, IndexedDB, localStorage) runs only *after* the DB commit
+ * succeeds, so a rolled-back transaction never leaves orphaned files behind. The OPFS paths it
+ * deletes are read *before* the transaction, because the rows that name them are what it removes.
  *
  * Permission: the statements go straight to the driver, so the repository guard never sees them
  * — {@link eraseTargets} asserts each selected target's own keys first, for the whole selection,
@@ -26,18 +27,21 @@
  */
 import type { IDatabaseDriver, SqlStatement } from '@/db/rpc/driver';
 import { getDatabaseDriver } from '@/db/client';
-import { removeImagesDirectory } from '@/features/images/opfs-images';
+import { deleteImageFiles } from '@/features/images/opfs-images';
 import { PREFERENCES_KEY } from '@/features/backup/settings-groups';
 import { assertPermissions } from '@/features/users/assert-permission';
 import { currentAuthority } from '@/features/users/current-authority';
 import { can, type Authority } from '@/features/users/permissions';
 import { parsePersistedBlob, serialisePersistedBlob } from '@/lib/persisted-state';
+import { assertExhaustive } from '@/lib/exhaustive';
 import {
   ERASE_EVERYTHING_PERMISSIONS,
   ERASE_TARGETS,
   eraseTargetById,
   eraseTargetPermissions,
+  type EraseTarget,
   type EraseTargetId,
+  type ImageOwningTable,
 } from './erase-targets';
 
 /**
@@ -73,8 +77,12 @@ function stripPreferenceFields(local: Storage, fields: readonly string[]): void 
 /** The side-effecting capabilities the executor needs, injected for testability. */
 export interface ErasePorts {
   readonly db: IDatabaseDriver;
-  /** Remove the whole OPFS `images/` directory (full photo wipe). */
-  readonly removeImagesDirectory: () => Promise<void>;
+  /**
+   * Delete full-resolution OPFS files by their stored `images/<uuid>.webp` paths. Takes the whole
+   * batch so the real implementation resolves the shared `images/` directory once, however many
+   * photos an erase clears.
+   */
+  readonly deleteImageFiles: (paths: readonly string[]) => Promise<void>;
   /** localStorage (or a fake) for clearing local-scope keys. */
   readonly local: Storage;
   /** Delete an IndexedDB database by name, resolving even if it was blocked/missing. */
@@ -185,6 +193,13 @@ export async function eraseTargets(
 
   const now = opts.now ?? Date.now();
   const selected = new Set(ids);
+  const targets = ids
+    .map((id) => eraseTargetById(id))
+    .filter((t): t is NonNullable<typeof t> => t !== undefined);
+
+  // 0. Read the full-resolution OPFS paths the selected targets are about to strand. This has to
+  //    happen BEFORE the transaction, because the rows that name those paths are what it deletes.
+  const imagePaths = await collectImagePaths(targets, ports.db);
 
   // 1. Collect DB statements in catalog order so a combined erase is deterministic and a
   //    parent deletion always precedes its dependants.
@@ -201,14 +216,10 @@ export async function eraseTargets(
   }
 
   // 3. Post-commit, non-transactional cleanup — only after the DB write has durably landed.
-  const targets = ids
-    .map((id) => eraseTargetById(id))
-    .filter((t): t is NonNullable<typeof t> => t !== undefined);
-
-  // Remove the OPFS images directory once if any selected target clears it.
-  if (targets.some((target) => target.clearsImages)) {
-    await ports.removeImagesDirectory();
-  }
+  // Delete the full-resolution files whose rows the transaction has just removed. Only those:
+  // the directory is shared between item photos and location photos, and a file belonging to a
+  // row that survived cannot be recovered from a peer (issue #820).
+  await ports.deleteImageFiles(imagePaths);
 
   for (const target of targets) {
     for (const dbName of target.clearsIdb ?? []) {
@@ -226,14 +237,62 @@ export async function eraseTargets(
 }
 
 /**
- * Wire the real browser capabilities for production use: the worker DB driver, the OPFS image
- * directory remover, `localStorage`, and an `indexedDB.deleteDatabase` wrapper that resolves on
+ * Read every full-resolution OPFS path held by one image-owning table.
+ *
+ * Written as a `switch` over literal statements rather than SQL carried on the target, so
+ * `db/query-row-shape.test.ts` can prepare each one and check `full_res_opfs_path` really is a
+ * column it returns. A member added to `IMAGE_OWNING_TABLES` fails to compile here until it is
+ * handled, and `erase-image-files.test.ts` is what makes the schema add that member.
+ */
+async function readImagePaths(db: IDatabaseDriver, table: ImageOwningTable): Promise<string[]> {
+  switch (table) {
+    case 'item_images': {
+      const rows = await db.query<{ full_res_opfs_path: string }>(
+        'SELECT full_res_opfs_path FROM item_images;',
+      );
+      return rows.map((row) => row.full_res_opfs_path);
+    }
+    case 'location_photos': {
+      const rows = await db.query<{ full_res_opfs_path: string }>(
+        'SELECT full_res_opfs_path FROM location_photos;',
+      );
+      return rows.map((row) => row.full_res_opfs_path);
+    }
+    default:
+      assertExhaustive(table);
+      // Out-of-band table name: erase the rows, leave the files for the orphan sweep. Deleting
+      // against a guess is the one outcome this whole change exists to prevent.
+      return [];
+  }
+}
+
+/**
+ * Collect the full-resolution OPFS paths every selected target is about to orphan, de-duplicated
+ * so a combined selection (e.g. `items` + `item-photos`, which empty the same table) deletes each
+ * file once. Read before the erase runs — afterwards the rows that name the paths are gone.
+ */
+async function collectImagePaths(targets: readonly EraseTarget[], db: IDatabaseDriver): Promise<string[]> {
+  const paths = new Set<string>();
+  const tables = new Set(
+    targets.map((target) => target.imageTable).filter((t): t is ImageOwningTable => t !== undefined),
+  );
+  for (const table of tables) {
+    for (const path of await readImagePaths(db, table)) {
+      if (path) paths.add(path);
+    }
+  }
+  return [...paths];
+}
+
+/**
+ * Wire the real browser capabilities for production use: the worker DB driver, the OPFS image-file
+ * remover, `localStorage`, and an `indexedDB.deleteDatabase` wrapper that resolves on
  * any outcome (success, error, or blocked) so a held-open connection can never hang the erase.
  */
 export function browserErasePorts(): ErasePorts {
   return {
     db: getDatabaseDriver(),
-    removeImagesDirectory: () => removeImagesDirectory(),
+    deleteImageFiles: (paths) => deleteImageFiles(paths),
     local: localStorage,
     authority: currentAuthority,
     deleteIdb: (name) =>

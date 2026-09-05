@@ -319,6 +319,35 @@ export async function removeImagesDirectory(): Promise<void> {
   }
 }
 
+/**
+ * Delete many raw image files in one pass, resolving the `images/` directory **once** rather
+ * than per file.
+ *
+ * This is what the Danger Zone erase uses (issue #820). It deletes the files belonging to the
+ * photo rows it removed, and clearing thousands of them one {@link deleteImageFile} call at a
+ * time would re-open the directory thousands of times. Missing files are ignored, exactly as
+ * they are for a single delete: an erase must finish whatever else it finds.
+ */
+export async function deleteImageFiles(paths: readonly string[]): Promise<void> {
+  if (paths.length === 0) return;
+  let dir: FileSystemDirectoryHandle;
+  try {
+    dir = await imagesDirectory(false);
+  } catch {
+    // Directory never created, or OPFS unavailable — there is nothing to reclaim.
+    return;
+  }
+  for (const path of paths) {
+    const filename = filenameOf(path);
+    if (!filename) continue;
+    try {
+      await dir.removeEntry(filename);
+    } catch {
+      // Already gone — nothing to reclaim, and the rest of the batch still must run.
+    }
+  }
+}
+
 /** Delete a raw image file from OPFS. Silently ignores an already-missing file. */
 export async function deleteImageFile(path: string): Promise<void> {
   const filename = filenameOf(path);

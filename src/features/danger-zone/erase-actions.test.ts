@@ -31,14 +31,14 @@ const nextId = (prefix: string) => `${prefix}-${seq++}`;
 
 describe('eraseTargets (memory-driver integration)', () => {
   let driver: MemoryDriver;
-  let removeImagesDirectory: ReturnType<typeof vi.fn>;
+  let deleteImageFiles: ReturnType<typeof vi.fn>;
   let deleteIdb: ReturnType<typeof vi.fn>;
   let local: Storage;
 
   /** Build the ports bag against the live driver + fakes. */
   function ports(localState?: Record<string, string>): ErasePorts {
     local = fakeStorage(localState);
-    return { db: driver, removeImagesDirectory, deleteIdb, local, authority: () => UNRESTRICTED_AUTHORITY };
+    return { db: driver, deleteImageFiles, deleteIdb, local, authority: () => UNRESTRICTED_AUTHORITY };
   }
 
   async function count(table: string): Promise<number> {
@@ -84,7 +84,7 @@ describe('eraseTargets (memory-driver integration)', () => {
     seq = 1;
     driver = createMemoryDriver();
     await runMigrations(driver, migrations);
-    removeImagesDirectory = vi.fn(async () => {});
+    deleteImageFiles = vi.fn(async () => {});
     deleteIdb = vi.fn(async () => {});
   });
 
@@ -200,8 +200,8 @@ describe('eraseTargets (memory-driver integration)', () => {
       expect(Number(after?.n)).toBe(5_000);
       expect(Number(after?.n)).toBeGreaterThan(Number(before?.n));
 
-      // Photos cleared once.
-      expect(removeImagesDirectory).toHaveBeenCalledTimes(1);
+      // The item photo's full-resolution file went with its row, by path.
+      expect(deleteImageFiles).toHaveBeenCalledWith(['images/x.webp']);
     });
 
     it('writes NO tombstones when tombstone is off', async () => {
