@@ -39,7 +39,7 @@ import { useFeature } from '@/features/modules/useFeature';
 import { usePermission } from './usePermission';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { BUILTIN_USER_IDS } from '@/db/repositories/constants';
-import type { Role, User } from '@/db/repositories/types';
+import type { ApiToken, Role, User } from '@/db/repositories/types';
 import { builtinRoleDescription, builtinRoleName, toStoredRoleText } from './builtin-role-labels';
 import { builtinUserDescription } from './builtin-user-labels';
 import { useApiTokens, useRoles, useUsers } from './queries';
@@ -57,6 +57,7 @@ import {
 } from './mutations';
 import { UserFormDialog, type UserFormValues } from './components/UserFormDialog';
 import { ApiTokensDialog } from './components/ApiTokensDialog';
+import { RevokeApiTokenDialog } from './components/RevokeApiTokenDialog';
 import { PasswordDialog } from './components/PasswordDialog';
 import { RoleFormDialog, type RoleFormValues } from './components/RoleFormDialog';
 
@@ -98,6 +99,10 @@ export function UsersScreen() {
   // is unrecoverable, so it must not linger. The id is what lets a revocation clear it only when
   // it is *that* token being revoked.
   const [minted, setMinted] = useState<{ readonly id: string; readonly token: string } | null>(null);
+  // The token pending a revoke confirmation, if any. *Every* revoke prompts (issue #1272): the row
+  // is hard-deleted and tombstoned, so the refusal reaches every synced device, and only a hash of
+  // the secret was ever stored — nothing can re-mint the same one.
+  const [revokingToken, setRevokingToken] = useState<ApiToken | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [roleDialog, setRoleDialog] = useState<{ readonly role: Role | null } | null>(null);
   const [deletingRole, setDeletingRole] = useState<Role | null>(null);
@@ -143,7 +148,13 @@ export function UsersScreen() {
     if (!mayManage) return;
     setFormError(null);
     setMinted(null);
+    setRevokingToken(null);
     setTokensFor(user);
+  };
+  const openRevokeToken = (token: ApiToken): void => {
+    if (!mayManage) return;
+    setFormError(null);
+    setRevokingToken(token);
   };
   const openDeleteUser = (user: User): void => {
     if (!mayManage) return;
@@ -157,7 +168,34 @@ export function UsersScreen() {
   };
   const closeTokensDialog = (): void => {
     setMinted(null);
+    setRevokingToken(null);
     setTokensFor(null);
+  };
+
+  /**
+   * Perform a revoke the user has confirmed. `tokensFor` is read here rather than captured when
+   * the confirmation opened, because the write is scoped to the account whose dialog is on screen
+   * — and the confirmation cannot outlive that dialog.
+   */
+  const confirmRevokeToken = (): void => {
+    if (!revokingToken || !tokensFor) return;
+    const token = revokingToken;
+    setFormError(null);
+    revokeApiToken.mutate(
+      { id: token.id, userId: tokensFor.id },
+      {
+        onSuccess: () => {
+          // Only clear the displayed plaintext when it is *this* token being revoked — revoking a
+          // different one must not snatch away a token the user has not copied yet.
+          setMinted((current) => (current?.id === token.id ? null : current));
+          setAnnouncement(t('users.announce.tokenRevoked', { vars: { name: token.name } }));
+          setRevokingToken(null);
+        },
+        // Without this a refused revoke leaves the confirmation sitting there unchanged, which
+        // reads as a dead button.
+        onError,
+      },
+    );
   };
 
   const submitUser = (values: UserFormValues): void => {
@@ -357,23 +395,21 @@ export function UsersScreen() {
               },
             );
           }}
-          onRevoke={(token) => {
-            setFormError(null);
-            revokeApiToken.mutate(
-              { id: token.id, userId: tokensFor.id },
-              {
-                onSuccess: () => {
-                  // Only clear the displayed plaintext when it is *this* token being revoked —
-                  // revoking a different one must not snatch away a token the user has not
-                  // copied yet.
-                  setMinted((current) => (current?.id === token.id ? null : current));
-                  setAnnouncement(t('users.announce.tokenRevoked', { vars: { name: token.name } }));
-                },
-                onError,
-              },
-            );
-          }}
+          onRequestRevoke={openRevokeToken}
           onClose={closeTokensDialog}
+        />
+      ) : null}
+
+      {/* Stacked over the tokens dialog, and mounted only once a revoke has been asked for — so
+          the modal stack sees the parent open first, which is what keeps Escape and the focus trap
+          on this one (issue #1272). */}
+      {mayManage && tokensFor && revokingToken ? (
+        <RevokeApiTokenDialog
+          token={revokingToken}
+          busy={revokeApiToken.isPending}
+          error={formError}
+          onCancel={() => setRevokingToken(null)}
+          onConfirm={confirmRevokeToken}
         />
       ) : null}
 

@@ -10,10 +10,14 @@
  *
  * - **The token is shown once.** Only a hash is stored, so there is no "show it again" and the
  *   copy says so before the user closes the panel rather than after. Minting a replacement is
- *   the recovery path, which is why revoking is one click away from minting.
+ *   the recovery path, which is why revoking sits beside minting rather than on another screen.
  * - **Revocation is immediate and total.** The row is deleted, not flagged, so a revoked token
- *   stops working everywhere the change reaches. The confirm wording says that plainly instead
- *   of implying it can be undone.
+ *   stops working everywhere the change reaches, and the hash is all that was ever stored — the
+ *   same secret can never be re-minted. So the row's button asks rather than acts: it hands the
+ *   token to `onRequestRevoke`, and `RevokeApiTokenDialog` says all of that plainly instead of
+ *   implying it can be undone (issue #1272). What that dialog's copy must say is held up by
+ *   `UsersScreen.test` → "names the token it is about to destroy, and says the loss is permanent",
+ *   not by this sentence — an earlier version of it asserted confirm wording nobody had written.
  */
 import { useState } from 'react';
 import { Banner, Button, FormField, Input, Modal, Surface } from '@/components/foundry';
@@ -34,7 +38,8 @@ export interface ApiTokensDialogProps {
    */
   readonly mintedToken: string | null;
   readonly onMint: (name: string) => void;
-  readonly onRevoke: (token: ApiToken) => void;
+  /** Asks for a revoke; the caller confirms it (`RevokeApiTokenDialog`) before anything is written. */
+  readonly onRequestRevoke: (token: ApiToken) => void;
   readonly onClose: () => void;
 }
 
@@ -46,7 +51,7 @@ export function ApiTokensDialog({
   error,
   mintedToken,
   onMint,
-  onRevoke,
+  onRequestRevoke,
   onClose,
 }: ApiTokensDialogProps) {
   const t = useT();
@@ -126,7 +131,12 @@ export function ApiTokensDialog({
                       })}
                     </p>
                   </div>
-                  <Button variant="destructive" size="sm" disabled={busy} onClick={() => onRevoke(token)}>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => onRequestRevoke(token)}
+                  >
                     {t('users.tokens.revoke')}
                   </Button>
                 </Surface>
