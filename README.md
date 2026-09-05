@@ -20,6 +20,8 @@ Gubbins runs entirely in your browser — **no install or local server required*
 
 A **local-first, offline-capable Progressive Web App** for tracking *anything* — electronics, 3D-printing supplies, tools, collections, household items, and general inventory. All data resides and is processed entirely within the user's browser/device.
 
+Gubbins is built first and foremost for its maintainer's own inventory, and published in case anyone else finds it useful. That shapes what it is: features exist because they solved a real problem here, and it is offered as-is rather than as a supported product. You are very welcome to use it — just don't mistake it for something with a roadmap you can rely on or a support desk behind it.
+
 > Status: **v0.3.0** (pre-release) — the master specification (phases 1–9) and the consolidation roadmap that followed it are implemented, so every feature listed below is built and usable. Development continues as issue-driven work: the open backlogs are the `🟢 ACTIVE` plans in [`docs/todo/`](docs/todo), alongside the trigger-gated items in `docs/dev/deferred-features.md`. While Gubbins is before **1.0**, database schema changes between updates are not migrated — an update may need your local data to be reset (back up first).
 
 ## Features
@@ -420,7 +422,9 @@ npm run test:e2e   # Playwright browser smoke against an already-running server 
 
 ## AI-assisted development
 
-AI tooling was used in the development of this software — and it is not merged unexamined.
+**Gubbins would not exist without AI assistance.** An application of this size — inventory, asset-lifecycle, purchasing and sync features spread across dozens of screens and dialogs, plus a companion bridge, a Home Assistant integration and a browser extension — is far beyond what one person could justify hand-writing in their spare time. AI tooling is what makes it feasible at all, and it is used heavily and deliberately rather than incidentally. It is also why development before **1.0** is extraordinarily fast: `main` frequently advances by hundreds of commits in a day, and features can appear, change shape and settle within a single week.
+
+That speed is the reason the checks below matter. AI tooling was used throughout — and nothing is merged unexamined.
 
 Every change is audited before it lands, and again by the gates that guard `main`:
 

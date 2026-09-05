@@ -7,7 +7,12 @@ effort on something that is unlikely to land.
 ## Please open an issue, not a pull request
 
 **Pull requests are unlikely to be accepted.** This is not a judgement on the quality of your
-work — it is a consequence of how this repository is developed.
+work — it is a consequence of what this project is and how it is developed.
+
+Gubbins is a personal project before it is a community one. It is built for its maintainer's own
+inventory and published in case anyone else finds it useful; it is not run as a collaborative
+development effort and is not looking for co-maintainers. That is not a closed door — the ideas
+you bring genuinely do shape it — but it does mean patches are not the currency here.
 
 Gubbins moves at an extremely high rate of change. `main` advances continuously — often by
 hundreds of commits in a single day — and much of the codebase is touched by work happening in
