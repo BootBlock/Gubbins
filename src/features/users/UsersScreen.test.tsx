@@ -11,9 +11,9 @@
  *    being enforced or entirely ignored.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { act, render, screen, cleanup, within } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { Role, User } from '@/db/repositories/types';
+import type { ApiToken, Role, User } from '@/db/repositories/types';
 import {
   ADMIN_USER_DESCRIPTION,
   ADMIN_USER_ID,
@@ -43,12 +43,13 @@ vi.mock('@/features/command-palette/HeaderSearch', () => ({
 
 const usersResult = { data: { rows: [] as User[] }, isPending: false, isError: false, refetch: vi.fn() };
 const rolesResult = { data: { rows: [] as Role[] }, isPending: false, isError: false, refetch: vi.fn() };
+const tokensResult = { data: [] as ApiToken[], isPending: false };
 vi.mock('./queries', () => ({
   useUsers: () => usersResult,
   useRoles: () => rolesResult,
-  // The token dialog is closed in every test here, so this stays inert — but it must still be
+  // The token dialog is closed in most tests here, so this stays inert — but it must still be
   // mocked, or the hook resolves to `undefined` and the screen fails to render at all.
-  useApiTokens: () => ({ data: [], isPending: false }),
+  useApiTokens: () => tokensResult,
   userKeys: { all: ['users'] },
   roleKeys: { all: ['roles'] },
   apiTokenKeys: { all: ['api-tokens'] },
@@ -57,6 +58,7 @@ vi.mock('./queries', () => ({
 // `vi.mock` is hoisted above this file's bindings, so the spy the factory closes over is created
 // through `vi.hoisted` — a plain `const` would still be in its temporal dead zone when it runs.
 const deleteUserMutate = vi.hoisted(() => vi.fn());
+const revokeTokenMutate = vi.hoisted(() => vi.fn());
 vi.mock('./mutations', () => {
   const idle = () => ({ mutate: vi.fn(), isPending: false });
   return {
@@ -69,7 +71,7 @@ vi.mock('./mutations', () => {
     useUpdateRole: idle,
     useDeleteRole: idle,
     useMintApiToken: idle,
-    useRevokeApiToken: idle,
+    useRevokeApiToken: () => ({ mutate: revokeTokenMutate, isPending: false }),
   };
 });
 
@@ -126,7 +128,10 @@ beforeEach(() => {
   // Every other test here runs as the default unrestricted authority; reset it in both hooks so a
   // permission test cannot leak its narrower authority into the next file or the next case.
   useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+  tokensResult.data = [];
+  tokensResult.isPending = false;
   deleteUserMutate.mockReset();
+  revokeTokenMutate.mockReset();
 });
 afterEach(() => {
   cleanup();
@@ -255,6 +260,101 @@ describe('UsersScreen — accounts', () => {
     render(<UsersScreen />);
 
     expect(screen.getByRole('alert')).toHaveTextContent('The accounts couldn’t be loaded.');
+  });
+});
+
+describe('UsersScreen — revoking an API token', () => {
+  function apiToken(overrides: Partial<ApiToken> = {}): ApiToken {
+    return {
+      id: 'tok-1',
+      userId: 'u1',
+      name: 'Home Assistant',
+      // A real prefix, not a shortened stand-in: `API_TOKEN_DISPLAY_CHARS` characters of
+      // `gbn_` + hex, which is what the confirmation has to be legible against.
+      tokenPrefix: 'gbn_1f3529',
+      createdAt: 0,
+      updatedAt: 0,
+      ...overrides,
+    };
+  }
+
+  /** Open the account's token dialog — the confirmation stacks on top of it. */
+  async function openTokens(): Promise<void> {
+    await userEvent.click(within(rowFor('Sam Okafor')).getByRole('button', { name: 'API tokens' }));
+  }
+
+  it('asks before revoking, rather than deleting on the row button alone', async () => {
+    // The whole of issue #1272: the row's button used to call the mutation straight through, and
+    // the write is a hard delete plus a tombstone of a secret only ever stored as a hash.
+    tokensResult.data = [apiToken()];
+    render(<UsersScreen />);
+
+    await openTokens();
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+
+    expect(revokeTokenMutate).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Revoke this token?' })).toBeInTheDocument();
+  });
+
+  it('names the token it is about to destroy, and says the loss is permanent', async () => {
+    // Two rows are told apart by a name and the short prefix kept in the clear, so the
+    // confirmation repeats both — and the copy has to say the secret cannot come back, which is
+    // the part a user cannot infer from the word "Revoke".
+    tokensResult.data = [apiToken()];
+    render(<UsersScreen />);
+
+    await openTokens();
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+
+    const confirm = within(screen.getByRole('dialog', { name: 'Revoke this token?' }));
+    expect(confirm.getByText(/Home Assistant/)).toBeInTheDocument();
+    expect(confirm.getByText(/gbn_1f3529/)).toBeInTheDocument();
+    expect(confirm.getByText(/can’t be undone/)).toBeInTheDocument();
+  });
+
+  it('revokes the token once the confirmation is confirmed', async () => {
+    tokensResult.data = [apiToken()];
+    render(<UsersScreen />);
+
+    await openTokens();
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke token' }));
+
+    expect(revokeTokenMutate).toHaveBeenCalledTimes(1);
+    expect(revokeTokenMutate.mock.calls[0][0]).toEqual({ id: 'tok-1', userId: 'u1' });
+  });
+
+  it('leaves the token alone when the confirmation is cancelled', async () => {
+    tokensResult.data = [apiToken()];
+    render(<UsersScreen />);
+
+    await openTokens();
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: 'Revoke this token?' })).getByRole('button', {
+        name: 'Cancel',
+      }),
+    );
+
+    expect(revokeTokenMutate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Revoke this token?' })).toBeNull();
+    // Back to the list it was asked from, not out of the token dialog entirely.
+    expect(screen.getByRole('dialog', { name: 'API tokens for Sam Okafor' })).toBeInTheDocument();
+  });
+
+  it('surfaces a refused revoke in the confirmation, which stays open', async () => {
+    // The confirmation sits on top of the token dialog, so an error rendered only underneath it
+    // would be invisible and the button would read as dead.
+    revokeTokenMutate.mockImplementation((_input, opts) => opts?.onError?.(new Error('Nope')));
+    tokensResult.data = [apiToken()];
+    render(<UsersScreen />);
+
+    await openTokens();
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke token' }));
+
+    const confirm = within(screen.getByRole('dialog', { name: 'Revoke this token?' }));
+    await waitFor(() => expect(confirm.getByRole('alert')).toBeInTheDocument());
   });
 });
 

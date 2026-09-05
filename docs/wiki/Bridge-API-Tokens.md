@@ -42,9 +42,11 @@ fingerprint of it, plus the first few characters so you can recognise which is w
 
 ## Revoking one
 
-Delete the token from the same list. That's permanent: anything still presenting it is refused
-from the moment the bridge sees the change. There is no "disable temporarily" — if you need access
-back, create a new one.
+Choose **Revoke** on the token's row in the same list. Gubbins asks first, naming the token and
+showing its prefix, because the answer is permanent: anything still presenting it is refused from
+the moment the bridge sees the change, on every device. There is no "disable temporarily", and the
+same token can never be brought back — if you need access again, create a new one and set it up
+wherever the old one was used.
 
 > **ℹ️ Note** One exception is worth knowing about. If something has an **event stream** open
 > (`/api/v1/events`) when you revoke its token, that already-open stream keeps running until the
