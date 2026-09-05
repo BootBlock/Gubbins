@@ -61,7 +61,8 @@ sits in the same place on every row.
 ## Adding a location
 
 The **+** button above the tree opens **Add location**. Give it a name — and, if you want them, an
-icon, a colour, a description, a capacity and its internal size — then select **Create**.
+icon, a colour, a description, a capacity, its internal size and its
+[[walk order|#walk-order-picking-in-one-sweep]] — then select **Create**.
 
 - **It nests where you are.** With one of your own locations selected, the new one is created
   *inside* it. From **All items**, from the built-in **Unassigned** and **In Transit** rows (which
@@ -370,8 +371,8 @@ Real containers rarely fill to 100%, and few are perfect boxes. Two optional set
 
 A location can be given a **walk order** — a plain number saying where it sits on the route you
 naturally walk when gathering things. Put the shelf by the door at **1**, the bench in the middle
-at **2**, the far storage at **9**, and so on. Set it from a location's **Edit** dialog; leave it
-blank for any location that isn't on a route.
+at **2**, the far storage at **9**, and so on. Set it as you **add** a location, or from its
+**Edit** dialog at any time after; leave it blank for any location that isn't on a route.
 
 Its one job is to order a project's **[[Picking list|Projects-and-BOM#picking-the-parts]]**: when
 you gather the parts for a build, Gubbins lists them — and each part's locations — in ascending
