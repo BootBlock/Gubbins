@@ -14,6 +14,7 @@ import type { Location, LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
 import { volumeFromDimensions, volumeSystemForDimensionUnit } from '@/lib/volume';
+import { resolveWalkOrderInput } from '@/lib/walk-order';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useCreateLocationPath } from '../mutations';
 import { buildParentOptions } from '../parent-options';
@@ -83,12 +84,9 @@ export function CreateLocationDialog({
     depthState.issue === null &&
     usableVolumeState.issue === null &&
     !packingState.outOfRange;
-  // Blank ⇒ unplaced (null); otherwise a whole number ≥ 0. The repository floors the ordinal and
-  // turns a negative or non-finite one into NULL, so a typo that reached it would quietly drop
-  // the location off the route — reject it at the field and block the create instead.
-  const walkOrderValue = walkOrder.trim() === '' ? null : Math.floor(Number(walkOrder));
-  const walkOrderValid =
-    walkOrder.trim() === '' || (Number.isFinite(Number(walkOrder)) && Number(walkOrder) >= 0);
+  // Read against the repository's own write rule: an ordinal it would discard is rejected at the
+  // field and blocks the create, rather than quietly dropping the location off the route.
+  const { value: walkOrderValue, valid: walkOrderValid } = resolveWalkOrderInput(walkOrder);
 
   // The parent choices: "top level" plus every user-created location, each carrying a
   // right-aligned item-count hint (system/archived locations are never valid parents).
