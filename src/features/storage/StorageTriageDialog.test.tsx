@@ -19,8 +19,11 @@ vi.mock('./hooks', () => ({
       imagesMeasured: true,
     },
   }),
-  usePruneCandidateCount: () => ({ data: 5 }),
-  useDowngradeCandidateCount: () => ({ data: 3 }),
+  // The dialog now reads the query's *state*, not just its data, so the stubs carry the shape a
+  // settled TanStack query really has (issue #898) — a bare `{ data }` would leave both rows
+  // stuck on their pending branch and hide the buttons this file is about.
+  usePruneCandidateCount: () => ({ data: 5, isPending: false, isError: false, isSuccess: true }),
+  useDowngradeCandidateCount: () => ({ data: 3, isPending: false, isError: false, isSuccess: true }),
   useArchiveAndPruneHistory: () => ({ isPending: false, mutate: vi.fn() }),
   useDowngradeImages: () => ({ isPending: false, mutate: vi.fn() }),
 }));

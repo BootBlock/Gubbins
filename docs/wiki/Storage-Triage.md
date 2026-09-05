@@ -22,6 +22,11 @@ Two safe cleanups, each keeping a copy of anything it removes:
 - **Downgrade images** — drop the full-resolution copy of old images while keeping their
   thumbnails, freeing significant space at the cost of detail you rarely need.
 
+Each cleanup tells you how much it would affect before you run it — *12 entries affected*,
+*40 images affected* — worked out from your data as it stands, and again whenever you change how
+far back it reaches. If Gubbins cannot work that figure out, it says so and offers a **Try again**
+rather than showing a number it does not have.
+
 > **💡 Tip**
 > Downgrading images usually frees the most space fastest — thumbnails still show on cards and in
 > lists, so day-to-day the app looks the same.
