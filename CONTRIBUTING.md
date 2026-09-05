@@ -4,6 +4,8 @@ Thanks for your interest in Gubbins. Bug reports, feature requests and ideas are
 welcome — but please read the next section **before** you write any code, so you don't spend
 effort on something that is unlikely to land.
 
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Please open an issue, not a pull request
 
 **Pull requests are unlikely to be accepted.** This is not a judgement on the quality of your
