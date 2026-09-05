@@ -66,7 +66,7 @@ export interface WebhookEventChangeView {
   readonly quantityDelta: number | null;
   readonly netValueDelta: number | null;
   /** The id of the account the change is recorded against (issue #774). */
-  readonly actorUserId: string | null;
+  readonly actorUserId: string;
   /** That account's display name, or `null` when the id resolves to no account. */
   readonly actorDisplayName: string | null;
 }

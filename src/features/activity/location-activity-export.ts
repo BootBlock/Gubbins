@@ -6,8 +6,9 @@
  * The sibling of `activity-export.ts`, and deliberately its own column set rather than a reuse:
  * the item columns are item-shaped (an owning item name, a quantity delta, a value delta), and a
  * location entry has none of those. What it has is a place, an action and the words describing it,
- * so the file is **when / location / action / detail**, plus who made the change — four honest
- * location columns beats seven with three permanently blank.
+ * so the file is **when / location / action / detail**, plus the pair naming who made the change
+ * that both activity exports carry. Reusing the item columns instead would bring a quantity delta,
+ * a value delta and an owning item name that are blank on every row of this file.
  *
  * Pure: it maps {@link LocationHistoryEntry} rows onto the shared tabular column model and hands
  * them to the generic serialisers in `@/features/export/tabular-export`. Kept free of React and

@@ -22,9 +22,9 @@ revaluations, servicing, and more.
 Every entry is also recorded against **who** made it. On a single-person setup that's always the
 built-in **Admin** account, so it isn't something you need to think about — and Gubbins doesn't
 clutter the list saying so. Turn on [[accounts|Users-and-Accounts]] and each entry shows the name of
-the person who made the change, under the time it happened. An account that has since been deleted
-reads as no longer existing rather than as somebody else: its entries move to the built-in
-**System** account, which is what the entry then names.
+the person who made the change, under the time it happened. Deleting an account never rewrites its
+entries as somebody else's work: they move to the built-in **System** account, and that is what the
+log then names.
 
 An **exported** log always names the account, whether or not you use accounts, because the file is
 read away from Gubbins by someone who may not know how many people had access. So does the
