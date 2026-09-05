@@ -15,6 +15,7 @@ function entry(overrides: Partial<LocationHistoryEntry> = {}): LocationHistoryEn
     note: 'Renamed from "Shelf B" to "Top shelf".',
     metadata: null,
     actorUserId: 'user-admin',
+    actorDisplayName: 'Admin',
     createdAt: Date.parse('2026-07-31T09:30:00Z'),
     ...overrides,
   };
@@ -32,12 +33,16 @@ describe('locationActivityExportColumns (issue #693)', () => {
       'Location',
       'Action',
       'Detail',
+      'Who',
+      'Who (account id)',
     ]);
     expect(cells(entry())).toEqual({
       When: '2026-07-31T09:30:00.000Z',
       Location: 'Top shelf',
       Action: 'Renamed',
       Detail: 'Renamed from "Shelf B" to "Top shelf".',
+      Who: 'Admin',
+      'Who (account id)': 'user-admin',
     });
   });
 

@@ -5,6 +5,7 @@ import { DeleteIcon, HistoryIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 import { getDeviceId } from '@/lib/env/device-id';
 import { useFormatters } from '@/lib/useFormatters';
+import { ActivityActor } from '@/features/activity/ActivityActor';
 import { buildItemActivityExport, itemActivityExportFilename } from '@/features/activity/activity-export';
 import { exportEveryPage } from '@/features/export/export-every-page';
 import { TabularExportMenu } from '@/features/export/TabularExportMenu';
@@ -147,12 +148,15 @@ export function ActivityLog({ itemId, itemName }: { itemId: string; itemName: st
                             ) : null}
                             {view.changes.length > 0 ? <HistoryChangeList changes={view.changes} /> : null}
                           </div>
-                          <time
-                            dateTime={new Date(entry.createdAt).toISOString()}
-                            className="shrink-0 text-[11px] text-muted-foreground/80"
-                          >
-                            {fmt.dateTime(entry.createdAt)}
-                          </time>
+                          <div className="flex shrink-0 flex-col items-end">
+                            <time
+                              dateTime={new Date(entry.createdAt).toISOString()}
+                              className="text-[11px] text-muted-foreground/80"
+                            >
+                              {fmt.dateTime(entry.createdAt)}
+                            </time>
+                            <ActivityActor actorDisplayName={entry.actorDisplayName} />
+                          </div>
                         </div>
                       );
                     })()

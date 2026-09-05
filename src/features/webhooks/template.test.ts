@@ -43,6 +43,8 @@ function view(overrides: Partial<WebhookEventView> = {}): WebhookEventView {
       delta: '−2',
       quantityDelta: -2,
       netValueDelta: null,
+      actorUserId: 'user-ada',
+      actorDisplayName: 'Ada Okafor',
     },
     ...overrides,
   };

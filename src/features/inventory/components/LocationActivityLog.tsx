@@ -1,6 +1,7 @@
 import { Button, Spinner } from '@/components/foundry';
 import { HistoryIcon } from '@/components/icons';
 import { useFormatters } from '@/lib/useFormatters';
+import { ActivityActor } from '@/features/activity/ActivityActor';
 import { useT } from '@/features/i18n';
 import { describeLocationHistoryEntry } from '../location-history-format';
 import { useLocationHistory } from '../queries';
@@ -59,12 +60,15 @@ export function LocationActivityLog({ locationId }: { locationId: string }) {
                 <span className="text-xs font-semibold">{view.label}</span>
                 {view.detail ? <p className="text-xs text-muted-foreground">{view.detail}</p> : null}
               </div>
-              <time
-                dateTime={new Date(entry.createdAt).toISOString()}
-                className="shrink-0 text-[11px] text-muted-foreground/80"
-              >
-                {fmt.dateTime(entry.createdAt)}
-              </time>
+              <div className="flex shrink-0 flex-col items-end">
+                <time
+                  dateTime={new Date(entry.createdAt).toISOString()}
+                  className="text-[11px] text-muted-foreground/80"
+                >
+                  {fmt.dateTime(entry.createdAt)}
+                </time>
+                <ActivityActor actorDisplayName={entry.actorDisplayName} />
+              </div>
             </li>
           );
         })}

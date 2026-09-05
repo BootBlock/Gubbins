@@ -93,6 +93,8 @@ function ledgerEvent(item: ItemSummaryDto | null): LedgerEvent {
       delta: '−1',
       quantityDelta: -1,
       netValueDelta: null,
+      actorUserId: 'user-ada',
+      actorDisplayName: 'Ada',
       item,
     },
   };
@@ -121,6 +123,8 @@ describe('buildWebhookEventView', () => {
       delta: '−1',
       quantityDelta: -1,
       netValueDelta: null,
+      actorUserId: 'user-ada',
+      actorDisplayName: 'Ada',
     });
   });
 

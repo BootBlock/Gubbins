@@ -12,6 +12,8 @@ function entry(over: Partial<ItemHistoryEntry> = {}): ItemHistoryEntry {
     netValueDelta: null,
     note: null,
     metadata: null,
+    actorUserId: 'user-ada',
+    actorDisplayName: 'Ada Okafor',
     createdAt: 1_700_000_000_000,
     ...over,
   };

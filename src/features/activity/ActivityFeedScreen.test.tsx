@@ -136,6 +136,8 @@ const itemEntry = (id: string, itemName: string): ActivityFeedEntry => ({
   netValueDelta: null,
   note: null,
   metadata: null,
+  actorUserId: 'user-ada',
+  actorDisplayName: 'Ada Okafor',
   createdAt: Date.parse('2026-07-31T09:30:00Z'),
   itemName,
   itemIsActive: true,
@@ -153,6 +155,7 @@ const locationEntry = (
   note: `Renamed from "Old" to "${locationName}".`,
   metadata: null,
   actorUserId: 'user-admin',
+  actorDisplayName: 'Admin',
   createdAt: Date.parse('2026-07-31T09:30:00Z'),
   ...overrides,
 });

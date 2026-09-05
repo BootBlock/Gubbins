@@ -4229,7 +4229,7 @@ paths:
             text/event-stream:
               schema:
                 type: "string"
-              example: "id: hist-0007\ndata: {\"id\":\"hist-0007\",\"type\":\"item.low_stock\",\"occurredAt\":\"2025-06-27T06:13:20.000Z\",\"data\":{\"itemId\":\"item-esp32\",\"itemName\":\"ESP32 Dev Board\",\"action\":\"QUANTITY_CHANGE\",\"kind\":\"stock\",\"label\":\"Quantity changed\",\"detail\":\"Checked out 4.\",\"delta\":\"−4\",\"quantityDelta\":-4,\"netValueDelta\":null,\"item\":null}}\n\n"
+              example: "id: hist-0007\ndata: {\"id\":\"hist-0007\",\"type\":\"item.low_stock\",\"occurredAt\":\"2025-06-27T06:13:20.000Z\",\"data\":{\"itemId\":\"item-esp32\",\"itemName\":\"ESP32 Dev Board\",\"action\":\"QUANTITY_CHANGE\",\"kind\":\"stock\",\"label\":\"Quantity changed\",\"detail\":\"Checked out 4.\",\"delta\":\"−4\",\"quantityDelta\":-4,\"netValueDelta\":null,\"actorUserId\":\"user-ada\",\"actorDisplayName\":\"Ada\",\"item\":null}}\n\n"
         "401":
           description: "Missing, unknown or revoked API token."
           headers:
@@ -6091,6 +6091,8 @@ components:
       - "delta"
       - "quantityDelta"
       - "netValueDelta"
+      - "actorUserId"
+      - "actorDisplayName"
       - "item"
       properties:
         itemId:
@@ -6134,6 +6136,15 @@ components:
           type: "number"
           nullable: true
           example: null
+        actorUserId:
+          type: "string"
+          description: "The id of the account the change is recorded against. Stable, and what the activity ledger actually stores — route on this rather than on the name."
+          example: "user-ada"
+        actorDisplayName:
+          type: "string"
+          nullable: true
+          description: "That account’s display name, or null when the id resolves to no account. A name is not unique and can be changed after the fact, so it is for rendering only."
+          example: "Ada"
         item:
           nullable: true
           description: "The item’s current summary, or null when the item is no longer present."
@@ -6149,6 +6160,8 @@ components:
       - "action"
       - "label"
       - "detail"
+      - "actorUserId"
+      - "actorDisplayName"
       properties:
         locationId:
           type: "string"
@@ -6171,6 +6184,15 @@ components:
           nullable: true
           description: "The stored human-readable note, or null."
           example: "Moved from \"Workshop\" to \"Garage\"."
+        actorUserId:
+          type: "string"
+          description: "The id of the account the change is recorded against. Stable, and what the activity ledger actually stores — route on this rather than on the name."
+          example: "user-ada"
+        actorDisplayName:
+          type: "string"
+          nullable: true
+          description: "That account’s display name, or null when the id resolves to no account. A name is not unique and can be changed after the fact, so it is for rendering only."
+          example: "Ada"
     LookupEventData:
       type: "object"
       required:

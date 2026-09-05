@@ -22,6 +22,15 @@ export interface LocationHistoryRow {
   readonly updated_at: number;
 }
 
+/**
+ * A `location_history` row with the actor's current display name joined on (issue #774) — the
+ * sibling of {@link import('./history').ItemHistoryWithActorRow}, and a LEFT join for the same
+ * reason: an entry whose actor cannot be resolved must still be read back, not dropped.
+ */
+export interface LocationHistoryWithActorRow extends LocationHistoryRow {
+  readonly actor_display_name: string | null;
+}
+
 export interface LocationHistoryEntry {
   readonly id: string;
   /**
@@ -36,5 +45,11 @@ export interface LocationHistoryEntry {
   readonly note: string | null;
   readonly metadata: Record<string, unknown> | null;
   readonly actorUserId: string;
+  /**
+   * That account's display name at the time of the read, or `null` when the id resolves to no
+   * account. Carried beside the id so an exported entry still answers "who?" away from this
+   * database — see {@link import('./history').ItemHistoryEntry.actorDisplayName}.
+   */
+  readonly actorDisplayName: string | null;
   readonly createdAt: number;
 }

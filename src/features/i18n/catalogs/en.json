@@ -2252,6 +2252,8 @@
   "alerts.snoozed": "Snoozed: {title}",
   "alerts.dismissed": "Dismissed: {title}",
   "activity.title": "Activity",
+  "activity.actor.by": "by {name}",
+  "activity.actor.unknown": "by an account that no longer exists",
   "activity.lane.label": "Show activity for",
   "activity.lane.items": "Items",
   "activity.lane.locations": "Locations",

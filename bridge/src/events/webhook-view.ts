@@ -220,6 +220,8 @@ export async function buildWebhookEventView(
     delta: data.delta,
     quantityDelta: data.quantityDelta,
     netValueDelta: data.netValueDelta,
+    actorUserId: data.actorUserId,
+    actorDisplayName: data.actorDisplayName,
   };
 
   const summary = data.item;

@@ -78,6 +78,10 @@ export interface LocationEventData {
   readonly label: string;
   /** The stored human-readable note, or null. */
   readonly detail: string | null;
+  /** The id of the account the change is recorded against (issue #774). */
+  readonly actorUserId: string;
+  /** That account's display name, or null when the id resolves to no account. */
+  readonly actorDisplayName: string | null;
 }
 
 /** A location activity event. Shares the `{ id, type, occurredAt, data }` envelope. */
@@ -124,6 +128,15 @@ export interface BridgeEventData {
   readonly delta: string | null;
   readonly quantityDelta: number | null;
   readonly netValueDelta: number | null;
+  /** The id of the account the change is recorded against (issue #774). */
+  readonly actorUserId: string;
+  /**
+   * That account's display name, or null when the id resolves to no account. A subscriber that
+   * routes on *who* needs the id (stable, and what the ledger stores); one that renders a
+   * message needs the name. Both are sent because neither derives the other away from the
+   * database.
+   */
+  readonly actorDisplayName: string | null;
   /** The item's current summary (null when the item is no longer present). */
   readonly item: ItemSummaryDto | null;
 }
@@ -379,6 +392,8 @@ export function buildLocationEvents(
       action: entry.action,
       label: locationHistoryActionLabel(entry.action),
       detail: entry.note?.trim() ? entry.note.trim() : null,
+      actorUserId: entry.actorUserId,
+      actorDisplayName: entry.actorDisplayName,
     },
   }));
 
@@ -398,6 +413,10 @@ export function buildLocationEvents(
       detail: `This generation exceeded the fan-out cap; ${omitted} further location event${
         omitted === 1 ? ' was' : 's were'
       } omitted.`,
+      // Attributed to the last kept event, exactly as its location and action already are — the
+      // summary stands in for changes by any number of accounts, so it invents no actor.
+      actorUserId: last.data.actorUserId,
+      actorDisplayName: last.data.actorDisplayName,
     },
   });
   return kept;
@@ -457,6 +476,8 @@ function baseEvent({ entry, summary }: ResolvedEntry): LedgerEvent {
       delta: view.delta,
       quantityDelta: entry.quantityDelta,
       netValueDelta: entry.netValueDelta,
+      actorUserId: entry.actorUserId,
+      actorDisplayName: entry.actorDisplayName,
       item: summary,
     },
   };
@@ -508,6 +529,11 @@ function truncationEvent(last: LedgerEvent, omitted: number): LedgerEvent {
       delta: null,
       quantityDelta: null,
       netValueDelta: null,
+      // The summary is about a *generation*, not about one person's change — it stands in for
+      // events by any number of accounts — so it is attributed to the last event it follows
+      // exactly as its item and action already are, rather than inventing an actor of its own.
+      actorUserId: last.data.actorUserId,
+      actorDisplayName: last.data.actorDisplayName,
       item: null,
     },
   };

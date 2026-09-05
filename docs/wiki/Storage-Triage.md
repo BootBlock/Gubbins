@@ -30,7 +30,8 @@ Two safe cleanups, each keeping a copy of anything it removes:
 
 Pruned history doesn't come back — not from another device either, because Gubbins remembers where
 you pruned to and won't re-download entries from before that point. The export is the only copy, so
-it isn't merely offered:
+it isn't merely offered. It carries every entry whole, including **who** made each change, so the
+file answers the same questions the [[activity log|Activity-Log]] did:
 
 - On browsers that can save a file properly (Chrome, Edge and other Chromium browsers on desktop),
   you're asked **where to put it**, and the entries are removed once it's written. Close that

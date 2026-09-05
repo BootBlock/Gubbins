@@ -20,9 +20,15 @@ Just about every meaningful change is logged: creating and editing items, stock 
 revaluations, servicing, and more.
 
 Every entry is also recorded against **who** made it. On a single-person setup that's always the
-built-in **Admin** account, so it isn't something you need to think about. Turn on
-[[accounts|Users-and-Accounts]] and each entry carries the name of the person who made the change
-instead.
+built-in **Admin** account, so it isn't something you need to think about — and Gubbins doesn't
+clutter the list saying so. Turn on [[accounts|Users-and-Accounts]] and each entry shows the name of
+the person who made the change, under the time it happened. Deleting an account never rewrites its
+entries as somebody else's work: they move to the built-in **System** account, and that is what the
+log then names.
+
+An **exported** log always names the account, whether or not you use accounts, because the file is
+read away from Gubbins by someone who may not know how many people had access. So does the
+cold-storage copy [[storage triage|Storage-Triage]] writes before pruning old history.
 
 - The **global Activity feed** shows everything across your inventory, newest first.
 - Each **item's Activity tab** shows just that item's history — a complete story of one thing.
@@ -116,7 +122,9 @@ that item.
 Either way the file covers the **whole** log under whatever you have filtered it to — not just what
 is on screen. An items file carries the timestamp, the item, the kind and action, the detail and the
 quantity and value changes; a locations file carries the timestamp, the location, the action and the
-detail. The usual formats are offered: CSV, TSV, an Excel workbook, JSON, Markdown, printable HTML
+detail. Both then name **who** made each change, as a display name and the account's own identifier
+— the identifier is there because a display name can be changed afterwards, and two people can share
+one. The usual formats are offered: CSV, TSV, an Excel workbook, JSON, Markdown, printable HTML
 or plain text. See [[Export & import|Export-and-Import]].
 
 ## Clearing an item's log

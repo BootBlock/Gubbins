@@ -22,6 +22,8 @@ function entry(overrides: Partial<ActivityFeedEntry> & { id: string; createdAt: 
     netValueDelta: null,
     note: null,
     metadata: null,
+    actorUserId: 'user-ada',
+    actorDisplayName: 'Ada Okafor',
     itemName: 'Widget',
     itemIsActive: true,
     ...overrides,
@@ -221,6 +223,15 @@ describe('buildEvents', () => {
       data: { itemId: 'item-1', action: 'CREATED', kind: 'created', label: 'Created', delta: '+5' },
     });
     expect(events[0]!.data.item).toEqual(summary);
+  });
+
+  it('names who made the change, id and display name (issue #774)', () => {
+    // Two changes by two people were previously indistinguishable to a subscriber: the payload
+    // carried what and when, and nothing that answered who.
+    const e = entry({ id: 'e1', createdAt: 1_000, actorUserId: 'user-grace', actorDisplayName: 'Grace' });
+    const [event] = buildEvents([resolved(e, discreteItem(5))]);
+    expect(event!.data.actorUserId).toBe('user-grace');
+    expect(event!.data.actorDisplayName).toBe('Grace');
   });
 
   it('adds a derived item.low_stock event when a stock movement leaves the item low', () => {

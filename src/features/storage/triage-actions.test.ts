@@ -22,6 +22,16 @@ import type { SafeSave } from '@/lib/save-file';
 
 const NOW = Date.parse('2026-07-31T09:00:00.000Z');
 
+/**
+ * The rows the read hands back. Shaped as the DTO actually is, attribution included (issue
+ * #774): the archive is these objects written verbatim, so what the read omits the file omits,
+ * and the prune that follows deletes the originals.
+ */
+const ROWS = [
+  { id: 'h1', createdAt: 1, actorUserId: 'user-ada', actorDisplayName: 'Ada Okafor' },
+  { id: 'h2', createdAt: 2, actorUserId: 'user-admin', actorDisplayName: 'Admin' },
+];
+
 /** One page of history rows, terminating the collection loop. */
 function onePage(rows: unknown[]) {
   return { rows, hasMore: false };
@@ -56,12 +66,7 @@ function save(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  listHistoryBefore.mockResolvedValue(
-    onePage([
-      { id: 'h1', created_at: 1 },
-      { id: 'h2', created_at: 2 },
-    ]),
-  );
+  listHistoryBefore.mockResolvedValue(onePage(ROWS));
   pruneHistoryBefore.mockResolvedValue(2);
 });
 
@@ -73,9 +78,15 @@ describe('archiveAndPruneHistory', () => {
 
     expect(result).toEqual({ cutoff: expect.any(Number), archived: 2, pruned: 2, archiveSaved: true });
     expect(pruneHistoryBefore).toHaveBeenCalledWith(result.cutoff);
-    // What was written is the archive of exactly those rows, not an empty envelope.
-    const payload = JSON.parse(await target.written[0]!.text()) as { rowCount: number };
+    // What was written is the archive of exactly those rows, not an empty envelope — and each
+    // row entire. A field the read carried but the file dropped would be gone from the device
+    // the moment the prune below ran, with no route back from the archive (issue #774).
+    const payload = JSON.parse(await target.written[0]!.text()) as {
+      rowCount: number;
+      rows: unknown[];
+    };
     expect(payload.rowCount).toBe(2);
+    expect(payload.rows).toEqual(ROWS);
   });
 
   it('deletes nothing when the archive was not confirmed as saved', async () => {

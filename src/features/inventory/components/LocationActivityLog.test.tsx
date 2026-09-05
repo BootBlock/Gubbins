@@ -33,6 +33,7 @@ vi.mock('@/lib/useFormatters', () => ({
   useFormatters: () => ({ dateTime: (ms: number) => `at ${ms}` }),
 }));
 
+import { useModulesStore } from '@/state/stores/useModulesStore';
 import { LocationActivityLog } from './LocationActivityLog';
 
 function entry(overrides: Partial<LocationHistoryEntry> & { id: string }): LocationHistoryEntry {
@@ -43,12 +44,14 @@ function entry(overrides: Partial<LocationHistoryEntry> & { id: string }): Locat
     note: 'Renamed from "Shelf A" to "Shelf B".',
     metadata: null,
     actorUserId: 'user-1',
+    actorDisplayName: 'Ada Okafor',
     createdAt: 1_700_000_000_000,
     ...overrides,
   } as LocationHistoryEntry;
 }
 
 beforeEach(() => {
+  useModulesStore.setState({ intent: {} });
   h.entries = [];
   h.isLoading = false;
   h.hasNextPage = false;
@@ -78,6 +81,18 @@ describe('LocationActivityLog', () => {
     expect(screen.getByText('Renamed')).toBeTruthy();
     expect(screen.getByText('Moved')).toBeTruthy();
     expect(screen.getByText('Moved from "Workshop" to the top level.')).toBeTruthy();
+  });
+
+  it('names who made the change once accounts are on (issue #774)', () => {
+    // The attribution has always been stored; until #774 nothing above the driver could read it,
+    // so two people's changes to one shelf read identically.
+    useModulesStore.getState().setFeatureIntent('users', true);
+    h.entries = [entry({ id: 'a' }), entry({ id: 'b', actorDisplayName: 'Grace Hopper' })];
+
+    render(<LocationActivityLog locationId="loc-1" />);
+
+    const names = screen.getAllByTestId('activity-actor').map((el) => el.textContent);
+    expect(names).toEqual(['by Ada Okafor', 'by Grace Hopper']);
   });
 
   it('omits the note line entirely when an entry has none', () => {

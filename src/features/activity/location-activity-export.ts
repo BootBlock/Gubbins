@@ -6,8 +6,9 @@
  * The sibling of `activity-export.ts`, and deliberately its own column set rather than a reuse:
  * the item columns are item-shaped (an owning item name, a quantity delta, a value delta), and a
  * location entry has none of those. What it has is a place, an action and the words describing it,
- * so the file is **when / location / action / detail** and nothing else — four honest columns
- * beats seven with three permanently blank.
+ * so the file is **when / location / action / detail**, plus the pair naming who made the change
+ * that both activity exports carry. Reusing the item columns instead would bring a quantity delta,
+ * a value delta and an owning item name that are blank on every row of this file.
  *
  * Pure: it maps {@link LocationHistoryEntry} rows onto the shared tabular column model and hands
  * them to the generic serialisers in `@/features/export/tabular-export`. Kept free of React and
@@ -45,6 +46,12 @@ export function locationActivityExportColumns(): readonly TabularColumn<Location
     { header: 'Location', value: (e) => e.locationName },
     { header: 'Action', value: (e) => describeLocationHistoryEntry(e).label },
     { header: 'Detail', value: (e): TabularCell => describeLocationHistoryEntry(e).detail },
+    // Who made the change (issue #774), on the same terms as the item export: always present,
+    // name and stored id side by side. There is an id column here and none for the location
+    // because a `location_id` is a historical coordinate meaningless outside this database,
+    // whereas an account id is what the ledger actually stores and the name only resolves.
+    { header: 'Who', value: (e): TabularCell => e.actorDisplayName },
+    { header: 'Who (account id)', value: (e) => e.actorUserId },
   ];
 }
 

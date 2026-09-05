@@ -68,6 +68,7 @@ import {
   type LocationHistoryAction,
   type LocationHistoryEntry,
 } from '@/db/repositories';
+import { ActivityActor } from './ActivityActor';
 import { activityExportFilename, buildActivityExport } from './activity-export';
 import { buildLocationActivityExport, locationActivityExportFilename } from './location-activity-export';
 import { ACTIVITY_KINDS, ACTIVITY_KIND_LABEL, actionsForKinds, type ActivityKind } from './activity-kind';
@@ -183,12 +184,15 @@ function ActivityRow({ entry, fmt }: { entry: ActivityFeedEntry; fmt: Formatters
         ) : null}
         {view.changes.length > 0 ? <HistoryChangeList changes={view.changes} /> : null}
       </div>
-      <time
-        dateTime={new Date(entry.createdAt).toISOString()}
-        className="shrink-0 text-[11px] text-muted-foreground/80"
-      >
-        {fmt.dateTime(entry.createdAt)}
-      </time>
+      <div className="flex shrink-0 flex-col items-end">
+        <time
+          dateTime={new Date(entry.createdAt).toISOString()}
+          className="text-[11px] text-muted-foreground/80"
+        >
+          {fmt.dateTime(entry.createdAt)}
+        </time>
+        <ActivityActor actorDisplayName={entry.actorDisplayName} />
+      </div>
     </div>
   );
 }
@@ -220,12 +224,15 @@ function LocationActivityRow({ entry, fmt }: { entry: LocationHistoryEntry; fmt:
         </div>
         {view.detail ? <p className="truncate text-xs text-muted-foreground">{view.detail}</p> : null}
       </div>
-      <time
-        dateTime={new Date(entry.createdAt).toISOString()}
-        className="shrink-0 text-[11px] text-muted-foreground/80"
-      >
-        {fmt.dateTime(entry.createdAt)}
-      </time>
+      <div className="flex shrink-0 flex-col items-end">
+        <time
+          dateTime={new Date(entry.createdAt).toISOString()}
+          className="text-[11px] text-muted-foreground/80"
+        >
+          {fmt.dateTime(entry.createdAt)}
+        </time>
+        <ActivityActor actorDisplayName={entry.actorDisplayName} />
+      </div>
     </div>
   );
 }

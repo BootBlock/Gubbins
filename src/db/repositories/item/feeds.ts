@@ -493,9 +493,11 @@ export function withDashboardFeeds<TBase extends Constructor<ItemCoreRepository>
       const where =
         actions && actions.length > 0 ? `WHERE h.action IN (${actions.map(() => '?').join(', ')})` : '';
       const rows = await this.driver.query<ActivityFeedRow>(
-        `SELECT h.*, i.name AS item_name, i.is_active AS item_is_active
+        `SELECT h.*, i.name AS item_name, i.is_active AS item_is_active,
+                u.display_name AS actor_display_name
          FROM item_history h
          JOIN items i ON i.id = h.item_id
+         LEFT JOIN users u ON u.id = h.actor_user_id
          ${where}
          ORDER BY h.created_at DESC, h.rowid DESC
          LIMIT ? OFFSET ?;`,

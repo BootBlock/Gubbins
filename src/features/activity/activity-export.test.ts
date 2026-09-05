@@ -18,6 +18,8 @@ function entry(overrides: Partial<ActivityFeedEntry> = {}): ActivityFeedEntry {
     netValueDelta: null,
     note: 'Restocked from the order.',
     metadata: null,
+    actorUserId: 'user-ada',
+    actorDisplayName: 'Ada Okafor',
     createdAt: Date.parse('2026-07-25T09:30:00Z'),
     itemName: 'Brass widget',
     itemIsActive: true,
@@ -63,6 +65,22 @@ describe('activityExportColumns', () => {
 
   it('treats a whitespace-only note as no note, as the feed row does', () => {
     expect(cells(entry({ note: '   ' })).Detail).toBeNull();
+  });
+
+  it('names who made the change, id beside name (issue #774)', () => {
+    // The gap this closed: the ledger recorded the actor, nothing read it back, and a file
+    // exported as an audit trail answered what and when but never who.
+    const row = cells(entry());
+    expect(row.Who).toBe('Ada Okafor');
+    expect(row['Who (account id)']).toBe('user-ada');
+  });
+
+  it('leaves the name blank rather than inventing one when the account cannot be resolved', () => {
+    const row = cells(entry({ actorDisplayName: null }));
+    expect(row.Who).toBeNull();
+    // The id is still carried: it is what the ledger actually stores, and it is the only thing
+    // that could ever identify the account again.
+    expect(row['Who (account id)']).toBe('user-ada');
   });
 
   it('degrades an unknown action from a newer peer to readable prose', () => {

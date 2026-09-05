@@ -72,6 +72,8 @@ describe('GET /api/v1/events', () => {
             delta: '−4',
             quantityDelta: -4,
             netValueDelta: null,
+            actorUserId: 'user-ada',
+            actorDisplayName: 'Ada',
             item: null,
           },
         },

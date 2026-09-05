@@ -36,8 +36,10 @@ Press **Add webhook** and fill in:
 - **Filter** *(optional)* — narrow it further to a particular location, category, tag, specific
   items, or a quantity threshold.
 - **Payload** *(optional)* — send Gubbins' standard event, a preset shaped for Discord, Slack or
-  Home Assistant, or write your own using `{{item.name}}`-style placeholders. A preview shows what
-  a real event would produce.
+  Home Assistant, or write your own using `{{item.name}}`-style placeholders. The editor lists
+  every placeholder it accepts, including `{{change.actorDisplayName}}` for the person who made
+  the change, so a message can read *“Ada took 4 off the shelf”*. A preview shows what a real
+  event would produce.
 - **Extra headers** *(optional)* — for receivers that expect a particular header.
 
 > **💡 Tip**

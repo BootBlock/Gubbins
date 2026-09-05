@@ -51,6 +51,16 @@ const EVENT_COLUMNS: readonly TabularColumn<ItemHistoryEntry>[] = [
   { header: 'Detail', value: (e): TabularCell => describeHistoryEntry(e).detail },
   { header: 'Quantity change', value: (e): TabularCell => e.quantityDelta },
   { header: 'Value change', value: (e): TabularCell => e.netValueDelta },
+  // Who made the change (issue #774). The ledger has always recorded it and nothing could read
+  // it back, so an export of an audit trail answered what and when but never who.
+  //
+  // Present **unconditionally**, unlike the on-screen line, which is hidden while the users
+  // module is off: a file is read away from the app, by someone who may not know how many
+  // accounts the install had, and a column that appears or vanishes with a setting is worse
+  // than one that reads "Admin" on every row of a single-person setup. The stored id goes
+  // beside the name because a name is not unique and can be changed after the fact.
+  { header: 'Who', value: (e): TabularCell => e.actorDisplayName },
+  { header: 'Who (account id)', value: (e) => e.actorUserId },
 ];
 
 /**

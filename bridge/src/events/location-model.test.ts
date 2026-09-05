@@ -20,6 +20,7 @@ function entry(overrides: Partial<LocationHistoryEntry> & { id: string }): Locat
     note: 'Renamed from "Shelf A" to "Shelf B".',
     metadata: null,
     actorUserId: 'user-1',
+    actorDisplayName: 'Ada Okafor',
     createdAt: 1_700_000_000_000,
     ...overrides,
   } as LocationHistoryEntry;
