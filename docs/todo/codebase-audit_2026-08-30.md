@@ -1,6 +1,6 @@
 # Full codebase audit — phased plan and findings register
 
-> **Status:** 🟢 ACTIVE — Phases 0–18 complete; Phase 19 (Close-out) is next.
+> **Status:** 🟢 ACTIVE — Phases 0–18 complete; Phase 19 (Close-out) in progress.
 
 This is the single source of truth for a whole-repository audit of Gubbins. Its purpose is to find
 every **genuine** mechanical, functional, performance and prompt defect in the codebase and log each
@@ -442,7 +442,7 @@ run the rows relevant to their unit; Phase 17 runs every row across the whole re
 | 16 | Wiki parity | `docs/wiki/` (every page, every image) against the app at the pinned commit; `docs/todo/wiki_2026-07-11.md` page map | complete | 391 | 73 | 85 | 0 |
 | 17 | Cross-cutting static sweeps | the whole repository: every §7 row; dead code and unused exports; duplicate implementations of an existing seam; TODO/FIXME/HACK; test-suite quality; dependency licences and `npm audit` | complete | 43 | 20 | 9 | 0 |
 | 18 | Runtime performance at scale | the running app and bridge with a seeded large vault; ties to #112 | complete | 20 | 4 | 10 | 1 |
-| 19 | Close-out | this document; every issue filed by the audit | not started | | | | |
+| 19 | Close-out | this document; every issue filed by the audit | in progress | | | | |
 
 Coverage check: every top-level path in the repository appears in exactly one phase's scope above
 (`dist/` and `node_modules/` are build output and are not audited; `extension/dist/` likewise).
