@@ -27,7 +27,7 @@ import type {
   CreateLocationInput,
   Location,
   LocationHistoryEntry,
-  LocationHistoryRow,
+  LocationHistoryWithActorRow,
   LocationRow,
   LocationTreeNode,
   LocationVolumeTotals,
@@ -61,9 +61,15 @@ export interface LocationHistoryFeedFilters extends PageParams {
  *
  * Callers handle the explicit-empty-array case before reaching here — it means "match nothing",
  * which is an early return rather than a clause.
+ *
+ * `prefix` qualifies the column for the caller that reads through a table alias (the feed, which
+ * joins `users` for the actor's name); the count has no join and passes none.
  */
-function locationHistoryActionFilter(actions: readonly LocationHistoryAction[] | undefined): string {
-  return actions && actions.length > 0 ? `action IN (${actions.map(() => '?').join(', ')})` : '1';
+function locationHistoryActionFilter(
+  actions: readonly LocationHistoryAction[] | undefined,
+  prefix = '',
+): string {
+  return actions && actions.length > 0 ? `${prefix}action IN (${actions.map(() => '?').join(', ')})` : '1';
 }
 
 interface LocationCountRow extends LocationRow {
@@ -759,9 +765,14 @@ export class LocationRepository extends BaseRepository {
    */
   async getHistory(locationId: string, params: PageParams = {}): Promise<Page<LocationHistoryEntry>> {
     const { limit, offset } = this.resolvePage(params);
-    const rows = await this.driver.query<LocationHistoryRow>(
-      `SELECT * FROM location_history WHERE location_id = ?
-       ORDER BY created_at DESC, rowid DESC
+    const rows = await this.driver.query<LocationHistoryWithActorRow>(
+      // The `users` LEFT JOIN resolves the actor's display name (issue #774) — see
+      // {@link LocationHistoryWithActorRow} for why it is a *left* join.
+      `SELECT h.*, u.display_name AS actor_display_name
+       FROM location_history h
+       LEFT JOIN users u ON u.id = h.actor_user_id
+       WHERE h.location_id = ?
+       ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ? OFFSET ?;`,
       [locationId, limit, offset],
     );
@@ -789,10 +800,12 @@ export class LocationRepository extends BaseRepository {
     const actions = filters.actions;
     // An explicit empty filter list means "match nothing" — return early without a query.
     if (actions !== undefined && actions.length === 0) return this.toPage([], limit, offset);
-    const rows = await this.driver.query<LocationHistoryRow>(
-      `SELECT * FROM location_history
-       WHERE (${locationHistoryActionFilter(actions)})
-       ORDER BY created_at DESC, rowid DESC
+    const rows = await this.driver.query<LocationHistoryWithActorRow>(
+      `SELECT h.*, u.display_name AS actor_display_name
+       FROM location_history h
+       LEFT JOIN users u ON u.id = h.actor_user_id
+       WHERE (${locationHistoryActionFilter(actions, 'h.')})
+       ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ? OFFSET ?;`,
       [...(actions ?? []), limit, offset],
     );

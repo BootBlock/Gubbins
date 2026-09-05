@@ -1965,7 +1965,8 @@ export const openapiDocument: JsonValue = {
                   'data: {"id":"hist-0007","type":"item.low_stock","occurredAt":"2025-06-27T06:13:20.000Z",' +
                   '"data":{"itemId":"item-esp32","itemName":"ESP32 Dev Board","action":"QUANTITY_CHANGE",' +
                   '"kind":"stock","label":"Quantity changed","detail":"Checked out 4.","delta":"−4",' +
-                  '"quantityDelta":-4,"netValueDelta":null,"item":null}}\n\n',
+                  '"quantityDelta":-4,"netValueDelta":null,"actorUserId":"user-ada",' +
+                  '"actorDisplayName":"Ada","item":null}}\n\n',
               },
             },
           },
@@ -2842,6 +2843,8 @@ export const openapiDocument: JsonValue = {
           'delta',
           'quantityDelta',
           'netValueDelta',
+          'actorUserId',
+          'actorDisplayName',
           'item',
         ],
         properties: {
@@ -2868,6 +2871,21 @@ export const openapiDocument: JsonValue = {
           },
           quantityDelta: { type: 'integer', nullable: true, example: -4 },
           netValueDelta: { type: 'number', nullable: true, example: null },
+          actorUserId: {
+            type: 'string',
+            description:
+              'The id of the account the change is recorded against. Stable, and what the ' +
+              'activity ledger actually stores — route on this rather than on the name.',
+            example: 'user-ada',
+          },
+          actorDisplayName: {
+            type: 'string',
+            nullable: true,
+            description:
+              'That account’s display name, or null when the id resolves to no account. A name ' +
+              'is not unique and can be changed after the fact, so it is for rendering only.',
+            example: 'Ada',
+          },
           item: {
             nullable: true,
             description: 'The item’s current summary, or null when the item is no longer present.',
@@ -2881,7 +2899,15 @@ export const openapiDocument: JsonValue = {
           'The payload of a `location.*` event — a change to a storage *location* rather than to ' +
           'an item. Deliberately flat: it carries no item, and no live location state (a ' +
           '`location.removed` event has none left to read).',
-        required: ['locationId', 'locationName', 'action', 'label', 'detail'],
+        required: [
+          'locationId',
+          'locationName',
+          'action',
+          'label',
+          'detail',
+          'actorUserId',
+          'actorDisplayName',
+        ],
         properties: {
           locationId: {
             type: 'string',
@@ -2920,6 +2946,21 @@ export const openapiDocument: JsonValue = {
             nullable: true,
             description: 'The stored human-readable note, or null.',
             example: 'Moved from "Workshop" to "Garage".',
+          },
+          actorUserId: {
+            type: 'string',
+            description:
+              'The id of the account the change is recorded against. Stable, and what the ' +
+              'activity ledger actually stores — route on this rather than on the name.',
+            example: 'user-ada',
+          },
+          actorDisplayName: {
+            type: 'string',
+            nullable: true,
+            description:
+              'That account’s display name, or null when the id resolves to no account. A name ' +
+              'is not unique and can be changed after the fact, so it is for rendering only.',
+            example: 'Ada',
           },
         },
       },

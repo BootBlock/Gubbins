@@ -26,7 +26,7 @@ import type {
   CreateItemInput,
   Item,
   ItemHistoryEntry,
-  ItemHistoryRow,
+  ItemHistoryWithActorRow,
   ItemRow,
   Page,
   PageParams,
@@ -827,14 +827,23 @@ export class ItemCoreRepository extends BaseRepository {
     ]);
   }
 
-  /** Paginated Activity Log for an item, newest first (spec §4.1.3). */
+  /**
+   * Paginated Activity Log for an item, newest first (spec §4.1.3).
+   *
+   * The `users` LEFT JOIN resolves the actor's display name (issue #774) — see
+   * {@link ItemHistoryWithActorRow} for why it is a *left* join and why every read that maps to
+   * a DTO carries it.
+   */
   async getHistory(itemId: string, params: PageParams = {}): Promise<Page<ItemHistoryEntry>> {
     const { limit, offset } = this.resolvePage(params);
-    const rows = await this.driver.query<ItemHistoryRow>(
+    const rows = await this.driver.query<ItemHistoryWithActorRow>(
       // rowid is the deterministic insertion-order tiebreaker when several
       // entries share a created_at millisecond (e.g. create + first adjustment).
-      `SELECT * FROM item_history WHERE item_id = ?
-       ORDER BY created_at DESC, rowid DESC
+      `SELECT h.*, u.display_name AS actor_display_name
+       FROM item_history h
+       LEFT JOIN users u ON u.id = h.actor_user_id
+       WHERE h.item_id = ?
+       ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ? OFFSET ?;`,
       [itemId, limit, offset],
     );
@@ -865,8 +874,12 @@ export class ItemCoreRepository extends BaseRepository {
     const byItem = new Map<string, ItemHistoryEntry[]>();
     const unique = [...new Set(itemIds)];
     if (unique.length === 0 || perItemLimit < 1) return byItem;
-    const rows = await this.driver.query<ItemHistoryRow>(
-      `SELECT * FROM (
+    const rows = await this.driver.query<ItemHistoryWithActorRow>(
+      // The actor join sits *outside* the ranking subquery (issue #774): the window function
+      // partitions the ledger, and joining before it would put a second table in the way of
+      // that for no gain — only the kept rows need a name.
+      `SELECT ranked.*, u.display_name AS actor_display_name
+       FROM (
          SELECT item_history.*,
                 ROW_NUMBER() OVER (
                   PARTITION BY item_history.item_id
@@ -874,9 +887,10 @@ export class ItemCoreRepository extends BaseRepository {
                 ) AS entry_rank
          FROM item_history
          WHERE item_history.item_id IN (${unique.map(() => '?').join(', ')})
-       )
-       WHERE entry_rank <= ?
-       ORDER BY item_id, entry_rank;`,
+       ) AS ranked
+       LEFT JOIN users u ON u.id = ranked.actor_user_id
+       WHERE ranked.entry_rank <= ?
+       ORDER BY ranked.item_id, ranked.entry_rank;`,
       [...unique, perItemLimit] as SqlValue[],
     );
     for (const row of rows) {

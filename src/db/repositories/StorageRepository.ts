@@ -19,7 +19,7 @@ import { rowToHistoryEntry } from './mappers';
 import type {
   DowngradableImage,
   ItemHistoryEntry,
-  ItemHistoryRow,
+  ItemHistoryWithActorRow,
   Page,
   PageParams,
   StorageRowCounts,
@@ -77,9 +77,14 @@ export class StorageRepository extends BaseRepository {
   async listHistoryBefore(cutoff: number, params: PageParams = {}): Promise<Page<ItemHistoryEntry>> {
     this.assertPermission('storage:read');
     const { limit, offset } = this.resolvePage(params);
-    const rows = await this.driver.query<ItemHistoryRow>(
-      `SELECT * FROM item_history WHERE created_at < ?
-       ORDER BY created_at ASC, rowid ASC
+    const rows = await this.driver.query<ItemHistoryWithActorRow>(
+      // The actor join (issue #774) matters most here: these are the rows the archive is written
+      // from and the prune then deletes, so whatever this read drops is gone from the device.
+      `SELECT h.*, u.display_name AS actor_display_name
+       FROM item_history h
+       LEFT JOIN users u ON u.id = h.actor_user_id
+       WHERE h.created_at < ?
+       ORDER BY h.created_at ASC, h.rowid ASC
        LIMIT ? OFFSET ?;`,
       [cutoff, limit, offset],
     );

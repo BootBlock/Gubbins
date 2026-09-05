@@ -48,6 +48,8 @@ function event(overrides: Partial<LedgerEvent> & { id: string; type: string }): 
       delta: '−1',
       quantityDelta: -1,
       netValueDelta: null,
+      actorUserId: 'user-ada',
+      actorDisplayName: 'Ada',
       item: null,
     },
     ...overrides,
@@ -256,6 +258,8 @@ describe('buildWebhookRequest (W5)', () => {
       delta: '−1',
       quantityDelta: -1,
       netValueDelta: null,
+      actorUserId: 'user-ada',
+      actorDisplayName: 'Ada',
     },
   };
   const evt = event({ id: 'hist-1', type: 'item.low_stock' });

@@ -42,5 +42,7 @@ export const WEBHOOK_PREVIEW_EVENT: WebhookEventView = Object.freeze({
     delta: null,
     quantityDelta: null,
     netValueDelta: null,
+    actorUserId: 'user-preview',
+    actorDisplayName: 'Sam Okafor',
   }),
 }) as WebhookEventView;

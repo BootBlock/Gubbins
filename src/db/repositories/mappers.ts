@@ -33,7 +33,7 @@ import type {
   LocationFieldValue,
   LocationFieldValueRow,
   LocationHistoryEntry,
-  LocationHistoryRow,
+  LocationHistoryWithActorRow,
   Item,
   ItemAlias,
   ItemAliasRow,
@@ -42,7 +42,7 @@ import type {
   ActivityFeedEntry,
   ActivityFeedRow,
   ItemHistoryEntry,
-  ItemHistoryRow,
+  ItemHistoryWithActorRow,
   ItemImage,
   ItemImageRow,
   LocationPhoto,
@@ -478,7 +478,15 @@ export function rowToPurchaseOrderLine(row: PurchaseOrderLineRow): PurchaseOrder
   };
 }
 
-export function rowToHistoryEntry(row: ItemHistoryRow): ItemHistoryEntry {
+/**
+ * Map a raw `item_history` row to its DTO.
+ *
+ * Takes the **actor-joined** row shape rather than the bare table row (issue #774), so a read
+ * that forgets the `users` join fails to compile instead of quietly producing entries that
+ * cannot say who made the change. That silence was the bug: the attribution reached the archive
+ * that Storage Triage writes before deleting the originals, and the archive did not carry it.
+ */
+export function rowToHistoryEntry(row: ItemHistoryWithActorRow): ItemHistoryEntry {
   return {
     id: row.id,
     itemId: row.item_id,
@@ -487,12 +495,14 @@ export function rowToHistoryEntry(row: ItemHistoryRow): ItemHistoryEntry {
     netValueDelta: row.net_value_delta,
     note: row.note,
     metadata: parseJson(row.metadata),
+    actorUserId: row.actor_user_id,
+    actorDisplayName: row.actor_display_name,
     createdAt: row.created_at,
   };
 }
 
 /** Map a raw `location_history` row to its DTO (issue #691). */
-export function rowToLocationHistoryEntry(row: LocationHistoryRow): LocationHistoryEntry {
+export function rowToLocationHistoryEntry(row: LocationHistoryWithActorRow): LocationHistoryEntry {
   return {
     id: row.id,
     locationId: row.location_id,
@@ -501,6 +511,7 @@ export function rowToLocationHistoryEntry(row: LocationHistoryRow): LocationHist
     note: row.note,
     metadata: parseJson(row.metadata),
     actorUserId: row.actor_user_id,
+    actorDisplayName: row.actor_display_name,
     createdAt: row.created_at,
   };
 }

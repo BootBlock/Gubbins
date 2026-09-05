@@ -80,6 +80,8 @@ const entry = (overrides: Partial<ItemHistoryEntry> = {}): ItemHistoryEntry => (
   netValueDelta: null,
   note: 'Item created.',
   metadata: null,
+  actorUserId: 'user-ada',
+  actorDisplayName: 'Ada Okafor',
   createdAt: Date.parse('2026-07-25T09:30:00Z'),
   ...overrides,
 });

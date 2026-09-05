@@ -176,6 +176,8 @@ describe('export-data builders', () => {
         netValueDelta: null,
         note: 'Added',
         metadata: null,
+        actorUserId: 'user-ada',
+        actorDisplayName: 'Ada Okafor',
         createdAt: 0,
       },
     ];
@@ -203,6 +205,8 @@ describe('export-data builders', () => {
         netValueDelta: null,
         note: 'a\\|b',
         metadata: null,
+        actorUserId: 'user-ada',
+        actorDisplayName: 'Ada Okafor',
         createdAt: 0,
       },
     ];

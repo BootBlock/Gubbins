@@ -206,9 +206,11 @@ describe('item_history cross-item reads seek idx_item_history_created_at (issue 
 
   // Mirrors `getHistoryFeed`'s SQL, including the `rowid DESC` tie-break — the part a `DESC` index
   // would fail to serve, leaving a per-tie-group `TEMP B-TREE FOR LAST TERM OF ORDER BY`.
-  const FEED_SQL = `SELECT h.*, i.name AS item_name, i.is_active AS item_is_active
+  const FEED_SQL = `SELECT h.*, i.name AS item_name, i.is_active AS item_is_active,
+              u.display_name AS actor_display_name
        FROM item_history h
        JOIN items i ON i.id = h.item_id
+       LEFT JOIN users u ON u.id = h.actor_user_id
        {WHERE}
        ORDER BY h.created_at DESC, h.rowid DESC
        LIMIT ? OFFSET ?;`;

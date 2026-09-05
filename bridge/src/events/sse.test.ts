@@ -22,6 +22,8 @@ function event(id: string, type = 'stock.adjusted'): BridgeEvent {
       delta: null,
       quantityDelta: null,
       netValueDelta: null,
+      actorUserId: 'user-ada',
+      actorDisplayName: 'Ada',
       item: null,
     },
   };

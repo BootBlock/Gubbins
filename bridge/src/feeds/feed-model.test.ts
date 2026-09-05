@@ -17,6 +17,8 @@ function entry(overrides: Partial<ActivityFeedEntry> = {}): ActivityFeedEntry {
     netValueDelta: null,
     note: 'Checked out 3.',
     metadata: null,
+    actorUserId: 'user-ada',
+    actorDisplayName: 'Ada',
     createdAt: 1_751_000_000_000,
     ...overrides,
   };

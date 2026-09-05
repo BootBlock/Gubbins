@@ -2252,6 +2252,8 @@
   "alerts.snoozed": "Zurückgestellt: {title}",
   "alerts.dismissed": "Ausgeblendet: {title}",
   "activity.title": "Aktivität",
+  "activity.actor.by": "von {name}",
+  "activity.actor.unknown": "von einem Konto, das nicht mehr existiert",
   "activity.lane.label": "Aktivität anzeigen für",
   "activity.lane.items": "Objekte",
   "activity.lane.locations": "Orte",

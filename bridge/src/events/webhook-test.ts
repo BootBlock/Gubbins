@@ -33,7 +33,12 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { IDatabaseDriver } from '@/db/rpc/driver';
-import type { HistoryAction, LocationHistoryAction } from '@/db/repositories/constants.ts';
+import {
+  SYSTEM_USER_DISPLAY_NAME,
+  SYSTEM_USER_ID,
+  type HistoryAction,
+  type LocationHistoryAction,
+} from '@/db/repositories/constants.ts';
 import {
   ACTION_EVENT_TYPE,
   ITEM_CHANGED_TYPE,
@@ -161,6 +166,10 @@ export function buildWebhookTestEvent(
         action,
         label: locationHistoryActionLabel(action),
         detail: TEST_EVENT_DETAIL,
+        // Attributed to System (issue #774) — nobody made this change, because no change was
+        // made. The same account every other thing the app does for itself is recorded against.
+        actorUserId: SYSTEM_USER_ID,
+        actorDisplayName: SYSTEM_USER_DISPLAY_NAME,
       },
     };
   }
@@ -178,6 +187,8 @@ export function buildWebhookTestEvent(
       delta: null,
       quantityDelta: null,
       netValueDelta: null,
+      actorUserId: SYSTEM_USER_ID,
+      actorDisplayName: SYSTEM_USER_DISPLAY_NAME,
       item: null,
     },
   };

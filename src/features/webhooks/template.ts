@@ -98,6 +98,10 @@ export const WEBHOOK_TEMPLATE_PATHS: Readonly<
   'change.delta': (view) => view.change?.delta ?? null,
   'change.quantityDelta': (view) => view.change?.quantityDelta ?? null,
   'change.netValueDelta': (view) => view.change?.netValueDelta ?? null,
+  // Who made the change (issue #774). Both are offered because neither derives the other away
+  // from the database: the id is what routing should key on, the name is what a message reads.
+  'change.actorUserId': (view) => view.change?.actorUserId ?? null,
+  'change.actorDisplayName': (view) => view.change?.actorDisplayName ?? null,
 });
 
 /** Every allow-listed path, sorted — the list the `W7` template editor offers as suggestions. */
