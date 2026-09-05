@@ -19,9 +19,9 @@ vi.mock('./hooks', () => ({
       imagesMeasured: true,
     },
   }),
-  // The dialog now reads the query's *state*, not just its data, so the stubs carry the shape a
-  // settled TanStack query really has (issue #898) — a bare `{ data }` would leave both rows
-  // stuck on their pending branch and hide the buttons this file is about.
+  // A settled query's real shape, because the dialog gates each workflow on `isSuccess` rather
+  // than on `data` alone (issue #898): a bare `{ data: 5 }` stub would render both buttons
+  // *disabled*, which this file's presence-only assertions would not have caught.
   usePruneCandidateCount: () => ({ data: 5, isPending: false, isError: false, isSuccess: true }),
   useDowngradeCandidateCount: () => ({ data: 3, isPending: false, isError: false, isSuccess: true }),
   useArchiveAndPruneHistory: () => ({ isPending: false, mutate: vi.fn() }),

@@ -285,13 +285,20 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               <CandidateCount
                 query={pruneCount}
                 testIdPrefix="prune"
-                label={t('storage.triage.pruneCount', { vars: { count: pruneReady ?? 0 } })}
+                label={(count) => t('storage.triage.pruneCount', { vars: { count } })}
                 errorText={t('storage.triage.pruneCountFailed')}
               />
-              {confirming === 'prune' ? (
+              {/*
+               * The window Select stays live underneath an open confirmation, and changing it
+               * re-keys the count query — so the figure this question names can stop being known
+               * while the question is still on screen. Falling back to the button (disabled, with
+               * the row above saying why) is the only honest move: a confirmation is the last
+               * place a guessed zero may stand in for an unknown one.
+               */}
+              {confirming === 'prune' && pruneReady !== null ? (
                 <ConfirmRow
                   testIdPrefix="prune"
-                  message={`Permanently delete ${pruneReady ?? 0} ${plural(pruneReady ?? 0, 'entry', 'entries')} once the archive is saved?`}
+                  message={`Permanently delete ${pruneReady} ${plural(pruneReady, 'entry', 'entries')} once the archive is saved?`}
                   onConfirm={() => void onPrune()}
                   onCancel={() => setConfirming(null)}
                   pending={prune.isPending}
@@ -348,13 +355,14 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               <CandidateCount
                 query={downgradeCount}
                 testIdPrefix="downgrade"
-                label={t('storage.triage.downgradeCount', { vars: { count: downgradeReady ?? 0 } })}
+                label={(count) => t('storage.triage.downgradeCount', { vars: { count } })}
                 errorText={t('storage.triage.downgradeCountFailed')}
               />
-              {confirming === 'downgrade' ? (
+              {/* Same reasoning as the prune confirmation above. */}
+              {confirming === 'downgrade' && downgradeReady !== null ? (
                 <ConfirmRow
                   testIdPrefix="downgrade"
-                  message={`Drop full-resolution data for ${downgradeReady ?? 0} ${plural(downgradeReady ?? 0, 'image')}? Thumbnails are kept.`}
+                  message={`Drop full-resolution data for ${downgradeReady} ${plural(downgradeReady, 'image')}? Thumbnails are kept.`}
                   onConfirm={onDowngrade}
                   onCancel={() => setConfirming(null)}
                   pending={downgrade.isPending}
@@ -410,7 +418,11 @@ function CandidateCount({
 }: {
   readonly query: UseQueryResult<number>;
   readonly testIdPrefix: string;
-  readonly label: string;
+  /**
+   * Rendered only on the success branch, and handed the settled figure — so a caller cannot
+   * reach for a `?? 0` placeholder to satisfy a string it does not have yet.
+   */
+  readonly label: (count: number) => string;
   readonly errorText: string;
 }) {
   const t = useT();
@@ -420,7 +432,8 @@ function CandidateCount({
         className="flex items-center gap-2 text-sm text-muted-foreground"
         data-testid={`${testIdPrefix}-count-pending`}
       >
-        {/* The visible label already announces the wait; a second live region would double it. */}
+        {/* Decorative: the spinner's own `role="status"` would announce a bare "Loading" next to
+            text that already says so, and would fire again on every change of the window. */}
         <Spinner decorative />
         {t('storage.triage.countPending')}
       </span>
@@ -447,7 +460,7 @@ function CandidateCount({
   }
   return (
     <span className="text-sm text-muted-foreground" data-testid={`${testIdPrefix}-count`}>
-      {label}
+      {label(query.data)}
     </span>
   );
 }

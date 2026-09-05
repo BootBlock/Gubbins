@@ -9,7 +9,7 @@
  * same wiring the dialog actually ships with.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const rowCounts = vi.hoisted(() => vi.fn());
@@ -34,6 +34,7 @@ vi.mock('@/lib/useFormatters', () => ({
 }));
 
 import { ToastProvider } from '@/components/foundry';
+import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { StorageTriageDialog } from './StorageTriageDialog';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
@@ -54,10 +55,12 @@ beforeEach(() => {
   countHistoryBefore.mockReset();
   countDowngradableBefore.mockReset().mockResolvedValue(3);
   useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+  usePreferencesStore.setState({ pruneWindowMonths: 6, downgradeWindowMonths: 6 });
 });
 afterEach(() => {
   cleanup();
   useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+  usePreferencesStore.setState({ pruneWindowMonths: 6, downgradeWindowMonths: 6 });
 });
 
 describe('StorageTriageDialog — a candidate count that is not a fact yet', () => {
@@ -102,6 +105,40 @@ describe('StorageTriageDialog — a candidate count that is not a fact yet', () 
     await waitFor(() => expect(screen.queryByTestId('prune-count-error')).toBeNull());
     expect(screen.getByTestId('prune-count').textContent).toContain('7 entries affected');
     expect(screen.getByTestId('prune-history').hasAttribute('disabled')).toBe(false);
+  });
+
+  it('does not let an open confirmation claim a figure the changed window has invalidated', async () => {
+    countHistoryBefore.mockResolvedValue(5);
+    renderDialog();
+    await screen.findByTestId('prune-count');
+    fireEvent.click(screen.getByTestId('prune-history'));
+    expect(screen.getByTestId('prune-confirm')).not.toBeNull();
+
+    // Changing the window is what the Select's `onChange` does, and it re-keys the count query.
+    // The confirmation is still on screen, and the figure it names is now for the old window.
+    countHistoryBefore.mockReturnValue(new Promise(() => {}));
+    act(() => {
+      usePreferencesStore.setState({ pruneWindowMonths: 3 });
+    });
+
+    expect(document.body.textContent).not.toContain('Permanently delete 0 entries');
+    expect(screen.queryByTestId('prune-confirm')).toBeNull();
+    expect(screen.getByTestId('prune-history').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('puts the confirmation back once the new window has a figure of its own', async () => {
+    countHistoryBefore.mockResolvedValue(5);
+    renderDialog();
+    await screen.findByTestId('prune-count');
+    fireEvent.click(screen.getByTestId('prune-history'));
+
+    countHistoryBefore.mockResolvedValue(40);
+    act(() => {
+      usePreferencesStore.setState({ pruneWindowMonths: 3 });
+    });
+
+    await waitFor(() => expect(screen.queryByTestId('prune-confirm')).not.toBeNull());
+    expect(document.body.textContent).toContain('Permanently delete 40 entries');
   });
 
   it('still disables the workflow when the count genuinely is zero', async () => {
