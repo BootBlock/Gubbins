@@ -14,13 +14,15 @@ on — so you can see what's actually filling it up before deciding what to do.
 
 ## Reclaiming space
 
-Two safe cleanups, each keeping a copy of anything it removes:
+Two cleanups. They differ in one important way — one saves a copy of what it removes, the other
+does not:
 
 - **Prune old history** — trim the [[activity log|Activity-Log]] back. Gubbins saves a
   **cold-storage export** of the history it's about to remove *first*, and deletes nothing until
   that file is safely yours.
 - **Downgrade images** — drop the full-resolution copy of old images while keeping their
-  thumbnails, freeing significant space at the cost of detail you rarely need.
+  thumbnails, freeing significant space at the cost of detail you rarely need. **Nothing is saved
+  first**, so take a [[backup|Backup-and-Restore]] beforehand if you might want that detail again.
 
 Each cleanup tells you how much it would affect before you run it — *12 entries affected*,
 *40 images affected* — worked out from your data as it stands, and again whenever you change how
@@ -30,6 +32,12 @@ rather than showing a number it does not have.
 > **💡 Tip**
 > Downgrading images usually frees the most space fastest — thumbnails still show on cards and in
 > lists, so day-to-day the app looks the same.
+
+> **⚠️ Heads-up**
+> Downgrading is the cleanup with no copy behind it. The full-resolution photos are deleted from
+> this device for good, and [[cloud sync|Cloud-Sync]] has never carried them, so it can't hand them
+> back either — a [[backup|Backup-and-Restore]] is the only thing that holds them. Take one before
+> you downgrade if the detail might matter.
 
 ### The cold-storage export has to land first
 
@@ -112,7 +120,7 @@ still tell Gubbins there is plenty of room. So the percentage is not the last wo
 > **⚠️ Heads-up**
 > Cleanups remove data from *this* device to save space. Keep a [[backup|Backup-and-Restore]] if
 > you might want the full-resolution images or old history back later — the cold-storage export
-> covers pruned history, but a backup is the complete safety net.
+> covers pruned history, and a backup is the only thing that covers the images.
 
 ## Related pages
 

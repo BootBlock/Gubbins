@@ -165,7 +165,11 @@ export class StorageRepository extends BaseRepository {
   }
 
   /**
-   * Record that a photo's full-resolution file was dropped, keeping its thumbnail.
+   * Record that a photo's full-resolution file was deleted, keeping its thumbnail.
+   *
+   * Nothing archives the bytes first: this device's copy is gone, and cloud sync never carried
+   * full-resolution image data (`SyncSnapshot` has no member for it), so only a backup taken
+   * beforehand still holds them. The triage dialog says so before it offers the action (#824).
    *
    * `owner` is required rather than defaulted: the id and the table must agree, and a default
    * would let a forgotten argument update the wrong table, match no row, and report success —
@@ -176,7 +180,8 @@ export class StorageRepository extends BaseRepository {
    * never propagated to cloud sync (§7.6.3 B).
    *
    * Permission-gated as `storage:write` (issue #429). The only caller is the user-chosen
-   * "downgrade images" storage-triage action, and the re-encode it records is irreversible, so
+   * "downgrade images" storage-triage action, and the deletion it records is irreversible (the
+   * full-resolution file is removed outright, not re-encoded, and no copy is kept), so
    * it needs a key of its own; it asked for `settings:write` until this device's data
    * housekeeping got one. `storage` is that key — vacuuming, sweeping and downgrading are not
    * this device's *preferences*, which is what `settings` means. Its sibling triage action
