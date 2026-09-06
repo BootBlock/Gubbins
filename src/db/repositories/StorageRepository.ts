@@ -168,8 +168,10 @@ export class StorageRepository extends BaseRepository {
    * Record that a photo's full-resolution file was deleted, keeping its thumbnail.
    *
    * Nothing archives the bytes first: this device's copy is gone, and cloud sync never carried
-   * full-resolution image data (`SyncSnapshot` has no member for it), so only a backup taken
-   * beforehand still holds them. The triage dialog says so before it offers the action (#824).
+   * full-resolution image data (`SyncSnapshot` has no member for it), so only a copy taken off the
+   * device beforehand still holds them — a backup with its images included, or a full archive
+   * (`features/archive/auto-archive.ts`). The triage dialog says so before it offers the action
+   * (#824).
    *
    * `owner` is required rather than defaulted: the id and the table must agree, and a default
    * would let a forgotten argument update the wrong table, match no row, and report success —

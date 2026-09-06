@@ -103,9 +103,13 @@ describe('StorageTriageDialog — the downgrade keeps no copy, and says so (issu
 
   it('offers no recovery the app cannot actually make', () => {
     renderDialog();
-    // Deliberately broad: the exact sentence was "Your cloud backup is left untouched", but any
-    // wording that leaves cloud sync sounding like a way back is the same false promise.
-    expect(document.body.textContent).not.toMatch(/cloud (backup|sync)[^.]*(untouched|unaffected)/i);
+    // Scoped to this workflow's own section rather than the whole document: "cloud sync is
+    // unaffected" is a true and reasonable thing to say elsewhere in the app (the erase dialog
+    // already does), and it is only beside *this* delete, offered as the reassurance, that it
+    // becomes the false promise. Broad within that scope, though: any wording leaving cloud sync
+    // sounding like a way back is the same claim, whatever words carry it.
+    const section = screen.getByRole('region', { name: /downgrade old images/i });
+    expect(section.textContent).not.toMatch(/cloud (backup|sync)[^.]*(untouched|unaffected)/i);
   });
 
   it('says the deletion cannot be undone in the confirmation itself', () => {

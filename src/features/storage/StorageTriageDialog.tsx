@@ -354,7 +354,7 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               // than Banner's default `status`: a live region here would announce copy that never
               // changes, competing with the dialog's own opening announcement.
               role="note"
-              icon={<WarningIcon />}
+              icon={<WarningIcon aria-hidden />}
               heading={t('storage.triage.downgradeNoCopy.heading')}
               data-testid="downgrade-no-copy"
             >
