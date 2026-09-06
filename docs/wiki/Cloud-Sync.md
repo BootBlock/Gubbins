@@ -301,6 +301,37 @@ after a complete sync. Nothing is lost — syncing again publishes your changes.
 > Until that next sync succeeds, your other devices won't see the changes made on this one. If
 > you're about to move to another device, sync again first.
 
+## When Gubbins can't agree what the time is
+
+Every change your devices make carries the moment it was made, and that's how Gubbins decides which
+of two edits to the same thing is the newer one. So that a slow or fast device doesn't distort that,
+Gubbins asks the network what the time is each time it syncs and lines its own clock up with the
+answer.
+
+Occasionally the answer is wrong. Public and guest Wi-Fi sign-in pages, and some office or hotel
+networks, answer on the real site's behalf and can report a wildly different time. A device that
+believed one of those would stamp everything it publishes far into the future — and every change
+your *other* devices make would then look older than it, however recently you made it, for as long
+as those stamps stood.
+
+Gubbins doesn't take that answer on trust. It compares it against what it already knows about this
+device's clock and against what a real clock error could plausibly look like, and if the answer
+doesn't hold up it **stops the sync** and says so. Nothing is read, merged or published, so nothing
+on any of your devices changes.
+
+Two things cause it, and the message names both:
+
+- **This device's date and time are wrong.** Correct them — on most systems, turning on "set time
+  automatically" is enough — and sync again.
+- **The network is answering for the site.** If you're on public or guest Wi-Fi, finish signing in
+  to it, or move to a network you trust, and sync again.
+
+> **ℹ️ Note**
+> A clock that is genuinely wrong is not itself a problem for sync — Gubbins corrects for it, and
+> says so with the marker described in
+> [[Device clock is wrong|FAQ-and-Troubleshooting#troubleshooting]]. This message means something
+> different: the *answer about* the time couldn't be trusted, not that your clock is out.
+
 ## Sharing your settings too
 
 By default sync carries your **records** — items, locations, loans and the rest — and leaves each

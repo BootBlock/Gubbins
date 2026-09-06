@@ -254,6 +254,16 @@ again, the marker disappears on the next launch.
 > Gubbins can only make this check when it can reach the network. Offline, it keeps using the last
 > correction it worked out, so a device with a known-wrong clock still judges dates correctly.
 
+**Syncing stopped and said Gubbins couldn't agree with the network on the time. Why?**
+Gubbins asks the network for the time each time it syncs, so that the changes it publishes are
+stamped with the real moment they were made rather than with a wrong device clock. Sign-in pages on
+public and guest Wi-Fi sometimes answer that question themselves, with a time that is far out — and
+trusting it would make everything this device publishes look newer than your other devices' work.
+
+So Gubbins stops before it reads or publishes anything, and nothing changes anywhere. Check this
+device's date and time, finish signing in to the Wi-Fi if you haven't, then sync again. There's more
+in [[Cloud sync|Cloud-Sync#when-gubbins-cant-agree-what-the-time-is]].
+
 > **💡 Tip**
 > Whatever the issue, a recent [[backup|Backup-and-Restore]] is the best safety net — take one
 > before big changes and you can always get back to a known-good state.

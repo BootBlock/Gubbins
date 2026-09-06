@@ -30,6 +30,11 @@
  * minutes mean the device clock is genuinely misconfigured and its owner should know.
  *
  * Everything here is pure — no clock, no DOM, no store.
+ *
+ * Two of these are also the sync engine's guard. {@link isPlausibleSkew} and
+ * {@link shouldRemeasure} decide whether a server-time reading may become the frame a sync
+ * publishes in (`features/sync/clock.ts`, issue #872) — the same header, so the same judgement of
+ * what counts as nonsense and of when a stored reading has aged out. Changing either changes both.
  */
 
 /**

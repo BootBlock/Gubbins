@@ -42,6 +42,9 @@ function withFailingPush(inner: CloudProvider, failure: Error): CloudProvider {
   };
 }
 
+/** As in `sync-engine.test.ts`: an early watermark without an offset the #872 guard refuses. */
+const MINUTE_BEHIND = () => Date.now() - 60_000;
+
 describe('a merge whose push fails (#638)', () => {
   let a: Awaited<ReturnType<typeof makeDevice>>;
   let b: Awaited<ReturnType<typeof makeDevice>>;
@@ -57,7 +60,7 @@ describe('a merge whose push fails (#638)', () => {
     // The #72 collision setup: both devices edit the same contact offline, A syncs first.
     const contact = await a.contacts.create({ name: 'Original' });
     await runSync(a.driver, provider, NO_QUOTA);
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: MINUTE_BEHIND });
 
     await b.contacts.update(contact.id, { name: 'B edit' });
     await a.contacts.update(contact.id, { name: 'A edit' });
@@ -86,7 +89,7 @@ describe('a merge whose push fails (#638)', () => {
   it('shows why the conflicts cannot simply be re-detected on the next sync', async () => {
     const contact = await a.contacts.create({ name: 'Original' });
     await runSync(a.driver, provider, NO_QUOTA);
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: MINUTE_BEHIND });
 
     await b.contacts.update(contact.id, { name: 'B edit' });
     await a.contacts.update(contact.id, { name: 'A edit' });
@@ -106,7 +109,7 @@ describe('a merge whose push fails (#638)', () => {
 
   it('reports what the merge brought in, and leaves the sync watermark unmoved', async () => {
     await runSync(a.driver, provider, NO_QUOTA);
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: MINUTE_BEHIND });
     // Two peer rows for B to pull in.
     await a.contacts.create({ name: 'From A' });
     await a.contacts.create({ name: 'Also from A' });
@@ -129,7 +132,7 @@ describe('a merge whose push fails (#638)', () => {
 
   it('keeps the transport error reachable as the cause', async () => {
     await runSync(a.driver, provider, NO_QUOTA);
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: MINUTE_BEHIND });
     await a.contacts.create({ name: 'From A' });
     await runSync(a.driver, provider, NO_QUOTA);
 
@@ -145,7 +148,7 @@ describe('a merge whose push fails (#638)', () => {
     await a.contacts.create({ name: 'From A' });
     await runSync(a.driver, provider, NO_QUOTA);
     // B's last sync is far enough back that the tombstone TTL forces a wholesale clone.
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+    await runSync(b.driver, provider, { ...NO_QUOTA, now: MINUTE_BEHIND });
 
     const err = await runSync(b.driver, withFailingPush(provider, new Error('offline')), {
       ...NO_QUOTA,

@@ -26,7 +26,8 @@ import { estimateStorage } from '@/features/storage/storage-api';
 import { STORAGE_THRESHOLDS, isWriteSuspended } from '@/features/storage/tiers';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { labFlag } from '@/state/stores/useLabStore';
-import { measureClockOffset } from './clock';
+import { useClockSkewStore } from '@/state/stores/useClockSkewStore';
+import { measureClockOffset, resolveSyncOffset } from './clock';
 import { TOMBSTONE_TTL_MS } from './retention';
 import { mergeSnapshot } from './merge';
 import type { CloudProvider } from './provider';
@@ -164,6 +165,13 @@ export interface RunSyncOptions {
    * confirmed, never automatically.
    */
   readonly allowRemoteReset?: boolean;
+  /**
+   * Issue #872: the device's own persisted clock-skew measurement, which corroborates the
+   * server-time reading this pass takes before that reading is allowed to become the frame
+   * every pushed row is stamped in (see {@link resolveSyncOffset}). Defaults to the store the
+   * clock-skew feature writes; injected by tests.
+   */
+  readonly clockSkew?: () => { readonly skewMs: number; readonly measuredAt: number };
 }
 
 /**
@@ -223,12 +231,22 @@ export async function runSync(
   // (§7.3 "a lightweight reliable time server *or* the cloud provider's API header").
   // The clock is sampled either side of the round-trip so latency isn't mistaken for skew
   // (see measureClockOffset) — otherwise a slow link mis-resolves LWW by its own latency.
-  const { offset, serverNow, localNow } = await measureClockOffset(now, async () => {
+  //
+  // Issue #872: the reading is *validated* before it becomes the publishing frame, and the frame
+  // is derived from the validated offset rather than read out of the header a second time. One
+  // wrong `Date` header would otherwise stamp every row this device pushes far enough ahead to
+  // beat every peer's genuinely newer edit — silently, since winning a comparison records no
+  // conflict. `resolveSyncOffset` throws rather than falling back to an offset of 0; see its
+  // docstring for why zeroing is not the safe default it looks like. It throws here, before the
+  // first fetch, so a refused pass leaves nothing changed.
+  const measurement = await measureClockOffset(now, async () => {
     const primary = await provider.getServerTime();
     if (primary !== null) return primary;
     return options.serverTime ? await options.serverTime() : null;
   });
-  const effectiveNow = serverNow ?? localNow;
+  // Read on the main thread beside the lab flag below, and for the same reason.
+  const readClockSkew = options.clockSkew ?? (() => useClockSkewStore.getState());
+  const { offset, effectiveNow } = resolveSyncOffset(measurement, readClockSkew());
 
   const rawRemote = await provider.fetchSnapshot();
   const meta = await readSyncMeta(driver);

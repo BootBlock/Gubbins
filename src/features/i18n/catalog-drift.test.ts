@@ -10,6 +10,7 @@ import { SORT_MODES } from '@/features/inventory/sorting';
 import { PROJECT_STATUS_LABELS, PROJECT_STATUS_LABEL_KEYS } from '@/features/projects/components/projects-ui';
 import { BUILTIN_ROLES } from '@/features/users/builtin-roles';
 import { builtinRoleDescriptionKey, builtinRoleNameKey } from '@/features/users/builtin-role-labels';
+import { CLOCK_UNTRUSTED_MESSAGE, PUSH_FAILED_MESSAGE } from '@/features/sync/sync-errors';
 import { EN_CATALOG } from './messages';
 
 /**
@@ -103,6 +104,28 @@ describe('catalog ↔ registry drift', () => {
       const { labels, keys } = mode.directions;
       expect(EN_CATALOG[keys.asc], `sort ${mode.value} asc`).toBe(labels.asc);
       expect(EN_CATALOG[keys.desc], `sort ${mode.value} desc`).toBe(labels.desc);
+    }
+  });
+
+  /**
+   * Two sync errors carry an authored, user-facing sentence *and* a catalog key whose docstring
+   * calls that key "its translated equivalent" — `describeError` shows an `Error`'s own message
+   * wherever the screen has no translated branch for it, so the same failure can reach the user
+   * down either path. Nothing checked the two said the same thing, so rewording one left the
+   * failure reading differently depending on which path reported it.
+   *
+   * `REMOTE_MISSING_MESSAGE` is deliberately *not* here: its screen copy drops the "check the
+   * right folder" sentence because the banner beneath it (`sync.remoteMissing.body`) already
+   * gives that advice at length. It claims no such identity, so asserting one would be inventing
+   * a promise rather than holding an existing one up.
+   */
+  it('every sync error sentence equals its message key in the English catalog', () => {
+    const pairs = [
+      ['sync.pushFailed.error', PUSH_FAILED_MESSAGE],
+      ['sync.clockUntrusted.error', CLOCK_UNTRUSTED_MESSAGE],
+    ] as const;
+    for (const [key, message] of pairs) {
+      expect(EN_CATALOG[key], `sync error ${key}`).toBe(message);
     }
   });
 });

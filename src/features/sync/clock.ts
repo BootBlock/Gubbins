@@ -7,7 +7,13 @@
  * a `local_clock_offset`, which it adds to every *local* `updated_at` so both sides
  * are compared on the server's timeline. All pure and injectable (callers pass
  * `localNow`), so no real clock is needed in tests.
+ *
+ * A measured offset is not believed on sight (issue #872). {@link resolveSyncOffset} is the gate
+ * between "what the header said" and "the frame this device publishes in", and every caller goes
+ * through it rather than using {@link measureClockOffset}'s raw result directly.
  */
+import { isPlausibleSkew, shouldRemeasure } from '@/features/clock-skew/skew';
+import { CLOCK_UNTRUSTED_MESSAGE, SyncClockUntrustedError } from './sync-errors';
 
 /**
  * Compute the offset to add to local timestamps so they align with server time:
@@ -60,4 +66,106 @@ export async function measureClockOffset(
     serverNow,
     localNow: after,
   };
+}
+
+/**
+ * The device's last persisted clock-skew measurement — the same quantity {@link measureClockOffset}
+ * produces, measured independently by `features/clock-skew` at boot and refreshed when it ages out.
+ */
+export interface PersistedClockSkew {
+  /** Milliseconds to add to the raw local clock to reach true time; 0 when unmeasured. */
+  readonly skewMs: number;
+  /** Raw-clock epoch-ms of that measurement; 0 when never measured. */
+  readonly measuredAt: number;
+}
+
+/** The publishing frame a pass may use, once the reading behind it has been believed. */
+export interface ResolvedSyncOffset {
+  /** Offset to add to local timestamps to reach server time. */
+  readonly offset: number;
+  /**
+   * "Now" in the server frame, derived from {@link ResolvedSyncOffset.offset} rather than read
+   * separately.
+   */
+  readonly effectiveNow: number;
+}
+
+/**
+ * How far a fresh reading may sit from the persisted measurement of the same clock before the two
+ * are treated as contradicting each other rather than agreeing.
+ *
+ * The persisted value is quantised to whole seconds over a two-second deadband, the midpoint
+ * estimator leaves residual asymmetric-latency error on that same scale, and a device clock drifts
+ * by well under a second across the hour {@link shouldRemeasure} lets a stored reading stand for.
+ * A minute is an order of magnitude past all of that, so agreement here is not a coincidence — and
+ * it stays below `SKEW_NOTICE_MS` (`features/clock-skew/skew`), so a disagreement large enough
+ * that the app would *tell* the user their clock is wrong is never quietly accepted as one.
+ */
+export const OFFSET_CORROBORATION_TOLERANCE_MS = 60_000;
+
+/**
+ * Decide whether a measured offset may become the frame this device publishes in (issue #872).
+ *
+ * Every row a pass pushes is stamped `local + offset`, so this one number decides which device
+ * wins every Last-Write-Wins comparison in the vault — and its only source is an HTTP `Date`
+ * header, which nothing authenticates. A broken proxy or a captive portal that answers with a time
+ * far in the future makes this device's rows beat every peer's genuinely newer edit, silently and
+ * for as long as the inflated stamps stand: they win the comparison, so no conflict is recorded.
+ *
+ * Two checks stand between the reading and the frame:
+ *
+ *  1. **A bound.** {@link isPlausibleSkew} — the same test the clock-skew feature already applies
+ *     to the same header, so the two cannot disagree about what counts as nonsense.
+ *  2. **Corroboration.** The device measures this very quantity elsewhere, at a different time,
+ *     and persists it. When that measurement is fresh enough to still be believed, a reading that
+ *     contradicts it by more than {@link OFFSET_CORROBORATION_TOLERANCE_MS} is one of two readings
+ *     that cannot both be right, and nothing here can say which.
+ *
+ * A failed check **stops the pass** rather than falling back to an offset of `0`. Zeroing is not
+ * the safe default it looks like: a device whose clock is genuinely a year slow depends on the
+ * offset to publish in the true frame, so zeroing would have it publish every row a year in the
+ * past and lose every comparison it should win. Refusing to publish at all is the only answer that
+ * is wrong in neither direction, and it is loud — the sync screen reports it — where the damage it
+ * replaces was silent.
+ *
+ * `serverNow === null` is not a failed check but the absence of one, and keeps the pre-existing
+ * "trust the local clock" behaviour: every shipped provider answers `null` from `getServerTime()`,
+ * and `httpTimeSource` degrades every failure to it. A non-finite reading is read the same way —
+ * it is not a measurement, so there is nothing to validate and nothing to apply.
+ *
+ * @throws {SyncClockUntrustedError} when the reading may not become the publishing frame.
+ */
+export function resolveSyncOffset(
+  measurement: OffsetMeasurement,
+  persisted: PersistedClockSkew | null,
+): ResolvedSyncOffset {
+  const { serverNow, localNow, offset } = measurement;
+
+  // No reading was taken (or the provider answered with something that is not a time).
+  if (serverNow === null || !Number.isFinite(serverNow)) {
+    return { offset: 0, effectiveNow: localNow };
+  }
+
+  if (!isPlausibleSkew(offset)) {
+    throw new SyncClockUntrustedError(CLOCK_UNTRUSTED_MESSAGE);
+  }
+
+  // Only a measurement fresh enough that the clock-skew feature would not yet re-take it can
+  // corroborate. A stale one is exactly what a user who has just corrected their system clock
+  // leaves behind, and holding a fresh reading to it would refuse every pass until it aged out.
+  const corroborator =
+    persisted !== null && persisted.measuredAt > 0 && !shouldRemeasure(persisted.measuredAt, localNow)
+      ? persisted.skewMs
+      : null;
+
+  if (corroborator !== null && Math.abs(offset - corroborator) > OFFSET_CORROBORATION_TOLERANCE_MS) {
+    throw new SyncClockUntrustedError(CLOCK_UNTRUSTED_MESSAGE);
+  }
+
+  // Derived from the offset, never read separately: `localNow` is sampled *after* the round-trip,
+  // so this is the server's clock carried forward to the moment the pass actually starts rather
+  // than the half-round-trip-stale stamp the header carried. It also cannot be non-finite once the
+  // offset above has been checked, which the older `serverNow ?? localNow` could not promise —
+  // `??` does not catch `NaN`.
+  return { offset, effectiveNow: localNow + offset };
 }
