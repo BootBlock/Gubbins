@@ -46,6 +46,24 @@ export class SyncRemoteMissingError extends Error {
 }
 
 /**
+ * The server-time reading a pass would publish in could not be trusted (issue #872).
+ *
+ * Every row a push sends is stamped in the frame that one reading defines, so a wrong one does not
+ * merely mis-date this device's work — it makes it beat every other device's genuinely newer edits,
+ * with no conflict record, for as long as the inflated stamps stand. The reading has no
+ * authentication of any kind behind it, so the pass stops before the first fetch rather than
+ * publish in a frame nothing corroborates.
+ *
+ * Nothing has changed anywhere when this is raised: it is thrown before the remote is read.
+ */
+export class SyncClockUntrustedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SyncClockUntrustedError';
+  }
+}
+
+/**
  * The merge landed locally but the merged snapshot could not be uploaded (issue #638).
  *
  * A sync is two round-trips with a database commit between them, so a push that fails leaves
@@ -91,7 +109,22 @@ export const REMOTE_MISSING_MESSAGE =
   'rather than replace it with only this device’s data — records that live on your other devices ' +
   'would be lost. Check the right folder or account is connected, then try again.';
 
-/** Copy for {@link SyncPushFailedError}; the UI prefers its translated equivalent. */
+/**
+ * Copy for {@link SyncPushFailedError}; the UI prefers its translated equivalent, and the two
+ * are held byte-identical by `features/i18n/catalog-drift.test.ts` so the same failure cannot
+ * read two different ways depending on which path reported it.
+ */
 export const PUSH_FAILED_MESSAGE =
   'Your devices’ changes were merged and saved on this device, but publishing them to the sync ' +
   'location failed. They are safe here and will publish the next time you sync.';
+
+/**
+ * Copy for {@link SyncClockUntrustedError}; the UI prefers its translated equivalent, and the
+ * two are held byte-identical by `features/i18n/catalog-drift.test.ts` so the same failure
+ * cannot read two different ways depending on which path reported it.
+ */
+export const CLOCK_UNTRUSTED_MESSAGE =
+  'Gubbins could not agree with the network on what the time is, so syncing stopped rather than ' +
+  'stamp your changes with a time your other devices would trust over their own newer work. ' +
+  'If you are on public or guest Wi-Fi, finish signing in to it and try again. If you have just ' +
+  'corrected this device’s clock, Gubbins can take up to an hour to accept the new time.';

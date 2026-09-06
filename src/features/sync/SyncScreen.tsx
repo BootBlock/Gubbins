@@ -60,7 +60,7 @@ import { GoogleApiError } from './providers/google-drive-api';
 import { consumeGoogleAuthError } from './providers/google-oauth';
 import { getActiveProvider, getSyncDriver, setActiveProvider } from './runtime';
 import { runSync, type SyncResult } from './sync-engine';
-import { SyncPushFailedError, SyncRemoteMissingError } from './sync-errors';
+import { SyncClockUntrustedError, SyncPushFailedError, SyncRemoteMissingError } from './sync-errors';
 import { describeSyncOutcome } from './sync-status-format';
 import { httpTimeSource } from './time-source';
 import { useSyncConflictsStore } from './conflict-store';
@@ -390,6 +390,12 @@ export function SyncScreen() {
         // used in preference to the error's own sentence so the whole banner is translated.
         setError(t('sync.remoteMissing.error'));
         setRemoteMissing(true);
+      } else if (cause instanceof SyncClockUntrustedError) {
+        // Issue #872: the pass stopped before it read anything, because the server-time reading it
+        // would have stamped every pushed row with could not be corroborated. A clock that is merely
+        // wrong does not cause this — that one is corroborated and accepted — so the copy names the
+        // two that do: a network answering with its own time, and a clock corrected a moment ago.
+        setError(t('sync.clockUntrusted.error'));
       } else if (pushFailure) {
         // Say which half failed. "Sync failed" reads as "nothing happened", and the user's
         // screens have in fact just changed underneath them.

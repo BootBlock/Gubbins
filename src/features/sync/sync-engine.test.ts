@@ -98,8 +98,7 @@ describe('runSync round-trip (§7.3)', () => {
     // A creates a contact and publishes; B pulls it (both now share a sync baseline).
     const contact = await a.contacts.create({ name: 'Original' });
     await runSync(a.driver, provider, NO_QUOTA);
-    // B's first sync is stamped at t=1 so B's later edit is unambiguously "after last sync".
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+    await runSync(b.driver, provider, NO_QUOTA);
 
     // Both devices edit the SAME contact before syncing again (the offline-clash case).
     await b.contacts.update(contact.id, { name: 'B edit' });
@@ -125,7 +124,7 @@ describe('runSync round-trip (§7.3)', () => {
   it('reports no conflict when a device merely catches up on a peer edit (#72)', async () => {
     const contact = await a.contacts.create({ name: 'Original' });
     await runSync(a.driver, provider, NO_QUOTA);
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: () => 1 });
+    await runSync(b.driver, provider, NO_QUOTA);
 
     // Only A edits; B made no competing change, so B pulling A's edit is not a conflict.
     await a.contacts.update(contact.id, { name: 'A edit' });
@@ -762,7 +761,7 @@ describe('server-time normalisation keeps LWW correct across skewed clocks (§7.
   it('pushes timestamps in server time, not the device’s own clock', async () => {
     // A device with a slow clock must not stamp the wire with its slow local time — otherwise a
     // peer picks the wrong LWW winner by the whole clock skew.
-    const LOCAL = 1_000_000_000_000; // 4000s behind the server
+    const LOCAL = SERVER - 4_000_000; // 4000s behind the server
     const provider = new MemoryCloudProvider({ clock: () => SERVER });
     const item = await a.items.create({ name: 'ESP32', locationId: UNASSIGNED_LOCATION_ID });
     const local = await itemUpdatedAt(a.driver, item.id);
