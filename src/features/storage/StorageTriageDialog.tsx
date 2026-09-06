@@ -13,7 +13,7 @@
  */
 import { useMemo, useState } from 'react';
 import type { UseQueryResult } from '@tanstack/react-query';
-import { Button, Modal, Select, Spinner, Tooltip, useToast } from '@/components/foundry';
+import { Banner, Button, Modal, Select, Spinner, Tooltip, useToast } from '@/components/foundry';
 import { useConfirmSaved } from '@/components/useConfirmSaved';
 import { prepareSave } from '@/lib/save-file';
 import {
@@ -24,6 +24,7 @@ import {
   PackageIcon,
   StorageIcon,
   SuccessIcon,
+  WarningIcon,
 } from '@/components/icons';
 import { plural } from '@/lib/plural';
 import { useT } from '@/features/i18n';
@@ -339,10 +340,28 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
                 Downgrade old images
               </h3>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Drops full-resolution photos to reclaim space, keeping the thumbnails. Your cloud backup is left
-              untouched.
-            </p>
+            <p className="text-sm text-muted-foreground">{t('storage.triage.downgradeBody')}</p>
+            {/*
+             * The sibling workflow above archives before it deletes; this one does not, and said
+             * so nowhere (issue #824). It used to offer the cloud backup as the safety net, which
+             * the sync artefact has never been — `SyncSnapshot` carries no image bytes at all.
+             * Only a copy the user saved beforehand does, and of the routes that write those
+             * bytes out (see `StorageRepository.markImageDowngraded`) the backup is the one that
+             * both covers every photo and can be asked for on demand — so that is what they are
+             * pointed at, before the confirm rather than after it.
+             */}
+            <Banner
+              tone="warning"
+              // Static advice, present from the moment the section renders, so it is a note rather
+              // than Banner's default `status`: a live region here would announce copy that never
+              // changes, competing with the dialog's own opening announcement.
+              role="note"
+              icon={<WarningIcon aria-hidden />}
+              heading={t('storage.triage.downgradeNoCopy.heading')}
+              data-testid="downgrade-no-copy"
+            >
+              {t('storage.triage.downgradeNoCopy.body')}
+            </Banner>
             <div className="flex flex-wrap items-center gap-3">
               <label className="text-sm">
                 Older than{' '}
@@ -365,16 +384,13 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
               {confirming === 'downgrade' && canDowngrade ? (
                 <ConfirmRow
                   testIdPrefix="downgrade"
-                  message={`Drop full-resolution data for ${downgradeReady} ${plural(downgradeReady, 'image')}? Thumbnails are kept.`}
+                  message={t('storage.triage.downgradeConfirm', { vars: { count: downgradeReady } })}
                   onConfirm={onDowngrade}
                   onCancel={() => setConfirming(null)}
                   pending={downgrade.isPending}
                 />
               ) : (
-                <Tooltip
-                  content="Drops the full-resolution photo data locally, keeping the thumbnails. Your cloud backup is left untouched."
-                  triggerTabIndex={-1}
-                >
+                <Tooltip content={t('storage.triage.downgradeTooltip')} triggerTabIndex={-1}>
                   <span>
                     <Button
                       data-testid="downgrade-images"

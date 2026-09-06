@@ -2071,6 +2071,31 @@ function gaugeLedgerReconstructs(row: SqlRow, deltas: readonly GaugeHistoryDelta
  *     propagate it. Such a side falls back to LWW, which is never worse than the value the row
  *     already carries. Each side is checked against its **own** stored row, since the whole
  *     question is whether *that* device's ledger explains *that* device's value.
+ *
+ * It stops there deliberately. `reconcileStock`'s **third** guard — skip when the remote brings no
+ * delta this device lacks — does *not* transfer, and adding it loses data (issue #869). The two
+ * passes carry their value on different rows. A placement's quantity lives on `stock_batches`,
+ * whose `updated_at` moves only when stock does — the local write paths to that table set
+ * `quantity`, and the one that rewrites a batch's other columns (the serialised-placement repair
+ * in `stock.ts`) rewrites them to the identity they already describe. So a peer that wins
+ * Last-Write-Wins there has by definition recorded a delta, and the guard falls through. A path
+ * that let a user edit a batch's metadata in place would end that, and guard (3) with it. A gauge's reading lives on the `items`
+ * row, whose stamp moves for a rename, a note, a price or a location change. So a peer holding a
+ * *stale* reading and a *subset* of this device's ledger can still win that upsert — and the
+ * upsert writes every column, `current_net_value` among them. The correction `applyPlan` runs
+ * afterwards is the only thing that puts this device's own consumption back; withholding it
+ * discards that consumption silently, which is the failure §7.3 exists to prevent.
+ *
+ * The `items` row carries a headline `quantity` too, and that peer edit overwrites it just the
+ * same — but a count has a ledger of its own to be rebuilt from, and issue #189's re-derive at the
+ * end of `applyPlan` rebuilds it from the `item_stock` rows the edit could not reach. A gauge's
+ * reading has no such second home; this correction is the only one it has.
+ * `gauge-churn.integration.test.ts` drives both shapes past the same peer edit and holds the
+ * difference apart.
+ *
+ * The redundant correction that therefore remains on a settled gauge is harmless. `applyPlan`
+ * guards the write so a value the row already holds matches no row at all, and an auto-stamp
+ * trigger that matches nothing cannot fire (issue #869).
  */
 function reconcileGauges(
   local: SyncSnapshot,
@@ -2109,8 +2134,10 @@ function reconcileGauges(
  * and a cycle count's assertion restarts the total rather than adding to it (issue #633; see
  * {@link replayStockQuantity}).
  *
- * Deliberately conservative, mirroring {@link reconcileGauges}, with three guards that each make it
- * *safe* to override the Last-Write-Wins quantity:
+ * Deliberately conservative, mirroring {@link reconcileGauges}'s first two guards, with a third
+ * that is this pass's alone — see the note on {@link reconcileGauges} for why a gauge cannot take
+ * it, and `gauge-churn.integration.test.ts` for the behaviour that keeps the two apart. Each guard
+ * makes it *safe* to override the Last-Write-Wins quantity:
  *
  *  1. **Contested** — a placement with deltas on only one side is left at its LWW value (the merge
  *     upsert already carried the newer side's quantity); only a placement both devices moved can

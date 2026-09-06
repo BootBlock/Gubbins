@@ -1491,7 +1491,7 @@ export default function SettingsDialog({
               label="Default downgrade window"
               description="The image age the Storage Triage tools default to."
               hint={
-                'The default **age of images** the Storage Triage tools offer to *downgrade* — recompress photos older than this to a smaller size, freeing space while keeping a usable picture.\n\n' +
+                'The default **age of images** the Storage Triage tools offer to *downgrade* — delete the full-resolution copy of photos older than this, freeing space and leaving the thumbnail. Nothing is archived first, so take a backup beforehand if you might want that detail again.\n\n' +
                 'As with the purge window, this is just the default the tool opens with; you confirm before anything changes.'
               }
             >

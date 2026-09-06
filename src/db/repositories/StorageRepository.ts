@@ -165,7 +165,17 @@ export class StorageRepository extends BaseRepository {
   }
 
   /**
-   * Record that a photo's full-resolution file was dropped, keeping its thumbnail.
+   * Record that a photo's full-resolution file was deleted, keeping its thumbnail.
+   *
+   * Nothing archives the bytes first: this device's copy is gone, and cloud sync never carried
+   * full-resolution image data (`SyncSnapshot` has no member for it), so only a copy the user
+   * saved beforehand still holds them. Three paths write those bytes out, and they do not cover
+   * the same set: the backup (`features/backup/build-backup.ts`) and the full archive
+   * (`features/archive/auto-archive.ts`) both zip the whole OPFS `images/` directory through
+   * `readAllImages`, so either holds every photo this deletes; the vault export
+   * (`features/export/run-export.ts`) copies item-image bytes only, and never a `location_photos`
+   * one. The backup is therefore the one the triage dialog names — complete, and askable for on
+   * demand, which the archive's mobile/no-sync/due branch is not (#824).
    *
    * `owner` is required rather than defaulted: the id and the table must agree, and a default
    * would let a forgotten argument update the wrong table, match no row, and report success —
@@ -176,7 +186,8 @@ export class StorageRepository extends BaseRepository {
    * never propagated to cloud sync (§7.6.3 B).
    *
    * Permission-gated as `storage:write` (issue #429). The only caller is the user-chosen
-   * "downgrade images" storage-triage action, and the re-encode it records is irreversible, so
+   * "downgrade images" storage-triage action, and the deletion it records is irreversible (the
+   * full-resolution file is removed outright, not re-encoded, and no copy is kept), so
    * it needs a key of its own; it asked for `settings:write` until this device's data
    * housekeeping got one. `storage` is that key — vacuuming, sweeping and downgrading are not
    * this device's *preferences*, which is what `settings` means. Its sibling triage action
