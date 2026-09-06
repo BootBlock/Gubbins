@@ -232,15 +232,27 @@ function advanceHistoryWatermark(now: number): SqlStatement {
  * only the provenance counted a location holding borrowed units as empty, and deleting it cascaded
  * the open loan away, leaving the item's on-hand count permanently short with no history entry to
  * explain it (issue #874). Units lent to a location are still stock the location is holding, so a
- * location that borrows is not empty — return the loan and it becomes erasable, exactly as
- * emptying a shelf of its items does.
+ * location that borrows is not empty.
  *
- * The references left out are the ones that cascade *because* they belong to the location and die
+ * Neither `checkouts` clause asks whether the loan is still open, and that is deliberate: a
+ * returned loan keeps its borrower and provenance columns (`planCheckIn` stamps `returned_at` and
+ * the returned quantity, and nothing ever clears the pointers), so the row is a durable record of
+ * a loan this place was party to. Cascading one away would destroy a ledger row with no deletion
+ * marker, on `locations:delete` alone — the same side door as the open-loan case with a smaller
+ * blast radius. The cost is that a location which has ever taken or supplied a loan stays out of
+ * this target for good; the Locations screen deletes it properly, returning any open loan and
+ * saying what else goes, which is why the tooltip sends the user there rather than promising that
+ * returning the loan is enough.
+ *
+ * Of the four references left out, three cascade *because* they belong to the location and die
  * with it: its own photos, tags and field values. A checkout does not belong to it — it is a
  * record about somebody else's stock that merely names this place, which is why it has to be kept
- * out of the predicate's way rather than allowed to cascade. `erase-locations-references.test.ts`
- * is the drift test for both halves of that claim: it drives a real erase against every reference
- * the schema declares, and fails on a new one nobody has classified.
+ * out of the predicate's way rather than allowed to cascade. The fourth, the `parent_id`
+ * self-reference, is the tree's own shape rather than anything the location holds, and what this
+ * target should do with a parent whose children survive is issue #873 — not this predicate's
+ * question. `erase-locations-references.test.ts` is the drift test: it requires every reference
+ * the schema declares to be classified, drives a real erase for each one it classifies as blocking
+ * or cascading, and fails on a new reference nobody has classified.
  */
 const LOCATION_EMPTY_PREDICATE = `l.is_system = 0
   AND NOT EXISTS (SELECT 1 FROM items WHERE location_id = l.id)
@@ -558,7 +570,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     section: 'organisation',
     label: 'Empty custom locations',
     tooltip:
-      'Deletes your empty custom locations only. The built-in system locations are kept, and so is any location still holding items or stock, or holding units lent to it — empty or return those first if you want the location gone.',
+      'Deletes your empty custom locations only. The built-in system locations are kept, and so is any location still holding items or stock, or with a loan recorded against it — delete one of those from the Locations screen instead, which returns any open loan first.',
     scope: 'db',
     countSql: `SELECT COUNT(*) AS n FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE}`,
     buildStatements: ({ tombstone }) => {
