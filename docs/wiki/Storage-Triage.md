@@ -36,8 +36,9 @@ rather than showing a number it does not have.
 > **⚠️ Heads-up**
 > Downgrading is the cleanup with no copy behind it. The full-resolution photos are deleted from
 > this device for good, and [[cloud sync|Cloud-Sync]] has never carried them, so it can't hand them
-> back either. Only a copy you took beforehand can — a [[backup|Backup-and-Restore]] with its image
-> files included, or a full archive. Take one before you downgrade if the detail might matter.
+> back either. Only a copy already taken off the device still holds them — a
+> [[backup|Backup-and-Restore]] with its image files included, an [[exported vault|Export-and-Import]],
+> or a full archive. Take a backup before you downgrade if the detail might matter.
 
 ### The cold-storage export has to land first
 
@@ -120,7 +121,7 @@ still tell Gubbins there is plenty of room. So the percentage is not the last wo
 > **⚠️ Heads-up**
 > Cleanups remove data from *this* device to save space. Keep a [[backup|Backup-and-Restore]] if
 > you might want the full-resolution images or old history back later — the cold-storage export
-> covers pruned history, and only a backup covers the images.
+> covers pruned history, and a backup is what covers the images.
 
 ## Related pages
 
