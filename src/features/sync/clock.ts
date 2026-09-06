@@ -97,9 +97,12 @@ export interface ResolvedSyncOffset {
  * The persisted value is quantised to whole seconds over a two-second deadband, the midpoint
  * estimator leaves residual asymmetric-latency error on that same scale, and a device clock drifts
  * by well under a second across the hour {@link shouldRemeasure} lets a stored reading stand for.
- * A minute is an order of magnitude past all of that, so agreement here is not a coincidence — and
- * it stays below `SKEW_NOTICE_MS` (`features/clock-skew/skew`), so a disagreement large enough
- * that the app would *tell* the user their clock is wrong is never quietly accepted as one.
+ * A minute is an order of magnitude past all of that, so agreement here is not a coincidence. It
+ * must also stay below `SKEW_NOTICE_MS` (`features/clock-skew/skew`), so a disagreement large
+ * enough that the app would *tell* the user their clock is wrong is never quietly accepted as one.
+ * That ordering is two separate literals, so `clock-offset-guard.test.ts` drives the guard with a
+ * disagreement of exactly `SKEW_NOTICE_MS` and requires a refusal — raising this past the notice
+ * threshold turns that test red rather than silently widening what the guard will swallow.
  */
 export const OFFSET_CORROBORATION_TOLERANCE_MS = 60_000;
 
@@ -133,6 +136,22 @@ export const OFFSET_CORROBORATION_TOLERANCE_MS = 60_000;
  * and `httpTimeSource` degrades every failure to it. A non-finite reading is read the same way —
  * it is not a measurement, so there is nothing to validate and nothing to apply.
  *
+ * Two limits are worth stating rather than leaving a reader to assume otherwise. The corroborator
+ * is a second reading *at a different time*, not from a different source — both come from the same
+ * origin's `Date` header — so an intermediary that lies consistently across both is not caught by
+ * anything here, and a device with no stored measurement at all has only the bound. And a
+ * contradiction says the two readings cannot both be right, never which one is: whichever caused
+ * it, the pass stops.
+ *
+ * The corroborator is also only as fresh as the clock-skew feature's own measurement, which is
+ * taken at boot and not renewed during a session — so a session running longer than
+ * `SKEW_REMEASURE_INTERVAL_MS` is left with the bound alone. Feeding accepted readings back in to
+ * keep it fresh is the obvious repair, and is deliberately not done: the test is
+ * `|reading − corroborator|`, so a corroborator that moves with each reading it has just approved
+ * bounds the *step* rather than the total, and a source drifting a little under the tolerance on
+ * every pass could then walk this device arbitrarily far ahead, one approved step at a time —
+ * the very harm this guard exists to stop, reached slowly instead of at once.
+ *
  * @throws {SyncClockUntrustedError} when the reading may not become the publishing frame.
  */
 export function resolveSyncOffset(
@@ -151,8 +170,10 @@ export function resolveSyncOffset(
   }
 
   // Only a measurement fresh enough that the clock-skew feature would not yet re-take it can
-  // corroborate. A stale one is exactly what a user who has just corrected their system clock
-  // leaves behind, and holding a fresh reading to it would refuse every pass until it aged out.
+  // corroborate. `shouldRemeasure` also reports stale for a stamp in the future, which is what a
+  // clock corrected *backwards* leaves behind — a correction forwards does not, so that case is a
+  // genuine contradiction and is refused until the stored reading ages out. The message the
+  // refusal carries says so.
   const corroborator =
     persisted !== null && persisted.measuredAt > 0 && !shouldRemeasure(persisted.measuredAt, localNow)
       ? persisted.skewMs

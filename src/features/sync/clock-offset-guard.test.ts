@@ -11,8 +11,8 @@
  * real pass, where the point is that a refused reading changes nothing at all.
  */
 import { describe, expect, it } from 'vitest';
-import { SKEW_REMEASURE_INTERVAL_MS, SKEW_SANITY_LIMIT_MS } from '@/features/clock-skew/skew';
-import { OFFSET_CORROBORATION_TOLERANCE_MS, resolveSyncOffset } from './clock';
+import { SKEW_NOTICE_MS, SKEW_REMEASURE_INTERVAL_MS, SKEW_SANITY_LIMIT_MS } from '@/features/clock-skew/skew';
+import { OFFSET_CORROBORATION_TOLERANCE_MS, computeClockOffset, resolveSyncOffset } from './clock';
 import { SyncClockUntrustedError } from './sync-errors';
 
 const LOCAL_NOW = 1_788_172_254_093;
@@ -23,11 +23,10 @@ function reading(serverNow: number | null): {
   serverNow: number | null;
   localNow: number;
 } {
-  return {
-    offset: serverNow === null || !Number.isFinite(serverNow) ? 0 : serverNow - LOCAL_NOW,
-    serverNow,
-    localNow: LOCAL_NOW,
-  };
+  // Through the real arithmetic, not a restatement of it: `computeClockOffset` answers 0 for a
+  // non-finite reading, and a fixture that decided that for itself could drift from what the
+  // engine actually hands the guard.
+  return { offset: computeClockOffset(serverNow, LOCAL_NOW), serverNow, localNow: LOCAL_NOW };
 }
 
 /** A persisted skew measured recently enough that the clock-skew feature still believes it. */
@@ -87,9 +86,20 @@ describe('resolveSyncOffset', () => {
     expect(() => resolveSyncOffset(reading(LOCAL_NOW + at + 1), fresh(0))).toThrow(SyncClockUntrustedError);
   });
 
+  it('refuses a disagreement the app would itself call the user’s clock being wrong', () => {
+    // `SKEW_NOTICE_MS` is the point at which the app puts a marker on screen saying this device's
+    // clock is out. The guard's tolerance is a separate literal, so drive the boundary rather than
+    // compare the two numbers: a disagreement that large must never be quietly accepted as
+    // agreement, and raising the tolerance past the notice threshold turns this red.
+    expect(() => resolveSyncOffset(reading(LOCAL_NOW + SKEW_NOTICE_MS), fresh(0))).toThrow(
+      SyncClockUntrustedError,
+    );
+  });
+
   it('ignores a persisted measurement too stale to still be believed', () => {
-    // A user who has just corrected their system clock leaves exactly this behind. Holding the
-    // fresh reading to it would refuse every pass until the stored one aged out.
+    // A clock corrected *backwards* leaves this behind — `shouldRemeasure` reports a stamp in the
+    // future as stale — and holding a fresh reading to it would refuse every pass until it aged
+    // out. A correction forwards does not, and is refused; the message says so.
     const stale = { skewMs: 0, measuredAt: LOCAL_NOW - SKEW_REMEASURE_INTERVAL_MS - 1 };
     expect(resolveSyncOffset(reading(LOCAL_NOW + 4 * 60 * 60 * 1_000), stale).offset).toBe(
       4 * 60 * 60 * 1_000,
@@ -102,5 +112,15 @@ describe('resolveSyncOffset', () => {
     const resolved = resolveSyncOffset(reading(Number.NaN), fresh(0));
     expect(resolved).toEqual({ offset: 0, effectiveNow: LOCAL_NOW });
     expect(Number.isFinite(resolved.effectiveNow)).toBe(true);
+  });
+
+  it('does not mistake a non-finite reading for a measurement of “the clocks agree”', () => {
+    // `computeClockOffset` answers 0 for a non-finite reading, so the offset alone cannot tell
+    // "no clock" from "the clocks agree" — only `serverNow` can. Drop that check and this device,
+    // which knows its clock is ten minutes slow, reads the garbage as a contradiction of its own
+    // measurement and refuses a pass there is nothing wrong with.
+    const knownSlow = fresh(10 * 60_000);
+    const resolved = resolveSyncOffset(reading(Number.NaN), knownSlow);
+    expect(resolved).toEqual({ offset: 0, effectiveNow: LOCAL_NOW });
   });
 });

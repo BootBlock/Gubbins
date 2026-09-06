@@ -126,5 +126,5 @@ export const PUSH_FAILED_MESSAGE =
 export const CLOCK_UNTRUSTED_MESSAGE =
   'Gubbins could not agree with the network on what the time is, so syncing stopped rather than ' +
   'stamp your changes with a time your other devices would trust over their own newer work. ' +
-  'Check this device’s date and time are right, then try again — if you are on public or ' +
-  'guest Wi-Fi, signing in to it first often fixes this.';
+  'If you are on public or guest Wi-Fi, finish signing in to it and try again. If you have just ' +
+  'corrected this device’s clock, Gubbins can take up to an hour to accept the new time.';

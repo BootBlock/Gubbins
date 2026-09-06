@@ -35,6 +35,10 @@ import { isPlausibleSkew, quantiseSkew, shouldRemeasure } from './skew';
  * provider returns `null` from `getServerTime()`), and those two cases are indistinguishable from
  * the result alone — so feeding it in here would let a failed measurement silently erase a real,
  * known correction. The measurement below checks `serverNow` instead, which cannot be confused.
+ *
+ * The engine does not feed its *validated* reading in either, for a second reason recorded in
+ * `features/sync/clock.ts`: that reading is checked against this stored value, so letting it
+ * overwrite the thing that checked it would bound each step rather than the total.
  */
 export function recordMeasuredSkew(rawOffsetMs: number): boolean {
   if (!isPlausibleSkew(rawOffsetMs)) return false;

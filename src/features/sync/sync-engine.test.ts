@@ -52,17 +52,6 @@ async function makeDevice(): Promise<{
 const NO_QUOTA = { skipQuotaCheck: true } as const;
 
 /**
- * A local clock a minute behind the provider's, for the tests that want a device's first sync to
- * leave its watermark unambiguously *before* the edits that follow.
- *
- * It used to be `() => 1`, which against `MemoryCloudProvider`'s real-clock default is an offset of
- * decades — a reading issue #872's guard now refuses as a broken `Date` header rather than let it
- * stamp every pushed row. A minute separates the watermark just as well and is a skew a real device
- * actually produces.
- */
-const MINUTE_BEHIND = () => Date.now() - 60_000;
-
-/**
  * A stamp pinned this far *ahead* of `now` forces the auto-stamp trigger's `MAX(now, OLD + 1)`
  * ratchet deterministically — `now` provably cannot advance past it — without racing the coarse
  * wall clock. It must stay **within** the trigger's `FUTURE_STAMP_REBASE_MS` window (issue #393):
@@ -109,8 +98,7 @@ describe('runSync round-trip (§7.3)', () => {
     // A creates a contact and publishes; B pulls it (both now share a sync baseline).
     const contact = await a.contacts.create({ name: 'Original' });
     await runSync(a.driver, provider, NO_QUOTA);
-    // B's first sync is stamped a minute back so B's later edit is unambiguously "after last sync".
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: MINUTE_BEHIND });
+    await runSync(b.driver, provider, NO_QUOTA);
 
     // Both devices edit the SAME contact before syncing again (the offline-clash case).
     await b.contacts.update(contact.id, { name: 'B edit' });
@@ -136,7 +124,7 @@ describe('runSync round-trip (§7.3)', () => {
   it('reports no conflict when a device merely catches up on a peer edit (#72)', async () => {
     const contact = await a.contacts.create({ name: 'Original' });
     await runSync(a.driver, provider, NO_QUOTA);
-    await runSync(b.driver, provider, { ...NO_QUOTA, now: MINUTE_BEHIND });
+    await runSync(b.driver, provider, NO_QUOTA);
 
     // Only A edits; B made no competing change, so B pulling A's edit is not a conflict.
     await a.contacts.update(contact.id, { name: 'A edit' });

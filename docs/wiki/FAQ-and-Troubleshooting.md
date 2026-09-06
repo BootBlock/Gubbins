@@ -260,9 +260,10 @@ stamped with the real moment they were made rather than with a wrong device cloc
 public and guest Wi-Fi sometimes answer that question themselves, with a time that is far out — and
 trusting it would make everything this device publishes look newer than your other devices' work.
 
-So Gubbins stops before it reads or publishes anything, and nothing changes anywhere. Check this
-device's date and time, finish signing in to the Wi-Fi if you haven't, then sync again. There's more
-in [[Cloud sync|Cloud-Sync#when-gubbins-cant-agree-what-the-time-is]].
+So Gubbins stops before it reads or publishes anything, and nothing changes anywhere. Finish
+signing in to the Wi-Fi if you haven't, then sync again. If you have just corrected this device's
+clock, it can take up to an hour before Gubbins accepts the new time — sync again later. There's
+more in [[Cloud sync|Cloud-Sync#when-gubbins-cant-agree-what-the-time-is]].
 
 > **💡 Tip**
 > Whatever the issue, a recent [[backup|Backup-and-Restore]] is the best safety net — take one

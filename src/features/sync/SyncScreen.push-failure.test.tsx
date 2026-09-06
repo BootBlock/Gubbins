@@ -15,7 +15,7 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useAuthStore } from '@/state/stores/useAuthStore';
 import { useSyncConflictsStore } from './conflict-store';
-import { SyncPushFailedError } from './sync-errors';
+import { SyncClockUntrustedError, SyncPushFailedError } from './sync-errors';
 import type { SyncConflict } from './types';
 import type { SyncResult } from './sync-engine';
 
@@ -183,6 +183,23 @@ describe('SyncScreen — a merge whose push failed (#638)', () => {
     await waitFor(() => expect(useSyncConflictsStore.getState().conflicts).toHaveLength(1));
     expect(mockInvalidateQueries).toHaveBeenCalled();
     expect(await screen.findByTestId('sync-error')).toHaveTextContent(/sign-in expired/i);
+  });
+
+  it('explains a refused clock reading instead of reporting a bare "Sync failed" (#872)', async () => {
+    // The engine always constructs this with `CLOCK_UNTRUSTED_MESSAGE`, and `describeError` would
+    // show an `Error`'s own message anyway — so a realistic message here would read identically
+    // whether or not the branch exists, and prove nothing. A sentinel separates the two: the
+    // banner may only carry the *catalog* copy, which is the half that is translated.
+    mockRunSync.mockRejectedValue(new SyncClockUntrustedError('untranslated engine sentence'));
+    await syncNow();
+
+    const banner = await screen.findByTestId('sync-error');
+    expect(banner).toHaveTextContent(/could not agree with the network on what the time is/i);
+    expect(banner).not.toHaveTextContent(/untranslated engine sentence/i);
+    // Nothing was read or merged, so nothing may be adopted or marked as synced.
+    expect(useSyncConflictsStore.getState().conflicts).toHaveLength(0);
+    expect(mockInvalidateQueries).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().lastSyncedAt).toBe(5000);
   });
 
   it('leaves an ordinary failure reported as one, with nothing adopted', async () => {

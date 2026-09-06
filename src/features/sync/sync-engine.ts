@@ -27,7 +27,7 @@ import { STORAGE_THRESHOLDS, isWriteSuspended } from '@/features/storage/tiers';
 import { useStorageStore } from '@/state/stores/useStorageStore';
 import { labFlag } from '@/state/stores/useLabStore';
 import { useClockSkewStore } from '@/state/stores/useClockSkewStore';
-import { measureClockOffset, resolveSyncOffset } from './clock';
+import { measureClockOffset, resolveSyncOffset, type PersistedClockSkew } from './clock';
 import { TOMBSTONE_TTL_MS } from './retention';
 import { mergeSnapshot } from './merge';
 import type { CloudProvider } from './provider';
@@ -171,7 +171,7 @@ export interface RunSyncOptions {
    * every pushed row is stamped in (see {@link resolveSyncOffset}). Defaults to the store the
    * clock-skew feature writes; injected by tests.
    */
-  readonly clockSkew?: () => { readonly skewMs: number; readonly measuredAt: number };
+  readonly clockSkew?: () => PersistedClockSkew;
 }
 
 /**

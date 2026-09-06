@@ -314,23 +314,30 @@ believed one of those would stamp everything it publishes far into the future �
 your *other* devices make would then look older than it, however recently you made it, for as long
 as those stamps stood.
 
-Gubbins doesn't take that answer on trust. It compares it against what it already knows about this
-device's clock and against what a real clock error could plausibly look like, and if the answer
-doesn't hold up it **stops the sync** and says so. Nothing is read, merged or published, so nothing
-on any of your devices changes.
+Gubbins doesn't take that answer on trust. It checks it against what a real clock error could
+plausibly look like, and against its own most recent measurement of this device's clock — and when
+those two can't both be right, it **stops the sync** and says so. Nothing is read, merged or
+published, so nothing on any of your devices changes.
+
+That catches a network reporting a wrong time *some* of the time, which is how it usually happens.
+One that has reported the same wrong time to this device from the very first request looks exactly
+like a clock that is genuinely out, so it is worth leaving your device's clock set automatically
+and syncing on a network you trust.
 
 Two things cause it, and the message names both:
 
-- **This device's date and time are wrong.** Correct them — on most systems, turning on "set time
-  automatically" is enough — and sync again.
 - **The network is answering for the site.** If you're on public or guest Wi-Fi, finish signing in
   to it, or move to a network you trust, and sync again.
+- **You have just corrected this device's clock.** Gubbins compares each answer against its last
+  measurement of your clock, and takes a fresh one at most an hour apart — so until it does, the
+  old measurement and the new answer disagree. Nothing is wrong and nothing is lost: sync again
+  later and it goes through.
 
 > **ℹ️ Note**
-> A clock that is genuinely wrong is not itself a problem for sync — Gubbins corrects for it, and
-> says so with the marker described in
+> A clock that is genuinely wrong is not itself a problem for sync, and does not cause this
+> message — Gubbins corrects for it, and says so with the marker described in
 > [[Device clock is wrong|FAQ-and-Troubleshooting#troubleshooting]]. This message means something
-> different: the *answer about* the time couldn't be trusted, not that your clock is out.
+> different: two readings of the time disagreed, and Gubbins can't tell which one to believe.
 
 ## Sharing your settings too
 
