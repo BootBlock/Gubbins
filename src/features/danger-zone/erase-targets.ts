@@ -225,11 +225,28 @@ function advanceHistoryWatermark(now: number): SqlStatement {
  * The emptiness predicate for a location safe to delete: a non-system location that nothing
  * references. Held identical between the count, the tombstone SELECT and the DELETE so all
  * three agree on exactly which rows go. Aliased `l` so it can be embedded as a sub-query.
+ *
+ * `checkouts` is named twice because it reaches a location through two columns that mean opposite
+ * things. `source_location_id` is the provenance — the shelf the units were lent FROM — while
+ * `location_id` is the borrower: a loan made *to* a place, "in the van", "out on site". Testing
+ * only the provenance counted a location holding borrowed units as empty, and deleting it cascaded
+ * the open loan away, leaving the item's on-hand count permanently short with no history entry to
+ * explain it (issue #874). Units lent to a location are still stock the location is holding, so a
+ * location that borrows is not empty — return the loan and it becomes erasable, exactly as
+ * emptying a shelf of its items does.
+ *
+ * The references left out are the ones that cascade *because* they belong to the location and die
+ * with it: its own photos, tags and field values. A checkout does not belong to it — it is a
+ * record about somebody else's stock that merely names this place, which is why it has to be kept
+ * out of the predicate's way rather than allowed to cascade. `erase-locations-references.test.ts`
+ * is the drift test for both halves of that claim: it drives a real erase against every reference
+ * the schema declares, and fails on a new one nobody has classified.
  */
 const LOCATION_EMPTY_PREDICATE = `l.is_system = 0
   AND NOT EXISTS (SELECT 1 FROM items WHERE location_id = l.id)
   AND NOT EXISTS (SELECT 1 FROM item_stock WHERE location_id = l.id)
   AND NOT EXISTS (SELECT 1 FROM stock_batches WHERE location_id = l.id)
+  AND NOT EXISTS (SELECT 1 FROM checkouts WHERE location_id = l.id)
   AND NOT EXISTS (SELECT 1 FROM checkouts WHERE source_location_id = l.id)
   AND NOT EXISTS (SELECT 1 FROM maintenance_schedules WHERE location_id = l.id)`;
 
@@ -541,7 +558,7 @@ export const ERASE_TARGETS: readonly EraseTarget[] = [
     section: 'organisation',
     label: 'Empty custom locations',
     tooltip:
-      'Deletes your empty custom locations only. The built-in system locations and any location still holding items or stock are kept — empty those items first if you want the location gone.',
+      'Deletes your empty custom locations only. The built-in system locations are kept, and so is any location still holding items or stock, or holding units lent to it — empty or return those first if you want the location gone.',
     scope: 'db',
     countSql: `SELECT COUNT(*) AS n FROM locations l WHERE ${LOCATION_EMPTY_PREDICATE}`,
     buildStatements: ({ tombstone }) => {

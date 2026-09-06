@@ -83,7 +83,7 @@ always has been.
 | --- | --- |
 | **Categories & schemas** | Every [[category\|Custom-Fields-and-Capabilities]] and the custom fields assigned to it, plus the matching values on items. Items stay but become uncategorised. The field dictionary and any values set on locations are kept. |
 | **Custom field dictionary** | Every custom field *definition*, and with it the values stored against items **and** locations. This removes the vocabulary itself, not just the values. |
-| **Empty custom locations** | Your empty custom [[locations\|Locations-and-Stock]] only. Built-in system locations, and any location still holding items or stock, are kept — empty those first if you want the location gone. |
+| **Empty custom locations** | Your empty custom [[locations\|Locations-and-Stock]] only. Built-in system locations are kept, and so is any location still holding items or stock, or holding units lent to it — empty or return those first if you want the location gone. |
 | **Location history** | The record of what has been done to your [[locations\|Locations-and-Stock]] — renames, moves, archiving and deletions. The locations themselves, and everything stored in them, are kept. |
 | **Location photos** | Every [[location photo\|Location-Photos-and-Regions]], thumbnails and full-resolution files, and the regions drawn on them. The locations stay, and so do the items placed in a region — they are only unplaced. |
 
