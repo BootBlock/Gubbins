@@ -28,7 +28,7 @@ const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, s
 
 describe('the extension type-check gate', () => {
   it('is reachable from the aggregate `type-check` script', () => {
-    // The aggregate is what CI's quality job, CONTRIBUTING.md and the PR checklist all invoke.
+    // The aggregate is what CI's quality job and the PR checklist both invoke.
     // An extension-only script nobody runs would be no gate at all.
     expect(scripts['type-check']).toContain('type-check:extension');
     expect(scripts['type-check:extension']).toBe('tsc --noEmit -p extension/tsconfig.json');

@@ -1,0 +1,184 @@
+name: Close external pull requests
+
+# Closes any pull request opened by someone from outside the project.
+#
+# Gubbins does not accept external pull requests — the policy, and the reasoning behind it,
+# are in CONTRIBUTING.md. The short version is that `main` moves fast enough that an external
+# branch is stale before it can be looked at, so an issue describing the change is worth far
+# more than a patch. Closing by hand meant a contributor's PR could sit open for days looking
+# as though it were under consideration; automating it makes the answer immediate and
+# consistent, and pairs it with a comment that explains what to do instead.
+#
+# `pull_request_target` rather than `pull_request`: a `pull_request` run triggered by a fork
+# gets a read-only token and cannot close anything, and it is held behind the fork-approval
+# gate for exactly the first-time contributors this exists to answer. `pull_request_target`
+# runs the workflow definition from the default branch with a writable token — which is why
+# this job must never check out or execute the pull request's code. It doesn't: no
+# `actions/checkout`, no `uses:` at all, and nothing PR-controlled is interpolated into the
+# shell. Every value it acts on comes from the event payload or from the API.
+on:
+  pull_request_target:
+    # `opened` answers a new pull request straight away, whatever branch it targets — the
+    # workflow is read from the default branch, so an old base branch does not hide it.
+    # `reopened` stops someone re-opening a closed one to route around the policy.
+    types: [opened, reopened]
+
+  # A sweep, because the event trigger is edge-triggered and can miss. Two cases need it: a
+  # pull request that was already open when this landed, and one whose run failed or was
+  # superseded (see the concurrency note below). Nothing else re-checks an open pull request,
+  # so without this a miss would be permanent.
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+# Least-privilege. `pull-requests: write` is the scope for everything this does — listing pull
+# requests, commenting on one, and closing it (the issue-comment endpoint is granted by the
+# pull-requests permission as well as by `issues`). In particular the job gets no `contents`
+# access, which is the permission that would matter if a PR's code ever ran here.
+permissions:
+  pull-requests: write
+
+# One run at a time, so a scheduled sweep and a freshly-opened pull request cannot both decide
+# to close the same one and comment on it twice. `cancel-in-progress: false` protects the run
+# that is already going; GitHub still keeps only one run *pending* per group, so a burst of
+# pull requests can leave a superseded run cancelled. The daily sweep is what makes that
+# recoverable rather than permanent.
+concurrency:
+  group: close-external-prs
+  cancel-in-progress: false
+
+jobs:
+  close:
+    name: Close and explain
+    runs-on: ubuntu-latest
+    steps:
+      # The rule lives here, once, rather than being split between a job-level `if:` and the
+      # script below. Both paths in the next step feed objects of the same shape — the event
+      # payload's `pull_request` and the REST list endpoint's items carry these same three
+      # fields — so one filter decides for both and the two cannot drift apart.
+      - name: Write the exemption rule
+        run: |
+          set -euo pipefail
+          cat > filter.jq <<'JQ'
+          # Emit the number of a pull request that should be closed.
+          #
+          # `author_association` is decided by GitHub and arrives with the payload, so this
+          # needs no extra API call. It reports the author's *relationship* to the repository
+          # rather than their permission level: OWNER, MEMBER (an organisation member) and
+          # COLLABORATOR are the values that mean someone is part of the project, which is the
+          # question the policy actually asks. Everyone else — CONTRIBUTOR,
+          # FIRST_TIME_CONTRIBUTOR, NONE — is external.
+          #
+          # Bots are exempt: Dependabot opens the dependency and Actions bumps this repo
+          # relies on, and `author_association` is not a useful signal for a bot account.
+          #
+          # The `state` check is what makes this rule readable on its own rather than only in
+          # the light of its callers. Neither caller can currently feed it a closed pull
+          # request — the sweep asks the API for `state=open`, and `opened` / `reopened` fire
+          # on nothing else — so it decides nothing today. It is here so that the filter says
+          # which pull requests it means.
+          select(.state == "open")
+          | select(.user.type != "Bot")
+          | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR") | not)
+          | .number
+          JQ
+
+      - name: Find the pull requests to close
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = 'pull_request_target' ]; then
+            # The pull request that triggered this run, read out of the event file rather than
+            # interpolated into the script — there is no injection surface that way.
+            jq '.pull_request' "${GITHUB_EVENT_PATH}" | jq -r -f filter.jq > to-close.txt
+          else
+            # The sweep. `--jq '.[]'` emits one pull request per line and gh applies it per
+            # page, so this streams rather than assembling every open PR in memory first.
+            gh api --paginate "repos/${GH_REPO}/pulls?state=open&per_page=100" --jq '.[]' \
+              | jq -r -f filter.jq > to-close.txt
+          fi
+
+          echo "Pull requests to close: $(wc -l < to-close.txt)"
+          cat to-close.txt
+
+      - name: Close them with an explanation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Nothing to do is the overwhelmingly common case — every maintainer and Dependabot
+          # pull request, and every scheduled sweep that finds the repository already clean.
+          if [ ! -s to-close.txt ]; then
+            echo 'No external pull requests are open.'
+            exit 0
+          fi
+
+          # The body is authored in a file rather than assembled in the command: it is
+          # multi-line markdown that gets posted publicly and permanently, and a heredoc is the
+          # one form that needs no shell-quoting rules at all.
+          cat > comment.md <<'MARKDOWN'
+          Thanks for taking the time to work on this — genuinely.
+
+          Gubbins does not accept external pull requests, so this one has been closed
+          automatically. That is a standing policy rather than anything to do with your change,
+          and it is not a rejection of the idea behind it.
+
+          The reason is pace: `main` advances continuously, and an external branch usually goes
+          stale — or lands in an area that has already been reworked — before it can be
+          reviewed. Reconciling it then costs more than implementing the change directly.
+
+          **The most effective thing you can do is open an issue** with a short summary of the
+          change you want:
+
+          - [Report a bug](https://github.com/BootBlock/Gubbins/issues/new?template=bug_report.yml)
+          - [Request a feature or change](https://github.com/BootBlock/Gubbins/issues/new?template=feature_request.yml)
+          - [Start a discussion](https://github.com/BootBlock/Gubbins/discussions) if you would rather float the idea first
+
+          A well-described issue carries much further here than a patch does — where the
+          underlying idea is a good one, the change gets implemented against the current state
+          of the tree and lands on `main`.
+
+          Please **do not** use an issue to report a security vulnerability — see
+          [SECURITY.md](https://github.com/BootBlock/Gubbins/blob/main/SECURITY.md) for the
+          private route.
+
+          Gubbins is [MIT-licensed](https://github.com/BootBlock/Gubbins/blob/main/LICENSE), so
+          forking it and running your own version is entirely welcome. The full reasoning is in
+          [CONTRIBUTING.md](https://github.com/BootBlock/Gubbins/blob/main/CONTRIBUTING.md).
+          MARKDOWN
+
+          # The comment and the close are two separate API calls. `gh pr close --comment` would
+          # make them one command, but then a failure leaves it ambiguous which half happened —
+          # and both half-states matter here. Commented-but-open contradicts the comment itself,
+          # which says the pull request was closed. Closed-without-a-comment contradicts
+          # CONTRIBUTING.md, which promises an explanation. Running them separately means each
+          # is known, and the job goes red for either.
+          failed=0
+          while read -r pr; do
+            [ -n "${pr}" ] || continue
+            echo "Closing #${pr}"
+
+            # Comment first, so the explanation is in place before the pull request closes.
+            explained=1
+            if ! gh pr comment "${pr}" --body-file comment.md; then
+              explained=0
+              echo "::warning::Could not comment on #${pr}; closing it anyway."
+            fi
+
+            # Closing an already-closed pull request is a no-op, so a re-run after a partial
+            # failure is safe.
+            if ! gh pr close "${pr}"; then
+              echo "::error::Failed to close #${pr}. The next sweep will retry it."
+              failed=1
+            elif [ "${explained}" -eq 0 ]; then
+              echo "::error::Closed #${pr} without an explanation. Comment on it by hand."
+              failed=1
+            fi
+          done < to-close.txt
+
+          exit "${failed}"
