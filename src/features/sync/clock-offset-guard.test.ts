@@ -53,9 +53,11 @@ describe('resolveSyncOffset', () => {
   });
 
   it('refuses the reading behind the reported data loss: a Date header 400 days ahead', () => {
+    // No corroborator, so the bound is the only thing that can refuse this. Handing it `fresh(0)`
+    // would let the corroboration check throw first and leave the bound untested.
     const fourHundredDays = 400 * 24 * 60 * 60 * 1_000;
     expect(fourHundredDays).toBeGreaterThan(SKEW_SANITY_LIMIT_MS);
-    expect(() => resolveSyncOffset(reading(LOCAL_NOW + fourHundredDays), fresh(0))).toThrow(
+    expect(() => resolveSyncOffset(reading(LOCAL_NOW + fourHundredDays), null)).toThrow(
       SyncClockUntrustedError,
     );
   });
@@ -97,11 +99,20 @@ describe('resolveSyncOffset', () => {
   });
 
   it('ignores a persisted measurement too stale to still be believed', () => {
-    // A clock corrected *backwards* leaves this behind — `shouldRemeasure` reports a stamp in the
-    // future as stale — and holding a fresh reading to it would refuse every pass until it aged
-    // out. A correction forwards does not, and is refused; the message says so.
+    // Ageing out is what ends a refusal: a clock corrected *forwards* contradicts the stored
+    // reading and is refused until this limb drops it.
     const stale = { skewMs: 0, measuredAt: LOCAL_NOW - SKEW_REMEASURE_INTERVAL_MS - 1 };
     expect(resolveSyncOffset(reading(LOCAL_NOW + 4 * 60 * 60 * 1_000), stale).offset).toBe(
+      4 * 60 * 60 * 1_000,
+    );
+  });
+
+  it('ignores a persisted measurement stamped in the future', () => {
+    // The other limb of `shouldRemeasure`, and the reason a clock corrected *backwards* recovers at
+    // once where one corrected forwards does not: the stored stamp is now ahead of the clock that
+    // wrote it, which is only possible because the clock moved.
+    const fromTheFuture = { skewMs: 0, measuredAt: LOCAL_NOW + 60_000 };
+    expect(resolveSyncOffset(reading(LOCAL_NOW + 4 * 60 * 60 * 1_000), fromTheFuture).offset).toBe(
       4 * 60 * 60 * 1_000,
     );
   });

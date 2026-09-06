@@ -329,9 +329,9 @@ Two things cause it, and the message names both:
 - **The network is answering for the site.** If you're on public or guest Wi-Fi, finish signing in
   to it, or move to a network you trust, and sync again.
 - **You have just corrected this device's clock.** Gubbins compares each answer against its last
-  measurement of your clock, and takes a fresh one at most an hour apart — so until it does, the
-  old measurement and the new answer disagree. Nothing is wrong and nothing is lost: sync again
-  later and it goes through.
+  measurement of your clock, and that measurement stands for an hour before it is set aside — so
+  until then, it and the new answer disagree. Nothing is wrong and nothing is lost: sync again once
+  the hour is up, or restart Gubbins then, and it goes through.
 
 > **ℹ️ Note**
 > A clock that is genuinely wrong is not itself a problem for sync, and does not cause this

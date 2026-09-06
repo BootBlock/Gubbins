@@ -9,8 +9,10 @@
  * `localNow`), so no real clock is needed in tests.
  *
  * A measured offset is not believed on sight (issue #872). {@link resolveSyncOffset} is the gate
- * between "what the header said" and "the frame this device publishes in", and every caller goes
- * through it rather than using {@link measureClockOffset}'s raw result directly.
+ * between "what the header said" and "the frame this device publishes in", and `runSync` goes
+ * through it rather than using {@link measureClockOffset}'s raw result. The clock-skew feature is
+ * the one caller that does take the raw result, for the reason its own module records: it is
+ * measuring the device, not deciding what to publish, and it applies its own rules to the answer.
  */
 import { isPlausibleSkew, shouldRemeasure } from '@/features/clock-skew/skew';
 import { CLOCK_UNTRUSTED_MESSAGE, SyncClockUntrustedError } from './sync-errors';
@@ -70,7 +72,8 @@ export async function measureClockOffset(
 
 /**
  * The device's last persisted clock-skew measurement — the same quantity {@link measureClockOffset}
- * produces, measured independently by `features/clock-skew` at boot and refreshed when it ages out.
+ * produces, measured independently by `features/clock-skew`. That measurement is taken at boot and
+ * not renewed while the app runs, which is what bounds how long a stale one can stand.
  */
 export interface PersistedClockSkew {
   /** Milliseconds to add to the raw local clock to reach true time; 0 when unmeasured. */

@@ -392,9 +392,9 @@ export function SyncScreen() {
         setRemoteMissing(true);
       } else if (cause instanceof SyncClockUntrustedError) {
         // Issue #872: the pass stopped before it read anything, because the server-time reading it
-        // would have stamped every pushed row with could not be corroborated. Say what the user can
-        // actually do about it — the two causes are a wrong device clock and a network that rewrites
-        // the time — rather than reporting a bare failure they can only retry.
+        // would have stamped every pushed row with could not be corroborated. A clock that is merely
+        // wrong does not cause this — that one is corroborated and accepted — so the copy names the
+        // two that do: a network answering with its own time, and a clock corrected a moment ago.
         setError(t('sync.clockUntrusted.error'));
       } else if (pushFailure) {
         // Say which half failed. "Sync failed" reads as "nothing happened", and the user's
