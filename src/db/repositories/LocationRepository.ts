@@ -22,6 +22,7 @@ import { UNASSIGNED_LOCATION_ID, clampDeadStockDays, type LocationHistoryAction 
 import { rowToLocation, rowToLocationHistoryEntry } from './mappers';
 import { parseLocationBranch } from '@/features/inventory/location-path';
 import { PACKING_FACTOR_BOUNDS, rawContainerVolume } from '@/lib/volume';
+import { normaliseWalkOrder } from '@/lib/walk-order';
 import { tombstoneStatement } from './tombstone';
 import type {
   CreateLocationInput,
@@ -1132,17 +1133,6 @@ function normaliseDimension(value: number | null | undefined): number | null {
 function normalisePackingFactor(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value) || value <= 0 || value > 1) return null;
   return Math.max(PACKING_FACTOR_BOUNDS.min, value);
-}
-
-/**
- * Coerce a walk-order ordinal to a non-negative integer, or NULL for "unplaced" (issue #461).
- * A blank, NaN, negative or non-finite value collapses to NULL so a cleared field drops the
- * location off the route — where it sorts after every placed location. Floored to a whole
- * number: walk order is a rung on a sequence, not a measured quantity.
- */
-function normaliseWalkOrder(value: number | null | undefined): number | null {
-  if (value == null || !Number.isFinite(value) || value < 0) return null;
-  return Math.floor(value);
 }
 
 /**

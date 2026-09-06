@@ -34,6 +34,7 @@ import { DEAD_STOCK_DAYS_BOUNDS } from '@/features/settings/settings';
 import { DEAD_STOCK_MODE_OPTIONS } from '../dead-stock-options';
 import { useFormatters } from '@/lib/useFormatters';
 import { volumeFromDimensions, volumeSystemForDimensionUnit } from '@/lib/volume';
+import { resolveWalkOrderInput } from '@/lib/walk-order';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useUpdateLocation } from '../mutations';
 import { collectDescendantIds, locationPath } from '../location-tree';
@@ -170,10 +171,9 @@ export function EditLocationDialog({
   const capacityValue = capacity.trim() === '' ? null : Math.floor(Number(capacity));
   const capacityValid =
     capacity.trim() === '' || (Number.isFinite(Number(capacity)) && Number(capacity) >= 0);
-  // Blank ⇒ unplaced (null), the same clear-vs-set discipline as capacity above.
-  const walkOrderValue = walkOrder.trim() === '' ? null : Math.floor(Number(walkOrder));
-  const walkOrderValid =
-    walkOrder.trim() === '' || (Number.isFinite(Number(walkOrder)) && Number(walkOrder) >= 0);
+  // Blank ⇒ unplaced (null), the same clear-vs-set discipline as capacity above — read here
+  // against the repository's own write rule so the field cannot accept an ordinal it discards.
+  const { value: walkOrderValue, valid: walkOrderValid } = resolveWalkOrderInput(walkOrder);
   // Blank ⇒ no override (defer to the location above, then the global default), matching
   // how the repository persists it.
   const deadStockDaysValue = deadStockDays.trim() === '' ? null : Math.floor(Number(deadStockDays));

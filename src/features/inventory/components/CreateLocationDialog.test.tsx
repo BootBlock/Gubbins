@@ -53,8 +53,8 @@ describe('CreateLocationDialog', () => {
 
   it('gives every field an information badge', () => {
     renderDialog();
-    // Name, Parent, Description, Icon, Colour, Capacity, Dimensions, Default.
-    expect(screen.getAllByLabelText('More information')).toHaveLength(8);
+    // Name, Parent, Description, Icon, Colour, Capacity, Dimensions, Walk order, Default.
+    expect(screen.getAllByLabelText('More information')).toHaveLength(9);
   });
 
   it('submits the richer metadata, including the glyph chosen in the picker', async () => {
@@ -74,6 +74,38 @@ describe('CreateLocationDialog', () => {
       capacity: 20,
       isDefault: true,
     });
+  });
+
+  it('places a location on the picking route as it is created', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Shelf A' } });
+    const walkOrder = screen.getByLabelText('Walk order (optional)');
+    expect(walkOrder).toHaveAttribute('placeholder', 'Not on the picking route');
+    fireEvent.change(walkOrder, { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(spies.create.mock.calls[0][0]).toMatchObject({ walkOrder: 2 });
+  });
+
+  it('leaves a blank walk order off the picking route rather than at position zero', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Spare bin' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(spies.create.mock.calls[0][0]).toMatchObject({ walkOrder: null });
+  });
+
+  it('blocks Create on a walk order the repository would silently discard', () => {
+    renderDialog();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Bad' } });
+    const name = screen.getByLabelText('Name');
+    fireEvent.change(screen.getByLabelText('Walk order (optional)'), { target: { value: '-1' } });
+
+    expect(screen.getByText('Walk order must be a whole number of 0 or more.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+    // Enter in the Name field submits directly, so the guard has to hold there too.
+    fireEvent.keyDown(name, { key: 'Enter' });
+    expect(spies.create).not.toHaveBeenCalled();
   });
 
   it('shows a derived-volume preview and stores the dimensions in canonical mm', () => {

@@ -14,6 +14,7 @@ import type { Location, LocationWithCount } from '@/db/repositories';
 import { useT } from '@/features/i18n';
 import { useFormatters } from '@/lib/useFormatters';
 import { volumeFromDimensions, volumeSystemForDimensionUnit } from '@/lib/volume';
+import { resolveWalkOrderInput } from '@/lib/walk-order';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
 import { useCreateLocationPath } from '../mutations';
 import { buildParentOptions } from '../parent-options';
@@ -59,6 +60,8 @@ export function CreateLocationDialog({
   const [color, setColor] = useState<LocationColor | null>(null);
   const [icon, setIcon] = useState<string | null>(null);
   const [capacity, setCapacity] = useState('');
+  // Walk order (issue #461): where this location sits on the picking sweep; blank = not on it.
+  const [walkOrder, setWalkOrder] = useState('');
   const [isDefault, setIsDefault] = useState(false);
   // Internal size (issue #457): entered in the user's dimension unit, stored canonical mm. A
   // fresh location has no stored value, so each field resolves against `null` — this gives the
@@ -81,6 +84,9 @@ export function CreateLocationDialog({
     depthState.issue === null &&
     usableVolumeState.issue === null &&
     !packingState.outOfRange;
+  // Read against the repository's own write rule: an ordinal it would discard is rejected at the
+  // field and blocks the create, rather than quietly dropping the location off the route.
+  const { value: walkOrderValue, valid: walkOrderValid } = resolveWalkOrderInput(walkOrder);
 
   // The parent choices: "top level" plus every user-created location, each carrying a
   // right-aligned item-count hint (system/archived locations are never valid parents).
@@ -98,7 +104,7 @@ export function CreateLocationDialog({
   const showPreview = ancestors.length > 0 || multipleLeaves;
 
   const submit = () => {
-    if (leaves.length === 0 || !dimensionsValid) return;
+    if (leaves.length === 0 || !dimensionsValid || !walkOrderValid) return;
     const capacityNum = capacity.trim() === '' ? null : Number(capacity);
     create.mutate(
       {
@@ -119,6 +125,8 @@ export function CreateLocationDialog({
         // Advanced overrides — usable volume (mm³) and packing factor (fraction).
         usableVolume: usableVolumeState.value,
         packingFactor: packingState.value,
+        // Position on the picking sweep; like the dimensions above it fans out onto every leaf.
+        walkOrder: walkOrderValue,
       },
       {
         onSuccess: (created) => {
@@ -127,6 +135,7 @@ export function CreateLocationDialog({
           setColor(null);
           setIcon(null);
           setCapacity('');
+          setWalkOrder('');
           setIsDefault(false);
           setWidth('');
           setHeight('');
@@ -284,6 +293,23 @@ export function CreateLocationDialog({
           defaultPackingPercent={Math.round(defaultPackingFactor * 100)}
         />
 
+        <FormField
+          label={t('inventory.location.walkOrder.field')}
+          hint={t('inventory.location.hint.walkOrder')}
+          error={walkOrderValid ? undefined : t('inventory.location.walkOrder.error')}
+        >
+          <Input
+            type="number"
+            min={0}
+            step={1}
+            inputMode="numeric"
+            value={walkOrder}
+            onChange={(e) => setWalkOrder(e.target.value)}
+            placeholder={t('inventory.location.walkOrder.placeholder')}
+            data-testid="location-walk-order"
+          />
+        </FormField>
+
         <div>
           <label
             className={`flex items-center gap-2 text-sm ${
@@ -311,7 +337,10 @@ export function CreateLocationDialog({
           <Button variant="ghost" onClick={onClose}>
             {t('inventory.location.cancel')}
           </Button>
-          <Button onClick={submit} disabled={create.isPending || leaves.length === 0 || !dimensionsValid}>
+          <Button
+            onClick={submit}
+            disabled={create.isPending || leaves.length === 0 || !dimensionsValid || !walkOrderValid}
+          >
             {t('inventory.location.create')}
           </Button>
         </div>
