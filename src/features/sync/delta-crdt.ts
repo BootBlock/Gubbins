@@ -37,6 +37,33 @@ function unionById<T extends { readonly id: string }>(
 }
 
 /**
+ * Break a same-instant tie between two delta rows by their ids, comparing **code units** rather
+ * than with `localeCompare` (pure). Both replays below sort by it, and both need it for the same
+ * reason: `localeCompare` reads the device's own locale, so two devices set to different languages
+ * order the same tied ids differently, and a CRDT whose inputs differ per device converges on
+ * nothing.
+ *
+ * The ids are lower-case UUIDs, which sounds safe from collation and is not: Danish and Norwegian
+ * sort `aa` as `å`, after `ab`. Roughly one random UUID pair in 550 is ordered differently by
+ * `da-DK` or `nb-NO` than by code unit.
+ *
+ * What that costs differs by replay, and neither is affordable. The stock replay drops every
+ * movement ordered before an assertion, so a differing order changes which movements survive. The
+ * gauge replay is a plain left-fold of REALs, so it only changes the sum in the last bits — small
+ * enough for both sides to stay inside `gaugeLedgerReconstructs`' tolerance and be believed, and
+ * therefore large enough for the two devices to correct each other's value on every sync, for
+ * ever, re-stamping `updated_at` each time (issue #869).
+ *
+ * {@link unionById} has already made the ids unique, so this is a strict **total** order over the
+ * merged set — which is the property that matters. That union returns its map in insertion order,
+ * local rows before remote ones, and that order is not the same on the two devices; only a
+ * tie-break that never returns 0 stops sort stability handing it straight back.
+ */
+function compareDeltaIds(a: { readonly id: string }, b: { readonly id: string }): number {
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
  * Merge two delta lists, de-duplicating by id and ordering chronologically.
  *
  * @internal Exported for unit tests only.
@@ -55,7 +82,7 @@ export function mergeDeltas(
     return held.netValueDelta <= candidate.netValueDelta ? held : candidate;
   });
   return merged.sort((a, b) =>
-    a.createdAt === b.createdAt ? a.id.localeCompare(b.id) : a.createdAt - b.createdAt,
+    a.createdAt === b.createdAt ? compareDeltaIds(a, b) : a.createdAt - b.createdAt,
   );
 }
 
@@ -131,11 +158,11 @@ export function reconcileGauge(
  */
 export function replayStockQuantity(deltas: readonly StockQuantityDelta[]): number {
   const rank = (d: StockQuantityDelta): number => (d.assertedQuantity === null ? 1 : 0);
-  // Ids compare by code unit, not `localeCompare` — this order decides which movements survive,
-  // so it must not vary with the device's locale.
-  const byId = (a: StockQuantityDelta, b: StockQuantityDelta): number =>
-    a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  const ordered = [...deltas].sort((a, b) => a.createdAt - b.createdAt || rank(a) - rank(b) || byId(a, b));
+  // Ties break on the id by code unit — see {@link compareDeltaIds}. Here the order decides which
+  // movements survive an assertion, not merely how a sum rounds.
+  const ordered = [...deltas].sort(
+    (a, b) => a.createdAt - b.createdAt || rank(a) - rank(b) || compareDeltaIds(a, b),
+  );
   let from = 0;
   let total = 0;
   for (let i = ordered.length - 1; i >= 0; i--) {

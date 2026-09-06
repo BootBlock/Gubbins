@@ -1109,10 +1109,28 @@ export async function applyPlan(
   }
 
   // §7.3 Delta-CRDT gauge corrections.
+  //
+  // Issue #869: guarded so a correction carrying the value the row already holds matches no row
+  // at all — the shape the sibling `items.quantity` re-derive below has always had.
+  //
+  // A settled gauge still produces a resolution every sync, and must: the correction runs after
+  // the Last-Write-Wins upserts, which write every column of the winning row, `current_net_value`
+  // among them. It is the only thing that puts this device's own consumption back when a peer's
+  // `items` row wins for an unrelated reason. What it must not do is *re-stamp* the row when it
+  // changes nothing. The auto-stamp trigger fires once per **matched** row, not per changed value,
+  // so the unguarded form moved `updated_at` on every sync between two long-converged devices —
+  // and that inflated stamp then beat a genuine edit still in flight from the other device,
+  // silently discarding its name, notes, price and location. See {@link reconcileGauges} for why
+  // the reconcile side cannot withhold the resolution instead.
+  //
+  // `IS NOT` rather than `<>` is defensive. A gauge row cannot hold NULL here — the
+  // `CONSUMABLE_GAUGE` CHECK in `v1-initial.ts` forbids it, and `gaugeLedgerReconstructs` would
+  // refuse the row anyway — but `<>` against a NULL yields NULL, so were one ever to arrive the
+  // guard would match nothing and silently withhold the correction. `IS NOT` cannot do that.
   for (const { itemId, netValue } of plan.gaugeResolutions) {
     statements.push({
-      sql: 'UPDATE items SET current_net_value = ? WHERE id = ?;',
-      params: [netValue, itemId],
+      sql: 'UPDATE items SET current_net_value = ? WHERE id = ? AND current_net_value IS NOT ?;',
+      params: [netValue, itemId, netValue],
     });
   }
 
