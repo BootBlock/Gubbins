@@ -12,6 +12,7 @@
 import { isTombstoneTable } from '@/db/repositories';
 import type { IDatabaseDriver, SqlRow } from '@/db/rpc/driver';
 import { JSON_EXPORT_KIND } from '@/lib/json-export-kind';
+import { isTimestamp } from '@/lib/timestamp';
 import { buildLocalSnapshot, restoreSnapshot } from './snapshot';
 import type {
   GaugeHistoryDelta,
@@ -51,7 +52,15 @@ function validateTombstones(value: unknown): readonly Tombstone[] {
     // when shifting to the server's time frame). A string would concatenate rather than add and a
     // non-finite value would lose every comparison, so a bad one silently corrupts merge outcomes
     // instead of failing loudly.
-    if (!isTombstoneTable(tableName) || typeof id !== 'string' || !Number.isFinite(deletedAt)) {
+    //
+    // It is range-checked ({@link isTimestamp}), not merely finite-checked, for the same reason the
+    // snapshot's own clock and a gauge delta's `createdAt` are. A finite but absurd instant — the
+    // year 318857, say — is a permanent one: the 180-day cleanup compares against it and never
+    // reaches it, `MAX(...)` on the next snapshot can only reinforce it, and it wins every
+    // comparison against the row it deletes, so that id can never be re-created on any device the
+    // snapshot spreads to. On the bridge the driver refuses to read an integer that large back at
+    // all, so a host that has taken one in can no longer build a snapshot: no sync, no backup.
+    if (!isTombstoneTable(tableName) || typeof id !== 'string' || !isTimestamp(deletedAt)) {
       throw new Error(
         'This backup file refers to data that is not part of Gubbins, so it has not been restored. ' +
           'Only open backups from a source you trust.',
@@ -71,21 +80,6 @@ function isBindable(value: unknown): boolean {
   return (
     value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
   );
-}
-
-/**
- * The largest instant `Date` can represent (±100 000 000 days from the epoch).
- *
- * Past it, `new Date(n)` is an Invalid Date and `toISOString()` throws a `RangeError` — which the
- * bridge does when it reports a snapshot's age (`bridge/src/cli.ts`, the `/api/v1` responses). A
- * value like `1e308` is perfectly ordinary JSON and finite, so `typeof … === 'number'` waves it
- * through; only the range check catches it.
- */
-const MAX_TIMESTAMP = 8.64e15;
-
-/** A number that is safe both to compare and to hand to `new Date(…)`. */
-function isTimestamp(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_TIMESTAMP;
 }
 
 /**

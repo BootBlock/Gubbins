@@ -41,6 +41,7 @@ import { withRecomputeDeferred } from '@/db/repositories/stock';
 export { withRecomputeDeferred };
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
+import { MAX_TIMESTAMP } from '@/lib/timestamp';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
 import { dedupeDefaultLocations, defaultLocationWinner } from './location-default-flag';
 import { labelsFor, mergeOverwriteId, overwriteNote } from './merge-audit';
@@ -333,11 +334,27 @@ export async function buildLocalSnapshot(
     tables[table] = rows.map((row) => rowForSnapshot(table, row));
   }
 
+  // Bound `deleted_at` to the range a clock can actually produce, and do it in SQL rather than
+  // after the read, because on the bridge the read *itself* is what fails: `deleted_at` is a
+  // STRICT INTEGER column and Node's SQLite driver refuses to hand back an integer above
+  // `Number.MAX_SAFE_INTEGER` ("Value is too large to be represented as a JavaScript number").
+  // One absurd marker — stamped by a build predating the parser check that now refuses them —
+  // threw here on every pass, taking sync and backup with it, and no filter after the read could
+  // have helped because the value never reaches JavaScript at all.
+  //
+  // Dropping bad local data on read rather than refusing it is the same choice the allow-list
+  // filter below makes, and for the same reason: this is data already sitting in the user's
+  // database, so failing on it would strand the device. What it does *not* share is that filter's
+  // eventual clean-up. The TTL prune deletes what is *older* than the cutoff, and a marker
+  // stamped in the year 318857 never will be, so this row stays in the table for good. What
+  // recovers is the device, not the row: excluded from every snapshot, the marker stops being
+  // republished, stops resolving deletions, and stops blocking the read (issue #876).
   const tombstoneRows = await attempt(
     'tombstones',
     () =>
       driver.query<{ table_name: string; id: string; deleted_at: number }>(
-        'SELECT table_name, id, deleted_at FROM tombstones ORDER BY deleted_at;',
+        'SELECT table_name, id, deleted_at FROM tombstones WHERE deleted_at BETWEEN ? AND ? ORDER BY deleted_at;',
+        [-MAX_TIMESTAMP, MAX_TIMESTAMP],
       ),
     [],
   );
