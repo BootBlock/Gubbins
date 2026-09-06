@@ -41,6 +41,7 @@ import { withRecomputeDeferred } from '@/db/repositories/stock';
 export { withRecomputeDeferred };
 import type { IDatabaseDriver, SqlRow, SqlStatement, SqlValue } from '@/db/rpc/driver';
 import { ensureStorageWritable } from '@/features/storage/write-gate';
+import { MAX_TIMESTAMP } from '@/lib/timestamp';
 import { decodeRowForTable, encodeRowForTable } from './blob-codec';
 import { dedupeDefaultLocations, defaultLocationWinner } from './location-default-flag';
 import { labelsFor, mergeOverwriteId, overwriteNote } from './merge-audit';
@@ -333,11 +334,19 @@ export async function buildLocalSnapshot(
     tables[table] = rows.map((row) => rowForSnapshot(table, row));
   }
 
+  // The range bound is applied in SQL rather than after the read, because on the bridge the read
+  // itself is what fails: `deleted_at` is a STRICT INTEGER column, and Node's SQLite driver refuses
+  // to hand back an integer above `Number.MAX_SAFE_INTEGER` ("Value is too large to be represented
+  // as a JavaScript number"). One absurd marker — stamped by a build predating the parser check
+  // that now refuses them — would otherwise throw here on every pass, and since this read happens
+  // *before* the TTL prune, nothing downstream ever gets the chance to clear it: no sync, no
+  // backup, permanently. Excluding it in the query is what lets such a host recover (issue #876).
   const tombstoneRows = await attempt(
     'tombstones',
     () =>
       driver.query<{ table_name: string; id: string; deleted_at: number }>(
-        'SELECT table_name, id, deleted_at FROM tombstones ORDER BY deleted_at;',
+        'SELECT table_name, id, deleted_at FROM tombstones WHERE deleted_at BETWEEN ? AND ? ORDER BY deleted_at;',
+        [-MAX_TIMESTAMP, MAX_TIMESTAMP],
       ),
     [],
   );

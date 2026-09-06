@@ -25,6 +25,7 @@ import type { SyncSnapshot } from '../sync/types';
 import { ITEM_HISTORY_TABLE, STOCK_DELTAS_TABLE } from '@/db/repositories/tombstone';
 import type { SqlRow, SqlValue } from '@/db/rpc/driver';
 import type { OpfsImageFile } from '@/features/images/opfs-images';
+import { isTimestamp } from '@/lib/timestamp';
 import { EXPORTABLE_SETTING_KEYS, sanitiseSettingsRecord } from './backup-settings';
 import { CHECKSUM_ALGORITHM, checksumBytes } from './checksum';
 import { DEFAULT_SETTINGS_GROUPS, ownerOfStoreField, type SettingsGroupSelection } from './settings-groups';
@@ -504,14 +505,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** A usable headline count: a whole, non-negative number. */
 function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-/** The widest epoch-ms `new Date()` can represent; beyond it every read is `Invalid Date`. */
-const MAX_TIMESTAMP = 8.64e15;
-
-/** A timestamp the preview can actually render as a date. */
-function isTimestamp(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_TIMESTAMP;
 }
 
 /**
