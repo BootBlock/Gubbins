@@ -119,6 +119,17 @@ describe('Delta-CRDT gauge replay (§7.3)', () => {
     expect(merged.map((m) => m.id)).toEqual(['a', 'b']);
   });
 
+  it('breaks a same-instant tie by code unit, not by the device’s locale (issue #869)', () => {
+    // `'a'.localeCompare('B')` puts 'a' first under an English collation and 'B' first under the
+    // code-unit order this must use. The two devices in a sync may be set to different languages,
+    // and the replay is a left-fold of REALs — so a locale-dependent order gives them sums that
+    // differ in the last bits, inside the tolerance each side's ledger check allows, and they
+    // correct each other's value on every sync for ever. `replayStockQuantity` states the same
+    // rule for the same reason.
+    const merged = mergeDeltas([d('a', -5, 10)], [d('B', -5, 10)]);
+    expect(merged.map((m) => m.id)).toEqual(['B', 'a']);
+  });
+
   it('replays concurrent offline usage from both devices', () => {
     // 1000 g spool: Device A used 45 g, Device B used 10 g → 945 g.
     const value = reconcileGauge(1000, [d('a', -45, 1)], [d('b', -10, 2)]);
