@@ -168,12 +168,14 @@ export class StorageRepository extends BaseRepository {
    * Record that a photo's full-resolution file was deleted, keeping its thumbnail.
    *
    * Nothing archives the bytes first: this device's copy is gone, and cloud sync never carried
-   * full-resolution image data (`SyncSnapshot` has no member for it), so only a copy already taken
-   * off the device still holds them. Three paths write those bytes out — the backup
-   * (`features/backup/build-backup.ts`), the full archive (`features/archive/auto-archive.ts`) and
-   * the vault export (`features/export/run-export.ts`) — and of the three only the backup is
-   * offered on demand to every user, so it is the one the triage dialog names before it offers
-   * this action (#824).
+   * full-resolution image data (`SyncSnapshot` has no member for it), so only a copy the user
+   * saved beforehand still holds them. Three paths write those bytes out, and they do not cover
+   * the same set: the backup (`features/backup/build-backup.ts`) and the full archive
+   * (`features/archive/auto-archive.ts`) both zip the whole OPFS `images/` directory through
+   * `readAllImages`, so either holds every photo this deletes; the vault export
+   * (`features/export/run-export.ts`) copies item-image bytes only, and never a `location_photos`
+   * one. The backup is therefore the one the triage dialog names — complete, and askable for on
+   * demand, which the archive's mobile/no-sync/due branch is not (#824).
    *
    * `owner` is required rather than defaulted: the id and the table must agree, and a default
    * would let a forgotten argument update the wrong table, match no row, and report success —

@@ -345,10 +345,10 @@ export function StorageTriageDialog({ open, onClose }: StorageTriageDialogProps)
              * The sibling workflow above archives before it deletes; this one does not, and said
              * so nowhere (issue #824). It used to offer the cloud backup as the safety net, which
              * the sync artefact has never been — `SyncSnapshot` carries no image bytes at all.
-             * Only a copy already taken off the device does, and of the three that carry those
-             * bytes (see `StorageRepository.markImageDowngraded`) the backup is the one any user
-             * can reach from here — so that is what they are pointed at, before the confirm
-             * rather than after it.
+             * Only a copy the user saved beforehand does, and of the routes that write those
+             * bytes out (see `StorageRepository.markImageDowngraded`) the backup is the one that
+             * both covers every photo and can be asked for on demand — so that is what they are
+             * pointed at, before the confirm rather than after it.
              */}
             <Banner
               tone="warning"

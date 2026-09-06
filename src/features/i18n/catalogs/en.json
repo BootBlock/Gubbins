@@ -2466,7 +2466,7 @@
   "storage.triage.countRetry": "Try again",
   "storage.triage.downgradeBody": "Drops full-resolution photos to reclaim space, keeping the thumbnails.",
   "storage.triage.downgradeNoCopy.heading": "This cleanup keeps no copy",
-  "storage.triage.downgradeNoCopy.body": "Unlike the history purge, nothing is archived first — the full-resolution photos are deleted from this device for good. Cloud sync has never carried them, so it cannot hand them back either. Only a copy already taken off this device still holds them. Take a backup from Sync → Backup & restore, with its image files included, before you confirm.",
+  "storage.triage.downgradeNoCopy.body": "Unlike the history purge, nothing is archived first — the full-resolution photos are deleted from this device for good. Cloud sync has never carried them, so it cannot hand them back either. Only a copy you saved beforehand still holds them. Take a backup from Sync → Backup & restore, with its image files included, before you confirm.",
   "storage.triage.downgradeTooltip": "Permanently deletes the full-resolution photo data on this device, keeping the thumbnails. Nothing is archived first, so take a backup that includes the image files beforehand if you might want that detail again.",
   "storage.triage.downgradeConfirm.one": "Permanently delete the full-resolution data for {count} image? The thumbnail is kept, and this cannot be undone.",
   "storage.triage.downgradeConfirm.other": "Permanently delete the full-resolution data for {count} images? Thumbnails are kept, and this cannot be undone.",

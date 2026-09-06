@@ -36,9 +36,9 @@ rather than showing a number it does not have.
 > **⚠️ Heads-up**
 > Downgrading is the cleanup with no copy behind it. The full-resolution photos are deleted from
 > this device for good, and [[cloud sync|Cloud-Sync]] has never carried them, so it can't hand them
-> back either. Only a copy already taken off the device still holds them — a
-> [[backup|Backup-and-Restore]] with its image files included, an [[exported vault|Export-and-Import]],
-> or a full archive. Take a backup before you downgrade if the detail might matter.
+> back either. Only a copy you saved beforehand still holds them, and a
+> [[backup|Backup-and-Restore]] with its image files included is the one that covers every photo.
+> Take one before you downgrade if the detail might matter.
 
 ### The cold-storage export has to land first
 
