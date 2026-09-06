@@ -126,21 +126,34 @@ describe('issue #876 — a device poisoned by an earlier build recovers', () => 
     await driver.close();
   });
 
-  // This is the control *and* the reason the bound is applied in SQL rather than after the read:
-  // the driver refuses to marshal the value at all, so no amount of filtering in JavaScript could
-  // have saved a read that asks for it. Remove the `BETWEEN` from `buildLocalSnapshot` and the
-  // test below fails with exactly this error.
-  it('cannot read the poisoned marker back at all', async () => {
+  // The unbounded read is asserted here rather than in a test of its own, so this case exercises
+  // the subject instead of merely restating what the driver does: an unbounded read of the same
+  // table throws, and `buildLocalSnapshot` nonetheless returns. That is why the bound has to be in
+  // the query — the value never reaches JavaScript, so no filter after the read could have saved
+  // it. Remove the `BETWEEN` from `buildLocalSnapshot` and this test fails with that same error.
+  it('builds a snapshot despite a marker the driver cannot even read back', async () => {
     await expect(driver.query('SELECT deleted_at FROM tombstones;')).rejects.toThrow(
       /too large to be represented/i,
     );
-  });
 
-  it('builds a snapshot that omits the poisoned marker and keeps the honest one', async () => {
     const snapshot = await buildLocalSnapshot(driver);
 
+    // The honest marker still travels; the poisoned one is excluded rather than dropping the
+    // whole section, which is what a failed read would have done.
     const ids = snapshot.tombstones.filter((t) => t.tableName === 'items').map((t) => t.id);
     expect(ids).toContain('honest');
     expect(ids).not.toContain('poisoned');
+  });
+
+  // The marker is excluded from the snapshot, not deleted: the TTL prune removes what is *older*
+  // than the cutoff, and this one never will be. Pinned so the comment in `buildLocalSnapshot`
+  // that says so cannot quietly stop being true.
+  it('leaves the poisoned row in the table rather than clearing it', async () => {
+    await buildLocalSnapshot(driver);
+
+    const rows = await driver.query<{ n: number }>('SELECT COUNT(*) AS n FROM tombstones WHERE id = ?;', [
+      'poisoned',
+    ]);
+    expect(Number(rows[0]?.n)).toBe(1);
   });
 });
