@@ -226,7 +226,8 @@ describe('repository permission enforcement', () => {
 
     it('refuses the image downgrade on `storage:write`, not `settings:write`', async () => {
       // The distinction is the point of the key: this is not one of the device's preferences,
-      // and a role that may change those should not thereby be able to re-encode every photo.
+      // and a role that may change those should not thereby be able to delete every
+      // photo’s full-resolution file.
       const authority: Authority = { mode: 'granted', grants: new Set(['settings:write']) };
       const storage = new StorageRepository(driver, withAuthority(authority));
       await expectDenied(() => storage.markImageDowngraded('img-1', 'item_images'), 'storage:write');

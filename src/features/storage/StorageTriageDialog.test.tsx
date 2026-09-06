@@ -9,7 +9,7 @@
  * is touched.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 
 vi.mock('./hooks', () => ({
   useStorageBreakdown: () => ({
@@ -81,5 +81,41 @@ describe('StorageTriageDialog — storage:write gating', () => {
     renderDialog();
     expect(screen.queryByTestId('triage-row-images')).not.toBeNull();
     expect(screen.queryByTestId('triage-row-history')).not.toBeNull();
+  });
+});
+
+/**
+ * What the downgrade workflow promises about recovery (issue #824).
+ *
+ * It deletes the only local copy of every full-resolution photo and archives nothing first, yet
+ * it used to offer the cloud backup as the safety net — and the sync artefact has never carried
+ * image bytes, so that was a reassurance about a copy that does not exist. These assertions fail
+ * if any such promise comes back, and if the pointer to the one artefact that *does* hold those
+ * photos (a backup) goes missing from in front of the confirm.
+ */
+describe('StorageTriageDialog — the downgrade keeps no copy, and says so (issue #824)', () => {
+  it('warns that nothing is archived first, and points at a backup', () => {
+    renderDialog();
+    const warning = screen.getByTestId('downgrade-no-copy');
+    expect(warning.textContent).toMatch(/nothing is archived first/i);
+    expect(warning.textContent).toMatch(/backup/i);
+  });
+
+  it('offers no recovery the app cannot actually make', () => {
+    renderDialog();
+    // Scoped to this workflow's own section rather than the whole document: "cloud sync is
+    // unaffected" is a true and reasonable thing to say elsewhere in the app (the erase dialog
+    // already does), and it is only beside *this* delete, offered as the reassurance, that it
+    // becomes the false promise. Broad within that scope, though: any wording leaving cloud sync
+    // sounding like a way back is the same claim, whatever words carry it.
+    const section = screen.getByRole('region', { name: /downgrade old images/i });
+    expect(section.textContent).not.toMatch(/cloud (backup|sync)[^.]*(untouched|unaffected)/i);
+  });
+
+  it('says the deletion cannot be undone in the confirmation itself', () => {
+    renderDialog();
+    fireEvent.click(screen.getByTestId('downgrade-images'));
+    const confirm = screen.getByRole('alertdialog', { name: 'Confirm' });
+    expect(confirm.textContent).toMatch(/cannot be undone/i);
   });
 });
