@@ -1,3 +1,9 @@
+> **⚠️ External pull requests are not accepted and are closed automatically.**
+> If you are not a collaborator on this repository, please
+> [open an issue](https://github.com/BootBlock/Gubbins/issues/new/choose) describing the change
+> instead — it is the route that actually gets it implemented. See
+> [CONTRIBUTING.md](https://github.com/BootBlock/Gubbins/blob/main/CONTRIBUTING.md) for why.
+
 <!-- What does this change do, and why? -->
 
 ## Summary

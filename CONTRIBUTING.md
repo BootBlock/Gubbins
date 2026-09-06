@@ -2,14 +2,15 @@
 
 Thanks for your interest in Gubbins. Bug reports, feature requests and ideas are genuinely
 welcome — but please read the next section **before** you write any code, so you don't spend
-effort on something that is unlikely to land.
+effort on something that will not land.
 
 Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Please open an issue, not a pull request
 
-**Pull requests are unlikely to be accepted.** This is not a judgement on the quality of your
-work — it is a consequence of what this project is and how it is developed.
+**Pull requests are never accepted.** A pull request opened by anyone outside the project is
+closed automatically, with a comment pointing at this page. That is not a judgement on the
+quality of your work — it is a consequence of what this project is and how it is developed.
 
 Gubbins is a personal project before it is a community one. It is built for its maintainer's own
 inventory and published in case anyone else finds it useful; it is not run as a collaborative
@@ -32,9 +33,13 @@ what that involves. In practice the pace means:
 So the most effective way to get something into Gubbins is **not** to send a patch. It is to
 **describe what you want, and let it be implemented against the current state of the tree.**
 
-If you open a PR anyway, expect it to be closed with thanks — and, where the underlying idea is
-a good one, expect the change itself to be implemented separately and land on `main`. Being
-closed is not a rejection of the idea.
+The offer of your work is genuinely appreciated — the ask is only that it arrives as an issue
+rather than as a patch. **Open a new issue with a short summary of the change you need**: a line
+or two saying what should be different is enough to work from.
+
+If you open a PR anyway, it will be closed with thanks — and, where the underlying idea is a
+good one, expect the change itself to be implemented separately and land on `main`. Being closed
+is not a rejection of the idea.
 
 ## What is genuinely useful
 
@@ -82,19 +87,18 @@ source, see the **Development** section of the [README](README.md) for the quick
 launcher options, and the Node version requirements (the test suites need a newer Node than the
 build does).
 
-## If you do send a pull request anyway
+## What happens if you open a pull request
 
-That's your call — the repository is public and MIT-licensed, and forking is entirely
-welcome. But please be aware of the above, and keep it small and self-contained if you do:
+It is closed automatically, and a comment is posted explaining why and pointing you at the
+issue templates. Nothing is held against you for trying — the policy is enforced by a workflow
+rather than by hand so the answer is the same for everyone and arrives at once, instead of a PR
+sitting open for days looking as though it were under consideration.
 
-- One focused change. Large or sweeping PRs have essentially no chance of landing.
-- Follow the conventions already in the tree — design tokens rather than raw colour values,
-  translated strings through the `t()` seam, Foundry primitives rather than hand-rolled
-  controls, and accessibility wired up. The [pull request template](.github/pull_request_template.md)
-  lists the checks.
-- No secrets, credentials, or personal data in the diff — see the note in the bug-report
-  section above; it applies doubly to code.
-- `npm run type-check` and the relevant tests should pass.
+The change you wanted still has a route in, and it is a shorter one: open an issue with a
+short summary of what you need. If the idea is a good one it gets implemented against the
+current state of the tree.
+
+If you would rather carry the change yourself, fork the project — see below.
 
 ## Forking
 
