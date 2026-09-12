@@ -6,7 +6,7 @@ import { serialiseGeometry } from '@/features/inventory/regions/geometry';
 afterEach(cleanup);
 
 /**
- * jsdom lays nothing out — every `getBoundingClientRect` is zeros, which `containBox` correctly
+ * happy-dom lays nothing out — every `getBoundingClientRect` is zeros, which `containBox` correctly
  * reports as "not measurable" and the component treats as "no gesture". Stubbing one honest
  * rectangle is what makes the pointer path testable at all; the maths behind it is already
  * covered directly in `features/inventory/regions`.

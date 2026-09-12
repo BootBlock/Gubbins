@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, fireEvent, render, screen, cleanup } from '@testing-library/react';
+import { fireEvent, render, screen, cleanup } from '@testing-library/react';
 import type { Item } from '@/db/repositories';
 import { usePreferencesStore } from '@/state/stores/usePreferencesStore';
+import { firePointer } from '@/test/pointer-drag';
 import { ItemDragProvider, useLocationRowDrop } from '../item-drag';
 
 // Capture the imperative `open` the row drives on a body click (the cardClickAction shortcut).
@@ -87,20 +88,6 @@ const makeItem = (overrides: Partial<Item> = {}): Item => ({ ...BASE, ...overrid
 
 function renderRow(item: Item, extra: Partial<React.ComponentProps<typeof ItemRow>> = {}) {
   return render(<ItemRow item={item} locations={[]} locationName="Workshop" {...extra} />);
-}
-
-/** Dispatch a fully-populated pointer event (happy-dom's PointerEvent is partial). */
-function firePointer(
-  target: EventTarget,
-  type: 'pointerdown' | 'pointermove',
-  init: { x?: number; y?: number } = {},
-) {
-  const { x = 0, y = 0 } = init;
-  const event = new Event(type, { bubbles: true, cancelable: true });
-  Object.assign(event, { clientX: x, clientY: y, pointerType: 'mouse', pointerId: 1, button: 0 });
-  act(() => {
-    target.dispatchEvent(event);
-  });
 }
 
 afterEach(() => {

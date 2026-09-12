@@ -442,7 +442,7 @@ describe('ScannerOverlay — header layout on a phone (issue #657)', () => {
     render(<ScannerOverlay open onClose={vi.fn()} />);
 
     // The overlay is `fixed`, so an overflowing header cannot be scrolled back into view — the
-    // row has to wrap. jsdom does no layout, so the contract is pinned on the classes that
+    // row has to wrap. happy-dom does no layout, so the contract is pinned on the classes that
     // decide it rather than on measured geometry.
     expect(header()).toHaveClass('flex-wrap');
     // The toggle is the item that drops to a second line below `sm`, so the two icon buttons

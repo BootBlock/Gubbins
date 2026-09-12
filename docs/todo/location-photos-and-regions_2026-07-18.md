@@ -272,8 +272,8 @@ locations live inside the inventory feature (`EditLocationDialog`, `location-tre
   engine. Three tools plus move/resize/abort of an existing shape.
 
 All three take plain rects and numbers as arguments and never read the DOM — because under
-**jsdom** `getBoundingClientRect` returns zeros and `elementFromPoint` is absent
-(`useBoardPointerDrag.tsx:135-136` guards for exactly this).
+**happy-dom**, which lays nothing out, `getBoundingClientRect` returns zeros and `elementFromPoint`
+returns `null`.
 
 ## 6. UI
 

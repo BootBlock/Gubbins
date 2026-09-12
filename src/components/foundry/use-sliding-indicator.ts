@@ -19,7 +19,7 @@
  *
  * Measurement is re-run when the selection changes, when the option count changes, and whenever
  * the container resizes (a layout reflow, a font swap, a longer label). Where the container has
- * not been laid out — jsdom, a hidden panel — the geometry stays `null` and the caller falls
+ * not been laid out — happy-dom, a hidden panel — the geometry stays `null` and the caller falls
  * back to painting the selected button directly.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';

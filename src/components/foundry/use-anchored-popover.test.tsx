@@ -26,7 +26,8 @@ describe('useAnchoredPopover — portal positioning', () => {
     expect(style.position).toBe('fixed');
     expect(style).toHaveProperty('width');
     expect(style).toHaveProperty('maxHeight');
-    // With ample room below (jsdom viewport), it drops below the anchor rather than flipping up.
+    // With ample room below (happy-dom's viewport is 768px tall, and the anchor reports a zero
+    // rect), it drops below the anchor rather than flipping up.
     expect(style).toHaveProperty('top');
     expect(style).not.toHaveProperty('bottom');
   });

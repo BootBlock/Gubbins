@@ -1395,8 +1395,9 @@ export function startPrecip(canvas: HTMLCanvasElement, opts: StartPrecipOptions)
   const { kind, reduced } = opts;
   const dprCap = opts.dprCap ?? DEFAULT_DPR_CAP;
   const ctx = canvas.getContext('2d');
-  // No 2D context (very old browser or a jsdom test): nothing to do — a no-op controller keeps the
-  // caller's lifecycle simple and the app fully functional without the decoration.
+  // No 2D context (a very old browser, or happy-dom in a test, where `getContext` returns null):
+  // nothing to do — a no-op controller keeps the caller's lifecycle simple and the app fully
+  // functional without the decoration.
   if (!ctx) return { refresh: () => {}, setWeather: () => {}, stop: () => {} };
 
   const overlay = opts.overlay ?? null;

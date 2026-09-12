@@ -14,10 +14,10 @@
  * and the clamping are `features/inventory/regions/geometry`; "which shape did I click?" is
  * `hit-test`; the press/drag/release gesture is the pure reducer in `draw-machine`; and the
  * arrow-key nudge/resize is `region-keyboard`. All four are DOM-free and unit-tested directly,
- * because **jsdom lays nothing out** — `getBoundingClientRect` returns zeros and there is no
- * `elementFromPoint` — so logic left in the component would be logic that could not be tested.
- * What remains here is glue: measuring, translating pointer events into machine events, and
- * painting.
+ * because **happy-dom lays nothing out** — `getBoundingClientRect` returns zeros and
+ * `elementFromPoint` returns `null` — so logic left in the component would be logic that could not
+ * be tested. What remains here is glue: measuring, translating pointer events into machine events,
+ * and painting.
  *
  * ## Layout — `object-contain`, never `object-cover`
  *
@@ -269,7 +269,7 @@ export function RegionCanvas({
 
   /**
    * Translate a client-space pointer position into normalised image space, or `null` when the
-   * element has not been laid out. Under **jsdom** `getBoundingClientRect` returns zeros, which
+   * element has not been laid out. Under **happy-dom** `getBoundingClientRect` returns zeros, which
    * `containBox` reports as `null` — the guard that keeps a test from dividing by zero.
    */
   const toNormalised = useCallback(

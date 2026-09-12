@@ -64,7 +64,7 @@ const { restoreArchive } = await import('@/features/archive/restore-archive');
  * The restore point's destination, reserved in the click and threaded into the restore
  * (issue #502). Asserted rather than waved through with `objectContaining`, because a restore
  * that quietly lost it would go back to overwriting on the strength of an unobserved download.
- * jsdom has no File System Access API, so this is always the anchor route.
+ * happy-dom has no File System Access API, so this is always the anchor route.
  */
 const RESTORE_POINT_SAVE = {
   saver: {

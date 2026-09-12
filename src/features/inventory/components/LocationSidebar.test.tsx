@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { act, render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import type { LocationTreeNode, LocationWithCount } from '@/db/repositories';
+import { firePointer, pointHitTestAt } from '@/test/pointer-drag';
 import { ToastProvider } from '@/components/foundry';
 import { ItemDragProvider, useItemDragSource } from '../item-drag';
 import { LocationSidebar } from './LocationSidebar';
@@ -841,25 +842,10 @@ describe('LocationSidebar — volumetric fullness indicator (issue #457)', () =>
   });
 });
 
-/** Dispatch a fully-populated pointer event (jsdom's PointerEvent is absent/partial). */
-function firePointer(
-  target: EventTarget,
-  type: 'pointerdown' | 'pointermove' | 'pointerup',
-  init: { x?: number; y?: number } = {},
-) {
-  const { x = 0, y = 0 } = init;
-  const event = new Event(type, { bubbles: true, cancelable: true });
-  Object.assign(event, { clientX: x, clientY: y, pointerType: 'mouse', pointerId: 1, button: 0 });
-  act(() => {
-    target.dispatchEvent(event);
-  });
-}
-
 describe('LocationSidebar — drag-to-nest', () => {
   afterEach(() => {
-    // Restore the hit-test stub some tests below install (jsdom has no layout).
-    // @ts-expect-error deleting the stubbed method restores jsdom's default (returns null).
-    delete document.elementFromPoint;
+    // Restore the hit-test spy some tests below install (happy-dom has no layout).
+    vi.restoreAllMocks();
   });
 
   // Drag-to-nest needs the pointer-drag provider that InventoryScreen supplies in production.
@@ -883,7 +869,7 @@ describe('LocationSidebar — drag-to-nest', () => {
     const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
 
     // Point every hit-test at the Workshop row, then drag Drawer onto it.
-    document.elementFromPoint = vi.fn(() => workshop);
+    pointHitTestAt(workshop);
     firePointer(drawer, 'pointerdown', { x: 10, y: 10 });
     firePointer(window, 'pointermove', { x: 40, y: 40 }); // past the activation threshold
     firePointer(window, 'pointerup', { x: 40, y: 40 });
@@ -901,7 +887,7 @@ describe('LocationSidebar — drag-to-nest', () => {
 
     // Cabinet already lives under Workshop, so nesting it there again is vetoed — no highlight,
     // no update.
-    document.elementFromPoint = vi.fn(() => workshop);
+    pointHitTestAt(workshop);
     firePointer(cabinet, 'pointerdown', { x: 10, y: 10 });
     firePointer(window, 'pointermove', { x: 40, y: 40 });
     firePointer(window, 'pointerup', { x: 40, y: 40 });
@@ -935,7 +921,7 @@ describe('LocationSidebar — drag-to-nest', () => {
     const drawer = screen.getByRole('treeitem', { name: 'Drawer' });
     const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
 
-    document.elementFromPoint = vi.fn(() => workshop);
+    pointHitTestAt(workshop);
     firePointer(drawer, 'pointerdown', { x: 10, y: 10 });
     firePointer(window, 'pointermove', { x: 40, y: 40 });
     firePointer(window, 'pointerup', { x: 40, y: 40 });
@@ -946,8 +932,8 @@ describe('LocationSidebar — drag-to-nest', () => {
 
 describe('LocationSidebar — drag-to-move item feedback', () => {
   afterEach(() => {
-    // @ts-expect-error restore jsdom's default hit-test (returns null).
-    delete document.elementFromPoint;
+    // Restore happy-dom's own hit-test, which answers null for every point.
+    vi.restoreAllMocks();
     // Ending a drag arms a one-shot capture listener on `window` that swallows the click the
     // release synthesises (see `item-drag`), disarming itself on a timer ~350ms later — long
     // after the next test has started. Spend it here with a throwaway click so it can't eat the
@@ -981,7 +967,7 @@ describe('LocationSidebar — drag-to-move item feedback', () => {
     const source = screen.getByTestId('item-source');
     const workshop = screen.getByRole('treeitem', { name: 'Workshop' });
 
-    document.elementFromPoint = vi.fn(() => workshop);
+    pointHitTestAt(workshop);
     firePointer(source, 'pointerdown', { x: 10, y: 10 });
     firePointer(window, 'pointermove', { x: 40, y: 40 });
     firePointer(window, 'pointerup', { x: 40, y: 40 });

@@ -7,7 +7,7 @@ import { LocationFieldsEditor } from './LocationFieldsEditor';
  *
  * Left to the flex row it sits in, the box shrank to fit its own text — and because the
  * listbox popover is anchored to the trigger's width, that sized the menu from whichever
- * field happened to be selected, truncating the field names inside it. jsdom lays nothing
+ * field happened to be selected, truncating the field names inside it. happy-dom lays nothing
  * out, so the resulting width cannot be measured here; what this pins is the one thing that
  * *is* visible in the markup, and the thing whose removal caused the bug: the box carries an
  * explicit width class rather than sizing to its content.

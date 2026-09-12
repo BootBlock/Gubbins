@@ -10,7 +10,7 @@ import { ANALYTICS_WINDOWS } from '../analytics-windows';
  * The `primary` surface is one pill that **slides** from the old window to the new one rather
  * than being repainted in place (issue #449) — a change of window re-scales every chart beneath
  * it, so the control says which way the window moved instead of just blinking. Where the control
- * has not been laid out (jsdom, a collapsed panel) nothing is measured and the active button
+ * has not been laid out (happy-dom, a collapsed panel) nothing is measured and the active button
  * paints the surface itself, so the selection is always visible.
  */
 export function WindowToggle({

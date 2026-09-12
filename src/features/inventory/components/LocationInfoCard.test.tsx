@@ -8,7 +8,7 @@ import { LocationInfoCard } from './LocationInfoCard';
  * The compact per-location summary shown atop the inventory list. Drives the real formatters
  * (en-GB defaults), so it also covers that the item count, capacity and fullness percent are
  * rendered as the user would see them. Responsive shedding is CSS-only (breakpoint `hidden`
- * utilities), so it isn't exercised here — jsdom keeps every piece in the DOM.
+ * utilities), so it isn't exercised here — happy-dom keeps every piece in the DOM.
  */
 
 const parent: LocationWithCount = {

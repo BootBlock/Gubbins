@@ -160,7 +160,7 @@ describe('CommandPalette', () => {
   });
 
   it('scrolls the newly highlighted row into view, including on wrap-around (issue #450)', async () => {
-    // jsdom stubs scrollIntoView as a no-op; spy on it to prove the wrapped-to selection is
+    // happy-dom implements scrollIntoView as a no-op; spy on it to prove the wrapped-to selection is
     // asked to reveal itself so the user can always see what's highlighted.
     const scrollSpy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {});
     useCommandPaletteStore.setState({ open: true });

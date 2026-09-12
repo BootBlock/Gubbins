@@ -37,7 +37,7 @@ vi.mock('@/components/BrandMark', () => ({
 }));
 vi.mock('@/components/icons', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/components/icons')>();
-  // Replace every icon with a lightweight span so we don't need SVG/canvas in jsdom.
+  // Replace every icon with a lightweight span, so the screen renders none of their SVG.
   return Object.fromEntries(Object.keys(actual).map((k) => [k, () => <span data-testid={`icon-${k}`} />]));
 });
 

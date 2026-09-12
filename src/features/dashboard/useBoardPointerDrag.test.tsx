@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
+import { firePointer, fireTouchMove, pointHitTestAt } from '@/test/pointer-drag';
 import { useBoardPointerDrag } from './useBoardPointerDrag';
 
 /**
@@ -7,9 +8,8 @@ import { useBoardPointerDrag } from './useBoardPointerDrag';
  * use it, without their full subtrees: a harness mounts one source tile (with an inner control, to
  * prove the interactive-origin guard) and one keyed drop target, then drives raw pointer sequences.
  *
- * jsdom has no layout, so `document.elementFromPoint` is stubbed to resolve the drop target;
- * window-level pointer events are dispatched manually (jsdom lacks a real `PointerEvent`), mirroring
- * `item-drag.test.tsx`.
+ * happy-dom lays nothing out, so each test names the drop target with `pointHitTestAt`; the
+ * pointer sequences come from the same `@/test/pointer-drag` helpers as `item-drag.test.tsx`.
  */
 
 function Harness({
@@ -42,33 +42,6 @@ function Harness({
       {drag.preview}
     </div>
   );
-}
-
-function firePointer(
-  target: EventTarget,
-  type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
-  init: { x?: number; y?: number; pointerType?: string; pointerId?: number; button?: number } = {},
-) {
-  const { x = 0, y = 0, pointerType = 'mouse', pointerId = 1, button = 0 } = init;
-  const event = new Event(type, { bubbles: true, cancelable: true });
-  Object.assign(event, { clientX: x, clientY: y, pointerType, pointerId, button });
-  act(() => {
-    target.dispatchEvent(event);
-  });
-}
-
-/** Dispatch a cancelable `touchmove` on window and return it, so a test can read `defaultPrevented`. */
-function fireTouchMove(): Event {
-  const event = new Event('touchmove', { bubbles: true, cancelable: true });
-  act(() => {
-    window.dispatchEvent(event);
-  });
-  return event;
-}
-
-/** Point every hit-test at the given element until restored. */
-function pointHitTestAt(el: Element | null) {
-  document.elementFromPoint = vi.fn(() => el);
 }
 
 afterEach(() => {

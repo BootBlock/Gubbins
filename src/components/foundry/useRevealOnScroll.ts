@@ -7,7 +7,7 @@
  * Behaviour, and why it is shaped this way (this is the one place the reveal lives, so no call
  * site hand-rolls its own observer):
  *  - **Enhance-downward.** The reveal only ever arms when an IntersectionObserver is available
- *    *and* the user permits motion. When it can't (reduced motion, no observer, SSR/jsdom), the
+ *    *and* the user permits motion. When it can't (reduced motion, no observer, SSR), the
  *    element is `revealed` from the very first paint — content is never gated on JS or on the
  *    observer, and never left stuck invisible.
  *  - **One-shot.** On the first intersection the element reveals and the observer disconnects,

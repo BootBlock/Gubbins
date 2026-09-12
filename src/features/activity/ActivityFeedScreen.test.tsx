@@ -173,7 +173,7 @@ beforeEach(() => {
   itemCount = 1;
   locationCount = 1;
   // Discrete pages, so the rows under test are plainly rendered rather than measured by the
-  // virtualiser (which has no layout to measure in jsdom).
+  // virtualiser (which has no layout to measure in happy-dom).
   usePreferencesStore.setState({ paginateLists: true, defaultPageSize: 50 });
 });
 afterEach(cleanup);
