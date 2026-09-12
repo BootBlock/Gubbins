@@ -75,7 +75,7 @@ export interface CountUpOptions {
  *  - **A change while mounted rolls** from the previous value to the new one over
  *    `durationMs`, easing on a steep expo-out curve, landing exactly on the target.
  *  - **Reduced motion (or no rAF) snaps.** When `reduced` is set (or the frame loop
- *    is unavailable, e.g. SSR/jsdom) the value is set instantly with no roll —
+ *    is unavailable, e.g. SSR) the value is set instantly with no roll —
  *    belt-and-braces alongside the global CSS reduced-motion catch-all.
  */
 export function useCountUp(

@@ -2,7 +2,7 @@
  * The pure reducer behind drawing, moving and resizing location-photo regions (issue #81).
  *
  * Drawing is a gesture — press, drag, release, with an escape hatch — and gestures are exactly the
- * logic that is hardest to test through a component: **jsdom lays nothing out**, so a test driving
+ * logic that is hardest to test through a component: **happy-dom lays nothing out**, so a test driving
  * the real canvas would be dragging across a zero-sized box reading zeroed rectangles. Modelling
  * the gesture as `(state, event) => state` over already-normalised points moves every rule worth
  * testing — what commits, what aborts, what a stray tap does — into a function with no layout

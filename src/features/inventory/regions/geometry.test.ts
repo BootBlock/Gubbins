@@ -59,7 +59,7 @@ describe('containBox — the object-contain letterbox transform (issue #81)', ()
   });
 
   it('returns null for unlaid-out, unsized or non-finite input (headless-safe)', () => {
-    expect(containBox(1600, 900, 0, 0)).toBeNull(); // jsdom: an unlaid-out box reports 0
+    expect(containBox(1600, 900, 0, 0)).toBeNull(); // happy-dom: an unlaid-out box reports 0
     expect(containBox(0, 0, 400, 300)).toBeNull(); // image not loaded yet
     expect(containBox(-10, 900, 400, 300)).toBeNull();
     expect(containBox(Number.NaN, 900, 400, 300)).toBeNull();

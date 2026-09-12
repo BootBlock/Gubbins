@@ -4,10 +4,10 @@
  *
  * The browser could answer this for us via `elementFromPoint` over the SVG overlay, and the
  * rendered overlay still gets native pointer events for the common case. But that path is
- * untestable — **jsdom has no `elementFromPoint` at all** and `getBoundingClientRect` returns
- * zeros — and it cannot answer the questions the keyboard and list affordances need ("what is
- * under this coordinate?" without a pointer). Doing the maths here keeps every containment rule
- * exhaustively unit-tested and identical on both paths.
+ * untestable — **happy-dom lays nothing out**, so `elementFromPoint` returns `null` and
+ * `getBoundingClientRect` returns zeros — and it cannot answer the questions the keyboard and list
+ * affordances need ("what is under this coordinate?" without a pointer). Doing the maths here keeps
+ * every containment rule exhaustively unit-tested and identical on both paths.
  */
 
 import { boundsOf, circleRadii, type NormalisedPoint, type RegionGeometry } from './geometry';

@@ -11,9 +11,9 @@ import { serialiseGeometry } from '../regions/geometry';
  * the OPFS image read — `usePhotoImageSrc` is exercised by the components' own placeholder paths
  * here rather than by faking `readImageBlob`.
  *
- * The focus is the part a pointer test could never reach under jsdom, which lays nothing out
- * (`getBoundingClientRect` is all zeros, `elementFromPoint` is absent): the **region list is the
- * primary, keyboard-complete path**, and the tool doubles as the create-vs-update discriminator.
+ * The focus is the part a pointer test could never reach under happy-dom, which lays nothing out
+ * (`getBoundingClientRect` is all zeros, `elementFromPoint` returns `null`): the **region list is
+ * the primary, keyboard-complete path**, and the tool doubles as the create-vs-update discriminator.
  */
 
 const h = vi.hoisted(() => ({

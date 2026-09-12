@@ -5,7 +5,7 @@ import { useFullscreen } from './useFullscreen';
 afterEach(cleanup);
 
 /**
- * jsdom ships no Fullscreen API, so each test installs a small controllable fake on
+ * happy-dom ships no Fullscreen API, so each test installs a small controllable fake on
  * `document`: a mutable `fullscreenElement`, request/exit that flip it and dispatch the
  * real `fullscreenchange` event the hook listens for, and the ability to omit
  * `requestFullscreen` entirely to simulate an unsupported browser.

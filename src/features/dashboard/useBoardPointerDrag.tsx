@@ -132,11 +132,9 @@ export function useBoardPointerDrag(opts: {
   onDropRef.current = onDrop;
 
   // The drop key under the point, scoped to this board (a target from the *other* board resolves
-  // to null so it never highlights or receives the drop). Guarded for jsdom, where
-  // `elementFromPoint` is absent — the pointer path then simply never resolves a target.
+  // to null so it never highlights or receives the drop).
   const resolveKey = useCallback(
     (x: number, y: number): string | null => {
-      if (typeof document.elementFromPoint !== 'function') return null;
       const el = document.elementFromPoint(x, y);
       const target = el instanceof Element ? el.closest<HTMLElement>('[data-board-drop]') : null;
       if (!target || target.getAttribute('data-drag-board') !== boardId) return null;

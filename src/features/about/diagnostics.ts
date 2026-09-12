@@ -270,7 +270,10 @@ function formatUtcOffset(offsetMinutes: number): string {
   return `UTC${sign}${hh}:${mm}`;
 }
 
-/** Read a media-query match defensively (jsdom and older engines may lack `matchMedia`). */
+/**
+ * Read a media-query match defensively: with no `window`, no `matchMedia`, or a query the engine
+ * rejects, the answer is `false` rather than a throw.
+ */
 function media(query: string): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   try {

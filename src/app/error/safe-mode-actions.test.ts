@@ -164,7 +164,8 @@ function mockOpfs(
 beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
-  // `location.reload` is the last line of a successful restore; jsdom refuses the real one.
+  // `location.reload` is the last line of a successful restore. It is stubbed so that no test
+  // depends on what the environment makes of a real reload (happy-dom only re-sets the URL).
   vi.stubGlobal('location', { ...window.location, reload: vi.fn() });
   // `clearAllMocks` forgets the *calls* but keeps the implementations, and several tests here
   // install one to record ordering or force a failure — reset the two that would otherwise leak

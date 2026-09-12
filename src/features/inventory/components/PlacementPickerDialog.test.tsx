@@ -169,7 +169,7 @@ describe('PlacementPickerDialog', () => {
   });
 
   it('clears the choice when the canvas reports a press on blank photo', () => {
-    // jsdom lays nothing out, so the canvas treats every press as unmeasurable and ignores it.
+    // happy-dom lays nothing out, so the canvas treats every press as unmeasurable and ignores it.
     // One honest rectangle (the photo is 400×300, so a client pixel is a display pixel) is what
     // makes the pointer path reachable at all; the geometry maths is covered in its own module.
     const box = { x: 0, y: 0, left: 0, top: 0, right: 400, bottom: 300, width: 400, height: 300 };

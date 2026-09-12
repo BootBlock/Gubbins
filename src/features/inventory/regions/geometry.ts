@@ -17,8 +17,8 @@
  *    *ellipse* on a non-square photo. So `r` is normalised against the image **width only** and
  *    the vertical radius is derived — see {@link circleRadii}.
  *
- * Everything here takes plain numbers and rectangles and never touches the DOM: under **jsdom**
- * `getBoundingClientRect` returns zeros and `elementFromPoint` does not exist, so maths that read
+ * Everything here takes plain numbers and rectangles and never touches the DOM: under **happy-dom**
+ * `getBoundingClientRect` returns zeros and `elementFromPoint` returns `null`, so maths that read
  * layout could not be unit-tested at all. The DOM glue (measuring the `<img>`, binding pointer
  * events) lives with the `RegionCanvas` component.
  */
@@ -118,7 +118,7 @@ function clamp(n: number, min: number, max: number): number {
  * The image is scaled by `Math.min(boxWidth / naturalWidth, boxHeight / naturalHeight)` so it fits
  * *whole*, then centred — leaving equal bars on whichever axis is over-long. Returns `null` when
  * any input is not a positive finite number: an unlaid-out element reports 0 (as it does under
- * jsdom), and an image whose intrinsic size has not resolved reports 0 too. Callers treat `null`
+ * happy-dom), and an image whose intrinsic size has not resolved reports 0 too. Callers treat `null`
  * as "nothing to render yet" rather than dividing by zero.
  */
 export function containBox(

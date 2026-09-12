@@ -11,9 +11,9 @@
  * The fix is a negative margin cancelled by an equal padding: the box grows outwards into padding
  * the Surface already has, the content does not move, and the ring has room.
  *
- * Asserted against the sources rather than a rendered component because jsdom applies no Tailwind
- * utility, so no component test can see any of these declarations. Four things are checked, and
- * they fail for different reasons:
+ * Asserted against the sources rather than a rendered component because the unit suite loads no
+ * stylesheet (`css: false` in `vite.config.ts`), so no component test can see any of these
+ * declarations. Four things are checked, and they fail for different reasons:
  *
  * 1. **`--spacing-ring-bleed` still exists and is still wide enough** for the widest ring the
  *    Foundry draws, on the control that magnifies it most.

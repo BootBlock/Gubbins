@@ -22,7 +22,7 @@ export interface SegmentedOption<T extends string> {
  *
  * The selection is drawn as a single pill that **slides** between the segments rather than
  * being repainted on whichever segment is current (issue #449), so the change of choice is
- * something the eye can follow. Where the control has not been laid out (jsdom, a collapsed
+ * something the eye can follow. Where the control has not been laid out (happy-dom, a collapsed
  * panel) the measurement yields nothing and the selected segment paints its own background
  * instead, so the control is never left with no visible selection.
  */
