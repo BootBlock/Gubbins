@@ -26,7 +26,7 @@ const CLAUDE = read('CLAUDE.md');
 const AGENTS = read('AGENTS.md');
 
 /** Character budgets. `CLAUDE.md` states these numbers too, and the last `CLAUDE.md` test holds it to them. */
-const BUDGET = { claudeFile: 10_000, claudeSection: 1_500, agentsFile: 600 };
+const BUDGET = { claudeFile: 8_000, claudeSection: 1_200, agentsFile: 600 };
 
 const HOW_TO_FIX =
   'Move detail that applies to one kind of change into a memory note, and name the note from a ' +
