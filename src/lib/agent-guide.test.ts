@@ -55,7 +55,7 @@ describe('CLAUDE.md stays within its budgets', () => {
     ).toBeLessThanOrEqual(BUDGET.claudeFile);
   });
 
-  it.each(sections(CLAUDE))('section "$title"', ({ title, length }) => {
+  it.each(sections(CLAUDE))('section $title', ({ title, length }) => {
     expect(
       length,
       `CLAUDE.md's "${title}" is ${length} characters, over the ${BUDGET.claudeSection} section budget. ${HOW_TO_FIX}`,
