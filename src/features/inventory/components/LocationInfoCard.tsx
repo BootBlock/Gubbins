@@ -13,16 +13,15 @@ import { LocationFullnessBar } from './LocationFullnessBar';
 import { describeVolumetricFullness } from './volumetric-fullness-text';
 
 /**
- * A vertically compact, single-row summary of the selected location, shown atop the
- * inventory list. It surfaces the same headline facts as the Edit-location dialog — the
- * capacity/fullness gauge, item count, breadcrumb path, sub-locations and last change —
- * without leaving the workspace.
+ * A vertically compact summary of the selected location, shown atop the inventory list. It
+ * surfaces the same headline facts as the Edit-location dialog — the capacity/fullness gauge,
+ * item count, breadcrumb path, sub-locations and last change — without leaving the workspace.
  *
- * The row never wraps: as the viewport narrows it sheds its least-useful pieces first
- * (sub-locations at `xl`, "updated" at `lg`, the fullness bar at `sm`, the path at
- * `md`), always keeping the identity and item count. The whole card is opt-out — the user
- * dismisses it from here or the inventory "More" menu, and the choice persists (see
- * {@link useLayoutStore.inventoryLocationCard}).
+ * On a phone (`handset:`) it sheds everything but the identity and item count. Anywhere else it
+ * keeps every piece and lets the stats wrap below the name, because a narrow viewport may be a
+ * desktop zoomed in by a reader who needs that content (see `src/lib/handset-hiding.test.ts`).
+ * The whole card is opt-out — the user dismisses it from here or the inventory "More" menu, and
+ * the choice persists (see {@link useLayoutStore.inventoryLocationCard}).
  */
 export function LocationInfoCard({
   location,
@@ -66,56 +65,60 @@ export function LocationInfoCard({
     >
       <LocationIcon icon={location.icon} className={cn('size-5 shrink-0', colorClass)} />
 
-      <div className="flex min-w-0 items-baseline gap-2">
-        <span className={cn('truncate font-medium', colorClass)} title={location.name}>
-          {location.name}
-        </span>
-        {showPath ? (
-          <span className="hidden min-w-0 truncate text-xs text-muted-foreground md:inline" title={path}>
-            {path}
+      {/* The name and the stats wrap as one group, so the hide button keeps its place at the end of
+          the first line when a narrow or zoomed window cannot fit every stat beside the name. */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className={cn('truncate font-medium', colorClass)} title={location.name}>
+            {location.name}
           </span>
-        ) : null}
-      </div>
-
-      <div className="ml-auto flex shrink-0 items-center gap-4 text-sm">
-        <Stat icon={<PackageIcon aria-hidden />} label="Items" value={itemsValue} />
-
-        {fullness ? (
-          <div
-            className="hidden w-28 items-center sm:flex"
-            data-testid="location-info-fullness"
-            title={fullnessDetail ?? undefined}
-          >
-            <span className="sr-only">{fullnessDetail ? `Fullness: ${fullnessDetail}` : 'Fullness'}</span>
-            <LocationFullnessBar fullness={fullness} className="flex-1" />
-          </div>
-        ) : null}
-
-        <div className="hidden lg:block">
-          <Stat
-            icon={<HistoryIcon aria-hidden />}
-            label="Updated"
-            value={fmt.relativeTime(location.updatedAt)}
-            title={fmt.dateTime(location.updatedAt)}
-          />
+          {showPath ? (
+            <span className="min-w-0 truncate text-xs text-muted-foreground handset:hidden" title={path}>
+              {path}
+            </span>
+          ) : null}
         </div>
 
-        {cycleCountsEnabled ? (
-          <div className="hidden xl:block" data-testid="location-info-last-counted">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm">
+          <Stat icon={<PackageIcon aria-hidden />} label="Items" value={itemsValue} />
+
+          {fullness ? (
+            <div
+              className="flex w-28 items-center handset:hidden"
+              data-testid="location-info-fullness"
+              title={fullnessDetail ?? undefined}
+            >
+              <span className="sr-only">{fullnessDetail ? `Fullness: ${fullnessDetail}` : 'Fullness'}</span>
+              <LocationFullnessBar fullness={fullness} className="flex-1" />
+            </div>
+          ) : null}
+
+          <div className="handset:hidden">
             <Stat
-              icon={<CycleCountIcon aria-hidden />}
-              label="Last counted"
-              value={location.lastCountedAt != null ? fmt.relativeTime(location.lastCountedAt) : 'Never'}
-              title={location.lastCountedAt != null ? fmt.dateTime(location.lastCountedAt) : undefined}
+              icon={<HistoryIcon aria-hidden />}
+              label="Updated"
+              value={fmt.relativeTime(location.updatedAt)}
+              title={fmt.dateTime(location.updatedAt)}
             />
           </div>
-        ) : null}
 
-        {childCount > 0 ? (
-          <div className="hidden xl:block">
-            <Stat icon={<MoveIcon aria-hidden />} label="Sub-locations" value={fmt.quantity(childCount)} />
-          </div>
-        ) : null}
+          {cycleCountsEnabled ? (
+            <div className="handset:hidden" data-testid="location-info-last-counted">
+              <Stat
+                icon={<CycleCountIcon aria-hidden />}
+                label="Last counted"
+                value={location.lastCountedAt != null ? fmt.relativeTime(location.lastCountedAt) : 'Never'}
+                title={location.lastCountedAt != null ? fmt.dateTime(location.lastCountedAt) : undefined}
+              />
+            </div>
+          ) : null}
+
+          {childCount > 0 ? (
+            <div className="handset:hidden">
+              <Stat icon={<MoveIcon aria-hidden />} label="Sub-locations" value={fmt.quantity(childCount)} />
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <Tooltip content="Hide this summary. Bring it back from the More menu." triggerTabIndex={-1}>

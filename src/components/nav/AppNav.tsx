@@ -72,7 +72,7 @@ export function AppNav() {
       trigger={
         <span className="relative flex items-center gap-2">
           <MenuIcon />
-          <span className="hidden sm:inline">{t('nav.menu')}</span>
+          <span className="handset:hidden">{t('nav.menu')}</span>
           {alertCount > 0 && (
             <span
               aria-hidden

@@ -93,7 +93,7 @@ describe('CardBadge', () => {
 
   it('passes the caller className through to the rendered badge', () => {
     usePreferencesStore.setState({ cardBadgeContent: 'condition', cardBadgeFallback: 'none' });
-    render(<CardBadge item={item({ condition: 'MINT' })} className="hidden sm:inline-flex" />);
-    expect(screen.getByText('Mint').className).toContain('hidden');
+    render(<CardBadge item={item({ condition: 'MINT' })} className="handset:hidden" />);
+    expect(screen.getByText('Mint').className).toContain('handset:hidden');
   });
 });
