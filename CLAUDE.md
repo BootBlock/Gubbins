@@ -141,3 +141,16 @@ A Gubbins issue URL, `#<id>` or "issue <id>" with no other instruction asks you 
 issue end to end: implement, review with `/auto-review high`, land, comment and close, with no
 pause for approval. Read the memory note *Actioning a Gubbins issue end to end* first. If the
 message only asks for discussion, answer instead.
+
+## Keep this file small (mandatory)
+
+This file is loaded into every session, so every line costs every task. It holds only rules that
+apply to every change, each in a few lines.
+
+- Put detail that applies to one kind of change (a recipe, a root cause, a table, an incident, a
+  list of examples) in a memory note, and name the note from a short rule here.
+- Shorten or replace an existing rule before you append a new one. Never append an explanation.
+- Never add a rule to `AGENTS.md`. It is only a pointer to this file.
+- `src/lib/agent-guide.test.ts` fails when this file passes 10,000 characters, one section passes
+  1,500, or `AGENTS.md` passes 600. Move detail out to pass it. Never raise a budget without asking
+  the maintainer.
