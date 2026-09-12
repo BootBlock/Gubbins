@@ -47,7 +47,8 @@ const RAW_FIELD_GAP =
 /**
  * Call sites that genuinely want 4px between a caption and a control. Empty, and it should stay
  * that way — if a field needs to be denser than the compact tier, that is a new token, not a
- * literal (CLAUDE.md, "Controls & spacing"). Add an entry only with a comment saying why.
+ * literal (CLAUDE.md, "UI: design tokens and Foundry primitives"). Add an entry only with a comment
+ * saying why.
  */
 const ALLOW_LIST: readonly string[] = [];
 
