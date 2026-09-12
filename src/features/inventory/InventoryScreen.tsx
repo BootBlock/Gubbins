@@ -8,9 +8,11 @@ import {
   Input,
   LiveRegion,
   Pagination,
+  PrimaryContentProvider,
   Spinner,
   Surface,
   pageCount,
+  useAfterSettled,
   useCompactLayout,
   MAIN_CONTENT_ID,
 } from '@/components/foundry';
@@ -476,9 +478,14 @@ function InventoryWorkspace() {
   const tree = useLocationTree();
   const flat = useLocations();
   const totalCount = useItemCount({ includeInactive });
+  // Whether the flat Card/Data/Table list is the arrangement actually on screen. The grouped
+  // sections, the two whole-collection visualisations and a Visual-Builder result set each draw
+  // their own rows, so the infinite read below is gated off for all of them (issue #1575): a read
+  // nobody can see still takes a turn on a connection that carries one statement at a time.
+  const showsFlatList = !grouped && !isVizMode && !astActive;
   // In paginated mode the infinite list is suspended and the page read (below) drives the list, so
   // the two never both run; otherwise the infinite list feeds the virtualised scroll as before.
-  const listItems = useInventoryItems(filters, undefined, !paginated);
+  const listItems = useInventoryItems(filters, undefined, showsFlatList && !paginated);
   // The chosen ordering applies to Visual-search results too — otherwise the Sort control would
   // silently do nothing while the builder drives the list.
   const astItems = useAstSearch(ast, astActive, itemSort, astLocationId);
@@ -486,6 +493,19 @@ function InventoryWorkspace() {
   // Discrete-pagination reads (issue #20), gated off unless the flat list is paginated: one page of
   // rows plus the filtered total that sizes the page count.
   const pageItems = useItemPage(filters, page, defaultPageSize, paginated);
+  // The query whose loading/success gates the list's spinner + "shown" line — the page read in
+  // paginated mode, the infinite/AST read otherwise.
+  const listStatus = paginated ? pageItems : active;
+
+  // The read the reader is actually waiting for, by arrangement — the one whose arrival means
+  // this screen has content (issue #1575). The grouped sections and the location map are both
+  // drawn from the location tree; the value treemap stands on an aggregation of its own, so there
+  // is nothing here for it to wait for. Everything *around* that read — the status-chip counts,
+  // the facet dictionaries, the removed-items probe and the navigation's alert badge — waits for
+  // it (through the `PrimaryContentProvider` below) instead of racing it down the one connection.
+  const primaryRead = isVizMode ? (density === 'map' ? tree : null) : grouped ? tree : listStatus;
+  const primarySettled = primaryRead === null || primaryRead.isFetched;
+  const afterListInLocation = useAfterSettled(primarySettled, selectedLocationId);
 
   // How many items actually **match** — the number the result summary announces, and the one that
   // sizes the page count while paginating (issue #220). It must come from a `COUNT(*)`, never from
@@ -513,12 +533,20 @@ function InventoryWorkspace() {
   // active-only one; their difference is the removed count, with no bespoke query needed.
   // keepPreviousData (inside useItemCount) stops the counts flickering the toggle on a location
   // change. In the no-location case these keys coincide with `totalCount` above and dedupe.
+  const probeLocationId = grouped ? null : selectedLocationId;
   const removedProbeScope = useMemo(
-    () => (grouped || !selectedLocationId ? {} : { locationId: selectedLocationId }),
-    [grouped, selectedLocationId],
+    () => (probeLocationId ? { locationId: probeLocationId } : {}),
+    [probeLocationId],
   );
-  const activeScopeCount = useItemCount({ ...removedProbeScope, includeInactive: false });
-  const allScopeCount = useItemCount({ ...removedProbeScope, includeInactive: true });
+  // Both probes answer a question *about* the list, so they wait for it (issue #1575) — scoped to
+  // the location their own keys carry rather than to the sidebar's, so the grouped view (which
+  // probes the whole inventory) is not made to wait again each time the selection moves.
+  const afterListInProbeScope = useAfterSettled(primarySettled, probeLocationId);
+  const activeScopeCount = useItemCount(
+    { ...removedProbeScope, includeInactive: false },
+    afterListInProbeScope,
+  );
+  const allScopeCount = useItemCount({ ...removedProbeScope, includeInactive: true }, afterListInProbeScope);
   // Require both counts before judging, so the toggle never flashes in on first load when the
   // all-items count resolves a tick before the active-only one (keepPreviousData keeps them
   // resolved together across later location changes, so there is no flash then either).
@@ -539,13 +567,24 @@ function InventoryWorkspace() {
   // superseded and disabled then, so the round-trip couldn't change anything the user can do.
   // Also gated off while a whole-collection visualisation is on screen: the filter bar these
   // counts feed is hidden then (see `isVizMode`), so the per-location round-trip is wasted work.
-  const applicableStatusesQuery = useApplicableStatuses(selectedLocationId, !astActive && !isVizMode);
+  // …and gated off until the list itself has arrived (issue #1575): these two counts carry the
+  // screen's heaviest correlated subqueries, and a reader waiting on an empty list is not waiting
+  // for the numbers in the chips above it.
+  const applicableStatusesQuery = useApplicableStatuses(
+    selectedLocationId,
+    !astActive && !isVizMode && afterListInLocation,
+  );
+  // `keepPreviousData` inside the hook holds the *previous* location's counts while a new
+  // location's read is pending, which is what stops the chips flickering on a refetch. While the
+  // read for this location has not started at all, though, those numbers describe somewhere the
+  // reader has just left — so they are dropped back to "not known yet", which is the state every
+  // chip already renders as no count rather than as a wrong one (issue #1575).
   const statusCounts = useMemo(
     () =>
-      applicableStatusesQuery.data
+      afterListInLocation && applicableStatusesQuery.data
         ? new Map(applicableStatusesQuery.data.map((s) => [s.status, s.count]))
         : undefined,
-    [applicableStatusesQuery.data],
+    [applicableStatusesQuery.data, afterListInLocation],
   );
   const applicableStatuses = useMemo(
     () => (statusCounts ? new Set(statusCounts.keys()) : undefined),
@@ -580,9 +619,6 @@ function InventoryWorkspace() {
   // leading page(s), so the virtualised list can index in absolute space. A discrete page always
   // starts at 0 (it holds exactly its own rows, not an absolute-indexed window).
   const firstItemIndex = paginated ? 0 : (active.data?.pages[0]?.offset ?? 0);
-  // The query whose loading/success gates the list's spinner + "shown" line — the page read in
-  // paginated mode, the infinite/AST read otherwise.
-  const listStatus = paginated ? pageItems : active;
   // Total pages for the control, from the filtered count (only fetched while paginating).
   const totalPages = pageCount(matchCount.data ?? 0, defaultPageSize);
   // If the result set shrinks below the current page (e.g. items removed, or a narrower filter),
@@ -761,873 +797,878 @@ function InventoryWorkspace() {
   };
 
   return (
-    <PageContainer fullHeight>
-      <PageHeader
-        className="pb-4"
-        hideSearch
-        icon={<PackageIcon />}
-        title="Inventory"
-        actions={
-          <>
-            {/* `min-w`/`max-w` + `flex-1` (rather than a fixed `w-64`) let the box cooperate
-                with the row's flex-wrap: it shrinks under space pressure and grows to fill
-                slack, instead of forcing an early hard break — the same fix applied to the
-                dashboard hero's search box, and for the same reason. The row itself now holds
-                only Search/Add item/Scan/More, mirroring the dashboard hero's Search/Add/
-                Scan/Menu set — Visual search, the view density and the grouping mode all
-                moved into the "More" menu below so the row stays this simple. */}
-            <div className="relative min-w-[10rem] max-w-xs flex-1">
-              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                ref={searchRef}
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => {
-                  // Escape clears the box (standard search-field behaviour), keeping focus.
-                  if (e.key === 'Escape' && searchInput) {
-                    e.preventDefault();
-                    setSearchInput('');
-                  }
-                }}
-                placeholder="Search items…"
-                className={`pl-9 ${searchInput && !astActive ? 'pr-16' : 'pr-9'}`}
-                aria-label="Search items"
-                disabled={astActive}
-              />
-              {/* In-box adornments: the usual clear "✕" (only with text to clear) and the saved-
-                  searches toggle, which is always offered — it *is* the discovery point for the
-                  feature (issue #136), so hiding it until there's something saved would defeat it. */}
-              <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
-                {searchInput && !astActive ? (
-                  <button
-                    type="button"
-                    onClick={() => {
+    <PrimaryContentProvider settled={primarySettled}>
+      <PageContainer fullHeight>
+        <PageHeader
+          className="pb-4"
+          hideSearch
+          icon={<PackageIcon />}
+          title="Inventory"
+          actions={
+            <>
+              {/* `min-w`/`max-w` + `flex-1` (rather than a fixed `w-64`) let the box cooperate
+                  with the row's flex-wrap: it shrinks under space pressure and grows to fill
+                  slack, instead of forcing an early hard break — the same fix applied to the
+                  dashboard hero's search box, and for the same reason. The row itself now holds
+                  only Search/Add item/Scan/More, mirroring the dashboard hero's Search/Add/
+                  Scan/Menu set — Visual search, the view density and the grouping mode all
+                  moved into the "More" menu below so the row stays this simple. */}
+              <div className="relative min-w-[10rem] max-w-xs flex-1">
+                <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  ref={searchRef}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Escape clears the box (standard search-field behaviour), keeping focus.
+                    if (e.key === 'Escape' && searchInput) {
+                      e.preventDefault();
                       setSearchInput('');
-                      searchRef.current?.focus();
-                    }}
-                    aria-label="Clear search"
-                    data-testid="inventory-search-clear"
-                    className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4"
-                  >
-                    <CloseIcon />
-                  </button>
-                ) : null}
-                <Tooltip content={t('inventory.savedSearches.tooltip')} triggerTabIndex={-1}>
-                  <button
-                    type="button"
-                    onClick={() => setSavedSearchesOpen((open) => !open)}
-                    aria-label={t('inventory.savedSearches.toggle')}
-                    aria-expanded={savedSearchesOpen}
-                    aria-controls={savedSearchesId}
-                    data-testid="inventory-saved-searches-toggle"
-                    className={cn(
-                      'rounded p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4',
-                      savedSearchesOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    <SavedSearchIcon aria-hidden />
-                  </button>
-                </Tooltip>
-              </div>
-            </div>
-
-            {/* Add item is a split button: the primary half opens the create dialog, and the
-                attached chevron offers Import… (the same entry point the dashboard hero uses).
-                Import lives here rather than in the "More" menu so there is one obvious place
-                to bring items in — beside the button that adds them. Placed right after search
-                (mirroring the dashboard hero's Search → Add item → Scan order) so the primary
-                actions stay grouped together at the front of the row; if the row must wrap at
-                a narrow width, it's the less-common view controls below that give way first. */}
-            <Button
-              onClick={() => setAddOpen(true)}
-              data-testid="inventory-add-item"
-              menuLabel="More add-item actions"
-              menuTriggerProps={{ 'data-testid': 'inventory-add-menu' }}
-              // Import is the chevron's only entry, so a session refused it gets no chevron at
-              // all — an undefined `menu` collapses the split button back to a plain one rather
-              // than leaving an empty panel hanging off it.
-              menu={
-                mayImport ? (
-                  <MenuAction
-                    icon={<ImportIcon />}
-                    onSelect={() => setImportOpen(true)}
-                    data-testid="open-catalog-import"
-                  >
-                    Import…
-                  </MenuAction>
-                ) : undefined
-              }
-            >
-              <AddIcon />
-              Add item
-            </Button>
-
-            {scannerEnabled ? (
-              <Button variant="outline" onClick={() => setScannerOpen(true)}>
-                <ScanIcon />
-                Scan
-              </Button>
-            ) : null}
-
-            <Menu
-              label="More inventory actions"
-              trigger={
-                <>
-                  <MoreIcon />
-                  More
-                </>
-              }
-            >
-              {/* Build complex queries graphically — combine fields, capabilities and AND/OR
-                  groups. Supersedes the quick search while active. */}
-              <MenuAction
-                icon={<BuilderIcon />}
-                onSelect={() => setBuilderOpen((v) => !v)}
-                selected={builderOpen}
-                selectionRole="checkbox"
-              >
-                Visual search
-              </MenuAction>
-              <MenuSeparator />
-              {/* The three arrangement axes: View (how each item is *drawn*: Card / Data / Table),
-                  Group by (how the list is *arranged*) and Sort by (what order it runs in). Each is
-                  a nested submenu holding its own modes — rendered off its own descriptor SSOT, so a
-                  future mode needs no menu rework — with the trigger showing the current choice, and
-                  each label resolved through the message catalog. */}
-              <MenuSub
-                icon={<activeDensity.icon />}
-                label={t('inventory.view.trigger', { vars: { mode: t(activeDensity.labelKey) } })}
-              >
-                {DENSITY_MODES.map((mode) => (
-                  <MenuAction
-                    key={mode.value}
-                    icon={<mode.icon />}
-                    onSelect={() => withViewTransition(() => setDensity(mode.value))}
-                    selected={density === mode.value}
-                    selectionRole="radio"
-                  >
-                    {t(mode.labelKey)}
-                  </MenuAction>
-                ))}
-              </MenuSub>
-              <MenuSub
-                icon={<GroupByIcon />}
-                label={t('inventory.groupBy.trigger', { vars: { mode: t(activeGrouping.labelKey) } })}
-              >
-                {GROUP_MODES.map((mode) => (
-                  <MenuAction
-                    key={mode.value}
-                    onSelect={() => setGrouping(mode.value)}
-                    selected={grouping === mode.value}
-                    selectionRole="radio"
-                  >
-                    {t(mode.labelKey)}
-                  </MenuAction>
-                ))}
-              </MenuSub>
-              {/* Sort by (the ordering axis, issue #128) — the third arrangement axis, rendered
-                  off the same kind of descriptor SSOT. Picking a field applies its natural
-                  direction (A → Z for text, newest/largest first for dates and numbers); the
-                  direction pair below then names what each way *means* for the chosen field,
-                  and is omitted under the default order, which has no direction to offer. */}
-              <MenuSub
-                icon={<SortIcon />}
-                label={t('inventory.sort.trigger', { vars: { mode: t(activeSort.labelKey) } })}
-              >
-                {SORT_MODES.map((mode) => (
-                  <MenuAction
-                    key={mode.value}
-                    onSelect={() =>
-                      changeSort({ field: mode.value, direction: initialDirection(mode.value) })
                     }
-                    selected={inventorySort.field === mode.value}
-                    selectionRole="radio"
-                  >
-                    {t(mode.labelKey)}
-                  </MenuAction>
-                ))}
-                {sortDirections ? (
-                  <>
-                    <MenuSeparator />
-                    {SORT_DIRECTIONS.map((direction) => (
-                      <MenuAction
-                        key={direction}
-                        icon={direction === 'asc' ? <SortAscIcon /> : <SortDescIcon />}
-                        onSelect={() => changeSort({ field: inventorySort.field, direction })}
-                        selected={inventorySort.direction === direction}
-                        selectionRole="radio"
-                      >
-                        {t(sortDirections.keys[direction])}
-                      </MenuAction>
-                    ))}
-                  </>
-                ) : null}
-              </MenuSub>
-              <MenuSeparator />
-              <MenuAction
-                icon={<InfoIcon />}
-                onSelect={toggleLocationCard}
-                selected={showLocationCard}
-                selectionRole="checkbox"
-                data-testid="toggle-location-info"
-              >
-                Location summary
-              </MenuAction>
-              {/* Paginate long lists (issue #20) — an app-wide view preference (mirrored in
-                  Settings). Splits the flat list into fixed-size pages; ignored while grouped or a
-                  whole-collection visualisation is on screen. */}
-              <MenuAction
-                icon={<DataDensityIcon />}
-                onSelect={() => setPaginateLists(!paginateLists)}
-                selected={paginateLists}
-                selectionRole="checkbox"
-                data-testid="toggle-paginate"
-              >
-                Paginate list
-              </MenuAction>
-              {/* Fullscreen (issue #118) — toggles the browser's fullscreen mode so the app fills
-                  the whole display. Only offered where the browser exposes the Fullscreen API. */}
-              {fullscreenSupported ? (
-                <MenuAction
-                  icon={isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
-                  onSelect={toggleFullscreen}
-                  selected={isFullscreen}
-                  selectionRole="checkbox"
-                  data-testid="toggle-fullscreen"
-                >
-                  Fullscreen
-                </MenuAction>
-              ) : null}
-              <MenuSeparator />
-              <MenuAction icon={<CategoryIcon />} onSelect={() => setCategoriesOpen(true)}>
-                Categories
-              </MenuAction>
-              <MenuAction icon={<TagIcon />} onSelect={() => void navigate({ to: '/tags' })}>
-                Tags
-              </MenuAction>
-              {cycleCountsEnabled ? (
-                <>
-                  <MenuAction
-                    icon={<CycleCountIcon />}
-                    onSelect={() => setCycleCountOpen(true)}
-                    disabled={!selectedLocationId}
-                    data-testid="open-cycle-count"
-                  >
-                    {selectedLocationId ? 'Cycle count' : 'Cycle count — select a location'}
-                  </MenuAction>
-                  <MenuAction
-                    icon={<CycleCountIcon />}
-                    onSelect={() => setAuditDayOpen(true)}
-                    data-testid="open-audit-day"
-                  >
-                    Stock-take (audit day)…
-                  </MenuAction>
-                </>
-              ) : null}
-              {mayExport ? (
-                <>
-                  <MenuSeparator />
-                  <MenuAction
-                    icon={<ExportIcon />}
-                    onSelect={() => setExportOpen(true)}
-                    data-testid="open-export-wizard"
-                  >
-                    Export
-                  </MenuAction>
-                </>
-              ) : null}
-              <MenuSeparator />
-              <MenuAction
-                icon={<SelectIcon />}
-                onSelect={toggleSelecting}
-                selected={selecting}
-                selectionRole="checkbox"
-                data-testid="toggle-select"
-              >
-                Select items
-              </MenuAction>
-            </Menu>
-          </>
-        }
-      />
-
-      {/* Saved-searches reveal (issue #136) — the same collapsing-grid disclosure the Visual
-          search panel below uses, so the two behave identically. It hosts the *same*
-          SavedSearchMenu the power box does, so saving, recalling and forgetting a search work
-          identically whichever box you came from — there is one saved-search UI, not two.
-          Recall routes through `recallSavedSearch`, which decides between this box and the
-          builder. */}
-      <div
-        className="grid transition-[grid-template-rows,opacity] duration-1000 ease-emphasized"
-        style={{
-          gridTemplateRows: savedSearchesOpen ? '1fr' : '0fr',
-          opacity: savedSearchesOpen ? 1 : 0,
-        }}
-      >
-        <div className="min-h-0 overflow-hidden">
-          <div
-            id={savedSearchesId}
-            className="pb-4"
-            inert={!savedSearchesOpen}
-            data-testid="inventory-saved-searches"
-          >
-            <Surface className="space-y-2 p-4">
-              <div className="flex items-center gap-2">
-                <span className="grid size-7 place-items-center rounded-lg bg-primary/15 text-primary [&_svg]:size-4">
-                  <SavedSearchIcon aria-hidden />
-                </span>
-                <h2 className="text-sm font-semibold">{t('inventory.savedSearches.toggle')}</h2>
-                <CloseButton
-                  className="ml-auto"
-                  onClick={() => setSavedSearchesOpen(false)}
-                  label={t('inventory.savedSearches.close')}
-                />
-              </div>
-              <SavedSearchMenu currentQuery={searchInput} onRecall={recallSavedSearch} />
-              <p className="text-[11px] text-muted-foreground">{t('inventory.savedSearches.hint')}</p>
-            </Surface>
-          </div>
-        </div>
-      </div>
-
-      {/* Visual-search reveal: the panel stays mounted and animates open/closed both ways
-          by transitioning a collapsing CSS grid row (0fr ↔ 1fr) plus opacity over 1s with
-          the signature emphasized ease. `inert` when closed keeps the hidden panel out of
-          the tab order and the accessibility tree. Reduced-motion users skip the transition
-          via the global catch-all and simply get the end state. */}
-      <div
-        className="grid transition-[grid-template-rows,opacity] duration-1000 ease-emphasized"
-        style={{ gridTemplateRows: builderOpen ? '1fr' : '0fr', opacity: builderOpen ? 1 : 0 }}
-      >
-        <div className="min-h-0 overflow-hidden">
-          <div className="pb-4" inert={!builderOpen}>
-            <VisualBuilder
-              resultSummary={
-                // The true match count, not the resident-page count (issue #220) — named with
-                // the location it is scoped to, so the panel agrees with the sidebar (#626).
-                astActive
-                  ? // Only name the location once it has resolved — `selectedLocationLabel`
-                    // falls back to "All items" until then, which would misdescribe the scope.
-                    astLocationId && selectedLocation
-                    ? t('inventory.results.builderSummaryInLocation', {
-                        vars: { count: matchTotal, location: selectedLocationLabel },
-                      })
-                    : t('inventory.results.builderSummary', { vars: { count: matchTotal } })
-                  : undefined
-              }
-              onClose={() => setBuilderOpen(false)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Drag-to-move (spec §4): the provider owns the unified pointer drag and must wrap both
-          the drop targets (the sidebar) and the drag sources (the item list). */}
-      <ItemDragProvider>
-        {/* Wide: master pane beside the list. Compact: the pane is in the drawer below, and
-            the row stacks so its trigger sits directly above the items it scopes. */}
-        <div className={cn('flex min-h-0 flex-1', compact ? 'flex-col gap-3' : 'gap-6 large-format:gap-8')}>
-          {compact ? (
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => setLocationsDrawerOpen(true)}
-              aria-haspopup="dialog"
-              aria-expanded={locationsDrawerOpen}
-              aria-label={t('inventory.locations.drawer.trigger', {
-                vars: { location: selectedLocationLabel },
-              })}
-              data-testid="open-locations-drawer"
-            >
-              <LocationTreeIcon />
-              {t('inventory.locations.title')}
-              {/* The scope the list is currently showing, so the trigger doubles as the
-                  breadcrumb the master pane would otherwise give you at a glance. */}
-              <span aria-hidden className="min-w-0 truncate font-normal text-muted-foreground">
-                {selectedLocationLabel}
-              </span>
-            </Button>
-          ) : tree.data && flat.data ? (
-            <LocationSidebar
-              tree={tree.data}
-              flat={flatLocations}
-              selectedId={selectedLocationId}
-              onSelect={setSelectedLocationId}
-              totalCount={totalCount.data ?? 0}
-            />
-          ) : (
-            <div className="w-64 shrink-0 large-format:w-72" />
-          )}
-
-          <main
-            id={MAIN_CONTENT_ID}
-            tabIndex={-1}
-            className="flex min-w-0 flex-1 animate-rise flex-col overflow-x-clip outline-none"
-          >
-            {/* Compact summary of the selected location (fullness, path, last change, …).
-                Opt-out and device-local; hidden for the "All locations" view. It stays
-                mounted while a location is selected and animates open/closed both ways by
-                transitioning a collapsing CSS grid row (0fr ↔ 1fr) plus opacity with the
-                signature emphasized ease — mirroring the visual-search reveal below. `inert`
-                when hidden keeps it out of the tab order and accessibility tree; reduced-motion
-                users skip the transition via the global catch-all and get the end state. */}
-            {selectedLocation && !isVizMode ? (
-              <div
-                className="grid transition-[grid-template-rows,opacity] duration-300 ease-emphasized"
-                style={{
-                  gridTemplateRows: showLocationCard ? '1fr' : '0fr',
-                  opacity: showLocationCard ? 1 : 0,
-                }}
-              >
-                <div className="min-h-0 overflow-hidden">
-                  <div inert={!showLocationCard}>
-                    <LocationInfoCard
-                      location={selectedLocation}
-                      locations={flatLocations}
-                      onHide={toggleLocationCard}
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* The selected location's own detail — its description as rich Markdown, plus the
-                custom-field values it holds about itself (issues #108, #617). Independent of the
-                compact summary card above: it is never dismissed, and it renders itself away when
-                the location holds neither, so the gate here is only "a location is selected and
-                we're not in a whole-collection visualisation". */}
-            {selectedLocation && !isVizMode ? <LocationDetailCard location={selectedLocation} /> : null}
-
-            {/* The filter/facet bars and the "shown" count belong to the item list; a
-                whole-collection visualisation (map/treemap) stands alone, so they're hidden then. */}
-            {!isVizMode ? (
-              <>
-                <InventoryFilterBar
-                  value={statusFilters}
-                  onToggle={toggleStatusFilter}
-                  onClear={clearStatusFilters}
-                  applicable={applicableStatuses}
-                  counts={statusCounts}
+                  }}
+                  placeholder="Search items…"
+                  className={`pl-9 ${searchInput && !astActive ? 'pr-16' : 'pr-9'}`}
+                  aria-label="Search items"
                   disabled={astActive}
                 />
-
-                <InventoryFacetBar
-                  categoryId={categoryId}
-                  onCategoryChange={setCategoryId}
-                  locationId={selectedLocationId}
-                  tagIds={tagIds}
-                  onToggleTag={toggleTag}
-                  disabled={astActive}
-                />
-
-                <div className="flex items-center justify-between pb-3">
-                  {/* The one place that answers "did my filter match anything, and how much?" —
-                      so it announces the **match total**, never the resident row count (issue
-                      #220). Grouped mode carries the same total, since a grouped list is just as
-                      filtered as a flat one. */}
-                  <p
-                    className="text-sm text-muted-foreground"
-                    role="status"
-                    aria-live="polite"
-                    data-testid="inventory-result-summary"
-                  >
-                    {!resultCount.isSuccess
-                      ? t('inventory.results.loading')
-                      : grouped
-                        ? t('inventory.results.grouped', { vars: { count: matchTotal } })
-                        : astActive
-                          ? // Named only once the location has resolved — see the builder
-                            // panel's summary above.
-                            astLocationId && selectedLocation
-                            ? t('inventory.results.visualSearchInLocation', {
-                                vars: { count: matchTotal, location: selectedLocationLabel },
-                              })
-                            : t('inventory.results.visualSearch', { vars: { count: matchTotal } })
-                          : t('inventory.results.count', { vars: { count: matchTotal } })}
-                  </p>
-                  {/* Only shown when it applies (removed items exist in view, or it's already on) —
-                      see `showRemovedToggle`. The help badge sits outside the label so a tap on the
-                      hint doesn't toggle the checkbox. */}
-                  {showRemovedToggle ? (
-                    <div className="flex items-center gap-1.5">
-                      <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                        <Checkbox
-                          checked={includeInactive}
-                          onChange={(e) => setIncludeInactive(e.target.checked)}
-                          className="size-3.5"
-                        />
-                        Show removed
-                      </label>
-                      <InfoHint content={SHOW_REMOVED_HINT} />
-                    </div>
-                  ) : null}
-                </div>
-              </>
-            ) : null}
-
-            {!isVizMode && selecting ? (
-              <div
-                className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2"
-                data-testid="selection-bar"
-              >
-                <span className="text-sm font-medium" data-testid="selection-count">
-                  {selected.size} selected
-                </span>
-                <div className="ml-auto flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelected(new Map())}
-                    disabled={selected.size === 0}
-                  >
-                    Clear
-                  </Button>
-                  {mayWriteItems ? (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setBulkEditOpen(true)}
-                        disabled={selected.size === 0}
-                        data-testid="bulk-edit"
-                      >
-                        <EditIcon />
-                        Bulk edit
-                      </Button>
-                      <Tooltip
-                        content="Seed a new item from this one (item-as-template). Select exactly one item."
-                        triggerTabIndex={-1}
-                      >
-                        <span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={duplicateSelected}
-                            disabled={selected.size !== 1 || cloneItem.isPending}
-                            data-testid="duplicate-item"
-                          >
-                            <DuplicateTabIcon />
-                            {cloneItem.isPending ? 'Duplicating…' : 'Duplicate'}
-                          </Button>
-                        </span>
-                      </Tooltip>
-                    </>
-                  ) : null}
-                  {reportsEnabled && mayReadReports ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
+                {/* In-box adornments: the usual clear "✕" (only with text to clear) and the saved-
+                    searches toggle, which is always offered — it *is* the discovery point for the
+                    feature (issue #136), so hiding it until there's something saved would defeat it. */}
+                <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                  {searchInput && !astActive ? (
+                    <button
+                      type="button"
                       onClick={() => {
-                        useCatalogueLaunch.getState().launch({ kind: 'items', itemIds: [...selectedIds] });
-                        void navigate({ to: '/catalogue' });
+                        setSearchInput('');
+                        searchRef.current?.focus();
                       }}
-                      disabled={selected.size === 0}
-                      data-testid="print-catalogue"
+                      aria-label="Clear search"
+                      data-testid="inventory-search-clear"
+                      className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4"
                     >
-                      <CatalogueIcon />
-                      Catalogue
-                    </Button>
+                      <CloseIcon />
+                    </button>
                   ) : null}
-                  {labelsEnabled && mayPrintLabels ? (
-                    <Button
-                      size="sm"
-                      onClick={() => setPrintOpen(true)}
-                      disabled={selected.size === 0}
-                      data-testid="print-labels"
+                  <Tooltip content={t('inventory.savedSearches.tooltip')} triggerTabIndex={-1}>
+                    <button
+                      type="button"
+                      onClick={() => setSavedSearchesOpen((open) => !open)}
+                      aria-label={t('inventory.savedSearches.toggle')}
+                      aria-expanded={savedSearchesOpen}
+                      aria-controls={savedSearchesId}
+                      data-testid="inventory-saved-searches-toggle"
+                      className={cn(
+                        'rounded p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg]:size-4',
+                        savedSearchesOpen ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+                      )}
                     >
-                      <PrintIcon />
-                      Print labels
-                    </Button>
-                  ) : null}
-                  <Tooltip content="Leave select mode and clear the current selection." triggerTabIndex={-1}>
-                    <span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={toggleSelecting}
-                        aria-label="Done selecting"
-                      >
-                        <CloseIcon />
-                      </Button>
-                    </span>
+                      <SavedSearchIcon aria-hidden />
+                    </button>
                   </Tooltip>
                 </div>
               </div>
-            ) : null}
 
-            {/* Keyed by the selected location *and* the density so switching either re-mounts
-              this region and replays an entrance — the list visibly arrives rather than
-              blinking into place. A location change plays the gentle vertical swap-in; a
-              view-mode change plays the horizontal slide chosen in `listEntrance`.
-              (Search-as-you-type deliberately doesn't re-key, so typing never flashes the
-              list.) Reduced-motion is handled by the global catch-all. */}
-            <div key={listKey} className={cn('flex min-h-0 flex-1 flex-col', listEntrance)}>
-              {density === 'map' ? (
-                tree.data ? (
-                  <LocationMapView
-                    tree={tree.data}
-                    onSelectLocation={setSelectedLocationId}
-                    onBrowseLocation={browseLocation}
-                  />
-                ) : (
-                  <div className="flex flex-1 items-center justify-center">
-                    <Spinner />
-                  </div>
-                )
-              ) : density === 'treemap' ? (
-                <ValueTreemapView grouping={grouping} />
-              ) : grouped ? (
-                tree.data ? (
-                  <GroupedItemList
-                    tree={tree.data}
-                    density={density}
-                    search={search}
-                    includeInactive={includeInactive}
-                    categoryId={filters.categoryId}
-                    tagIds={filters.tagIds}
-                    status={filters.status}
-                    lowStockThresholds={filters.lowStockThresholds}
-                    expirySoonWindowDays={filters.expirySoonWindowDays}
-                    locations={flatLocations}
-                    locationName={locationName}
-                    locationColorClass={locationColorClass}
-                    locationTintClass={locationTintClass}
-                    selection={selection}
-                    selectedIds={selectedIds}
-                    cardFieldsConfig={cardFieldsConfig}
-                  />
-                ) : (
-                  <div className="flex flex-1 items-center justify-center">
-                    <Spinner />
-                  </div>
-                )
-              ) : listStatus.isLoading ? (
-                <div className="flex flex-1 items-center justify-center">
-                  <Spinner />
-                </div>
-              ) : listStatus.isError ? (
-                // Never fall through to the list's empty state on failure: an empty
-                // inventory and a failed read would render byte-identically, and "nothing
-                // here" is the most alarming possible misreport for stock that is actually
-                // just unreadable (issue #306). Offer a retry so it's recoverable in place.
-                <div className="flex flex-1 items-center justify-center p-4">
-                  <Surface className="flex flex-col items-center gap-3 p-6 text-center">
-                    <p role="alert" className="text-sm text-destructive">
-                      {t('inventory.list.error')}
-                    </p>
-                    <Button variant="outline" onClick={() => void listStatus.refetch()}>
-                      {t('inventory.list.retry')}
-                    </Button>
-                  </Surface>
-                </div>
-              ) : (
-                <div className="flex min-h-0 flex-1 flex-col">
-                  <ItemList
-                    items={flatItems}
-                    firstItemIndex={firstItemIndex}
-                    // The true match total, so each card/row announces "item 12 of 340" even though
-                    // only a screenful is mounted (issue #208). Left undefined while the count is
-                    // still resolving, and in paginated mode — there the list *is* the page, so its
-                    // own resident rows are the honest set size.
-                    totalCount={paginated ? undefined : resultCount.data}
-                    locations={flatLocations}
-                    density={density}
-                    selectedLocationId={selectedLocationId}
-                    locationName={locationName}
-                    locationColorClass={locationColorClass}
-                    locationTintClass={locationTintClass}
-                    // In paginated mode the list holds exactly one page, so the infinite-scroll
-                    // fetch triggers are disabled — the page control drives navigation instead.
-                    hasNextPage={!paginated && active.hasNextPage}
-                    isFetchingNextPage={!paginated && active.isFetchingNextPage}
-                    fetchNextPage={() => {
-                      if (!paginated) void active.fetchNextPage();
-                    }}
-                    hasPreviousPage={!paginated && active.hasPreviousPage}
-                    isFetchingPreviousPage={!paginated && active.isFetchingPreviousPage}
-                    fetchPreviousPage={() => {
-                      if (!paginated) void active.fetchPreviousPage();
-                    }}
-                    childLocations={childLocations}
-                    onSelectLocation={setSelectedLocationId}
-                    selection={selection}
-                    selectedIds={selectedIds}
-                    cardFields={cardFields}
-                    emptyContext={
-                      astActive
-                        ? { visualSearch: true, visualSearchScoped: astLocationId !== null }
-                        : {
-                            search,
-                            statusFilterCount: statusFilters.size,
-                            categoryFilter: Boolean(categoryId),
-                            tagFilterCount: tagIds.length,
-                          }
-                    }
-                  />
-                  {paginated ? (
-                    <Pagination
-                      page={page}
-                      pageCount={totalPages}
-                      onPageChange={setPage}
-                      pageSize={defaultPageSize}
-                      onPageSizeChange={changePageSize}
-                      pageSizeOptions={PAGE_SIZE_PRESETS}
-                      minPageSize={PAGE_SIZE_BOUNDS.min}
-                      maxPageSize={PAGE_SIZE_BOUNDS.max}
-                      totalItems={matchCount.data ?? 0}
-                      className="px-4"
-                      data-testid="inventory-pagination"
-                    />
+              {/* Add item is a split button: the primary half opens the create dialog, and the
+                  attached chevron offers Import… (the same entry point the dashboard hero uses).
+                  Import lives here rather than in the "More" menu so there is one obvious place
+                  to bring items in — beside the button that adds them. Placed right after search
+                  (mirroring the dashboard hero's Search → Add item → Scan order) so the primary
+                  actions stay grouped together at the front of the row; if the row must wrap at
+                  a narrow width, it's the less-common view controls below that give way first. */}
+              <Button
+                onClick={() => setAddOpen(true)}
+                data-testid="inventory-add-item"
+                menuLabel="More add-item actions"
+                menuTriggerProps={{ 'data-testid': 'inventory-add-menu' }}
+                // Import is the chevron's only entry, so a session refused it gets no chevron at
+                // all — an undefined `menu` collapses the split button back to a plain one rather
+                // than leaving an empty panel hanging off it.
+                menu={
+                  mayImport ? (
+                    <MenuAction
+                      icon={<ImportIcon />}
+                      onSelect={() => setImportOpen(true)}
+                      data-testid="open-catalog-import"
+                    >
+                      Import…
+                    </MenuAction>
+                  ) : undefined
+                }
+              >
+                <AddIcon />
+                Add item
+              </Button>
+
+              {scannerEnabled ? (
+                <Button variant="outline" onClick={() => setScannerOpen(true)}>
+                  <ScanIcon />
+                  Scan
+                </Button>
+              ) : null}
+
+              <Menu
+                label="More inventory actions"
+                trigger={
+                  <>
+                    <MoreIcon />
+                    More
+                  </>
+                }
+              >
+                {/* Build complex queries graphically — combine fields, capabilities and AND/OR
+                    groups. Supersedes the quick search while active. */}
+                <MenuAction
+                  icon={<BuilderIcon />}
+                  onSelect={() => setBuilderOpen((v) => !v)}
+                  selected={builderOpen}
+                  selectionRole="checkbox"
+                >
+                  Visual search
+                </MenuAction>
+                <MenuSeparator />
+                {/* The three arrangement axes: View (how each item is *drawn*: Card / Data / Table),
+                    Group by (how the list is *arranged*) and Sort by (what order it runs in). Each is
+                    a nested submenu holding its own modes — rendered off its own descriptor SSOT, so a
+                    future mode needs no menu rework — with the trigger showing the current choice, and
+                    each label resolved through the message catalog. */}
+                <MenuSub
+                  icon={<activeDensity.icon />}
+                  label={t('inventory.view.trigger', { vars: { mode: t(activeDensity.labelKey) } })}
+                >
+                  {DENSITY_MODES.map((mode) => (
+                    <MenuAction
+                      key={mode.value}
+                      icon={<mode.icon />}
+                      onSelect={() => withViewTransition(() => setDensity(mode.value))}
+                      selected={density === mode.value}
+                      selectionRole="radio"
+                    >
+                      {t(mode.labelKey)}
+                    </MenuAction>
+                  ))}
+                </MenuSub>
+                <MenuSub
+                  icon={<GroupByIcon />}
+                  label={t('inventory.groupBy.trigger', { vars: { mode: t(activeGrouping.labelKey) } })}
+                >
+                  {GROUP_MODES.map((mode) => (
+                    <MenuAction
+                      key={mode.value}
+                      onSelect={() => setGrouping(mode.value)}
+                      selected={grouping === mode.value}
+                      selectionRole="radio"
+                    >
+                      {t(mode.labelKey)}
+                    </MenuAction>
+                  ))}
+                </MenuSub>
+                {/* Sort by (the ordering axis, issue #128) — the third arrangement axis, rendered
+                    off the same kind of descriptor SSOT. Picking a field applies its natural
+                    direction (A → Z for text, newest/largest first for dates and numbers); the
+                    direction pair below then names what each way *means* for the chosen field,
+                    and is omitted under the default order, which has no direction to offer. */}
+                <MenuSub
+                  icon={<SortIcon />}
+                  label={t('inventory.sort.trigger', { vars: { mode: t(activeSort.labelKey) } })}
+                >
+                  {SORT_MODES.map((mode) => (
+                    <MenuAction
+                      key={mode.value}
+                      onSelect={() =>
+                        changeSort({ field: mode.value, direction: initialDirection(mode.value) })
+                      }
+                      selected={inventorySort.field === mode.value}
+                      selectionRole="radio"
+                    >
+                      {t(mode.labelKey)}
+                    </MenuAction>
+                  ))}
+                  {sortDirections ? (
+                    <>
+                      <MenuSeparator />
+                      {SORT_DIRECTIONS.map((direction) => (
+                        <MenuAction
+                          key={direction}
+                          icon={direction === 'asc' ? <SortAscIcon /> : <SortDescIcon />}
+                          onSelect={() => changeSort({ field: inventorySort.field, direction })}
+                          selected={inventorySort.direction === direction}
+                          selectionRole="radio"
+                        >
+                          {t(sortDirections.keys[direction])}
+                        </MenuAction>
+                      ))}
+                    </>
                   ) : null}
+                </MenuSub>
+                <MenuSeparator />
+                <MenuAction
+                  icon={<InfoIcon />}
+                  onSelect={toggleLocationCard}
+                  selected={showLocationCard}
+                  selectionRole="checkbox"
+                  data-testid="toggle-location-info"
+                >
+                  Location summary
+                </MenuAction>
+                {/* Paginate long lists (issue #20) — an app-wide view preference (mirrored in
+                    Settings). Splits the flat list into fixed-size pages; ignored while grouped or a
+                    whole-collection visualisation is on screen. */}
+                <MenuAction
+                  icon={<DataDensityIcon />}
+                  onSelect={() => setPaginateLists(!paginateLists)}
+                  selected={paginateLists}
+                  selectionRole="checkbox"
+                  data-testid="toggle-paginate"
+                >
+                  Paginate list
+                </MenuAction>
+                {/* Fullscreen (issue #118) — toggles the browser's fullscreen mode so the app fills
+                    the whole display. Only offered where the browser exposes the Fullscreen API. */}
+                {fullscreenSupported ? (
+                  <MenuAction
+                    icon={isFullscreen ? <ExitFullscreenIcon /> : <FullscreenIcon />}
+                    onSelect={toggleFullscreen}
+                    selected={isFullscreen}
+                    selectionRole="checkbox"
+                    data-testid="toggle-fullscreen"
+                  >
+                    Fullscreen
+                  </MenuAction>
+                ) : null}
+                <MenuSeparator />
+                <MenuAction icon={<CategoryIcon />} onSelect={() => setCategoriesOpen(true)}>
+                  Categories
+                </MenuAction>
+                <MenuAction icon={<TagIcon />} onSelect={() => void navigate({ to: '/tags' })}>
+                  Tags
+                </MenuAction>
+                {cycleCountsEnabled ? (
+                  <>
+                    <MenuAction
+                      icon={<CycleCountIcon />}
+                      onSelect={() => setCycleCountOpen(true)}
+                      disabled={!selectedLocationId}
+                      data-testid="open-cycle-count"
+                    >
+                      {selectedLocationId ? 'Cycle count' : 'Cycle count — select a location'}
+                    </MenuAction>
+                    <MenuAction
+                      icon={<CycleCountIcon />}
+                      onSelect={() => setAuditDayOpen(true)}
+                      data-testid="open-audit-day"
+                    >
+                      Stock-take (audit day)…
+                    </MenuAction>
+                  </>
+                ) : null}
+                {mayExport ? (
+                  <>
+                    <MenuSeparator />
+                    <MenuAction
+                      icon={<ExportIcon />}
+                      onSelect={() => setExportOpen(true)}
+                      data-testid="open-export-wizard"
+                    >
+                      Export
+                    </MenuAction>
+                  </>
+                ) : null}
+                <MenuSeparator />
+                <MenuAction
+                  icon={<SelectIcon />}
+                  onSelect={toggleSelecting}
+                  selected={selecting}
+                  selectionRole="checkbox"
+                  data-testid="toggle-select"
+                >
+                  Select items
+                </MenuAction>
+              </Menu>
+            </>
+          }
+        />
+
+        {/* Saved-searches reveal (issue #136) — the same collapsing-grid disclosure the Visual
+            search panel below uses, so the two behave identically. It hosts the *same*
+            SavedSearchMenu the power box does, so saving, recalling and forgetting a search work
+            identically whichever box you came from — there is one saved-search UI, not two.
+            Recall routes through `recallSavedSearch`, which decides between this box and the
+            builder. */}
+        <div
+          className="grid transition-[grid-template-rows,opacity] duration-1000 ease-emphasized"
+          style={{
+            gridTemplateRows: savedSearchesOpen ? '1fr' : '0fr',
+            opacity: savedSearchesOpen ? 1 : 0,
+          }}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div
+              id={savedSearchesId}
+              className="pb-4"
+              inert={!savedSearchesOpen}
+              data-testid="inventory-saved-searches"
+            >
+              <Surface className="space-y-2 p-4">
+                <div className="flex items-center gap-2">
+                  <span className="grid size-7 place-items-center rounded-lg bg-primary/15 text-primary [&_svg]:size-4">
+                    <SavedSearchIcon aria-hidden />
+                  </span>
+                  <h2 className="text-sm font-semibold">{t('inventory.savedSearches.toggle')}</h2>
+                  <CloseButton
+                    className="ml-auto"
+                    onClick={() => setSavedSearchesOpen(false)}
+                    label={t('inventory.savedSearches.close')}
+                  />
                 </div>
-              )}
+                <SavedSearchMenu currentQuery={searchInput} onRecall={recallSavedSearch} />
+                <p className="text-[11px] text-muted-foreground">{t('inventory.savedSearches.hint')}</p>
+              </Surface>
             </div>
-          </main>
+          </div>
         </div>
 
-        {/* The compact home of the master pane. Kept inside the drag provider so drag-to-*nest*
-            still works (a location row is dragged onto another, both inside the drawer), and so
-            the add/edit dialogs it opens stack on the drawer via the shared modal stack.
+        {/* Visual-search reveal: the panel stays mounted and animates open/closed both ways
+            by transitioning a collapsing CSS grid row (0fr ↔ 1fr) plus opacity over 1s with
+            the signature emphasized ease. `inert` when closed keeps the hidden panel out of
+            the tab order and the accessibility tree. Reduced-motion users skip the transition
+            via the global catch-all and simply get the end state. */}
+        <div
+          className="grid transition-[grid-template-rows,opacity] duration-1000 ease-emphasized"
+          style={{ gridTemplateRows: builderOpen ? '1fr' : '0fr', opacity: builderOpen ? 1 : 0 }}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="pb-4" inert={!builderOpen}>
+              <VisualBuilder
+                resultSummary={
+                  // The true match count, not the resident-page count (issue #220) — named with
+                  // the location it is scoped to, so the panel agrees with the sidebar (#626).
+                  astActive
+                    ? // Only name the location once it has resolved — `selectedLocationLabel`
+                      // falls back to "All items" until then, which would misdescribe the scope.
+                      astLocationId && selectedLocation
+                      ? t('inventory.results.builderSummaryInLocation', {
+                          vars: { count: matchTotal, location: selectedLocationLabel },
+                        })
+                      : t('inventory.results.builderSummary', { vars: { count: matchTotal } })
+                    : undefined
+                }
+                onClose={() => setBuilderOpen(false)}
+              />
+            </div>
+          </div>
+        </div>
 
-            Drag-to-*move* — an item card onto a location row — is not reachable here, and can't
-            be: with the drawer shut there is no row on screen, and with it open the backdrop
-            covers the very cards you would drag from. `beginDrag` therefore refuses to arm while
-            nothing is registered as a drop target, so the gesture is inert rather than doomed.
-            Nothing is lost that the compact layout didn't already lack: the pointer drag has
-            always been an additive affordance over the keyboard-accessible "Move item" action
-            and the Edit-location Parent field, which stay the complete paths. */}
-        {compact && locationsDrawerOpen ? (
-          <Drawer open onClose={() => setLocationsDrawerOpen(false)} title={t('inventory.locations.title')}>
-            {tree.data && flat.data ? (
+        {/* Drag-to-move (spec §4): the provider owns the unified pointer drag and must wrap both
+            the drop targets (the sidebar) and the drag sources (the item list). */}
+        <ItemDragProvider>
+          {/* Wide: master pane beside the list. Compact: the pane is in the drawer below, and
+              the row stacks so its trigger sits directly above the items it scopes. */}
+          <div className={cn('flex min-h-0 flex-1', compact ? 'flex-col gap-3' : 'gap-6 large-format:gap-8')}>
+            {compact ? (
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => setLocationsDrawerOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={locationsDrawerOpen}
+                aria-label={t('inventory.locations.drawer.trigger', {
+                  vars: { location: selectedLocationLabel },
+                })}
+                data-testid="open-locations-drawer"
+              >
+                <LocationTreeIcon />
+                {t('inventory.locations.title')}
+                {/* The scope the list is currently showing, so the trigger doubles as the
+                    breadcrumb the master pane would otherwise give you at a glance. */}
+                <span aria-hidden className="min-w-0 truncate font-normal text-muted-foreground">
+                  {selectedLocationLabel}
+                </span>
+              </Button>
+            ) : tree.data && flat.data ? (
               <LocationSidebar
-                compact
                 tree={tree.data}
                 flat={flatLocations}
                 selectedId={selectedLocationId}
                 onSelect={setSelectedLocationId}
-                // Picking a location is the drawer's whole purpose, so it closes on choice and
-                // hands the screen straight back to the items now in scope. Only a *deliberate*
-                // pick closes it: the sidebar also clears the selection on the user's behalf when
-                // the selected location is deleted or archived out of view (issue #713), and
-                // taking the pane away because a filter toggle did that would be a non-sequitur.
-                onPick={() => setLocationsDrawerOpen(false)}
                 totalCount={totalCount.data ?? 0}
               />
             ) : (
-              <div className="flex justify-center pt-8">
-                <Spinner />
-              </div>
+              <div className="w-64 shrink-0 large-format:w-72" />
             )}
-          </Drawer>
+
+            <main
+              id={MAIN_CONTENT_ID}
+              tabIndex={-1}
+              className="flex min-w-0 flex-1 animate-rise flex-col overflow-x-clip outline-none"
+            >
+              {/* Compact summary of the selected location (fullness, path, last change, …).
+                  Opt-out and device-local; hidden for the "All locations" view. It stays
+                  mounted while a location is selected and animates open/closed both ways by
+                  transitioning a collapsing CSS grid row (0fr ↔ 1fr) plus opacity with the
+                  signature emphasized ease — mirroring the visual-search reveal below. `inert`
+                  when hidden keeps it out of the tab order and accessibility tree; reduced-motion
+                  users skip the transition via the global catch-all and get the end state. */}
+              {selectedLocation && !isVizMode ? (
+                <div
+                  className="grid transition-[grid-template-rows,opacity] duration-300 ease-emphasized"
+                  style={{
+                    gridTemplateRows: showLocationCard ? '1fr' : '0fr',
+                    opacity: showLocationCard ? 1 : 0,
+                  }}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div inert={!showLocationCard}>
+                      <LocationInfoCard
+                        location={selectedLocation}
+                        locations={flatLocations}
+                        onHide={toggleLocationCard}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* The selected location's own detail — its description as rich Markdown, plus the
+                  custom-field values it holds about itself (issues #108, #617). Independent of the
+                  compact summary card above: it is never dismissed, and it renders itself away when
+                  the location holds neither, so the gate here is only "a location is selected and
+                  we're not in a whole-collection visualisation". */}
+              {selectedLocation && !isVizMode ? <LocationDetailCard location={selectedLocation} /> : null}
+
+              {/* The filter/facet bars and the "shown" count belong to the item list; a
+                  whole-collection visualisation (map/treemap) stands alone, so they're hidden then. */}
+              {!isVizMode ? (
+                <>
+                  <InventoryFilterBar
+                    value={statusFilters}
+                    onToggle={toggleStatusFilter}
+                    onClear={clearStatusFilters}
+                    applicable={applicableStatuses}
+                    counts={statusCounts}
+                    disabled={astActive}
+                  />
+
+                  <InventoryFacetBar
+                    categoryId={categoryId}
+                    onCategoryChange={setCategoryId}
+                    locationId={selectedLocationId}
+                    tagIds={tagIds}
+                    onToggleTag={toggleTag}
+                    disabled={astActive}
+                  />
+
+                  <div className="flex items-center justify-between pb-3">
+                    {/* The one place that answers "did my filter match anything, and how much?" —
+                        so it announces the **match total**, never the resident row count (issue
+                        #220). Grouped mode carries the same total, since a grouped list is just as
+                        filtered as a flat one. */}
+                    <p
+                      className="text-sm text-muted-foreground"
+                      role="status"
+                      aria-live="polite"
+                      data-testid="inventory-result-summary"
+                    >
+                      {!resultCount.isSuccess
+                        ? t('inventory.results.loading')
+                        : grouped
+                          ? t('inventory.results.grouped', { vars: { count: matchTotal } })
+                          : astActive
+                            ? // Named only once the location has resolved — see the builder
+                              // panel's summary above.
+                              astLocationId && selectedLocation
+                              ? t('inventory.results.visualSearchInLocation', {
+                                  vars: { count: matchTotal, location: selectedLocationLabel },
+                                })
+                              : t('inventory.results.visualSearch', { vars: { count: matchTotal } })
+                            : t('inventory.results.count', { vars: { count: matchTotal } })}
+                    </p>
+                    {/* Only shown when it applies (removed items exist in view, or it's already on) —
+                        see `showRemovedToggle`. The help badge sits outside the label so a tap on the
+                        hint doesn't toggle the checkbox. */}
+                    {showRemovedToggle ? (
+                      <div className="flex items-center gap-1.5">
+                        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                          <Checkbox
+                            checked={includeInactive}
+                            onChange={(e) => setIncludeInactive(e.target.checked)}
+                            className="size-3.5"
+                          />
+                          Show removed
+                        </label>
+                        <InfoHint content={SHOW_REMOVED_HINT} />
+                      </div>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+
+              {!isVizMode && selecting ? (
+                <div
+                  className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2"
+                  data-testid="selection-bar"
+                >
+                  <span className="text-sm font-medium" data-testid="selection-count">
+                    {selected.size} selected
+                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelected(new Map())}
+                      disabled={selected.size === 0}
+                    >
+                      Clear
+                    </Button>
+                    {mayWriteItems ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setBulkEditOpen(true)}
+                          disabled={selected.size === 0}
+                          data-testid="bulk-edit"
+                        >
+                          <EditIcon />
+                          Bulk edit
+                        </Button>
+                        <Tooltip
+                          content="Seed a new item from this one (item-as-template). Select exactly one item."
+                          triggerTabIndex={-1}
+                        >
+                          <span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={duplicateSelected}
+                              disabled={selected.size !== 1 || cloneItem.isPending}
+                              data-testid="duplicate-item"
+                            >
+                              <DuplicateTabIcon />
+                              {cloneItem.isPending ? 'Duplicating…' : 'Duplicate'}
+                            </Button>
+                          </span>
+                        </Tooltip>
+                      </>
+                    ) : null}
+                    {reportsEnabled && mayReadReports ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          useCatalogueLaunch.getState().launch({ kind: 'items', itemIds: [...selectedIds] });
+                          void navigate({ to: '/catalogue' });
+                        }}
+                        disabled={selected.size === 0}
+                        data-testid="print-catalogue"
+                      >
+                        <CatalogueIcon />
+                        Catalogue
+                      </Button>
+                    ) : null}
+                    {labelsEnabled && mayPrintLabels ? (
+                      <Button
+                        size="sm"
+                        onClick={() => setPrintOpen(true)}
+                        disabled={selected.size === 0}
+                        data-testid="print-labels"
+                      >
+                        <PrintIcon />
+                        Print labels
+                      </Button>
+                    ) : null}
+                    <Tooltip
+                      content="Leave select mode and clear the current selection."
+                      triggerTabIndex={-1}
+                    >
+                      <span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={toggleSelecting}
+                          aria-label="Done selecting"
+                        >
+                          <CloseIcon />
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Keyed by the selected location *and* the density so switching either re-mounts
+                this region and replays an entrance — the list visibly arrives rather than
+                blinking into place. A location change plays the gentle vertical swap-in; a
+                view-mode change plays the horizontal slide chosen in `listEntrance`.
+                (Search-as-you-type deliberately doesn't re-key, so typing never flashes the
+                list.) Reduced-motion is handled by the global catch-all. */}
+              <div key={listKey} className={cn('flex min-h-0 flex-1 flex-col', listEntrance)}>
+                {density === 'map' ? (
+                  tree.data ? (
+                    <LocationMapView
+                      tree={tree.data}
+                      onSelectLocation={setSelectedLocationId}
+                      onBrowseLocation={browseLocation}
+                    />
+                  ) : (
+                    <div className="flex flex-1 items-center justify-center">
+                      <Spinner />
+                    </div>
+                  )
+                ) : density === 'treemap' ? (
+                  <ValueTreemapView grouping={grouping} />
+                ) : grouped ? (
+                  tree.data ? (
+                    <GroupedItemList
+                      tree={tree.data}
+                      density={density}
+                      search={search}
+                      includeInactive={includeInactive}
+                      categoryId={filters.categoryId}
+                      tagIds={filters.tagIds}
+                      status={filters.status}
+                      lowStockThresholds={filters.lowStockThresholds}
+                      expirySoonWindowDays={filters.expirySoonWindowDays}
+                      locations={flatLocations}
+                      locationName={locationName}
+                      locationColorClass={locationColorClass}
+                      locationTintClass={locationTintClass}
+                      selection={selection}
+                      selectedIds={selectedIds}
+                      cardFieldsConfig={cardFieldsConfig}
+                    />
+                  ) : (
+                    <div className="flex flex-1 items-center justify-center">
+                      <Spinner />
+                    </div>
+                  )
+                ) : listStatus.isLoading ? (
+                  <div className="flex flex-1 items-center justify-center">
+                    <Spinner />
+                  </div>
+                ) : listStatus.isError ? (
+                  // Never fall through to the list's empty state on failure: an empty
+                  // inventory and a failed read would render byte-identically, and "nothing
+                  // here" is the most alarming possible misreport for stock that is actually
+                  // just unreadable (issue #306). Offer a retry so it's recoverable in place.
+                  <div className="flex flex-1 items-center justify-center p-4">
+                    <Surface className="flex flex-col items-center gap-3 p-6 text-center">
+                      <p role="alert" className="text-sm text-destructive">
+                        {t('inventory.list.error')}
+                      </p>
+                      <Button variant="outline" onClick={() => void listStatus.refetch()}>
+                        {t('inventory.list.retry')}
+                      </Button>
+                    </Surface>
+                  </div>
+                ) : (
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    <ItemList
+                      items={flatItems}
+                      firstItemIndex={firstItemIndex}
+                      // The true match total, so each card/row announces "item 12 of 340" even though
+                      // only a screenful is mounted (issue #208). Left undefined while the count is
+                      // still resolving, and in paginated mode — there the list *is* the page, so its
+                      // own resident rows are the honest set size.
+                      totalCount={paginated ? undefined : resultCount.data}
+                      locations={flatLocations}
+                      density={density}
+                      selectedLocationId={selectedLocationId}
+                      locationName={locationName}
+                      locationColorClass={locationColorClass}
+                      locationTintClass={locationTintClass}
+                      // In paginated mode the list holds exactly one page, so the infinite-scroll
+                      // fetch triggers are disabled — the page control drives navigation instead.
+                      hasNextPage={!paginated && active.hasNextPage}
+                      isFetchingNextPage={!paginated && active.isFetchingNextPage}
+                      fetchNextPage={() => {
+                        if (!paginated) void active.fetchNextPage();
+                      }}
+                      hasPreviousPage={!paginated && active.hasPreviousPage}
+                      isFetchingPreviousPage={!paginated && active.isFetchingPreviousPage}
+                      fetchPreviousPage={() => {
+                        if (!paginated) void active.fetchPreviousPage();
+                      }}
+                      childLocations={childLocations}
+                      onSelectLocation={setSelectedLocationId}
+                      selection={selection}
+                      selectedIds={selectedIds}
+                      cardFields={cardFields}
+                      emptyContext={
+                        astActive
+                          ? { visualSearch: true, visualSearchScoped: astLocationId !== null }
+                          : {
+                              search,
+                              statusFilterCount: statusFilters.size,
+                              categoryFilter: Boolean(categoryId),
+                              tagFilterCount: tagIds.length,
+                            }
+                      }
+                    />
+                    {paginated ? (
+                      <Pagination
+                        page={page}
+                        pageCount={totalPages}
+                        onPageChange={setPage}
+                        pageSize={defaultPageSize}
+                        onPageSizeChange={changePageSize}
+                        pageSizeOptions={PAGE_SIZE_PRESETS}
+                        minPageSize={PAGE_SIZE_BOUNDS.min}
+                        maxPageSize={PAGE_SIZE_BOUNDS.max}
+                        totalItems={matchCount.data ?? 0}
+                        className="px-4"
+                        data-testid="inventory-pagination"
+                      />
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </main>
+          </div>
+
+          {/* The compact home of the master pane. Kept inside the drag provider so drag-to-*nest*
+              still works (a location row is dragged onto another, both inside the drawer), and so
+              the add/edit dialogs it opens stack on the drawer via the shared modal stack.
+
+              Drag-to-*move* — an item card onto a location row — is not reachable here, and can't
+              be: with the drawer shut there is no row on screen, and with it open the backdrop
+              covers the very cards you would drag from. `beginDrag` therefore refuses to arm while
+              nothing is registered as a drop target, so the gesture is inert rather than doomed.
+              Nothing is lost that the compact layout didn't already lack: the pointer drag has
+              always been an additive affordance over the keyboard-accessible "Move item" action
+              and the Edit-location Parent field, which stay the complete paths. */}
+          {compact && locationsDrawerOpen ? (
+            <Drawer open onClose={() => setLocationsDrawerOpen(false)} title={t('inventory.locations.title')}>
+              {tree.data && flat.data ? (
+                <LocationSidebar
+                  compact
+                  tree={tree.data}
+                  flat={flatLocations}
+                  selectedId={selectedLocationId}
+                  onSelect={setSelectedLocationId}
+                  // Picking a location is the drawer's whole purpose, so it closes on choice and
+                  // hands the screen straight back to the items now in scope. Only a *deliberate*
+                  // pick closes it: the sidebar also clears the selection on the user's behalf when
+                  // the selected location is deleted or archived out of view (issue #713), and
+                  // taking the pane away because a filter toggle did that would be a non-sequitur.
+                  onPick={() => setLocationsDrawerOpen(false)}
+                  totalCount={totalCount.data ?? 0}
+                />
+              ) : (
+                <div className="flex justify-center pt-8">
+                  <Spinner />
+                </div>
+              )}
+            </Drawer>
+          ) : null}
+        </ItemDragProvider>
+
+        {/* Mounted only while open so the location default is re-seeded from the current
+            sidebar selection on every open — a real, user-created location pre-fills the
+            dialog's Location (the form captures `defaultLocationId` on mount). Mirrors the
+            "Add location" dialog in LocationSidebar. */}
+        {addOpen ? (
+          <CreateItemDialog
+            open
+            onClose={() => {
+              setAddOpen(false);
+              setScanBarcode(null);
+              setScanProduct(null);
+            }}
+            locations={flatLocations}
+            defaultLocationId={defaultLocationForNewItem(
+              selectedLocationId,
+              flatLocations,
+              markedDefaultLocationId(flatLocations),
+            )}
+            initialValues={
+              scanBarcode
+                ? {
+                    barcode: scanBarcode,
+                    name: scanProduct?.name,
+                    manufacturer: scanProduct?.brand ?? undefined,
+                    description: scanProduct?.description ?? undefined,
+                  }
+                : undefined
+            }
+          />
         ) : null}
-      </ItemDragProvider>
-
-      {/* Mounted only while open so the location default is re-seeded from the current
-          sidebar selection on every open — a real, user-created location pre-fills the
-          dialog's Location (the form captures `defaultLocationId` on mount). Mirrors the
-          "Add location" dialog in LocationSidebar. */}
-      {addOpen ? (
-        <CreateItemDialog
-          open
-          onClose={() => {
-            setAddOpen(false);
-            setScanBarcode(null);
-            setScanProduct(null);
+        <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
+        {cycleCountsEnabled && cycleCountOpen && selectedLocationId ? (
+          <CycleCountDialog
+            open
+            onClose={() => setCycleCountOpen(false)}
+            location={{ id: selectedLocationId, name: locationName(selectedLocationId) }}
+          />
+        ) : null}
+        {cycleCountsEnabled ? (
+          <AuditDayDialog open={auditDayOpen} onClose={() => setAuditDayOpen(false)} />
+        ) : null}
+        <ScannerOverlay
+          open={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onLocationScanned={(id) => {
+            setSelectedLocationId(id);
+            setScannerOpen(false);
           }}
-          locations={flatLocations}
-          defaultLocationId={defaultLocationForNewItem(
-            selectedLocationId,
-            flatLocations,
-            markedDefaultLocationId(flatLocations),
-          )}
-          initialValues={
-            scanBarcode
-              ? {
-                  barcode: scanBarcode,
-                  name: scanProduct?.name,
-                  manufacturer: scanProduct?.brand ?? undefined,
-                  description: scanProduct?.description ?? undefined,
-                }
-              : undefined
-          }
-        />
-      ) : null}
-      <CategoryManagerDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
-      {cycleCountsEnabled && cycleCountOpen && selectedLocationId ? (
-        <CycleCountDialog
-          open
-          onClose={() => setCycleCountOpen(false)}
-          location={{ id: selectedLocationId, name: locationName(selectedLocationId) }}
-        />
-      ) : null}
-      {cycleCountsEnabled ? (
-        <AuditDayDialog open={auditDayOpen} onClose={() => setAuditDayOpen(false)} />
-      ) : null}
-      <ScannerOverlay
-        open={scannerOpen}
-        onClose={() => setScannerOpen(false)}
-        onLocationScanned={(id) => {
-          setSelectedLocationId(id);
-          setScannerOpen(false);
-        }}
-        onCreateFromBarcode={(gtin, product) => {
-          setScannerOpen(false);
-          setScanBarcode(gtin);
-          setScanProduct(product ?? null);
-          setAddOpen(true);
-        }}
-        onViewItem={(item) => {
-          // Jump-to-item, mirroring the command palette / alert deep-links: seed the search so
-          // the item is in view even if a filter would hide it, then flash its card.
-          setScannerOpen(false);
-          // Both halves of the box: the URL is what the query reads, and the input is what the
-          // user sees — set together so the debounce below has nothing left to commit.
-          setSearchInput(item.name);
-          setView({ search: item.name });
-          requestHighlight(item.id);
-        }}
-      />
-      {/* The dialogs answer to the same keys as the controls that open them, so a capability
-          revoked mid-session takes down what is already on screen rather than leaving a live
-          wizard behind a button that has gone. */}
-      {mayExport ? (
-        <ExportWizard
-          open={exportOpen}
-          onClose={() => setExportOpen(false)}
-          initialLocationId={selectedLocationId}
-        />
-      ) : null}
-      {mayImport ? <ImportDataDialog open={importOpen} onClose={() => setImportOpen(false)} /> : null}
-      {/* Deep-linked item detail (e.g. from a Reports data-hygiene row): open the card directly
-          so the user lands on the item rather than hunting for it. Rendered only once the record
-          has loaded; closing clears the id so the query goes idle again. */}
-      {detailItem.data ? (
-        <ItemDetailDialog item={detailItem.data} open onClose={() => setDetailItemId(null)} />
-      ) : null}
-      {mayPrintLabels ? (
-        <PrintLabelsDialog open={printOpen} onClose={() => setPrintOpen(false)} items={selectedLabels} />
-      ) : null}
-      {mayWriteItems ? (
-        <BulkEditDialog
-          open={bulkEditOpen}
-          onClose={() => setBulkEditOpen(false)}
-          itemIds={selectedItemIds}
-          locations={flatLocations}
-          onApplied={({ message, undo, hadFailures }) => {
-            setSelected(new Map());
-            // Announced by the toast (its viewport is aria-live), not the live region below — a
-            // bulk edit is reversible, and the Undo has to be reachable from the same surface
-            // that reports the outcome. Pushing the sentence into both would announce it twice.
-            undoToast(message, undo, hadFailures ? 'warning' : 'success');
+          onCreateFromBarcode={(gtin, product) => {
+            setScannerOpen(false);
+            setScanBarcode(gtin);
+            setScanProduct(product ?? null);
+            setAddOpen(true);
+          }}
+          onViewItem={(item) => {
+            // Jump-to-item, mirroring the command palette / alert deep-links: seed the search so
+            // the item is in view even if a filter would hide it, then flash its card.
+            setScannerOpen(false);
+            // Both halves of the box: the URL is what the query reads, and the input is what the
+            // user sees — set together so the debounce below has nothing left to commit.
+            setSearchInput(item.name);
+            setView({ search: item.name });
+            requestHighlight(item.id);
           }}
         />
-      ) : null}
+        {/* The dialogs answer to the same keys as the controls that open them, so a capability
+            revoked mid-session takes down what is already on screen rather than leaving a live
+            wizard behind a button that has gone. */}
+        {mayExport ? (
+          <ExportWizard
+            open={exportOpen}
+            onClose={() => setExportOpen(false)}
+            initialLocationId={selectedLocationId}
+          />
+        ) : null}
+        {mayImport ? <ImportDataDialog open={importOpen} onClose={() => setImportOpen(false)} /> : null}
+        {/* Deep-linked item detail (e.g. from a Reports data-hygiene row): open the card directly
+            so the user lands on the item rather than hunting for it. Rendered only once the record
+            has loaded; closing clears the id so the query goes idle again. */}
+        {detailItem.data ? (
+          <ItemDetailDialog item={detailItem.data} open onClose={() => setDetailItemId(null)} />
+        ) : null}
+        {mayPrintLabels ? (
+          <PrintLabelsDialog open={printOpen} onClose={() => setPrintOpen(false)} items={selectedLabels} />
+        ) : null}
+        {mayWriteItems ? (
+          <BulkEditDialog
+            open={bulkEditOpen}
+            onClose={() => setBulkEditOpen(false)}
+            itemIds={selectedItemIds}
+            locations={flatLocations}
+            onApplied={({ message, undo, hadFailures }) => {
+              setSelected(new Map());
+              // Announced by the toast (its viewport is aria-live), not the live region below — a
+              // bulk edit is reversible, and the Undo has to be reachable from the same surface
+              // that reports the outcome. Pushing the sentence into both would announce it twice.
+              undoToast(message, undo, hadFailures ? 'warning' : 'success');
+            }}
+          />
+        ) : null}
 
-      {/* Announce duplicate + saved-search outcomes (WCAG 4.1.3). Bulk edit announces
-          through its own toast instead, so the Undo it carries is reachable from there. */}
-      <LiveRegion visuallyHidden data-testid="inventory-action-live-region">
-        {actionAnnouncement ? <p>{actionAnnouncement}</p> : null}
-      </LiveRegion>
-    </PageContainer>
+        {/* Announce duplicate + saved-search outcomes (WCAG 4.1.3). Bulk edit announces
+            through its own toast instead, so the Undo it carries is reachable from there. */}
+        <LiveRegion visuallyHidden data-testid="inventory-action-live-region">
+          {actionAnnouncement ? <p>{actionAnnouncement}</p> : null}
+        </LiveRegion>
+      </PageContainer>
+    </PrimaryContentProvider>
   );
 }

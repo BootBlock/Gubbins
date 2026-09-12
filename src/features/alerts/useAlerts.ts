@@ -127,7 +127,7 @@ interface AlertLaneGates {
  *   - `readAllAlerts` — re-read **every** page of every lane and rebuild the feed, for the
  *     export. Not a hook; call it from an export's `build` callback.
  */
-export function useAlerts(options: { withTotals?: boolean } = {}): {
+export function useAlerts(options: { withTotals?: boolean; enabled?: boolean } = {}): {
   readonly alerts: Alert[];
   readonly allAlerts: Alert[];
   readonly isLoading: boolean;
@@ -178,14 +178,30 @@ export function useAlerts(options: { withTotals?: boolean } = {}): {
   const { lowStock: lowStockOn, expiry: perishablesOn, warranty: warrantyOn } = gates;
   const { maintenance: maintenanceOn, fieldDue: customFieldsOn } = gates;
 
-  const lowStockQuery = useLowStockItems({ qtyThreshold, gaugePercent }, { enabled: lowStockOn });
-  const expiringQuery = useExpiringItems(expirySoonWindowDays, { enabled: perishablesOn });
-  const maintenanceDueQuery = useDueMaintenance({ enabled: maintenanceOn });
+  /**
+   * Whether the lanes may **fetch** yet (issue #1575). Every read in the app shares one worker
+   * connection, so a caller that is chrome rather than content — the navigation's alert badge —
+   * holds these five whole-vault feeds back until the screen's own content has arrived, instead
+   * of queueing ahead of it.
+   *
+   * Deliberately separate from the lane gates above: those decide what a lane may *contribute*,
+   * and a lane that has not fetched yet must read as "not answered" rather than as "answered,
+   * nothing there" — which is what keeps `completeKinds` (and so dismissal pruning) honest.
+   *
+   * It holds only where this hook is the sole consumer of these keys. The reminder firer
+   * (`useReminderNotifications`) reads the same five, ungated, from the application root whenever
+   * reminders are switched on, and one enabled observer is enough to fetch a key.
+   */
+  const fetchNow = options.enabled ?? true;
+
+  const lowStockQuery = useLowStockItems({ qtyThreshold, gaugePercent }, { enabled: lowStockOn && fetchNow });
+  const expiringQuery = useExpiringItems(expirySoonWindowDays, { enabled: perishablesOn && fetchNow });
+  const maintenanceDueQuery = useDueMaintenance({ enabled: maintenanceOn && fetchNow });
 
   const warrantyQuery = useQuery({
     queryKey: inventoryKeys.warrantyExpiring(),
     queryFn: () => getItemRepository().listWarrantyExpiring(WARRANTY_EXPIRING_SOON_DAYS, now, { limit: 100 }),
-    enabled: warrantyOn,
+    enabled: warrantyOn && fetchNow,
   });
 
   /**
@@ -201,7 +217,7 @@ export function useAlerts(options: { withTotals?: boolean } = {}): {
   const fieldDueQuery = useQuery({
     queryKey: inventoryKeys.fieldDueDatesWithin(null),
     queryFn: () => readAllPages((page) => getItemRepository().listFieldDueDates(now, page)),
-    enabled: customFieldsOn,
+    enabled: customFieldsOn && fetchNow,
   });
 
   /**
@@ -213,7 +229,7 @@ export function useAlerts(options: { withTotals?: boolean } = {}): {
    * `field-due` has no count: that lane already walks every page, so its rows *are* its total
    * unless the `readAllPages` ceiling stopped the walk, which it reports itself.
    */
-  const wantTotals = options.withTotals ?? false;
+  const wantTotals = (options.withTotals ?? false) && fetchNow;
   const lowStockTotal = useLowStockCount({ enabled: wantTotals && lowStockOn });
   const expiringTotal = useExpiringCount(expirySoonWindowDays, { enabled: wantTotals && perishablesOn });
   const maintenanceTotal = useDueMaintenanceCount({ enabled: wantTotals && maintenanceOn });
@@ -293,7 +309,13 @@ export function useAlerts(options: { withTotals?: boolean } = {}): {
   // always-mounted nav badge does the housekeeping too, not just a visit to the alert centre.
   // `pruneDismissals` returns null when there is nothing to drop, so the store write below can
   // never re-trigger this effect in a loop.
-  const settled = !isLoading && !isError;
+  //
+  // It requires a pass that actually **read** the lanes. A held-back lane (see `fetchNow`) is
+  // idle rather than loading, and React Query reports an idle pending query as `isLoading: false`
+  // — so without this the housekeeping would run against an empty feed the moment a caller
+  // deferred it, and the staleness rule at the end of `pruneDismissals` would retire every record
+  // older than its grace period even though the alert raising it is still live.
+  const settled = fetchNow && !isLoading && !isError;
   const liveIdKey = allAlerts.map((a) => a.id).join('\n');
   // The complete-lane set is threaded through as a string for the same reason as the ids: the
   // effect must re-run when its *contents* change, not on every render that rebuilds an equal Set.

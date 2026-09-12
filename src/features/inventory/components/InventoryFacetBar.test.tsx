@@ -1,21 +1,32 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { PrimaryContentProvider } from '@/components/foundry';
 import { InventoryFacetBar } from './InventoryFacetBar';
 
 // Mutable category / tag dictionaries so each test can shape what the facets have to offer.
 // `inUse` is the id set the item-scoped `useCategoriesInUse` reports; `undefined` models the
 // pre-resolution state where the facet should show every category.
-const { catRows, tagRows, inUse } = vi.hoisted(() => ({
+const { catRows, tagRows, inUse, reads } = vi.hoisted(() => ({
   catRows: { current: [] as { id: string; name: string }[] },
   tagRows: { current: [] as { id: string; name: string }[] },
   inUse: { current: undefined as string[] | undefined },
+  // Both dictionary reads record whether they were allowed to run, for the ordering tests below.
+  reads: { categoriesInUse: vi.fn(), tagDictionary: vi.fn() },
 }));
 vi.mock('../categories', () => ({
   useCategories: () => ({ data: { rows: catRows.current } }),
-  useCategoriesInUse: () => ({ data: inUse.current }),
+  useCategoriesInUse: (_locationId: string | null, enabled = true) => {
+    reads.categoriesInUse(enabled);
+    return { data: inUse.current };
+  },
 }));
-vi.mock('../tags', () => ({ useTagDictionary: () => ({ data: { rows: tagRows.current } }) }));
+vi.mock('../tags', () => ({
+  useTagDictionary: (_page?: number, _pageSize?: number, _browse?: unknown, enabled = true) => {
+    reads.tagDictionary(enabled);
+    return { data: { rows: tagRows.current } };
+  },
+}));
 
 /**
  * The inventory facet bar: a Category single-select and a Tags token-multiselect, each gated
@@ -149,5 +160,64 @@ describe('InventoryFacetBar', () => {
     fireEvent.click(screen.getByTestId('inventory-facet-category'));
     expect(screen.getByRole('option', { name: 'Resistors' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Tools' })).toBeInTheDocument();
+  });
+
+  /**
+   * Issue #1575: both dictionaries narrow a list the reader is still waiting for, and every read
+   * shares one worker connection — so on a screen that declares its main content they wait for it.
+   */
+  describe('when the screen is still loading its list', () => {
+    beforeEach(() => {
+      reads.categoriesInUse.mockClear();
+      reads.tagDictionary.mockClear();
+    });
+
+    it('reads both dictionaries where no screen declares primary content', () => {
+      renderBar();
+      expect(reads.categoriesInUse.mock.calls.at(-1)?.[0]).toBe(true);
+      expect(reads.tagDictionary.mock.calls.at(-1)?.[0]).toBe(true);
+    });
+
+    it('holds both back until the list has arrived', () => {
+      render(
+        <PrimaryContentProvider settled={false}>
+          <InventoryFacetBar
+            categoryId={null}
+            onCategoryChange={vi.fn()}
+            locationId={null}
+            tagIds={[]}
+            onToggleTag={vi.fn()}
+          />
+        </PrimaryContentProvider>,
+      );
+      expect(reads.categoriesInUse.mock.calls.map(([on]) => on)).not.toContain(true);
+      expect(reads.tagDictionary.mock.calls.map(([on]) => on)).not.toContain(true);
+    });
+
+    it('reads the tag dictionary anyway while a tag filter is applied', () => {
+      // With a tag active the chips below name it *from* this dictionary, so holding the read
+      // back would leave the reader looking at a raw id for as long as the list takes to load.
+      render(
+        <PrimaryContentProvider settled={false}>
+          <InventoryFacetBar
+            categoryId={null}
+            onCategoryChange={vi.fn()}
+            locationId={null}
+            tagIds={['tag-1']}
+            onToggleTag={vi.fn()}
+          />
+        </PrimaryContentProvider>,
+      );
+      expect(reads.tagDictionary.mock.calls.at(-1)?.[0]).toBe(true);
+      // The in-use categories are a refinement either way, so they still wait.
+      expect(reads.categoriesInUse.mock.calls.map(([on]) => on)).not.toContain(true);
+    });
+
+    it('never reads the tag dictionary while the Tags capability is off', () => {
+      // With Tags off this bar renders no tag control at all, so the read could only be discarded.
+      useModulesStore.getState().setFeatureIntent('tags-attachments', false);
+      renderBar();
+      expect(reads.tagDictionary.mock.calls.map(([on]) => on)).not.toContain(true);
+    });
   });
 });

@@ -1,6 +1,14 @@
 import { Fragment } from 'react';
 import { useRouterState } from '@tanstack/react-router';
-import { Kbd, Menu, MenuLink, MenuAction, MenuExternalLink, MenuSeparator } from '@/components/foundry';
+import {
+  Kbd,
+  Menu,
+  MenuLink,
+  MenuAction,
+  MenuExternalLink,
+  MenuSeparator,
+  useAfterScreenReads,
+} from '@/components/foundry';
 import { MenuIcon, WikiIcon, ExternalLinkIcon, SignOutIcon } from '@/components/icons';
 import { useAlerts } from '@/features/alerts/useAlerts';
 import { useEnabledFeatures, useFeature } from '@/features/modules/useFeature';
@@ -46,7 +54,13 @@ const WIKI_URL = 'https://github.com/BootBlock/Gubbins/wiki';
 export function AppNav() {
   const t = useT();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { alerts } = useAlerts();
+  // The badge is chrome around whatever screen is showing, and its five feeds each read the whole
+  // vault. On a screen that declares its main content they wait for that content *and* for the
+  // screen's own reads, so neither the reader's list nor the controls beside it are queued behind
+  // them on the single worker connection (issue #1575); on a screen that declares none they run
+  // as early as they always have.
+  const alertsMayRead = useAfterScreenReads();
+  const { alerts } = useAlerts({ enabled: alertsMayRead });
   const alertCount = alerts.length;
   const enabledFeatures = useEnabledFeatures();
   const allows = usePermissionCheck();

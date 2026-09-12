@@ -292,6 +292,25 @@ cards → Category watermarks** (on by default; the Data, Compact and Table view
 The **Gallery** view uses the same glyph, but as a stand-in for a missing photo rather than as a
 watermark — so it appears there whether the setting is on or off.
 
+## How the screen loads
+
+Your database answers one question at a time, so the Inventory screen asks for the **items first**
+and for everything around them straight afterwards. The list and the location tree beside it
+arrive on their own. A moment later come the counts in the status chips, the **Show removed**
+tick-box and the categories and tags the facet pickers offer; last of all, the alert badge on the
+**Menu** button, which counts things belonging to another screen entirely.
+
+While you wait, the screen shows what it can rather than guessing: the status chips are all
+offered but carry no counts, the category picker offers every category, the tag picker is not
+shown yet, and the **Menu** button carries no badge. A tag filter you already have applied is
+named straight away, so a link or a reload never leaves you looking at a bare id.
+
+Switching to another location works the same way: that location's items come back first, and its
+chip counts follow — and until they do, the chips drop their counts rather than show the previous
+location's. On a small inventory the whole lot lands together and you will not notice; on a large
+one it is the difference between reading your items straight away and waiting for a screenful of
+totals you did not ask for.
+
 ## Related pages
 
 - **[[Search overview|Search-Overview]]** — narrowing which items are shown.
