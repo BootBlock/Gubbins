@@ -1,11 +1,11 @@
 /**
  * Guards against naming a DOM test environment the app's unit suite does not run on (issue #1568).
  *
- * The suite runs on happy-dom. jsdom has never been a dependency, yet thirty files named it, and the
- * wrong model did not stay in the comments: they said `elementFromPoint`, `PointerEvent` and
- * `matchMedia` were missing (happy-dom has all three), and code was written to suit — a guard in
- * `useBoardPointerDrag` that could never fire, and pointer events assembled from a bare `Event` in
- * three drag tests. Nothing about a comment fails a type-check or a component test, so this scan
+ * The suite runs on happy-dom. jsdom has never been a dependency, yet more than thirty files named
+ * it, and eleven of those comments said `elementFromPoint`, `PointerEvent` or `matchMedia` was
+ * missing (happy-dom has all three). The wrong model did not stay in the comments: code was written
+ * to suit — a guard in `useBoardPointerDrag` that could never fire, and pointer events assembled
+ * from a bare `Event` in five drag tests. Nothing about a comment fails a type-check or a component test, so this scan
  * makes it a build failure.
  *
  * The environment in use is read from `vite.config.ts` rather than restated here. Moving the suite
