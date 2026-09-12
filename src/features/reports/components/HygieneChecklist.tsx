@@ -52,7 +52,7 @@ function HygieneRow({ section, formatters }: { section: HygieneSection; formatte
       <summary className="flex cursor-pointer list-none items-center gap-3 py-1.5 text-sm">
         <WarningIcon className="size-4 shrink-0 text-warning" aria-hidden />
         <span className="font-medium">{section.label}</span>
-        <span className="hidden text-muted-foreground sm:inline">{section.description}</span>
+        <span className="text-muted-foreground handset:hidden">{section.description}</span>
         <span className="ml-auto rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning-foreground tabular-nums">
           {formatters.quantity(section.count)}
         </span>

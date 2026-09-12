@@ -132,8 +132,8 @@ const ItemRowBody = memo(function ItemRow({
         <CardFieldSummary fields={fields} locationColorClass={locationColorClass} />
       </div>
 
-      <CardBadge item={item} className="hidden sm:inline-flex" />
-      {isUnlimited(item) ? <UnlimitedBadge className="hidden sm:inline-flex" /> : null}
+      <CardBadge item={item} className="handset:hidden" />
+      {isUnlimited(item) ? <UnlimitedBadge className="handset:hidden" /> : null}
 
       <div className="flex w-40 items-center justify-end gap-2">
         <ItemStockValue item={item} />

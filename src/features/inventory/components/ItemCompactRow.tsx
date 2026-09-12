@@ -120,7 +120,7 @@ const ItemCompactRowBody = memo(function ItemCompactRow({
       {/* The one field, right-aligned so a scan down the list reads as two columns. Capped at a
           share of the line so a long value can never squeeze out the name it belongs to. */}
       {keyField ? (
-        <span className="hidden min-w-0 max-w-[45%] shrink-0 truncate text-xs text-muted-foreground sm:flex">
+        <span className="flex min-w-0 max-w-[45%] shrink-0 truncate text-xs text-muted-foreground handset:hidden">
           <FieldValue field={keyField} locationColorClass={locationColorClass} />
         </span>
       ) : null}

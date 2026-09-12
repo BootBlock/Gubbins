@@ -2,11 +2,12 @@
  * Calendar-day arithmetic (issue #325).
  *
  * The DST-sensitive behaviour — the whole point of these helpers — can only be observed in a time
- * zone that actually springs forward and falls back, and the Vitest worker pool is pinned to UTC
- * (setting `process.env.TZ` inside a `worker_threads` worker does not re-seat V8's cached zone). So
- * the daylight-saving cases run in a **child Node process** pinned to `America/New_York`, driving the
- * real module (it is dependency-free, so the child imports it directly under type-stripping). The
- * structural cases that hold in any zone stay as ordinary in-worker tests.
+ * zone that actually springs forward and falls back, and the Vitest worker pool cannot be put in one:
+ * a worker runs in whatever zone the host machine uses, and setting `process.env.TZ` inside a
+ * `worker_threads` worker does not re-seat V8's cached zone. So the daylight-saving cases run in a
+ * **child Node process** pinned to `America/New_York`, driving the real module (it is
+ * dependency-free, so the child imports it directly under type-stripping). The structural cases that
+ * hold in any zone stay as ordinary in-worker tests.
  *
  * New York DST boundaries for 2025:
  *  · spring forward — 2025-03-09, 02:00 EST → 03:00 EDT (any local day-window spanning it is 23h)
@@ -26,7 +27,7 @@ import {
 } from './calendar-days';
 
 // ---------------------------------------------------------------------------
-// Structural cases — true in any time zone (the worker runs in UTC).
+// Structural cases — true in any time zone, so they hold in the host's zone.
 // ---------------------------------------------------------------------------
 
 describe('startOfLocalDay', () => {
@@ -245,8 +246,9 @@ describe('addCalendarDays across DST (America/New_York)', () => {
 
 // ---------------------------------------------------------------------------
 // utcDayToLocalDay across time zones — the issue #323 reproduction, run in a
-// child process pinned to a zone east and west of UTC (the worker is UTC, where
-// the whole point — local ≠ UTC midnight — cannot be observed).
+// child process pinned to a zone east and west of UTC (the worker runs in the
+// host's zone, which may be UTC, where the whole point — local ≠ UTC midnight —
+// cannot be observed).
 // ---------------------------------------------------------------------------
 
 /**
