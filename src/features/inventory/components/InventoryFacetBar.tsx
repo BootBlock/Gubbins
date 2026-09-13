@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Select } from '@/components/foundry';
+import { Select, useAfterPrimaryContent } from '@/components/foundry';
 import { CategoryIcon, CloseIcon, TagIcon } from '@/components/icons';
 import { useFeature } from '@/features/modules/useFeature';
 import { useCategories, useCategoriesInUse } from '../categories';
@@ -48,8 +48,20 @@ export function InventoryFacetBar({
 }: InventoryFacetBarProps) {
   const tagsEnabled = useFeature('tags-attachments');
   const categories = useCategories();
-  const categoriesInUse = useCategoriesInUse(locationId);
-  const tagDictionary = useTagDictionary();
+  // Both dictionaries narrow a list the reader is still waiting for, so on a screen that declares
+  // its main content they wait for it rather than queueing ahead of it on the single worker
+  // connection (issue #1575). The in-use set is scoped to the selected location, exactly as its
+  // query key is, so changing location makes it wait for that location's list in the same way.
+  const afterList = useAfterPrimaryContent();
+  const afterListInLocation = useAfterPrimaryContent(locationId);
+  const categoriesInUse = useCategoriesInUse(locationId, afterListInLocation);
+  // The tag dictionary is also gated on the capability that displays it: with Tags off this bar
+  // renders no tag control at all, so the read could only ever be discarded. It is **not**
+  // deferred while a tag filter is active, though: the chips below name the active tags from this
+  // dictionary, so with one applied (a reload, a shared link) it is naming what is already on
+  // screen rather than offering a refinement, and holding it back would show the reader a raw id.
+  const namesActiveTags = tagIds.length > 0;
+  const tagDictionary = useTagDictionary(1, 100, {}, tagsEnabled && (namesActiveTags || afterList));
 
   const allCategoryRows = useMemo(() => categories.data?.rows ?? [], [categories.data]);
   const tagRows = useMemo(() => tagDictionary.data?.rows ?? [], [tagDictionary.data]);

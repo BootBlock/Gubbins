@@ -254,6 +254,41 @@ describe('useAlerts — Warranty off', () => {
 });
 
 /**
+ * Issue #1575: every read in the app crosses one worker connection that runs a single statement
+ * at a time, so a caller that is chrome rather than content — the navigation's alert badge —
+ * can hold these five whole-vault feeds back until the screen's own list has arrived.
+ */
+describe('useAlerts — a caller may hold the feeds back', () => {
+  it('fetches every lane by default', () => {
+    renderHook(() => useAlerts());
+
+    expect(h.useLowStockItems.mock.calls.at(-1)?.[1]).toEqual({ enabled: true });
+    expect(h.useExpiringItems.mock.calls.at(-1)?.[1]).toEqual({ enabled: true });
+    expect(h.useDueMaintenance).toHaveBeenLastCalledWith({ enabled: true });
+    expect(laneEnabled('warranty-expiring')).toBe(true);
+    expect(laneEnabled('field-due-dates')).toBe(true);
+  });
+
+  it('gates every lane off while the caller is waiting for something else', () => {
+    renderHook(() => useAlerts({ enabled: false }));
+
+    expect(h.useLowStockItems.mock.calls.at(-1)?.[1]).toEqual({ enabled: false });
+    expect(h.useExpiringItems.mock.calls.at(-1)?.[1]).toEqual({ enabled: false });
+    expect(h.useDueMaintenance).toHaveBeenLastCalledWith({ enabled: false });
+    expect(laneEnabled('warranty-expiring')).toBe(false);
+    expect(laneEnabled('field-due-dates')).toBe(false);
+  });
+
+  it('gates the lane totals off with them, so asking for totals cannot reopen the feeds', () => {
+    renderHook(() => useAlerts({ withTotals: true, enabled: false }));
+
+    expect(h.useLowStockCount).toHaveBeenLastCalledWith({ enabled: false });
+    expect(h.useExpiringCount.mock.calls.at(-1)?.[1]).toEqual({ enabled: false });
+    expect(h.useDueMaintenanceCount).toHaveBeenLastCalledWith({ enabled: false });
+  });
+});
+
+/**
  * Dismissal housekeeping (issue #134). `pruneDismissals` itself is covered exhaustively in
  * `alerts.test.ts`; what matters here is the wiring — that the hook actually reconciles the
  * store against the live feed, and that it holds off while the feed can't be trusted.
@@ -321,6 +356,25 @@ describe('useAlerts — dismissal pruning', () => {
     });
 
     renderHook(() => useAlerts());
+
+    expect(useDismissedAlertsStore.getState().dismissals.size).toBe(1);
+  });
+
+  it('leaves the records alone while the caller is holding the feeds back (issue #1575)', () => {
+    // A held-back lane is *idle*, not loading, and React Query reports an idle pending query as
+    // `isLoading: false` — so every lane answers exactly as a disabled one does here. Read as
+    // "settled, and nothing is live", the staleness rule would retire a record whose alert is
+    // still firing, and the alert would come back undismissed.
+    const idle = { data: undefined, isLoading: false, isError: false };
+    h.useLowStockItems.mockReturnValue(idle);
+    h.useExpiringItems.mockReturnValue(idle);
+    h.useDueMaintenance.mockReturnValue(idle);
+    h.useQuery.mockReturnValue(idle);
+    useDismissedAlertsStore.setState({
+      dismissals: new Map([['low-stock:low-1', { until: null, at: LONG_AGO }]]),
+    });
+
+    renderHook(() => useAlerts({ enabled: false }));
 
     expect(useDismissedAlertsStore.getState().dismissals.size).toBe(1);
   });

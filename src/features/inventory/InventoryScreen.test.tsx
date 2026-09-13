@@ -15,6 +15,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useSessionStore } from '@/state/stores/useSessionStore';
 import { useModulesStore } from '@/state/stores/useModulesStore';
+import { DEFAULT_DENSITY, DEFAULT_GROUPING, useLayoutStore } from '@/state/stores/useLayoutStore';
 import { UNRESTRICTED_AUTHORITY } from '@/features/users/permissions';
 import { useInventoryEntry } from './useInventoryEntry';
 import { InventoryScreen } from './InventoryScreen';
@@ -55,14 +56,36 @@ const emptyList = {
   refetch: vi.fn(),
 };
 
+/**
+ * The screen *orders* its reads, so the mocks record which read was issued and which was held
+ * back (issue #1575) rather than only answering. `listSettled` stands in for the list having
+ * arrived — the signal everything around it waits for.
+ */
+const reads = vi.hoisted(() => ({ list: vi.fn(), statuses: vi.fn(), filterBar: vi.fn() }));
+const listSettled = vi.hoisted(() => ({ current: true }));
+
 vi.mock('./queries', () => ({
-  useInventoryItems: () => emptyList,
-  useItemPage: () => ({ data: { rows: [] }, isLoading: false, isError: false, isSuccess: true }),
+  useInventoryItems: (_filters: unknown, _pageSize: unknown, enabled = true) => {
+    reads.list(enabled);
+    return { ...emptyList, isFetched: listSettled.current };
+  },
+  useItemPage: () => ({
+    data: { rows: [] },
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+    isFetched: true,
+  }),
   useItemCount: () => ({ data: 0, isSuccess: true }),
   useItem: () => ({ data: undefined }),
   useLocations: () => ({ data: { rows: [] } }),
-  useLocationTree: () => ({ data: [] }),
-  useApplicableStatuses: () => ({ data: undefined }),
+  useLocationTree: () => ({ data: [], isFetched: true }),
+  useApplicableStatuses: (_locationId: unknown, active = true) => {
+    reads.statuses(active);
+    // Answers with counts whether or not it was allowed to run, mirroring the `keepPreviousData`
+    // the real hook carries — so a test can tell "held back" from "nothing cached".
+    return { data: [{ status: 'low-stock', count: 3 }] };
+  },
 }));
 vi.mock('@/features/search/queries', () => ({
   astError: () => null,
@@ -99,7 +122,14 @@ vi.mock('./components/ItemList', () => ({ ItemList: () => <div data-testid="item
 vi.mock('./components/GroupedItemList', () => ({ GroupedItemList: () => <div /> }));
 vi.mock('./components/LocationMapView', () => ({ LocationMapView: () => <div /> }));
 vi.mock('./components/ValueTreemapView', () => ({ ValueTreemapView: () => <div /> }));
-vi.mock('./components/InventoryFilterBar', () => ({ InventoryFilterBar: () => <div /> }));
+vi.mock('./components/InventoryFilterBar', () => ({
+  // Records its props: the chip counts it is handed are how a test reads what the screen believes
+  // it knows about the current location.
+  InventoryFilterBar: (props: unknown) => {
+    reads.filterBar(props);
+    return <div />;
+  },
+}));
 vi.mock('./components/InventoryFacetBar', () => ({ InventoryFacetBar: () => <div /> }));
 vi.mock('./components/LocationInfoCard', () => ({ LocationInfoCard: () => <div /> }));
 vi.mock('./components/LocationDetailCard', () => ({ LocationDetailCard: () => <div /> }));
@@ -145,12 +175,18 @@ async function enterSelectMode(user: ReturnType<typeof userEvent.setup>) {
 // The rest of the suite (and every other screen test) runs as single-user mode does —
 // unrestricted — so the authority is restored on both edges rather than only before, or a
 // restricted case here would leak its grants into whatever ran next.
-beforeEach(() => useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY }));
+beforeEach(() => {
+  useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
+  listSettled.current = true;
+  reads.list.mockClear();
+  reads.statuses.mockClear();
+});
 afterEach(() => {
   cleanup();
   useInventoryEntry.setState({ pendingIntent: null });
   useSessionStore.setState({ authority: UNRESTRICTED_AUTHORITY });
   useModulesStore.setState({ intent: {} });
+  useLayoutStore.setState({ density: DEFAULT_DENSITY, grouping: DEFAULT_GROUPING });
 });
 
 describe('InventoryScreen — an unrestricted session', () => {
@@ -275,5 +311,65 @@ describe('InventoryScreen — an import intent raised elsewhere', () => {
     expect(screen.queryByTestId('import-dialog')).not.toBeInTheDocument();
     // Cleared regardless, or it would re-fire the next time this screen mounted.
     expect(useInventoryEntry.getState().pendingIntent).toBeNull();
+  });
+});
+
+/**
+ * Issue #1575: every read crosses one worker connection that carries a single statement at a
+ * time, so what this screen must get right is the *order* — the list first, and nothing issued
+ * for an arrangement that is not on screen.
+ */
+describe('InventoryScreen — which reads the screen issues, and when', () => {
+  it('holds the status-chip counts back while the list is still loading', () => {
+    listSettled.current = false;
+    render(<InventoryScreen />);
+
+    // Not merely "eventually false": no call may have asked for them, or the chips' two
+    // correlated-subquery counts would already be queued ahead of the list.
+    expect(reads.statuses.mock.calls.map(([active]) => active)).not.toContain(true);
+  });
+
+  it('runs them once the list has arrived', () => {
+    render(<InventoryScreen />);
+
+    expect(reads.statuses.mock.calls.at(-1)?.[0]).toBe(true);
+  });
+
+  it('shows no chip counts while those counts are still the previous location’s', () => {
+    // The counts hook holds its last answer through a location change (`keepPreviousData`), which
+    // is right for a refetch and wrong for a location the reader has just left. Until the read for
+    // this location has started, the chips must say nothing rather than say somewhere else's total.
+    listSettled.current = false;
+    render(<InventoryScreen />);
+
+    const props = reads.filterBar.mock.calls.at(-1)?.[0] as { counts?: unknown };
+    expect(props.counts).toBeUndefined();
+  });
+
+  it('hands the counts over once that read has run', () => {
+    render(<InventoryScreen />);
+
+    const props = reads.filterBar.mock.calls.at(-1)?.[0] as { counts?: Map<string, number> };
+    expect(props.counts?.get('low-stock')).toBe(3);
+  });
+
+  it('does not read the flat list while the grouped view is what is on screen', () => {
+    useLayoutStore.setState({ grouping: 'location' });
+    render(<InventoryScreen />);
+
+    expect(reads.list.mock.calls.at(-1)?.[0]).toBe(false);
+  });
+
+  it('does not read it under a whole-collection visualisation either', () => {
+    useLayoutStore.setState({ density: 'map' });
+    render(<InventoryScreen />);
+
+    expect(reads.list.mock.calls.at(-1)?.[0]).toBe(false);
+  });
+
+  it('reads it in the flat view, which is the one it draws', () => {
+    render(<InventoryScreen />);
+
+    expect(reads.list.mock.calls.at(-1)?.[0]).toBe(true);
   });
 });

@@ -77,10 +77,14 @@ export function useCategoryNames(): ReadonlyMap<string, string> {
  * or removing the last item of a category — refreshes which categories the facet offers.
  * `keepPreviousData` holds the last set on screen while a location change reloads it.
  */
-export function useCategoriesInUse(locationId: string | null) {
+export function useCategoriesInUse(locationId: string | null, enabled = true) {
   return useQuery({
     queryKey: inventoryKeys.categoriesInUse(locationId),
     queryFn: () => getItemRepository().categoriesInUse(locationId),
+    // The facet is a refinement of a list the reader is still waiting for, so the caller can
+    // hold this read until that list has arrived (issue #1575). Until then the picker offers
+    // every category, which is what it already does while this read is in flight.
+    enabled,
     placeholderData: keepPreviousData,
   });
 }

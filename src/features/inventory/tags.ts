@@ -24,11 +24,15 @@ import { projectTagSet } from './tag-set';
  * resolved the same way, so it reaches tags that sort past the page on screen rather than
  * narrowing the page in hand. Pair with {@link useTagCount} given the same filter.
  */
-export function useTagDictionary(page = 1, pageSize = 100, browse: TagBrowse = {}) {
+export function useTagDictionary(page = 1, pageSize = 100, browse: TagBrowse = {}, enabled = true) {
   const offset = Math.max(0, (page - 1) * pageSize);
   return useQuery({
     queryKey: inventoryKeys.tagList(offset, pageSize, browse),
     queryFn: () => getTagRepository().list({ ...browse, limit: pageSize, offset }),
+    // `enabled` lets a caller that only offers the dictionary as a *filter* hold the read until
+    // the list it filters has arrived (issue #1575); the Tags screen, where the dictionary is
+    // the content, leaves it at the default.
+    enabled,
     // Keep the previous page on screen while the next one loads (or the filter changes), so
     // paging and typing don't flash the empty/loading state.
     placeholderData: (previous) => previous,

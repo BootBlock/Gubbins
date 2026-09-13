@@ -14,7 +14,9 @@ vi.mock('@tanstack/react-router', () => ({
 
 const alertsMock = vi.fn();
 vi.mock('@/features/alerts/useAlerts', () => ({
-  useAlerts: () => alertsMock(),
+  // Takes the options through, so a test can state whether the badge's feeds were allowed to
+  // fetch at all (issue #1575) rather than only what they returned.
+  useAlerts: (options?: { enabled?: boolean }) => alertsMock(options),
 }));
 
 // The real `useSignOut` reaches for a QueryClient; the sign-out behaviour itself is covered by
@@ -22,6 +24,7 @@ vi.mock('@/features/alerts/useAlerts', () => ({
 const signOutMock = vi.fn();
 vi.mock('@/features/users/useSignOut', () => ({ useSignOut: () => signOutMock }));
 
+import { PrimaryContentProvider } from '@/components/foundry';
 import { AppNav } from './AppNav';
 import { NAV_DESTINATIONS } from './nav-destinations';
 import { getFeature } from '@/features/modules/feature-registry';
@@ -226,5 +229,29 @@ describe('AppNav — feature gating (Phase 2)', () => {
     for (const dest of optIn) {
       expect(screen.queryByRole('menuitem', { name: new RegExp(dest.label) })).toBeNull();
     }
+  });
+
+  /**
+   * Issue #1575: the badge's five feeds each read the whole vault, and every read in the app
+   * shares one worker connection — so on a screen that is still loading its own content, the
+   * badge waits rather than queueing ahead of it.
+   */
+  it('reads its alert feeds at once where no screen declares primary content', () => {
+    render(<AppNav />);
+
+    // The *first* call, not merely the last: on a screen that defers nothing the badge must not
+    // pass through a commit with its feeds switched off, because a consumer of those feeds reads
+    // "switched off" as "nothing to report".
+    expect(alertsMock.mock.calls[0]?.[0]).toEqual({ enabled: true });
+  });
+
+  it('holds them back while the screen it sits on is still loading', () => {
+    render(
+      <PrimaryContentProvider settled={false}>
+        <AppNav />
+      </PrimaryContentProvider>,
+    );
+
+    expect(alertsMock).toHaveBeenLastCalledWith({ enabled: false });
   });
 });
