@@ -57,8 +57,8 @@ This issue was actioned by an agent on behalf of @BootBlock.
 ```
 
 Match the verb to what you did (`actioned` / `opened` / `updated`), and write `pull request` for
-a PR. Omit it only where GitHub has no body to sign. Commit messages carry a `Co-Authored-By`
-trailer instead.
+a PR. Omit it only where GitHub has no body to sign. A commit message carries no attribution
+at all.
 
 ## UI: design tokens and Foundry primitives (mandatory)
 
