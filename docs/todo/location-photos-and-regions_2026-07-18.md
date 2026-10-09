@@ -409,7 +409,7 @@ browser — pointer geometry is precisely what types cannot confirm.
 6. `EditLocationDialog` → `RailModal`; generalise `ImageManager`; Photos tab.
 7. Region editor + linking; item-side panel; feature gating.
 8. i18n, wiki, screenshots.
-9. Full verification pass, `/code-review high`, fix findings, land.
+9. Full verification pass, the `auto-review` skill at `medium`, fix findings, land.
 
 ## 11. Explicitly out of scope
 

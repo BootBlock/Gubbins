@@ -385,9 +385,9 @@ in [docs/todo/wiki_2026-07-11.md](wiki_2026-07-11.md). Run `npm run wiki:check`.
 
 ## 8. Phasing
 
-Each phase is independently shippable, verified, review-clean (`/code-review high`), and
-merged `--no-ff` from its own worktree (CLAUDE.md). Wiki + i18n travel *with* the phase that
-introduces the user-visible surface.
+Each phase is independently shippable, verified, review-clean (the `auto-review` skill at
+`medium`), and merged `--no-ff` from its own worktree (CLAUDE.md). Wiki + i18n travel *with* the
+phase that introduces the user-visible surface.
 
 | Phase | Scope | Ships |
 | --- | --- | --- |
