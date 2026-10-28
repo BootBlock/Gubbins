@@ -56,15 +56,15 @@ describe('viewTransitionsSupported', () => {
 });
 
 describe('viewTransitionTypesSupported', () => {
-  const realSupports = window.CSS?.supports;
-
+  // happy-dom exposes `CSS` as a getter-only window property, so plain assignment throws:
+  // `vi.stubGlobal` redefines it and `vi.unstubAllGlobals` restores the original descriptor.
   afterEach(() => {
-    if (window.CSS) window.CSS.supports = realSupports as typeof window.CSS.supports;
+    vi.unstubAllGlobals();
   });
 
   /** Stand in for a browser's `CSS.supports`, answering only the selector we ask about. */
   const stubSupports = (answer: boolean) => {
-    window.CSS = { ...(window.CSS ?? {}), supports: vi.fn(() => answer) } as unknown as typeof window.CSS;
+    vi.stubGlobal('CSS', { ...(window.CSS ?? {}), supports: vi.fn(() => answer) });
   };
 
   it('is true only where the view-transition-type selector is understood', () => {
@@ -75,10 +75,8 @@ describe('viewTransitionTypesSupported', () => {
   });
 
   it('is false on a browser with no CSS.supports at all', () => {
-    const saved = window.CSS;
-    (window as { CSS?: unknown }).CSS = undefined;
+    vi.stubGlobal('CSS', undefined);
     expect(viewTransitionTypesSupported()).toBe(false);
-    (window as { CSS?: unknown }).CSS = saved;
   });
 });
 
