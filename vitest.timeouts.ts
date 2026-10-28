@@ -17,3 +17,16 @@
  * number would be free to drift from this one.
  */
 export const DEFAULT_TEST_TIMEOUT_MS = 15_000;
+
+/**
+ * How long a Testing Library `waitFor` / `findBy*` keeps retrying before it fails.
+ *
+ * The library's own default is 1s, which the same load that drove the per-test budget above
+ * also overruns: a dialog that renders in ~60ms on an idle machine has measured past 1s under a
+ * full parallel run, failing a different test in the same file each time. 5s absorbs that and
+ * stays well inside `DEFAULT_TEST_TIMEOUT_MS`, so a `waitFor` that will never pass still reports
+ * its own unmet expectation rather than the test's timeout.
+ *
+ * Applied once, by `src/test/setup.ts`.
+ */
+export const ASYNC_UTIL_TIMEOUT_MS = 5_000;

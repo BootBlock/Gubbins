@@ -5,6 +5,11 @@
  * for the component-level tests of the Tier-1 state layer described in spec §8.5.
  */
 import '@testing-library/jest-dom/vitest';
+import { configure } from '@testing-library/react';
+import { ASYNC_UTIL_TIMEOUT_MS } from '../../vitest.timeouts';
+
+// Testing Library's 1s retry budget is too tight under load; see `vitest.timeouts.ts`.
+configure({ asyncUtilTimeout: ASYNC_UTIL_TIMEOUT_MS });
 
 /*
  * Ensure a working Web Storage API for Tier-2 (Zustand `persist`) stores under test.

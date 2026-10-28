@@ -56,10 +56,9 @@ describe('resolveDefaultViewTransition', () => {
 });
 
 describe('what actually decides whether the router consults the view-transition gate', () => {
-  const realSupports = window.CSS?.supports;
-
   afterEach(() => {
-    if (window.CSS) window.CSS.supports = realSupports as typeof window.CSS.supports;
+    // happy-dom's `CSS` is a getter-only window property, so it is stubbed, never assigned.
+    vi.unstubAllGlobals();
     delete (document as { startViewTransition?: unknown }).startViewTransition;
   });
 
@@ -72,10 +71,7 @@ describe('what actually decides whether the router consults the view-transition 
    * this fails, and the choice needs revisiting.
    */
   const driveRouter = (selectorSupported: boolean) => {
-    window.CSS = {
-      ...(window.CSS ?? {}),
-      supports: vi.fn(() => selectorSupported),
-    } as unknown as typeof window.CSS;
+    vi.stubGlobal('CSS', { ...(window.CSS ?? {}), supports: vi.fn(() => selectorSupported) });
     (document as { startViewTransition?: unknown }).startViewTransition = (
       arg: (() => void) | { update: () => void },
     ) => ({ updateCallbackDone: Promise.resolve((typeof arg === 'function' ? arg : arg.update)()) });
