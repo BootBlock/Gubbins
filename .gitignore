@@ -112,3 +112,6 @@ scripts/.smoke-screenshot.png
 # publish sync by hand to see what it would do; that clones the wiki here. It is a whole
 # second repo (with its own .git) and must never be committed into this one.
 /.wiki/
+
+# Drive.NET workspace artifacts
+.drive-net/

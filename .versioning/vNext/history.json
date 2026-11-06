@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "id": "79b905",
+      "kind": "changed",
+      "text": "The Sync screen now warns you when your bridge is older than 0.33.0 and needs updating, because an older bridge can report a part-returned loan as still fully out.",
+      "date": "2026-10-28",
+      "commit": "06055ca5",
+      "agent": "claude"
+    }
+  ]
+}
